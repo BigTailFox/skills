@@ -13,10 +13,25 @@ ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = ROOT / "skills"
 CATEGORIES = ("execution", "governance")
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+BRAND = "canon"
 MAX_NAME = 64
 MAX_DESCRIPTION = 1024
 MAX_LINES = 500
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
+FENCE_RE = re.compile(r"^\s*(```|~~~)")
+INLINE_CODE_RE = re.compile(r"`[^`]*`")
+
+
+def link_targets(text):
+    """Yield link targets outside fenced code blocks and inline code."""
+    fence = None
+    for line in text.splitlines():
+        match = FENCE_RE.match(line)
+        if match:
+            fence = match.group(1) if fence is None else (None if fence == match.group(1) else fence)
+            continue
+        if fence is None:
+            yield from LINK_RE.findall(INLINE_CODE_RE.sub("", line))
 
 
 def parse_frontmatter(text):
@@ -71,6 +86,8 @@ def validate_skill(skill_dir):
             errors.append(f"`name` ({name}) does not match directory name ({skill_dir.name})")
         if not NAME_RE.match(name):
             errors.append("`name` must use lowercase letters, digits and single hyphens only")
+        if name != BRAND and not name.startswith(BRAND + "-"):
+            errors.append(f"`name` must be `{BRAND}` or start with `{BRAND}-`")
         if len(name) > MAX_NAME:
             errors.append(f"`name` exceeds {MAX_NAME} characters")
 
@@ -84,7 +101,7 @@ def validate_skill(skill_dir):
     if line_count > MAX_LINES:
         errors.append(f"SKILL.md has {line_count} lines (max {MAX_LINES})")
 
-    for target in LINK_RE.findall(text):
+    for target in link_targets(text):
         if re.match(r"^[a-z]+:", target) or target.startswith("#"):
             continue
         if not (skill_dir / target.split("#", 1)[0]).exists():
