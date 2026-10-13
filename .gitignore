@@ -1,0 +1,23 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+*.swp
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Artifacts from running `npx skills add` inside this repo
+.agents/
+skills-lock.json
+
+# Local secrets and scratch
+.env
+.env.*
+*.local.md
+tmp/

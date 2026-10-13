@@ -1,0 +1,30 @@
+# AGENTS.md
+
+本仓库是个人 Agent Skills 集合，通过 `npx skills`（vercel-labs/skills）安装和分发。每个技能是一个包含 `SKILL.md` 的目录，位于 `skills/execution/` 或 `skills/governance/` 下。
+
+不要在 `skills/` 之外创建 `SKILL.md`（包括模板、示例），CLI 会把它们识别为可安装的技能。也不要添加自定义的安装脚本，安装、更新、卸载都交给 `npx skills`。
+
+## 分类规则
+
+- `execution/`：直接完成开发任务、产出代码或改动的技能。
+- `governance/`：定义规范、做检查评审、约束流程的技能。
+- 拿不准时，问自己：这个技能的主要产出是「改动」还是「判断」？前者放 `execution/`，后者放 `governance/`。
+
+## 技能规范
+
+- 目录名即技能名：小写字母、数字、连字符，不超过 64 字符。技能名在整个仓库内必须唯一（跨分类也不能重复）。
+- `SKILL.md` 必须以 YAML frontmatter 开头，包含：
+  - `name`：与目录名一致。
+  - `description`：非空，不超过 1024 字符，第三人称，同时写明「做什么」和「何时使用」，包含触发关键词。
+- 默认加 `disable-model-invocation: true`，只有确实需要根据上下文自动触发的技能才去掉。
+- `SKILL.md` 正文控制在 500 行以内；详细资料拆到同目录的其他 `.md` 文件，并从 `SKILL.md` 直接链接（只引用一层）。
+- 只写 Agent 不知道的内容，不解释常识。给一个默认做法，而不是罗列多个选项。
+- 路径使用 `/`，不写有时效性的内容（如「2026 年之前用旧 API」）。
+- 技能附带的脚本放在 `scripts/` 下，并在 `SKILL.md` 中说明是「执行」还是「阅读参考」。
+
+## 工作流程
+
+- 新建技能：在 `skills/<分类>/` 下运行 `npx skills init <name>`，然后按上面的规范补全 frontmatter（包括 `disable-model-invocation`）。
+- 修改任何技能后运行 `python3 scripts/validate.py` 和 `npx skills add . --list`，两者都通过后再提交。
+- 提交信息使用 Conventional Commits，scope 用技能名，例如 `feat(code-review): add security checklist`；仓库级改动不带 scope 或用 `repo`。
+- 文档（`README.md`、`AGENTS.md`）用中文；技能内容中文或英文均可，同一个技能内保持一致。
