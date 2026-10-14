@@ -16,7 +16,7 @@ Implement slice by slice, each slice in a fresh worker subagent (the `canon-impl
 
 When the implementation cannot follow the plan or the design:
 
-- **Plan problem with one clear fix**: edit the plan and continue without asking; log the deviation and the decision. When the plan problem needs a decision, mark the slice `paused` and ask the user.
+- **Plan problem with one clear fix**: edit the plan and continue without asking; log the deviation and the decision. Such a fix keeps the plan's `revision`. When the plan problem needs a decision, or its fix would change what the plan delivers, mark the slice `paused` and ask the user: that is a new plan revision, made with the `canon-plan` skill, and it passes the review gate before the slices resume.
 - **Design problem**: no implementation can satisfy the design, or the design contradicts itself. Mark the slice `paused` and tell the user. Never change the design's intent yourself, even when it is plainly wrong.
 - While a slice is paused for a design problem or a pending decision, finish the slices that do not depend on it, then report every paused slice with its problem.
 
@@ -29,11 +29,11 @@ Every design or plan revision passes this gate before it is accepted, and every 
 1. Run `canon.py check` and fix its errors, so reviewers spend no effort on formatting. It warns that the revision is not reviewed until step 5.
 2. Launch the first-round reviewers in parallel, with the `canon-blind-review` skill when it is installed. A blind reviewer is a fresh subagent that carries nothing from the current conversation: never fork the session, and pass only the reviewer prompt below.
    - **Same-model reviewer**: a subagent on the author's model and effort (Subagents below).
-   - **Cross-family reviewer**: a model of another family, run as the reviewer file says (Subagents below), in the first round only. Required for L2, optional for L1. Without the file, or when it fails, give the user the filled reviewer prompt to run in another tool, and wait for the result.
+   - **Cross-family reviewer**: a model of another family than the session's, run as the reviewer file says (Subagents below), in the first round only. Required for L2, optional for L1. When the file names no such reviewer, or the run fails, give the user the filled reviewer prompt to run in another tool, and wait for the result.
 3. Merge the findings. Accept and fix, decline with a one-line reason for the user, or escalate to the user. A finding raised by both reviewers is accepted unless it is clearly wrong. Declined findings stay out of the doc; record a Decision only when its rationale has lasting value.
 4. When accepted blocker or major findings were fixed, the reviewers that raised them confirm the fixes in one more round, as the `canon-blind-review` skill's confirmation describes. Blockers still open after it go to the user; there is no third round.
 5. Set `reviewed: <revision>` and `reviewers: [<model ids>]`, using `manual:<model>` for user-run reviews.
-6. Status. L1: a draft becomes `accepted`. L2: report the accepted, declined and escalated findings and the reviewer models, including any fallback, and get the user's answer on each escalated finding. The user then approves, here or by starting the next phase on the doc; a draft becomes `accepted` at that point and until then stays a `draft` whose `reviewed` equals `revision`. A revised active design stays `active` in both tiers.
+6. Status. L1: a draft becomes `accepted`. L2: report the accepted, declined and escalated findings and the reviewer models, including any fallback, and get the user's answer on each escalated finding. The user then approves, here or by starting the next phase on the doc; a draft becomes `accepted` at that point and until then stays a `draft` whose `reviewed` equals `revision`. A revised active design stays `active`, and a revised plan in progress stays `in-progress`, in both tiers.
 
 ### Reviewer prompt
 
@@ -76,7 +76,7 @@ Fix findings in the change; when blocker or major fixes changed it, the reviewer
 
 The user sets each session's model and reasoning effort. Reviewers and implementation workers are new subagents from the host's own tool (the Task tool in Cursor, the Agent tool in Claude Code, multi-agent subagents in Codex), never forks of the session. Launch them without a model or effort, so they run on the session's.
 
-The cross-family reviewer runs as the reviewer file, `.canon/canon-blind-review/reviewer.md`, says. The file is local because the tools and logins it relies on differ between machines; the `canon-init` skill writes it. It names the model and effort, then how to run the reviewer: a shell command with `<prompt>` and `<out>` placeholders that starts a new read-only session and leaves the final review in `<out>`, or a host subagent with a named model. It also notes what the host needs to run it, such as running outside its sandbox.
+The cross-family reviewer runs as the reviewer file, `.canon/canon-blind-review/reviewer.md`, says. The file is local because the tools and logins it relies on differ between machines; the `canon-init` skill writes it. It lists one or more reviewers, each with its model and effort, how to run it (a shell command with `<prompt>` and `<out>` placeholders that starts a new read-only session and leaves the final review in `<out>`, or a host subagent with a named model), and what the host needs to run it, such as running outside its sandbox. The cross-family reviewer is the first one whose model is of another family than the current session's.
 
 ## Docs step
 

@@ -13,11 +13,11 @@ Execute `canon.py`; do not read it. Use the project's copy at the path named in 
 
 | Command | Purpose |
 |---|---|
-| `check [--fix] [--base REF]` | Validate all docs. `--fix` applies mechanical fixes (`refs`, `updated`, `implemented`, indexes). `--base origin/main` also checks the branch against that ref: deleted docs, id collisions, revisions pending review and unfinished docs fail. |
+| `check [--fix] [--base REF]` | Validate all docs. `--fix` applies mechanical fixes (`refs`, `updated`, indexes, and `implemented` of an active design never revised). `--base origin/main` also checks the branch against that ref: deleted docs, id collisions, revisions pending review and unfinished docs fail. |
 | `new TYPE SLUG [--title T] [--from D00X] [--parent D00X] [--root DIR]` | Create a doc from its template with the next free id. `--from` links a plan to its design; `--parent` creates a sub-design. |
 | `archive ID STATUS` | Set a terminal status, move the doc to `archived/`, rewrite every link to it. |
 | `rename ID SLUG` | Change a doc's file slug and rewrite every link to it. |
-| `renumber ID\|PATH [--base REF]` | Give a doc a new id and rewrite every link to it. Only for collisions reported by `check`. |
+| `renumber ID\|PATH --base REF` | Give a doc a new id, or a sub-design a new letter, and rewrite the links and references to it. Only for collisions reported by `check`; REF is the branch merged or rebased onto. |
 | `index` | Regenerate the indexes in `docs/README.md` and `docs/archived/README.md`. |
 | `show ID` / `show ID#slug` | Print a doc's frontmatter and outline, or one section. |
 | `find WORDS [--archived]` | Search ids, titles, summaries, owned topics, modules and headings. |
@@ -101,7 +101,7 @@ based_on: [D003@r4]                  # P only
 ## Rules
 
 - The id is a doc's identity. Create docs with `new`, retire them with `archive`, change slugs with `rename`. Never delete a doc or reuse an id.
-- Ids are unique on the current branch. When `check` reports a collision with another branch, renumber the doc your branch added: `renumber <path> --base <ref>` before rebasing, `renumber <path>` after.
+- Ids are unique on the current branch. When `check` reports a collision with another branch, renumber the doc your branch added with `renumber <path> --base <ref>`, where `<ref>` is the branch you merge or rebase onto, before or after the merge or rebase. Then fix the references it reports as kept; only you can tell which doc they mean.
 - Reference a section as `[D003§token-refresh: refresh flow](../designs/D003-auth.md#token-refresh)` and a whole doc as `[D003: auth design](../designs/D003-auth.md)`. Never reference by line number.
 - Each standard lives only in the design that owns its topic; everywhere else links to it.
 - A design or plan revision must pass the review gate before it is accepted or implemented: `reviewed` equals `revision`. `check` warns while a revision is pending; `check --base` fails.
