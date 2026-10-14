@@ -1,0 +1,9 @@
+This skill is adapted from mattpocock/skills
+https://github.com/mattpocock/skills
+
+Upstream skills: codebase-design
+License: MIT, see LICENSE
+
+Modified: rewritten for the canon documentation system. Upstream document
+conventions were replaced with canon's, and content was added, removed and
+reworded.
