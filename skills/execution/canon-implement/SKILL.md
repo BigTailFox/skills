@@ -12,7 +12,7 @@ Read the `canon` skill first; its workflow governs tiers, deviations, code revie
 
 1. Identify the work: the plan or design the user named (`canon.py find <words>` when only a topic is given), or an L0 change. State the tier. Work without a plan is one slice built in this session.
 2. Check the work against the tier's flow in the `canon` skill's workflow:
-   - A plan must be `accepted` or `in-progress`. An L2 plan still `draft` after its gate awaits the user's approval, and invoking this skill on it gives that approval: say so in one line and set it `accepted`.
+   - A plan must be `accepted` or `in-progress`, with `reviewed` equal to `revision`. An L2 plan still `draft` after its gate awaits the user's approval, and invoking this skill on it gives that approval: say so in one line and set it `accepted`.
    - An L1 design revision that passed the gate and needs no plan: follow L1 without a plan below.
    - When an earlier phase is missing, stop and give the user its command, e.g. `/canon-design D00X` or `/canon-plan D00X`.
 3. Read the plan's Current state, then the governing design sections (`show D00X#<section>`). If `check` warns that a design moved past the plan's `based_on`, compare the design's changes with the remaining slices first; a conflict is a plan or design problem under the workflow's deviation rules.
@@ -48,7 +48,7 @@ Build the slice test-first with the `canon-tdd` skill, at the seams its test cri
 You cannot reach the user. Stop and report instead when:
 - the plan or a design cannot be followed: say which, and the fix you would propose;
 - a decision is needed that the docs and code do not settle;
-- a test failure stays unexplained after two attempts.
+- a failing test stays unexplained and your last two attempts produced no new evidence narrowing its cause.
 
 Report in under 300 words: status (done | stuck | blocked), files changed, tests added with their seams, the test commands you ran and their results, deviations from the plan, open questions.
 ```
