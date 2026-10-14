@@ -1,16 +1,22 @@
 ---
 name: canon-code-review
-description: Reviews a code change (uncommitted work, or the diff since a commit, branch or merge base) on two separate axes run as parallel subagents. Spec checks the change against its governing designs and plan; Standards checks it against the standards the project's designs and AGENTS.md state plus a code-smell baseline. Use after implementing a change and before the docs step, or when the user asks to review a branch, PR, diff or work in progress.
+description: Reviews one complete code change. Use when a change is finished and before the docs step, or when the user asks to review a branch, PR, diff or work in progress. Not for single plan slices or whole-codebase reviews. Checks the diff and untracked files against the governing designs and plan (Spec) and the project's stated standards plus a smell baseline (Standards), at a depth set by the tier, from self-review to parallel axes with a cross-family reviewer for L2.
 ---
 
 # Code review
 
-Two-axis review of one change:
+Review of one complete change on two axes:
 
 - **Spec**: does the code implement what its governing designs and plan specify, and nothing else?
 - **Standards**: does the code follow the standards the project states?
 
-Each axis runs in its own subagent so neither pollutes the other's context; this skill then reports them side by side.
+## Depth
+
+Pick the depth from the change's tier (the `canon` skill's workflow); a user who asks for a deeper review gets it.
+
+- **Self-review**: a small L0 change that alters no behavior (rename, dependency bump, test or tooling change). Run steps 1 to 3, read the diff against both briefs yourself, and report one short list.
+- **One reviewer**: other L0 changes and L1 changes. One subagent gets both briefs and both sets of sources.
+- **Two axes**: L2 changes and wide changes (several modules or a large diff). One subagent per axis, so neither pollutes the other's context, plus a cross-family reviewer for L2.
 
 ## 1. Pin the fixed point
 
@@ -34,9 +40,9 @@ When no design governs the change, the Spec axis still runs: it checks that the 
 - Linter, formatter and type-checker config: skip whatever it enforces.
 - The smell baseline in [smells.md](smells.md), pasted in full into the Standards prompt.
 
-## 4. Spawn the reviewers in parallel
+## 4. Spawn the reviewers
 
-Issue the calls together, in the foreground: one subagent per axis, plus, for an L2 change, one reviewer from another model family through the `canon-blind-review` skill whose prompt carries both briefs and both sets of sources. Each prompt carries the diff command, the untracked files, the commit list, and its sources (paths to read, plus the pasted baseline for Standards). Reviewers report findings with severity `blocker`, `major` or `minor`, under 400 words per axis.
+Issue the calls together, in the foreground, as the depth says: one subagent with both briefs, or one per axis plus, for an L2 change, one reviewer from another model family through the `canon-blind-review` skill whose prompt carries both briefs and both sets of sources. Each prompt carries the diff command, the untracked files, the commit list, and its sources (paths to read, plus the pasted baseline for Standards). Reviewers report findings with severity `blocker`, `major` or `minor`, under 400 words per axis.
 
 **Spec brief**: "Report: (a) requirements the spec or plan asks for that are missing or partial; (b) behavior in the diff that nothing asked for; (c) requirements that look implemented but wrong; (d) behavior the diff changes that its governing design does not specify or contradicts, meaning the change needed a design revision first; (e) slice test criteria with no test at the named seam. Cite the section for each finding, e.g. D003§token-refresh."
 
@@ -44,7 +50,7 @@ Issue the calls together, in the foreground: one subagent per axis, plus, for an
 
 ## 5. Report
 
-Present the reports under `## Spec` and `## Standards`, verbatim or lightly cleaned, and an L2 cross-family report after them under `## Cross-family (<model>)`. Do not merge or rerank across axes: a change can pass one and fail the other, and separate reports stop one from masking the other. End with one line per axis: finding count and the worst finding.
+Present the findings under `## Spec` and `## Standards`, verbatim or lightly cleaned, and an L2 cross-family report after them under `## Cross-family (<model>)`. Keep the axes apart instead of merging or reranking across them: a change can pass one and fail the other, and separate reports stop one from masking the other. End with one line per axis: finding count and the worst finding.
 
 ## 6. Dispose
 
