@@ -12,7 +12,7 @@ Design, plan and implementation are separate phases, and each can start in a fre
 
 ## Implementation
 
-Implement slice by slice. After each slice, set its `Status:` and update the plan's Current state and Log.
+Implement slice by slice, each slice in a fresh worker subagent (the `canon-implement` skill). Only the orchestrating session edits the plan and commits: after each slice it sets the slice's `Status:` and updates the plan's Current state and Log.
 
 When the implementation cannot follow the plan or the design:
 
@@ -78,15 +78,18 @@ Fix findings in the change; when blocker or major fixes changed it, the reviewer
 
 ## Models and effort
 
-The user sets each session's model and reasoning effort. The project's `AGENTS.md` or the user's rules may name reviewer models in one line, every entry optional; use the first available model of a list:
+The user sets each session's model and reasoning effort. The project's `AGENTS.md` or the user's rules may name subagent models in these lines, every entry optional; use the first available model of a list:
 
-`Reviewers: A1 = <model>; A2 = <model>, <model>; Standards = <model>`
+```text
+Reviewers: A1 = <model>; A2 = <model>, <model>; Standards = <model>
+Workers: medium = <model>; high = <model>
+```
 
-A1 and Standards default to the session's model; name A1 when sessions may run a weaker model than reviews need. Without an A2 entry, ask the user once for A2's model and suggest adding the line.
+A1, Standards and workers default to the session's model. Name A1 when sessions may run a weaker model than reviews need, and name worker models where the model name fixes the effort (Cursor slugs). Without an A2 entry, ask the user once for A2's model and suggest adding the line.
 
 Default reasoning efforts; xhigh and max only when the user asks:
 
-- **Implementation**: medium. High for a slice with a `Risk:` line, and for a failure that stays unexplained.
+- **Implementation**: each slice's worker at medium; high for a slice with a `Risk:` line, and for the retry after a medium worker could not explain a failure.
 - **Review gate**: A1 medium for L1 and high for L2; A2 high.
 - **Code review**: one reviewer medium; Spec high, Standards medium; A2 high.
 
