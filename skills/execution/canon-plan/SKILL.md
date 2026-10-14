@@ -20,7 +20,7 @@ Draft the whole plan yourself before asking anything:
 
 - **Vertical slices.** Each slice delivers one observable behavior end to end, a tracer bullet, so it can be verified on its own. Never one slice for all the tests and another for all the code.
 - **Order by dependency**, riskiest first among independent slices. When a slice depends on an unanswered design question, its first step is an experiment (`canon-prototype`) whose conclusion feeds the design.
-- **Each slice**: `### S<n>: <name>`, a `Status: todo` line, a `Risk:` line when the slice involves complex logic, concurrency, performance, security or data migration (it is implemented at high reasoning effort), the changes (modules, files, migrations), and test criteria. Each criterion names its seam, the interface from the design's Spec where the test observes behavior (`canon-codebase-design` vocabulary), and the expected behavior.
+- **Each slice**: `### S<n>: <name>`, a `Status: todo` line, a `Risk:` line when the slice involves complex logic, concurrency, performance, security or data migration, the changes (modules, files, migrations), and test criteria. Each criterion names its seam, the interface from the design's Spec where the test observes behavior (`canon-codebase-design` vocabulary), and the expected behavior.
 - **Notes**: risks, constraints, migration and rollout concerns the implementer must keep in mind.
 - **Current state**: `Next: S1`.
 
@@ -33,4 +33,4 @@ Then settle what the draft leaves open with the `canon-grill` skill: slice bound
 3. Set the status as the gate's last step describes.
 4. Commit the plan (Conventional Commits, `docs` type, `Refs:` trailer).
 
-End with the command for the next phase, `/canon-implement P00X`. In L2, the user starting it approves the plan.
+End with the command for the next phase, `/canon-implement P00X`. In L2, the user starting it approves the plan. When slices carry a `Risk:` line, name them beside the command and suggest high reasoning effort for the implementation session, since every worker runs at the session's effort.
