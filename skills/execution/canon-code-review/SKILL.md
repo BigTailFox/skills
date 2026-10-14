@@ -1,6 +1,6 @@
 ---
 name: canon-code-review
-description: Reviews one complete code change. Use when a change is finished and before the docs step, or when the user asks to review a branch, PR, diff or work in progress. Not for single plan slices or whole-codebase reviews. Checks the diff and untracked files against the governing designs and plan (Spec) and the project's stated standards plus a smell baseline (Standards), at a depth set by the tier, from self-review to parallel axes with a cross-family reviewer for L2.
+description: Reviews one complete code change. Use when a change is finished and before the docs step, or when the user asks to review a branch, PR, diff or work in progress. Not for single plan slices or whole-codebase reviews. Checks the diff and untracked files against the governing designs and plan (Spec) and the project's stated standards plus a smell baseline (Standards), with one fresh reviewer per axis plus a cross-family reviewer for L2.
 ---
 
 # Code review
@@ -10,13 +10,7 @@ Review of one complete change on two axes:
 - **Spec**: does the code implement what its governing designs and plan specify, and nothing else?
 - **Standards**: does the code follow the standards the project states?
 
-## Depth
-
-Pick the depth from the change's tier (the `canon` skill's workflow); a user who asks for a deeper review gets it.
-
-- **Self-review**: a small L0 change that alters no behavior (rename, dependency bump, test or tooling change). Run steps 1 to 3, read the diff against both briefs yourself, and report one short list.
-- **One reviewer**: other L0 changes and L1 changes. One subagent gets both briefs and both sets of sources.
-- **Two axes**: L2 changes and wide changes (several modules or a large diff). One subagent per axis, so neither pollutes the other's context, plus a cross-family reviewer for L2.
+Every change, whatever its tier, gets both axes, each from a fresh subagent: the session that wrote the change never reviews it, and neither axis colors the other. An L2 change adds the cross-family reviewer.
 
 ## 1. Pin the fixed point
 
@@ -42,7 +36,7 @@ When no design governs the change, the Spec axis still runs: it checks that the 
 
 ## 4. Spawn the reviewers
 
-Issue the calls together, in the foreground, as the depth says: one subagent with both briefs on the A1 model, or Spec on the A1 model and Standards on the Standards model, plus, for an L2 change, A2 through the `canon-blind-review` skill with a prompt carrying both briefs and both sets of sources. Models and efforts follow the `canon` skill's workflow (Models and effort); launch each reviewer as the `canon-blind-review` skill's host notes describe. Each prompt carries the diff command, the untracked files, the commit list, and its sources (paths to read, plus the pasted baseline for Standards). Reviewers report findings with severity `blocker`, `major` or `minor`, under 400 words per axis.
+Issue the calls together, in the foreground: a Spec reviewer and a Standards reviewer, each launched like the same-model reviewer in the `canon-blind-review` skill, plus, for an L2 change, the cross-family reviewer through that skill with a prompt carrying both briefs and both sets of sources. Each prompt carries the diff command, the untracked files, the commit list, and its sources (paths to read, plus the pasted baseline for Standards). Reviewers report findings with severity `blocker`, `major` or `minor`, under 400 words per axis.
 
 **Spec brief**: "Report: (a) requirements the spec or plan asks for that are missing or partial; (b) behavior in the diff that nothing asked for; (c) requirements that look implemented but wrong; (d) behavior the diff changes that its governing design does not specify or contradicts, meaning the change needed a design revision first; (e) slice test criteria with no test at the named seam. Cite the section for each finding, e.g. D003§token-refresh."
 
