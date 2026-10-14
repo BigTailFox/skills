@@ -10,7 +10,7 @@ Read the `canon` skill first. `canon.py` means the project copy named in `AGENTS
 
 ## 1. Start
 
-1. The design must be `accepted` or `active` with `reviewed` equal to `revision`. Otherwise stop and tell the user (the `canon-design` skill writes it).
+1. The design must have passed the review gate (`reviewed` equals `revision`) and be `accepted` or `active`. An L2 design still `draft` after its gate awaits the user's approval, and invoking this skill on it gives that approval: say so in one line, naming the gate's reviewers, and set it `accepted`. Otherwise stop and give the user `/canon-design D00X` to finish it.
 2. New plan: `canon.py new P <slug> --from D00X`. Revising a plan: edit it in place and bump `revision`.
 3. Read the whole design, the code its `paths` govern, the existing tests and the commands that run them.
 
@@ -28,9 +28,9 @@ Then settle what the draft leaves open with the `canon-grill` skill: slice bound
 
 ## 3. Gate
 
-1. Run `canon.py check` until it is clean.
+1. Run `canon.py check` and fix its errors.
 2. Pass the review gate from the `canon` skill's workflow.
-3. L1: set the plan `accepted`. L2: report the findings and reviewers, and set `accepted` only after the user approves.
+3. Set the status as the gate's last step describes.
 4. Commit the plan (Conventional Commits, `docs` type, `Refs:` trailer).
 
-Tell the user the plan is ready for the `canon-implement` skill.
+End with the command for the next phase, `/canon-implement P00X`. In L2, the user starting it approves the plan.
