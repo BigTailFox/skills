@@ -118,7 +118,7 @@ Every change has a tier; state it when starting and pick the higher one when uns
 
 A commit that touches a design's `paths`, in any tier, names the designs it was checked against in a `Refs:` trailer (`affected` lists them); `audit` treats commits without one as unchecked.
 
-Flows, the blind-review gate with its reviewer prompt, code review depths, and the docs step before committing: [workflow.md](workflow.md).
+Flows, the blind-review gate with its reviewer prompt, code review depths, reviewer models and reasoning efforts, and the docs step before committing: [workflow.md](workflow.md).
 
 ## Writing
 

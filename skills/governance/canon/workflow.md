@@ -28,8 +28,8 @@ Every design or plan revision passes this gate before it is accepted, and every 
 
 1. Run `canon.py check` and fix its errors, so reviewers spend no effort on formatting. It warns that the revision is not reviewed until step 5.
 2. Launch the first-round reviewers in parallel, with the `canon-blind-review` skill when it is installed. A blind reviewer is a fresh subagent that carries nothing from the current conversation: never fork the session, and pass only the reviewer prompt below.
-   - **A1**: same model as the author. Default reasoning effort for L1, highest available for L2.
-   - **A2**: a different model family at its highest reasoning effort, in the first round only. Required for L2, optional for L1. If the host cannot launch another family, give the user the filled reviewer prompt to run in another tool, and wait for the result.
+   - **A1**: the author's model, unless the `Reviewers:` line (Models and effort below) names another.
+   - **A2**: the flagship model of another family, in the first round only; a smaller model of another family does not count. Required for L2, optional for L1. If the host cannot launch another family, give the user the filled reviewer prompt to run in another tool, and wait for the result.
 3. Merge the findings. Accept and fix, decline with a one-line reason for the user, or escalate to the user. A finding raised by both reviewers is accepted unless it is clearly wrong. Declined findings stay out of the doc; record a Decision only when its rationale has lasting value.
 4. When accepted blocker or major findings were fixed, the reviewers that raised them confirm the fixes in one more round, as the `canon-blind-review` skill's confirmation describes. Blockers still open after it go to the user; there is no third round.
 5. Set `reviewed: <revision>` and `reviewers: [<model ids>]`, using `manual:<model>` for user-run reviews.
@@ -71,10 +71,24 @@ End with one line: Verdict: approve | revise
 Review every change once it is complete, before the docs step, with the `canon-code-review` skill when it is installed: against the governing designs and plan (spec) and the standards their owning designs state. Plan slices are not reviewed one by one. The depth follows the change:
 
 - **Self-review**: a small L0 change that alters no behavior (rename, dependency bump, test or tooling change). Read your own diff against the spec and standards; no subagent.
-- **One reviewer**: any other L0 change, and L1 changes. One fresh subagent checks both spec and standards.
-- **Two axes**: L2 changes and wide changes (several modules or a large diff). Spec and standards reviewers run in parallel; L2 adds a reviewer from another model family in the first round.
+- **One reviewer**: any other L0 change, and L1 changes. One fresh subagent on the A1 model checks both spec and standards.
+- **Two axes**: L2 changes and wide changes (several modules or a large diff). A spec reviewer on the A1 model and a standards reviewer on the Standards model run in parallel; L2 adds A2 in the first round.
 
 Fix findings in the change; when blocker or major fixes changed it, the reviewers that raised them confirm the fixes once. A finding deferred to later work goes into an R doc with disposition `open` so it stays tracked; code review produces no R doc otherwise.
+
+## Models and effort
+
+The user sets each session's model and reasoning effort. The project's `AGENTS.md` or the user's rules may name reviewer models in one line, every entry optional; use the first available model of a list:
+
+`Reviewers: A1 = <model>; A2 = <model>, <model>; Standards = <model>`
+
+A1 and Standards default to the session's model; name A1 when sessions may run a weaker model than reviews need. Without an A2 entry, ask the user once for A2's model and suggest adding the line.
+
+Default reasoning efforts; xhigh and max only when the user asks:
+
+- **Implementation**: medium. High for a slice with a `Risk:` line, and for a failure that stays unexplained.
+- **Review gate**: A1 medium for L1 and high for L2; A2 high.
+- **Code review**: one reviewer medium; Spec high, Standards medium; A2 high.
 
 ## Docs step
 

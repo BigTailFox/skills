@@ -27,7 +27,7 @@ Sections: Current state, Slices, Notes, Log.
 
 - Create a plan only from an accepted or active design: `new P <slug> --from D00X`.
 - **Current state** (top): current slice, next action, paused slices with their reasons. Update it at the end of every slice; a new session resumes from here.
-- **Slices**: ordered `### S1: name` subsections. Each starts with a `Status:` line (`todo`, `in-progress`, `done`, `paused`), then lists its changes and the test criteria that prove it done. Each criterion names its seam: the public interface, as the design's Spec defines it, where the test observes behavior. Seams in an accepted plan are agreed with the user; tests go only there.
+- **Slices**: ordered `### S1: name` subsections. Each starts with a `Status:` line (`todo`, `in-progress`, `done`, `paused`), then a `Risk:` line naming the kinds when the slice involves complex logic, concurrency, performance, security or data migration (e.g. `Risk: concurrency, data migration`), then lists its changes and the test criteria that prove it done. Each criterion names its seam: the public interface, as the design's Spec defines it, where the test observes behavior. Seams in an accepted plan are agreed with the user; tests go only there.
 - **Notes**: risks and constraints the implementer must keep in mind.
 - **Log**: append decisions, results, evidence and deviations as they happen. How to handle deviations: [workflow.md](workflow.md#implementation).
 - **Status**: `accepted` after the review gate (and, in L2, the user's approval), `in-progress` while implementing. Archive as `done` once every slice is `done`, in the commit that completes the implementation, or as `abandoned`.
