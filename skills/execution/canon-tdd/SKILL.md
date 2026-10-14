@@ -1,11 +1,11 @@
 ---
 name: canon-tdd
-description: Test-driven development in red-green cycles at agreed seams, producing tests that verify behavior through public interfaces and survive refactors. Use when writing or changing code that should be tested, implementing a plan slice, fixing a bug test-first, writing a regression or integration test, or when the user mentions TDD or red-green-refactor.
+description: Test-driven development in red-green-refactor cycles. Use when writing or changing code that should be tested, implementing a plan slice, fixing a bug test-first, adding a regression or integration test, or when the user mentions TDD. Tests sit at agreed seams and verify behavior through public interfaces, so they survive refactors. Not for throwaway prototypes.
 ---
 
 # TDD
 
-TDD is the red → green loop. This skill makes that loop produce tests worth keeping: what a good test is, where tests go, the anti-patterns, and the rules of the loop. Apply every section on every cycle.
+TDD is the red → green → refactor loop. This skill makes that loop produce tests worth keeping: what a good test is, where tests go, the anti-patterns, the rules of the loop, and when the work is done.
 
 ## What a good test is
 
@@ -33,5 +33,8 @@ You can't test everything; agreed seams put the effort on the critical paths and
 
 - **Red before green.** Write the failing test first and watch it fail on the asserted behavior, not on a compile or import error. Then write only enough code to pass it. No speculative features.
 - **One cycle at a time.** One seam, one test, one minimal implementation per cycle.
-- **Tight feedback.** Run the touched test file and the type checker every cycle; run the full suite when a plan slice's criteria all pass.
-- **Refactoring is not part of the loop.** It belongs to code review, after the behavior is green.
+- **Refactor on green.** Once a cycle passes, tidy what it touched (names, duplication, shape) with the tests green after each step. Structure that spans slices is the code review's job.
+
+## Done
+
+A slice or change is done when its test criteria pass and nothing that was green has turned red. Choose which tests to run from what the change can affect; run the full suite before the final code review.
