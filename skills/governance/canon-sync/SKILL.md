@@ -14,7 +14,7 @@ Run the docs step defined by the `canon` skill, on uncommitted work by default o
 
 ## After a merge or rebase
 
-Run `canon.py check --fix --base <target>`. For an id collision, renumber the doc your branch added: `renumber <path> --base <target>` before rebasing, `renumber <path>` after.
+Run `canon.py check --fix --base <target>`. For an id collision, renumber the doc your branch added with `renumber <path> --base <target>`, then fix the references it reports as kept.
 
 ## Audit
 
