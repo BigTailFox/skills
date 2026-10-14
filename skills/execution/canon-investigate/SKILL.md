@@ -1,11 +1,11 @@
 ---
 name: canon-investigate
-description: Diagnoses hard bugs and performance regressions with a disciplined loop. It builds a tight red-capable feedback loop, reproduces and minimises, ranks falsifiable hypotheses, instruments, then fixes with a regression test and cleans up, recording the whole investigation in a canon investigation doc that survives across sessions. Use when the user says diagnose or debug, or reports something broken, throwing, failing, flaky or slow.
+description: Diagnoses hard bugs and performance regressions. Use when a quick fix has failed or the cause is unclear, for intermittent failures and slowdowns, or when the user asks to diagnose or debug. It builds a tight red-capable feedback loop, reproduces and minimises, ranks falsifiable hypotheses, instruments, then fixes with a regression test and cleans up, recording the investigation in a canon investigation doc that survives across sessions.
 ---
 
 # Investigate
 
-A discipline for hard bugs. Skip a phase only with a stated reason.
+A discipline for hard bugs. A bug whose cause the error already shows needs none of it: fix it as an L0 change with a regression test (`canon-tdd`). Skip a phase only with a stated reason.
 
 ## Record
 
@@ -23,7 +23,7 @@ Replace every secret with `<REDACTED>` in anything you show or commit: commands,
 
 ## Phase 1: Build a feedback loop
 
-**This is the skill.** With a **tight** pass/fail signal that goes **red** on this bug, you will find the cause: bisection, hypothesis-testing and instrumentation all just consume it. Without one, no amount of staring at code will save you. Spend disproportionate effort here.
+**This is the skill.** With a **tight** pass/fail signal that goes **red** on this bug, you will find the cause: bisection, hypothesis-testing and instrumentation all just consume it. Spend disproportionate effort here.
 
 Ways to construct one, roughly in this order:
 
@@ -42,7 +42,7 @@ Ways to construct one, roughly in this order:
 
 **Non-deterministic bugs**: raise the reproduction rate instead of chasing a clean repro. Loop the trigger 100×, parallelise, add stress, narrow timing windows. A 50% flake is debuggable; 1% is not.
 
-**When you cannot build a loop**, stop and say so. List what you tried and ask for access to an environment that reproduces it, a redacted captured artifact (HAR, log dump, core dump, recording with timestamps), or permission to add temporary production instrumentation. Never hypothesise without a loop.
+**When you cannot build a loop yet**, say so: list what you tried and ask for access to an environment that reproduces it, a redacted captured artifact (HAR, log dump, core dump, recording with timestamps), or permission to add temporary production instrumentation. Meanwhile work from the evidence you have, with hypotheses (Phase 3) and probes (Phase 4) that may produce a loop. What waits for the loop is the fix: a fix made without one is unverified, and Resolution's `Verification:` says so.
 
 **Done when** you can name one command you have already run (show it and its redacted output) that is:
 
@@ -50,8 +50,6 @@ Ways to construct one, roughly in this order:
 - [ ] **Deterministic**: same verdict every run, or a pinned high reproduction rate.
 - [ ] **Fast**: seconds, not minutes.
 - [ ] **Agent-runnable**: runs unattended, or through the human-in-the-loop script.
-
-If you catch yourself reading code to build a theory before this command exists, stop.
 
 ## Phase 2: Reproduce and minimise
 
@@ -61,13 +59,13 @@ Then shrink the repro: cut inputs, callers, config, data and steps one at a time
 
 ## Phase 3: Hypothesise
 
-Write 3–5 ranked hypotheses before testing any. Each must be falsifiable: "If X is the cause, then changing Y makes the bug disappear and changing Z makes it worse." A hypothesis without a prediction is a vibe: sharpen or drop it.
+Write ranked hypotheses before testing any, as many as the evidence supports; one is enough when the evidence points straight at it. Each must be falsifiable: "If X is the cause, then changing Y makes the bug disappear and changing Z makes it worse." A hypothesis without a prediction is a vibe: sharpen or drop it.
 
-Show the ranked list to the user before testing; they often re-rank instantly or have ruled some out. Proceed with your ranking if they are unavailable.
+Show the ranked list to the user and start on the top one; they often re-rank instantly or have ruled some out, so fold in their answer when it comes.
 
 ## Phase 4: Instrument
 
-Each probe tests one prediction from Phase 3; change one variable at a time. Prefer a debugger or REPL, then targeted logs at the boundaries that separate hypotheses. Never log everything and grep.
+Each probe tests one prediction from Phase 3; change one variable at a time. Prefer a debugger or REPL, then targeted logs at the boundaries that separate hypotheses; blanket logging buries the signal.
 
 Tag every debug log with a unique prefix such as `[DEBUG-a4f2]` so cleanup is one grep.
 
