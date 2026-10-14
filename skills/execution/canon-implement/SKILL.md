@@ -10,7 +10,7 @@ Read the `canon` skill first; its workflow governs tiers, deviations, code revie
 
 ## 1. Start
 
-1. Identify the work: the plan or design the user named (`canon.py find <words>` when only a topic is given), or an L0 change. State the tier.
+1. Identify the work: the plan or design the user named (`canon.py find <words>` when only a topic is given), or an L0 change. State the tier. For work without a plan, state whether it involves complex logic, concurrency, performance, security or data migration; if so, ask the user to switch the session to high reasoning effort before building.
 2. Check the work against the tier's flow in the `canon` skill's workflow:
    - A plan must be `accepted` or `in-progress`. An L2 plan still `draft` after its gate awaits the user's approval, and invoking this skill on it gives that approval: say so in one line and set it `accepted`.
    - An L1 design revision that passed the gate and needs no plan: follow L1 without a plan below.
@@ -20,12 +20,13 @@ Read the `canon` skill first; its workflow governs tiers, deviations, code revie
 
 ## 2. Each slice
 
-1. Set the slice's `Status: in-progress`.
-2. Build it with the `canon-tdd` skill at the seams its test criteria name.
-3. When something is unclear, use the `canon-grill` skill's triage. A logic or design question that evidence can settle goes to `canon-prototype`. A defect goes to `canon-investigate`.
-4. When the code cannot follow the plan or the design, apply the workflow's deviation rules: fix a plan problem with one clear answer and log it. Pause the slice for a design problem or a pending decision, and continue with slices that do not depend on it.
-5. When the slice is done by the `canon-tdd` skill's definition, set `Status: done`, point Current state at the next action, and append results, decisions and deviations to the Log.
-6. Run `canon.py check --fix`, then commit the slice: code plus plan, Conventional Commits, `Refs: <design>, <plan>` trailer.
+1. A slice with a `Risk:` line runs at high reasoning effort, others at medium, and the session starts at medium. When this slice's effort differs from the previous slice's, stop and ask the user to switch the session's effort; continue when they reply.
+2. Set the slice's `Status: in-progress`.
+3. Build it with the `canon-tdd` skill at the seams its test criteria name.
+4. When something is unclear, use the `canon-grill` skill's triage. A logic or design question that evidence can settle goes to `canon-prototype`. A defect goes to `canon-investigate`. When a test failure stays unexplained after two attempts at medium effort, stop and ask the user to switch to high.
+5. When the code cannot follow the plan or the design, apply the workflow's deviation rules: fix a plan problem with one clear answer and log it. Pause the slice for a design problem or a pending decision, and continue with slices that do not depend on it.
+6. When the slice is done by the `canon-tdd` skill's definition, set `Status: done`, point Current state at the next action, and append results, decisions and deviations to the Log.
+7. Run `canon.py check --fix`, then commit the slice: code plus plan, Conventional Commits, `Refs: <design>, <plan>` trailer.
 
 ## 3. Finish
 
