@@ -1,6 +1,6 @@
 ---
 name: canon-review
-description: Runs a periodic review of a module or the whole repository from chosen angles (architecture, performance, security, functional, usability), one parallel subagent per angle. It records the findings in a canon review doc with a visual HTML report, then takes every finding through the user's decision. A finding is fixed, moved into a design, plan, investigation or backlog concept, or declined with its reason recorded. Use when the user asks for a codebase, module, architecture, performance, security or usability review, or when canon audit reports a review is due.
+description: Runs a periodic review of a module or the whole repository from chosen angles (architecture, performance, security, functional, usability), one parallel subagent per angle. It records the findings in a canon review doc with a visual HTML report, then takes every finding through the user's decision, proposing a fix plan for each small L0 or L1 finding. A finding is fixed, moved into a design, plan, investigation or backlog concept, or declined with its reason recorded. Use when the user asks for a codebase, module, architecture, performance, security or usability review, or when canon audit reports a review is due.
 disable-model-invocation: true
 ---
 
@@ -38,10 +38,12 @@ Spawn one subagent per angle, in parallel, in the foreground. Each brief carries
 
 ## 5. Decide with the user
 
-Take the findings to the user in rounds with the `canon-grill` skill; the user decides each one:
+Sort the findings first. **Fixable now** means an L0 fix, or an L1 change inside one design, small enough for this session; write a short plan for each: the change, the files, the tier, and for L1 the spec change. L2 work and broad architecture changes are recorded for later.
 
-- **Fix now**, when it changes no spec (refactor, or a bug fix restoring specified behavior): implement it as an L0 change with `canon-tdd` and `canon-code-review`, run the docs step, and set `fixed <commit>`.
-- **Needs a spec change**: set `moved D00X` to the design that will carry it, or `moved P00X` when a plan covers it, and tell the user the next step is the `canon-design` or `canon-plan` skill.
+Take the findings to the user in rounds with the `canon-grill` skill. Present the fixable ones with their plans and ask which to fix now; every other finding, and each fixable one the user does not take, gets one of the other dispositions:
+
+- **Fix now** (an approved plan): build it through its tier's flow, L0 with `canon-tdd` and `canon-code-review`, L1 by revising the design and passing the review gate (A1) first. Run the docs step, commit each fix on its own, and set `fixed <commit>`.
+- **Needs a spec change**: set `moved D00X` to the design that will carry it, or `moved P00X` when a plan covers it, and give the user the next phase's command (`/canon-design D00X` or `/canon-plan D00X`).
 - **A defect**: create an investigation (`canon.py new I <slug>`) and set `moved I00X`.
 - **Later**: add it as an Idea to the module's backlog concept (`canon.py find backlog`, else `canon.py new C <module>-backlog`) and set `moved C00X`.
 - **Rejected**: set `declined <reason>`. When the reason is lasting and the idea likely to return, add a one-line Decision to the owning design so later reviews skip it.

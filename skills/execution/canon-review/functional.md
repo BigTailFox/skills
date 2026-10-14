@@ -1,6 +1,6 @@
 # Functional angle
 
-Check the code against the active designs that govern the scope. The design's Spec is the definition of correct.
+Check the code against the active designs that govern the scope. The design's Spec is the definition of correct. When a design's `implemented` is below its `revision`, the spec leads the code: the unimplemented difference is an open plan's work, not a defect.
 
 ## Spec conformance
 
