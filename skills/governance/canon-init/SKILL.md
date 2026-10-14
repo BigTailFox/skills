@@ -1,6 +1,6 @@
 ---
 name: canon-init
-description: Sets up the canon documentation system in a repository or monorepo module, migrates existing docs (design notes, ADRs, RFCs, plans, postmortems, benchmarks) into it, and upgrades a project's canon.py copy. Use when the user asks to initialize, install, adopt, migrate to or upgrade canon docs, or to add a docs root for a new module.
+description: Sets up canon in a repository or monorepo module, migrates existing docs into it, and upgrades a project's canon.py.
 disable-model-invocation: true
 ---
 
@@ -21,7 +21,7 @@ Read the `canon` skill first; it defines the system. Until the project has its o
    - Fold each ADR into the owning design as a Decision line and remove the ADR file.
    - Archive docs about finished or obsolete work, e.g. `archive P001 done`, `archive D004 superseded`.
 6. **Architecture design.** Fill it from the code: module map (module, path, purpose, owning design), allowed dependency directions, and a glossary of cross-module terms. Make the designs' `paths` cover the main source directories so `which` answers for most files.
-7. **AGENTS.md.** Keep the canon block short and in the project's language. Move spec-like content from the rest of `AGENTS.md` into designs, and remove instructions that conflict with canon, such as old doc conventions. If the project uses Claude Code and has no `CLAUDE.md`, create one containing `@AGENTS.md`.
+7. **AGENTS.md.** Keep the canon block short and in the project's language. Move spec-like content from the rest of `AGENTS.md` into designs, and remove instructions that conflict with canon, such as old doc conventions. Ask the user which models review as A2 (another family than their usual author model, in order of preference) and add `Reviewers: A2 = <model>, <model>` below the canon block, outside its markers, which `init` rewrites. If the project uses Claude Code and has no `CLAUDE.md`, create one containing `@AGENTS.md`.
 8. **CI.** If the project has CI, add `python3 scripts/canon.py check --base origin/<default branch>`, with a fetch depth that includes the merge base.
 9. **Review.** Pass every design that describes existing code through the review gate at L1, so A1 checks it against the code, then set it `active` with `implemented` equal to its revision. Show the user the architecture design.
 10. Run `python3 scripts/canon.py check --fix` until it reports no errors, and commit as `docs: adopt canon`.
