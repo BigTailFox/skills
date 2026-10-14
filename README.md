@@ -33,7 +33,7 @@
 | `canon-prototype` | 用临时原型回答读代码和推理都定不下来的设计或逻辑问题：状态模型的单文件可点击演示、真实页面上可切换的 UI 变体、验证可行性和性能的最小 spike；问题、结论和原型记录为 E 文档 | 自动触发 |
 | `canon-investigate` | 诊断疑难 bug 和性能回退（快速修复无效、原因不明、偶发或变慢，或用户要求诊断时）：先构造稳定的复现回路，再最小化、列出可证伪的假设、插桩、写回归测试并修复、清理；全过程记录在 I 文档中，可跨会话继续。原因一眼可见的 bug 直接按 L0 修 | 自动触发 |
 | `canon-research` | 依据一手来源（官方文档、规范、源码）回答问题：一两个来源就能定的事实直接带链接回答；要支撑设计决策的，在后台子 agent 中调研，带引用的结论写进 E 文档，主会话继续工作，结论再吸收进设计 | 自动触发 |
-| `canon-implement` | 按已接受的计划逐个切片实现（或直接实现 L0 改动、无需计划的 L1 设计修订）：在计划的 seam 上 TDD，每个切片提交一次，默认 medium 推理，遇到标了 `Risk:` 的切片停下来提示切到 high，最后整体代码评审、执行 docs step（记录设计的 `implemented`）并归档计划 | 手动 |
+| `canon-implement` | 按已接受的计划逐个切片实现（或直接实现 L0 改动、无需计划的 L1 设计修订）：主会话负责编排，每个切片交给一个新的 worker 子 agent 在计划的 seam 上 TDD；普通切片 medium 推理，标了 `Risk:` 的切片 high，worker 解释不了失败时自动换 high 重试；主会话验证后每个切片提交一次，最后整体代码评审、执行 docs step（记录设计的 `implemented`）并归档计划 | 手动 |
 | `canon-design` | 通过追问用户写出或修订设计（想法不成熟时写成概念），对照术语表收敛用词，决定一项写一项，最后过 review gate，并给出下一阶段的命令；L2 设计由用户启动下一阶段时批准 | 手动 |
 | `canon-plan` | 为已接受的设计写计划：先起草按依赖排序、各带 seam 和测试标准的垂直切片（涉及复杂逻辑、并发、性能、安全或数据迁移的切片标 `Risk:`），再与用户敲定未决点，过 review gate，并给出实现命令；L2 计划由用户启动实现时批准 | 手动 |
 | `canon-handoff` | 把当前工作交给新的 Agent：先把可长期保留的状态写进 canon 文档（计划、调查、设计草稿等），再在被 git 忽略的 `.canon/canon-handoff/<会话 id>-<主题>/` 下写一份只含文档之外信息的 handoff 文件，列出恢复入口和建议使用的技能 | 手动 |
@@ -116,5 +116,6 @@ npx skills add ~/my/skills -g --skill canon-my-task -a cursor -y
 | 子 agent | 对一份 L2 设计跑 review gate | A1、A2 都是新的子 agent，只收到评审 prompt；确认轮恢复的是同一批评审者 |
 | 降级路径 | 在不能直接启动其他家族模型的宿主上跑 A2 | 依次尝试已安装的 CLI，都不可用时给出可复制的手动送审 prompt |
 | Cursor 调 GPT | 在 Cursor 里用 GPT 作 A2 跑 review gate | A2 通过 `codex exec` 在 Cursor 沙箱外运行，确认轮用 `codex exec resume` 恢复同一会话 |
+| 按切片派发 worker | 用 `/canon-implement` 实现一份含 `Risk:` 切片的计划 | 每个切片一个新 worker，`Risk:` 切片以 high 推理运行；主会话不停下来请你切换推理等级，由它更新计划并提交 |
 
-Cursor 里 GPT 模型一律通过 codex CLI 调用，并且要在 Cursor 的沙箱外运行，因为 codex 要把会话写进 `~/.codex`，确认轮靠它恢复。其他模型用 Task 工具，而 Task 只有在用户明确要求时才换模型，推理等级也由模型名决定。所以评审模型要写进项目 `AGENTS.md` 或用户规则，GPT 用 codex 的模型 id，例如 `Reviewers: A2 = gpt-6-astra, gemini-4-argon-medium`。codex 不指定模型时用的是它自己的默认模型，不一定是旗舰。
+Cursor 里 GPT 模型一律通过 codex CLI 调用，并且要在 Cursor 的沙箱外运行，因为 codex 要把会话写进 `~/.codex`，确认轮靠它恢复。其他模型用 Task 工具，而 Task 只有在用户明确要求时才换模型，推理等级也由模型名决定。所以评审模型要写进项目 `AGENTS.md` 或用户规则，GPT 用 codex 的模型 id，例如 `Reviewers: A2 = gpt-6-astra, gemini-4-argon-medium`。codex 不指定模型时用的是它自己的默认模型，不一定是旗舰。实现阶段的 worker 同理：Cursor 里 worker 默认继承会话的模型和推理等级，要让 `Risk:` 切片用 high，就在 `Workers:` 行写明对应的模型名，例如会话用 Sonnet 5.5 medium 时写 `Workers: high = claude-sonnet-5-5-high`。
