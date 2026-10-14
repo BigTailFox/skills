@@ -1,42 +1,42 @@
 # AGENTS.md
 
-本仓库是个人 Agent Skills 集合，通过 `npx skills`（vercel-labs/skills）安装和分发。每个技能是一个包含 `SKILL.md` 的目录，位于 `skills/execution/` 或 `skills/governance/` 下。
+This repository is a personal collection of agent skills, installed and distributed with `npx skills` (vercel-labs/skills). Each skill is a directory containing a `SKILL.md`, under `skills/execution/` or `skills/governance/`.
 
-不要在 `skills/` 之外创建 `SKILL.md`（包括模板、示例），CLI 会把它们识别为可安装的技能。也不要添加自定义的安装脚本，安装、更新、卸载都交给 `npx skills`。
+Do not create a `SKILL.md` outside `skills/`, templates and examples included: the CLI would treat it as an installable skill. Do not add custom install scripts either; installing, updating and removing are left to `npx skills`.
 
-## 分类规则
+## Categories
 
-- `governance/`：建立和维护一套跟随项目生命周期的文档系统，作为跨会话、跨模型长期开发的统一规范、指导、记录和信息中心。
-- `execution/`：完成具体开发任务（澄清需求、写代码、测试、调试、评审等），读写项目文档时一律经由 governance 定义的文档系统。
-- 拿不准时，问自己：这个技能是在建立/维护文档系统本身，还是借助它完成开发工作？前者放 `governance/`，后者放 `execution/`。
+- `governance/`: builds and maintains a documentation system that follows the project's lifecycle and serves as the shared standard, guide, record and information hub for long-running development across sessions and models.
+- `execution/`: does concrete development work (clarifying requirements, writing code, testing, debugging, reviewing), and reads and writes project docs only through the documentation system governance defines.
+- When unsure, ask whether the skill builds or maintains the documentation system itself, or uses it to get development work done. The former goes in `governance/`, the latter in `execution/`.
 
-## 移植上游技能
+## Porting upstream skills
 
-`execution/` 主要移植自 [mattpocock/skills](https://github.com/mattpocock/skills)（MIT）。移植时：
+`execution/` is mostly ported from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). When porting:
 
-- `SKILL.md` 及其引用的文件里不写上游链接、出处或改动说明，这些内容会占用上下文并干扰 Agent。
-- 来源信息放在技能目录下：`LICENSE` 原样复制上游许可证，`NOTICE` 写明上游仓库、对应的上游技能名，并说明已做修改。
-- 文档约定只遵循 governance 层的规则。上游的约定（`GLOSSARY.md`、ADR、issue tracker、`setup-matt-pocock-skills` 等）有可取之处的，先吸收进 governance，再由技能引用；移植后的技能不能再依赖或提及上游的约定。
+- Keep upstream links, attribution and change notes out of `SKILL.md` and the files it references; they take up context and distract the agent.
+- Put provenance in the skill directory: `LICENSE` is the upstream license copied verbatim, and `NOTICE` names the upstream repository and skill and states that it was modified.
+- Follow only the governance layer's doc conventions. Upstream conventions worth keeping (`GLOSSARY.md`, ADRs, the issue tracker, `setup-matt-pocock-skills` and so on) are absorbed into governance first and then referenced by skills; a ported skill no longer depends on or mentions upstream conventions.
 
-## 技能规范
+## Skill rules
 
-- 目录名即技能名：小写字母、数字、连字符，不超过 64 字符。技能名在整个仓库内必须唯一（跨分类也不能重复）。
-- 所有技能都属于 canon 文档系统：核心技能叫 `canon`，其他技能一律用 `canon-<任务>` 命名，任务词尽量对应文档类型（`canon-design`、`canon-plan`、`canon-investigate`）。
-- `npx skills` 按技能名平铺安装，分类目录不会保留。技能之间按名字引用（如「遵循 `canon` 技能」），不要用跨技能目录的相对路径；调用 `canon.py` 时使用项目 `AGENTS.md` 中给出的路径。
-- `SKILL.md` 必须以 YAML frontmatter 开头，包含：
-  - `name`：与目录名一致。
-  - `description`：非空，不超过 1024 字符，第三人称，不含 `: `（会破坏 YAML 解析）。自动触发的技能先用一个短句说做什么，紧接着写「Use when …」触发条件，必要时写明不适用的情况；触发词放在前 190 个字符内，因为宿主会截断过长的 description。手动技能只写一行给人看的摘要。
-- 默认手动触发：frontmatter 加 `disable-model-invocation: true`（Claude Code、Cursor 读这个），技能目录下放 `agents/openai.yaml`，内容为 `policy:` 下的 `allow_implicit_invocation: false`（Codex 读这个）。只有确实需要根据上下文自动触发的技能才两者都去掉；`validate.py` 检查两者成对出现。
-- `SKILL.md` 正文控制在 500 行以内；详细资料拆到同目录的其他 `.md` 文件，并从 `SKILL.md` 直接链接（只引用一层）。
-- 只写 Agent 不知道的内容，不解释常识。给一个默认做法，而不是罗列多个选项。
-- 路径使用 `/`，不写有时效性的内容（如「2026 年之前用旧 API」）。
-- 技能附带的脚本放在 `scripts/` 下，并在 `SKILL.md` 中说明是「执行」还是「阅读参考」。
+- The directory name is the skill name: lowercase letters, digits and hyphens, at most 64 characters. Skill names are unique across the whole repository, across categories too.
+- Every skill belongs to the canon documentation system: the core skill is `canon`, and every other skill is named `canon-<task>`, with the task word matching a doc type where possible (`canon-design`, `canon-plan`, `canon-investigate`).
+- `npx skills` installs skills flat by name, without the category directories. Skills refer to each other by name (e.g. "follow the `canon` skill"), never by relative paths across skill directories; to run `canon.py`, use the path given in the project's `AGENTS.md`.
+- `SKILL.md` starts with YAML frontmatter containing:
+  - `name`: equal to the directory name.
+  - `description`: non-empty, at most 1024 characters, in the third person, and free of `: ` (it breaks YAML parsing). An auto-invoked skill states what it does in one short sentence, followed at once by "Use when …" triggers and, where needed, when it does not apply; keep the trigger words within the first 190 characters, because hosts truncate long descriptions. A manual skill gets a one-line summary for humans.
+- Skills are manual by default: add `disable-model-invocation: true` to the frontmatter (read by Claude Code and Cursor), and put `agents/openai.yaml` in the skill directory with `allow_implicit_invocation: false` under `policy:` (read by Codex). Remove both only from a skill that truly needs to trigger from context; `validate.py` checks that they come in pairs.
+- Keep the `SKILL.md` body under 500 lines; move details into other `.md` files in the same directory, linked directly from `SKILL.md` (one level deep).
+- Write only what the agent does not already know; skip common knowledge. Give one default approach instead of a list of options.
+- Use `/` in paths, and write nothing time-sensitive (such as "before 2026, use the old API").
+- Scripts shipped with a skill go in `scripts/`, and `SKILL.md` says whether each is to be executed or read as reference.
 
-## 工作流程
+## Workflow
 
-- 新建技能：在 `skills/<分类>/` 下运行 `npx skills init <name>`，然后按上面的规范补全 frontmatter（包括 `disable-model-invocation`）和 `agents/openai.yaml`。
-- 新增、删除技能，或改变技能的用途、触发方式时，同步更新 `README.md` 的「技能列表」；`validate.py` 检查列表里的技能名、分类和触发方式与 frontmatter 一致，简介需要自己核对。
-- 修改任何技能后运行 `python3 scripts/validate.py`（同时运行 `tests/`）和 `npx skills add . --list`，两者都通过后再提交。
-- 修改 `canon.py` 时在 `tests/test_canon.py` 补回归测试，并在同一个提交里 bump `CANON_VERSION`：`init` 只按版本号升级项目里的副本，`validate.py` 会拒绝内容变了而版本号没变的 `canon.py`。
-- 提交信息使用 Conventional Commits，scope 用技能名，例如 `feat(canon-code-review): add security checklist`；仓库级改动不带 scope 或用 `repo`。
-- 文档（`README.md`、`AGENTS.md`）用中文；技能内容用英文。
+- New skill: run `npx skills init <name>` in `skills/<category>/`, then complete the frontmatter (including `disable-model-invocation`) and `agents/openai.yaml` as the rules above describe.
+- When adding or removing a skill, or changing its purpose or trigger mode, update the Skills tables in `README.md`. `validate.py` checks their names, categories and trigger modes against the frontmatter; check the summaries yourself.
+- After changing any skill, run `python3 scripts/validate.py` (it also runs `tests/`) and `npx skills add . --list`, and commit only once both pass.
+- When changing `canon.py`, add regression tests to `tests/test_canon.py` and bump `CANON_VERSION` in the same commit: `init` upgrades a project's copy by version number only, and `validate.py` rejects a `canon.py` whose content changed while its version did not.
+- Commit messages follow Conventional Commits, with the skill name as the scope, e.g. `feat(canon-code-review): add security checklist`; repository-wide changes use no scope or `repo`.
+- Write everything in English: skills, `README.md` and `AGENTS.md`.

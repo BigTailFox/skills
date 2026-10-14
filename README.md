@@ -1,121 +1,129 @@
 # skills
 
-个人 Agent Coding 技能仓库，用于保存和定制日常开发中使用的 Agent Skills。技能遵循 [Agent Skills 规范](https://agentskills.io)，通过 [`skills`](https://github.com/vercel-labs/skills) CLI（`npx skills`）安装到 Cursor、Claude Code、Codex 等 Agent。
+Personal agent skills for long-running software projects, built around **canon**: a documentation system that lives in the repository and carries designs, plans and decisions from one session, and one model, to the next. The skills follow the [Agent Skills specification](https://agentskills.io) and install into Cursor, Claude Code, Codex and other agents with the [`skills`](https://github.com/vercel-labs/skills) CLI.
 
-## 定位
+## Install
 
-技能分为两层：
+The skills refer to each other by name, so install all of them. `-g` installs at user level, for every project:
 
-- **governance（治理层）**：建立并维护一套跟随项目生命周期的文档系统，作为跨会话、跨模型长期开发的统一规范、指导、记录和信息中心。
-- **execution（执行层）**：完成具体开发任务。主要移植 [mattpocock/skills](https://github.com/mattpocock/skills)（MIT）中的常用技能，文档约定统一改用 governance 层的规则；上游约定中可取的部分会选择性吸收进 governance。
+```bash
+npx skills add <git-url> -g                                     # pick skills and agents interactively
+npx skills add <git-url> -g -s '*' -a cursor -a claude-code -y  # every skill, for the named agents
+npx skills update -g                                            # pull the latest version
+npx skills ls -g                                                # list installed skills
+npx skills remove canon-teach -g                                # remove one skill
+```
 
-## 技能列表
+To try unpushed changes, install from the local path instead. That installs a copy, which `npx skills update` does not track, so rerun the same `add` after each change:
 
-「自动触发」表示 Agent 会根据上下文自行加载；其余技能需要手动调用（如 `/canon-init`）。
+```bash
+npx skills add ~/my/skills -g -s '*' -a cursor -y
+```
+
+Then run `/canon-init` in a project. It sets up `docs/`, migrates the project's existing docs, and sets up this machine's cross-family reviewer.
+
+## How canon works
+
+Canon keeps a project's knowledge in numbered docs under `docs/`: concepts (C), designs (D), plans (P), reviews (R), experiments (E) and investigations (I). Designs are the long-lived authority on their topics and name the code they govern; a plan carries one change. Every change gets a tier, and the tier sets the flow:
+
+| Tier | When | Flow |
+|---|---|---|
+| L0 | No spec changes: a bug fix that restores specified behavior, a refactor, a dependency bump, test or tooling work | implement → code review → docs step |
+| L1 | Specs change or grow inside one existing design, within one module | revise the design → review gate → plan if needed → implement → code review → docs step |
+| L2 | A new topic or module, a cross-module interface or architecture change, a rewrite of a design's goals, or whenever you ask | design → review gate → your approval → plan → review gate → your approval → implement → code review → docs step |
+
+Design, plan and implementation are separate phases, started with `/canon-design`, `/canon-plan` and `/canon-implement`. Each can run in a fresh session because the docs carry the state, and each ends by giving you the command for the next one; for L2, running it is your approval. Along the way:
+
+- **Review gate.** A design or plan revision is accepted only after a blind review by fresh subagents that see a prompt naming files in the repository and nothing of the conversation. A same-model reviewer always reviews; L2 adds a cross-family reviewer, a model from another family.
+- **Implementation.** Each plan slice goes to a fresh worker subagent that builds it test-first. The main session verifies the slice, updates the plan and commits; a slice whose worker gets stuck is paused for you to decide.
+- **Code review.** Every finished change, L0 included, gets a Spec reviewer (against its designs and plan) and a Standards reviewer (against the project's stated standards) as parallel subagents, so the session that wrote the code never reviews it. L2 adds the cross-family reviewer.
+- **Docs step.** Before the final commit, designs absorb the details the code settled, finished plans and reviews are archived, and the commit names the designs it was checked against in a `Refs:` trailer, which lets `canon.py audit` flag code commits nobody checked against their design.
+
+Workers and reviewers inherit the session's model and reasoning effort, so the session you start sets both; start a risky implementation at high effort. The exception is the cross-family reviewer, whose tool, model and effort are set per machine in `.canon/canon-blind-review/reviewer.md`, which `/canon-init` writes after a test run. Without that file, the review falls back to a prompt you run in another tool.
+
+## Skills
+
+Auto skills load when the context calls for them. Manual skills run only as commands: `/canon-init` in Cursor and Claude Code, `$canon-init` in Codex.
 
 ### governance
 
-| 技能 | 简介 | 触发 |
-|------|------|------|
-| `canon` | 核心文档系统：定义 `docs/` 下编号的概念、设计、计划、评审、实验、调查文档，统一 frontmatter、引用格式、生命周期与归档规则，L0/L1/L2 变更分级和盲审门槛，子 agent 的启动规则（继承会话的模型和推理等级；跨家族评审者按本机的评审者文件启动），并附带 `canon.py` 用于创建、检查、查询和归档文档 | 自动触发 |
-| `canon-init` | 在仓库或 monorepo 模块中初始化 canon，把已有文档（设计说明、ADR、RFC、计划、复盘、基准测试等）迁移进来，问清跨家族评审者用的工具、模型和推理等级，试跑通过后写进本机的 `.canon/canon-blind-review/reviewer.md`（新克隆或换机器后可单独重跑这一步），并升级项目内的 `canon.py` | 手动 |
-| `canon-sync` | 让文档与代码保持一致：改动完成后执行文档步骤（更新设计、归档完成的计划和评审等、生成 `Refs:` 提交 trailer），合并分支后修复文档，以及定期审计文档健康度（有未核对代码提交的设计、闲置文档、到期的评审） | 手动 |
+| Skill | Summary | Trigger |
+|---|---|---|
+| `canon` | The documentation system: doc types, frontmatter, references, lifecycle and archiving, the change tiers, the review gate, how subagents launch, and `canon.py`, which creates, checks, queries and archives docs. | Auto |
+| `canon-init` | Sets up canon in a repository or monorepo module, migrates existing docs (design notes, ADRs, RFCs, plans, postmortems, benchmarks), sets up the cross-family reviewer, and upgrades the project's `canon.py`. Rerun it after a fresh clone to set up the reviewer alone. | Manual |
+| `canon-sync` | Keeps docs in step with the code: runs the docs step after a change, repairs docs after a merge or rebase, and audits doc health (designs with unchecked code commits, idle docs, reviews that are due). | Manual |
 
 ### execution
 
-| 技能 | 简介 | 触发 |
-|------|------|------|
-| `canon-tdd` | 测试驱动开发：在约定的 seam 上逐个红绿循环，变绿后顺手重构，测试只通过公开接口验证行为；seam 来自计划切片的测试标准或设计 Spec 定义的接口；完成标准是测试标准通过且原本绿的没有变红 | 自动触发 |
-| `canon-code-review` | 评审一次完整的改动（未提交改动、未跟踪的新文件或某个起点之后的 diff）：Spec 轴对照治理它的设计和计划，Standards 轴对照项目文档中的标准和坏味道基线。不论层级，两轴各由一个新的子 agent 并行评审，写代码的会话不自评，L2 首轮再加跨家族评审者；修复后由原评审者确认一次，推迟的问题写成 R 文档 | 自动触发 |
-| `canon-grill` | 先分诊再追问：能查的自己查，设计已规定的照做，明显正确的直接决定，能用原型或调研回答的交给对应技能，剩下的才按轮次带推荐答案问用户，答案立即写进对应文档 | 自动触发 |
-| `canon-blind-review` | 盲审：首轮启动不带当前会话任何上下文的评审者，只传入自包含的 prompt；同模型评审者是继承会话模型和推理等级的宿主子 agent，跨家族评审者按本机的 `.canon/canon-blind-review/reviewer.md` 启动，没有该文件或运行失败时手动送审；修复后由提出问题的评审者确认（同模型评审者恢复原会话，跨家族评审者重新运行并附上它第一轮的发现）；用于 review gate 或任何需要独立意见的评审 | 自动触发 |
-| `canon-codebase-design` | 深模块设计的共享术语和原则（module、interface、depth、seam、adapter 等），按依赖类别加深模块，以及用并行子 agent 把接口设计两遍；供设计、TDD 和评审技能引用 | 自动触发 |
-| `canon-prototype` | 用临时原型回答读代码和推理都定不下来的设计或逻辑问题：状态模型的单文件可点击演示、真实页面上可切换的 UI 变体、验证可行性和性能的最小 spike；问题、结论和原型记录为 E 文档 | 自动触发 |
-| `canon-investigate` | 诊断疑难 bug 和性能回退（快速修复无效、原因不明、偶发或变慢，或用户要求诊断时）：先构造稳定的复现回路，再最小化、列出可证伪的假设、插桩、写回归测试并修复、清理；全过程记录在 I 文档中，可跨会话继续。原因一眼可见的 bug 直接按 L0 修 | 自动触发 |
-| `canon-research` | 依据一手来源（官方文档、规范、源码）回答问题：一两个来源就能定的事实直接带链接回答；要支撑设计决策的，在后台子 agent 中调研，带引用的结论写进 E 文档，主会话继续工作，结论再吸收进设计 | 自动触发 |
-| `canon-implement` | 按已接受的计划逐个切片实现（或直接实现 L0 改动、无需计划的 L1 设计修订）：主会话负责编排，每个切片交给一个新的 worker 子 agent 在计划的 seam 上 TDD，worker 继承主会话的模型和推理等级；worker 卡住时不重试，暂停该切片并在最后一并报告；主会话验证后每个切片提交一次，最后整体代码评审、执行 docs step（记录设计的 `implemented`）并归档计划 | 手动 |
-| `canon-design` | 通过追问用户写出或修订设计（想法不成熟时写成概念），对照术语表收敛用词，决定一项写一项，最后过 review gate，并给出下一阶段的命令；L2 设计由用户启动下一阶段时批准 | 手动 |
-| `canon-plan` | 为已接受的设计写计划：先起草按依赖排序、各带 seam 和测试标准的垂直切片（涉及复杂逻辑、并发、性能、安全或数据迁移的切片标 `Risk:`），再与用户敲定未决点，过 review gate，并给出实现命令（有 `Risk:` 切片时建议实现会话用 high 推理）；L2 计划由用户启动实现时批准 | 手动 |
-| `canon-handoff` | 把当前工作交给新的 Agent：先把可长期保留的状态写进 canon 文档（计划、调查、设计草稿等），再在被 git 忽略的 `.canon/canon-handoff/<会话 id>-<主题>/` 下写一份只含文档之外信息的 handoff 文件，列出恢复入口和建议使用的技能 | 手动 |
-| `canon-teach` | 教用户新技能或概念：单个问题直接讲一次；要系统学习时跨多次会话授课，维护有状态的教学工作区（目标、资源、课程、速查、学习记录）；在项目仓库中运行时工作区位于被 git 忽略的 `.canon/canon-teach/<topic>/`；讲当前项目时以 canon 文档和代码为一手来源 | 手动 |
-| `canon-agent-writing` | 编写给 Agent 读的文档（技能、`AGENTS.md`/`CLAUDE.md`、通过指针到达的文档）的参考：上下文指针、两种负载、信息层级与渐进披露、完成标准、引导词、剪枝，以及技能的 frontmatter 和各宿主的调用开关 | 手动 |
-| `canon-review` | 对模块或整个仓库做定期评审，可选架构、性能、安全、功能、易用性角度，每个角度一个并行子 agent；结果写成 R 文档，需要时再生成可视化 HTML 报告，每条发现由用户决定修复、移入设计/计划/调查/backlog 概念，或记录理由后否决；能当场修的 L0/L1 问题先给出修复计划，用户批准后执行 | 手动 |
+| Skill | Summary | Trigger |
+|---|---|---|
+| `canon-design` | Writes or revises a design (or a concept, while the idea is still rough) by interviewing you one decision at a time, in the glossary's terms; then passes the review gate and gives you the next command. | Manual |
+| `canon-plan` | Turns an accepted design into dependency-ordered vertical slices, each with seams and test criteria, and marks risky ones (complex logic, concurrency, performance, security, data migration) with `Risk:`; settles open points with you, passes the review gate and gives you the implementation command. | Manual |
+| `canon-implement` | Implements an accepted plan, an L1 design revision or an L0 change. A fresh worker builds each slice test-first; the main session verifies and commits each slice and pauses stuck ones for you, then runs the code review and the docs step. | Manual |
+| `canon-code-review` | Reviews one finished change (uncommitted work, untracked files or a diff from a base) on two axes, each by a fresh subagent: Spec against its designs and plan, Standards against the project's stated standards and a smell baseline. L2 adds the cross-family reviewer; findings deferred to later work go into an R doc. | Auto |
+| `canon-blind-review` | Runs reviewers that see only a self-contained prompt about files in the repository: a same-model subagent, and a cross-family reviewer run as this machine's reviewer file says, with a manual fallback. The reviewers confirm the fixes to their findings. Serves the review gate and any independent review. | Auto |
+| `canon-review` | Reviews a module or the whole repository from the angles you pick (architecture, performance, security, functionality, usability), one parallel subagent per angle. Findings go into an R doc, with an HTML report on request, and each gets your decision: fix it, move it into a design, plan, investigation or backlog concept, or decline it with a reason. | Manual |
+| `canon-tdd` | Test-driven development in red-green-refactor cycles at the seams a plan slice or design spec names, testing behavior through public interfaces. Done when the test criteria pass and nothing that was green turned red. | Auto |
+| `canon-grill` | Settles open decisions: looks up what it can, follows what the designs already say, decides the obvious, hands evidence questions to a prototype or research, and asks you the rest in rounds with recommended answers, writing each answer into its doc. | Auto |
+| `canon-prototype` | Builds a throwaway prototype to answer a design or logic question that reading and reasoning cannot settle: a clickable single-file demo of a state model, switchable UI variants on a real page, or a feasibility or speed spike. The question, verdict and prototype are recorded as an E doc. | Auto |
+| `canon-research` | Answers questions from primary sources (official docs, specs, source code). Quick facts get a direct answer with links; findings that back a design decision are researched in a background subagent and recorded with citations in an E doc. | Auto |
+| `canon-investigate` | Diagnoses hard bugs and performance regressions: a feedback loop that reproduces the failure, falsifiable hypotheses, instrumentation, then a fix with a regression test, all recorded in an I doc that survives across sessions. A bug with a plain cause is fixed directly as L0. | Auto |
+| `canon-codebase-design` | Shared vocabulary and principles for deep modules (module, interface, depth, seam, adapter), deepening a module by its dependency category, and designing an interface twice with parallel subagents. The design, TDD and review skills build on it. | Auto |
+| `canon-handoff` | Hands the current work to a fresh agent: durable state goes into canon docs, the rest into a short handoff file under `.canon/canon-handoff/` that says where to resume and which skills to use. | Manual |
+| `canon-teach` | Teaches a topic: one explanation for a single question, or a course over several sessions with a teaching workspace (goals, resources, lessons, cheat sheet, learning log), kept under `.canon/canon-teach/` inside a project. | Manual |
+| `canon-agent-writing` | Reference for writing docs that agents read (skills, `AGENTS.md`, `CLAUDE.md` and docs reached through pointers): context pointers, progressive disclosure, completion criteria, pruning, skill frontmatter and each host's invocation switches. | Manual |
 
-## 目录结构
+## Repository layout
 
 ```
 .
 ├── skills/
-│   ├── execution/          # 执行类技能：直接完成具体开发任务
+│   ├── governance/         # build and maintain the documentation system
 │   │   └── <skill-name>/
-│   │       ├── SKILL.md    # 必需：frontmatter + 指令
-│   │       ├── *.md        # 可选：参考资料、示例
-│   │       ├── scripts/    # 可选：技能调用的脚本
-│   │       ├── agents/openai.yaml  # 手动技能必需：让 Codex 也不隐式调用
-│   │       └── LICENSE, NOTICE  # 移植技能必需：上游许可证与来源说明
-│   └── governance/         # 治理类技能：建立和维护项目文档系统
+│   └── execution/          # do development work through it
 │       └── <skill-name>/
+│           ├── SKILL.md            # required: frontmatter and instructions
+│           ├── *.md                # optional: reference material linked from SKILL.md
+│           ├── scripts/            # optional: scripts the skill runs or points to
+│           ├── agents/openai.yaml  # manual skills: keeps Codex from invoking them implicitly
+│           └── LICENSE, NOTICE     # ported skills: upstream license and provenance
 ├── scripts/
-│   └── validate.py         # 校验技能结构、frontmatter、链接、README 技能列表和 CANON_VERSION，并运行 tests/
+│   └── validate.py         # checks skills, links, the Skills tables and CANON_VERSION, then runs tests/
 └── tests/
-    └── test_canon.py       # canon.py 的回归测试
+    └── test_canon.py       # regression tests for canon.py
 ```
 
-技能必须放在 `skills/<分类>/<技能名>/SKILL.md`，这是 `npx skills` 能识别的分类目录布局。不要在 `skills/` 之外放 `SKILL.md`，否则会被 CLI 当成可安装的技能。
+`npx skills` discovers skills at `skills/<category>/<skill-name>/SKILL.md`, and would treat a `SKILL.md` anywhere else as an installable skill too, so keep templates and examples under other names. The two categories:
 
-### 分类
+- **governance** builds and maintains the documentation system that carries a project across sessions and models.
+- **execution** does development work (clarifying requirements, TDD, debugging, reviewing) and reads and writes docs only through that system. Most of it is adapted from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT), with the upstream doc conventions replaced by canon's; each ported skill keeps the upstream `LICENSE` and a `NOTICE`.
 
-| 分类 | 放什么 | 例子 |
-|------|--------|------|
-| `execution/` | 借助文档系统完成开发工作的技能 | 需求澄清、TDD、调试、Code Review（多移植自 mattpocock/skills） |
-| `governance/` | 建立和维护项目文档系统本身的技能 | 文档系统初始化、规范与决策记录、随生命周期更新文档 |
-
-## 新增技能
+## Adding a skill
 
 ```bash
 cd skills/execution && npx skills init canon-my-task && cd -
 ```
 
-然后编辑 `SKILL.md`：`name` 与目录名一致，`description` 按 `AGENTS.md` 的规范写（自动触发的技能把触发条件放在前面，手动技能写一行摘要）；手动技能再加 `agents/openai.yaml`。最后在上面的「技能列表」中补上一行简介。完成后校验：
+Complete the frontmatter as [AGENTS.md](AGENTS.md) describes: `name` equals the directory name, and `description` leads with the triggers for an auto skill or is a one-line summary for a manual one. A manual skill also gets `disable-model-invocation: true` and `agents/openai.yaml`. Add a row to the Skills tables above, then check:
 
 ```bash
-python3 scripts/validate.py
-npx skills add . --list        # 确认 CLI 能发现该技能
+python3 scripts/validate.py    # structure, frontmatter, links, Skills tables, CANON_VERSION, tests
+npx skills add . --list        # the CLI discovers the skill
 ```
 
-## 安装与分发
+## Host verification
 
-推送到远程仓库后，在任意机器上安装（`-g` 为用户级安装，所有项目可用）：
+After installing on a new host, after a major host upgrade, or after changing descriptions, invocation switches or how reviewers launch, run these checks in Cursor, Claude Code and Codex:
 
-```bash
-npx skills add <git-url> -g                         # 交互式选择技能和 Agent
-npx skills add <git-url> -g --skill canon-my-task -a cursor -a claude-code -y
-npx skills update -g                                # 拉取仓库最新版本
-npx skills ls -g                                    # 查看已安装技能
-npx skills remove canon-my-task -g
-```
+| Check | Do | Expect |
+|---|---|---|
+| Discovery | Open the host's skill list (`/skills` in Codex) | All 18 skills are listed, and no auto skill's triggers are cut off |
+| Manual invocation | Run `/canon-sync` (`$canon-sync` in Codex) | The skill loads and follows its steps |
+| Manual skills stay manual | In a new session, say "sync the docs" without naming a skill | `canon-sync` does not load |
+| Implicit invocation | In a new session, say "this test fails intermittently, find out why" | `canon-investigate` loads |
+| Reviewer setup | Run `/canon-init` in a new project | It asks for the cross-family reviewer's tool, model and effort, test-runs it, and writes `.canon/canon-blind-review/reviewer.md` |
+| Subagents | Run the review gate on an L2 design | The same-model reviewer is a new subagent, the cross-family reviewer runs as the reviewer file says, and both get only the reviewer prompt. Confirmation resumes the same-model reviewer and reruns the cross-family one with its first-round findings |
+| Fallback | Run an L2 review gate on a machine without the reviewer file | One line gives the reason and suggests `/canon-init`, then a reviewer prompt to copy into another tool |
+| Workers per slice | Implement a plan with `/canon-implement` | Each slice gets a new worker on the session's model and effort; the main session updates the plan and commits, and a stuck worker's slice is paused and reported at the end |
 
-本地调试未推送的改动时，直接从本地路径安装：
-
-```bash
-npx skills add ~/my/skills -g --skill canon-my-task -a cursor -y
-```
-
-本地路径安装的是一份副本，`npx skills update` 不会跟踪本地来源；修改后重新执行同一条 `add` 命令即可覆盖。
-
-## 宿主验证清单
-
-装到新宿主、宿主大版本升级，或改了 description、调用开关、盲审启动方式之后，在 Cursor、Claude Code、Codex 上各做一遍：
-
-| 项目 | 做法 | 期望 |
-|------|------|------|
-| 技能发现 | 打开宿主的技能列表（Codex 用 `/skills`） | 18 个技能都在，自动触发技能的触发条件没有被截掉 |
-| 手动调用 | 输入 `/canon-sync`（Codex 用 `$canon-sync`） | 技能加载并按步骤执行 |
-| 手动技能不被隐式调用 | 新会话里说「帮我同步一下文档」，不点名技能 | `canon-sync` 不会自动加载 |
-| 隐式调用 | 新会话里说「这个测试偶发失败，帮我查原因」 | 自动加载 `canon-investigate` |
-| 配置跨家族评审者 | 在新项目里跑 `/canon-init` | 问清工具、模型和推理等级，试跑通过后写入 `.canon/canon-blind-review/reviewer.md` |
-| 子 agent | 对一份 L2 设计跑 review gate | 同模型评审者是新的子 agent，跨家族评审者按评审者文件启动，都只收到评审 prompt；确认轮恢复同模型评审者，跨家族评审者重新运行并附上它第一轮的发现 |
-| 降级路径 | 在没有评审者文件的机器上跑 L2 review gate | 用一句话说明原因并提示 `/canon-init`，给出可复制的手动送审 prompt |
-| 按切片派发 worker | 用 `/canon-implement` 实现一份计划 | 每个切片一个新 worker，继承主会话的模型和推理等级；主会话更新计划并提交，worker 卡住时暂停该切片并在最后报告 |
-
-Cursor 的子 agent（Task 工具）默认继承会话的模型，推理等级是模型名的一部分；只有用户明确要求时才能换模型，而且只能从固定列表里选。canon 的同模型子 agent 都用这个默认值，在 Cursor 里不需要额外配置。跨家族评审者由 `canon-init` 写进本机的评审者文件：GPT 走 codex CLI，因为列表里的 GPT 模型有限、推理等级也固定，codex 还要在 Cursor 的沙箱外运行，因为它要往 `~/.codex` 写文件；其他家族也可以直接用列表里的模型名，例如 `gemini-4-argon-medium`。
+In Cursor, subagents come from the Task tool, which runs them on the session's model by default. The reasoning effort is part of the model name, and a subagent can use another model only when the user asks for it, from a fixed list. Canon's workers and same-model reviewers keep the default, so they need no setup in Cursor. For a GPT cross-family reviewer, use the codex CLI rather than the Task tool, since the list offers few GPT models and fixes their efforts; codex has to run outside Cursor's sandbox because it writes to `~/.codex`. A reviewer from another family can be a Task subagent on a model from the list.

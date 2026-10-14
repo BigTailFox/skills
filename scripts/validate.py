@@ -23,9 +23,9 @@ MAX_LINES = 500
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 FENCE_RE = re.compile(r"^\s*(```|~~~)")
 INLINE_CODE_RE = re.compile(r"`[^`]*`")
-SKILL_LIST = "## 技能列表"
+SKILL_LIST = "## Skills"
 SKILL_ROW_RE = re.compile(r"^\|\s*`([a-z0-9-]+)`\s*\|.*\|\s*([^|]+?)\s*\|\s*$")
-TRIGGER = {False: "自动触发", True: "手动"}
+TRIGGER = {False: "Auto", True: "Manual"}
 IMPLICIT_RE = re.compile(r"^\s*allow_implicit_invocation:\s*['\"]?(\w+)", re.M)
 CANON_SCRIPT = "skills/governance/canon/scripts/canon.py"
 VERSION_RE = re.compile(r'^CANON_VERSION = "\d+"', re.M)
