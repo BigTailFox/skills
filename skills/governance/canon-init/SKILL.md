@@ -29,17 +29,18 @@ Read the `canon` skill first; it defines the system. Until the project has its o
 
 ## Set up the cross-family reviewer
 
-Run this alone when the project is set up but this machine has no `.canon/canon-blind-review/reviewer.md`, e.g. after a fresh clone.
+Run this alone when the project is set up but this machine has no `.canon/canon-blind-review/reviewer.md`, e.g. after a fresh clone, or when sessions start running on a model family the file has no reviewer of another family for.
 
-1. Ask the user which tool runs the reviewer: an agent CLI such as codex, claude, gemini or Cursor's agent, which works from every host, or a subagent of their host with a named model. Ask for its model, suggesting the flagship of a family other than their sessions' (a smaller model of another family adds little), and its reasoning effort.
-2. Build the command from the tool's `--help`: a new read-only session at that model and effort, the prompt read from `<prompt>`, the final message left in `<out>`. Run it once on a one-line prompt and fix it until it works, noting what the host needed, such as running outside its sandbox.
-3. Write the reviewer file as the `canon` skill's workflow describes (Subagents).
+1. Ask the user which model families their sessions run on. Each needs a reviewer of another family, so sessions on both Claude and GPT need a GPT reviewer and a Claude reviewer.
+2. For each reviewer, ask which tool runs it: an agent CLI such as codex, claude, gemini or Cursor's agent, which works from every host, or a subagent of their host with a named model. Ask for its model, suggesting the family's flagship (a smaller model of another family adds little), and its reasoning effort.
+3. Build each command from the tool's `--help`: a new read-only session at that model and effort, the prompt read from `<prompt>`, the final message left in `<out>`. Run it once on a one-line prompt and fix it until it works, noting what the host needed, such as running outside its sandbox.
+4. Write the reviewer file as the `canon` skill's workflow describes (Subagents), the user's preferred reviewer first.
 
 Without another family, skip this; reviews then use the manual fallback.
 
 ## Upgrade
 
-From the repo root run `python3 <canon>/scripts/canon.py init`. It replaces an older `scripts/canon.py` (by `CANON_VERSION`) and refreshes the `AGENTS.md` block between its markers; everything else is kept. Then run `check --fix` and fix what the new version still reports. An active design `--fix` cannot give `implemented` (one with an open plan) gets the revision its code fully implements, found from the plan's `based_on` and the git history.
+From the repo root run `python3 <canon>/scripts/canon.py init`. It replaces an older `scripts/canon.py` (by `CANON_VERSION`) and refreshes the `AGENTS.md` block between its markers; everything else is kept. Then run `check --fix` and fix what the new version still reports. `--fix` gives `implemented: 1` only to an active design never revised and without an open plan; give any other active design the revision its code fully implements, found by comparing the code with each revision of the spec in the git history, and the open plan's `based_on` when there is one. A plan in progress whose `reviewed` is below its `revision` passes the review gate before its slices continue.
 
 ## Add a module
 
