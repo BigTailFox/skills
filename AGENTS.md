@@ -35,6 +35,7 @@
 ## 工作流程
 
 - 新建技能：在 `skills/<分类>/` 下运行 `npx skills init <name>`，然后按上面的规范补全 frontmatter（包括 `disable-model-invocation`）。
+- 新增、删除技能，或改变技能的用途、触发方式时，同步更新 `README.md` 的「技能列表」。
 - 修改任何技能后运行 `python3 scripts/validate.py` 和 `npx skills add . --list`，两者都通过后再提交。
 - 提交信息使用 Conventional Commits，scope 用技能名，例如 `feat(canon-code-review): add security checklist`；仓库级改动不带 scope 或用 `repo`。
 - 文档（`README.md`、`AGENTS.md`）用中文；技能内容用英文。

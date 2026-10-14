@@ -9,6 +9,22 @@
 - **governance（治理层）**：建立并维护一套跟随项目生命周期的文档系统，作为跨会话、跨模型长期开发的统一规范、指导、记录和信息中心。
 - **execution（执行层）**：完成具体开发任务。主要移植 [mattpocock/skills](https://github.com/mattpocock/skills)（MIT）中的常用技能，文档约定统一改用 governance 层的规则；上游约定中可取的部分会选择性吸收进 governance。
 
+## 技能列表
+
+「自动触发」表示 Agent 会根据上下文自行加载；其余技能需要手动调用（如 `/canon-init`）。
+
+### governance
+
+| 技能 | 简介 | 触发 |
+|------|------|------|
+| `canon` | 核心文档系统：定义 `docs/` 下编号的概念、设计、计划、评审、实验、调查文档，统一 frontmatter、引用格式、生命周期与归档规则，L0/L1/L2 变更分级和盲审门槛，并附带 `canon.py` 用于创建、检查、查询和归档文档 | 自动触发 |
+| `canon-init` | 在仓库或 monorepo 模块中初始化 canon，把已有文档（设计说明、ADR、RFC、计划、复盘、基准测试等）迁移进来，并升级项目内的 `canon.py` | 手动 |
+| `canon-sync` | 让文档与代码保持一致：改动完成后执行文档步骤（更新设计、归档完成的计划和评审等、生成提交 trailer），合并分支后修复文档，以及定期审计文档健康度 | 手动 |
+
+### execution
+
+暂无。
+
 ## 目录结构
 
 ```
@@ -41,7 +57,7 @@
 cd skills/execution && npx skills init canon-my-task && cd -
 ```
 
-然后编辑 `SKILL.md`：`name` 与目录名一致，`description` 写清楚「做什么」和「什么时候用」。完成后校验：
+然后编辑 `SKILL.md`：`name` 与目录名一致，`description` 写清楚「做什么」和「什么时候用」，并在上面的「技能列表」中补上一行简介。完成后校验：
 
 ```bash
 python3 scripts/validate.py
