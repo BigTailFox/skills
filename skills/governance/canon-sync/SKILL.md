@@ -1,6 +1,6 @@
 ---
 name: canon-sync
-description: Brings a project's canon docs in line with its code. Runs the docs step after a change (update governing designs, archive finished plans, reviews, investigations and experiments, fix stale READMEs, prepare the commit trailer), reconciles docs after merges, and audits doc health (stale designs, idle docs, due reviews, outdated canon.py). Use when the user asks to sync, update, reconcile or audit docs, before committing finished work, or after merging branches.
+description: Runs the canon docs step, reconciles docs after a merge or rebase, and audits doc health.
 disable-model-invocation: true
 ---
 
@@ -18,9 +18,9 @@ Run `canon.py check --fix --base <target>`. For an id collision, renumber the do
 
 ## Audit
 
-1. Compare `python3 scripts/canon.py --version` with the `canon` skill's `scripts/canon.py --version`. If the project copy is older, upgrade it as the `canon-init` skill describes.
+1. Compare `python3 scripts/canon.py --version` with the `canon` skill's `scripts/canon.py --version`. If the project copy is older, upgrade it as the `canon-init` skill describes. If the versions match but the files differ, show the user the diff before replacing it: the project may have local edits.
 2. Run `canon.py audit`.
-3. For each stale design, inspect `git log --since=<updated> -- <paths>` and reconcile it as the docs step reconciles a listed design.
+3. For each design with unchecked commits, inspect `git log <since>..HEAD -- <paths>` (audit prints the commit it counts from) and reconcile it as the docs step reconciles a listed design. Commit the design, bumping only `updated` when nothing else changed, so audit counts from there.
 4. For each idle doc, finish it, archive it (`dropped`, `retired`, `abandoned`), or ask the user.
 5. When a review is due, propose its scope (modules and angles) and the `canon-review` skill to run it.
 6. Report what changed and what needs the user's decision.
