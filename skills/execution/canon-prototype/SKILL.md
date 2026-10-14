@@ -12,7 +12,7 @@ A prototype is **throwaway code that answers a question**. The question decides 
 Write the question in one sentence, plus the observation that would settle it.
 
 - The verdict will feed a design or plan: create the experiment now with `canon.py new E <slug>` and fill its Question. Self-contained prototype files go in `experiments/E00X/`.
-- The question is a detail inside the current task: skip the doc. Build in a scratch directory, record the verdict in the plan's Log or the commit message, and delete the prototype.
+- The question is a detail inside the current task: skip the doc. Build in `.canon/canon-prototype/<topic>/`, record the verdict in the plan's Log or the commit message, and delete the prototype.
 
 ## 2. Pick a branch
 

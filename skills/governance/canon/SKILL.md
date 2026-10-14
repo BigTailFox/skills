@@ -47,7 +47,7 @@ Execute `canon.py`; do not read it. Use the project's copy at the path named in 
     └── archived/           same categories, docs in a terminal status only
 ```
 
-`.canon/` at the repo root holds local working state of canon skills, such as teaching workspaces. `init` adds it to `.gitignore`; nothing in it is a doc.
+Temporary files of canon skills (prompts, scratch prototypes, handoffs, teaching workspaces) go in `.canon/<skill>/<topic>/` at the repo root, never in the OS temp directory or the tracked tree; `<topic>` is a short kebab-case slug. `init` adds `.canon/` to `.gitignore`; if `git check-ignore -q .canon` fails, add it yourself. Nothing in `.canon/` is a doc: anything worth keeping becomes an attachment or doc content.
 
 Attachments of a numbered doc (data, scripts, reports, prototypes, images used only by it) live in `<category>/<ID>/` beside the doc, e.g. `designs/D003/flow.svg`; `archive` and `renumber` move them with it. Create the directory when the first attachment appears. Link large binaries instead of committing them.
 

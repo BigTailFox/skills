@@ -49,7 +49,7 @@ You are reviewing a {design | plan} in this repository with no prior context. Ju
 Target: {path}
 Changes since: {commit} (review what changed; read the rest for context)
 
-Read the target, the docs it links to, and the code it governs. Do not modify any file.
+Read the target, the docs it links to, and the code it governs. Do not read `.canon/`. Do not modify any file.
 
 Assess:
 - Correctness and feasibility against the current code.

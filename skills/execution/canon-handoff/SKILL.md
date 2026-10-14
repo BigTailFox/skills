@@ -22,7 +22,7 @@ Run `canon.py check --fix`. Commit only if the user asks; the handoff lists what
 
 ## 2. Write the handoff
 
-Write `HANDOFF.md` to `.canon/canon-handoff/<id>-<topic>/` at the repository root, where `<id>` is the current conversation's id (`<YYYYMMDD-HHMM>` when unknown) and `<topic>` is a short kebab-case slug of the work. If `git check-ignore -q .canon` fails, add `.canon/` to the repository's `.gitignore`. The file never goes into `docs/` or the history. It holds:
+Write `HANDOFF.md` to `.canon/canon-handoff/<id>-<topic>/` at the repository root, where `<id>` is the current conversation's id (`<YYYYMMDD-HHMM>` when unknown) and `<topic>` is a slug of the work. It holds:
 
 - **Goal**: the work and, when the user passed arguments, what the next session will focus on.
 - **Position**: tier, branch, `HEAD` commit, and `git status --short`.

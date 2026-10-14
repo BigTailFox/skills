@@ -17,7 +17,7 @@ You are reviewing {artifact} in this repository with no prior context. Judge it 
 
 Target: {paths, or the diff command}
 
-Read the target and whatever it links to or depends on. Do not modify any file.
+Read the target and whatever it links to or depends on. Do not read `.canon/`. Do not modify any file.
 
 Assess:
 - {criterion, e.g. correctness against the code it describes}
@@ -51,7 +51,7 @@ Launch all reviewers in parallel. Each is a new agent, never a fork or resumptio
 
 ## Cross-family CLIs
 
-Use whichever is installed (`command -v`). Write the filled prompt to a temporary file, run in the background from the repo root, and read the final message when it finishes:
+Use whichever is installed (`command -v`). Write the filled prompt to `.canon/canon-blind-review/<topic>/` (topic: the doc id or change under review, plus the reviewer), run in the background from the repo root with the output in the same directory, and read the final message when it finishes:
 
 ```bash
 codex exec -s read-only --ephemeral -m <model> -c model_reasoning_effort=xhigh -o <out.md> - < <prompt.txt>
