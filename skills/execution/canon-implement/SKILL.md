@@ -1,6 +1,6 @@
 ---
 name: canon-implement
-description: Implements a change the canon way. Works through an accepted plan slice by slice (or directly an L0 change or an L1 design revision without a plan), test-first at the plan's seams, and commits each slice. It then reviews the whole change, runs the docs step that archives the finished plan, and reports paused slices and deferred findings. Use when the user asks to implement, build, execute, continue or resume a plan, design or change.
+description: Implements an accepted plan slice by slice, an L1 design revision or an L0 change, then reviews it and runs the docs step.
 disable-model-invocation: true
 ---
 
@@ -21,10 +21,10 @@ Read the `canon` skill first; its workflow governs tiers, deviations, code revie
 ## 2. Each slice
 
 1. Set the slice's `Status: in-progress`.
-2. Build it with the `canon-tdd` skill at the seams its test criteria name. Run the type checker and the touched test files often.
+2. Build it with the `canon-tdd` skill at the seams its test criteria name.
 3. When something is unclear, use the `canon-grill` skill's triage. A logic or design question that evidence can settle goes to `canon-prototype`. A defect goes to `canon-investigate`.
 4. When the code cannot follow the plan or the design, apply the workflow's deviation rules: fix a plan problem with one clear answer and log it. Pause the slice for a design problem or a pending decision, and continue with slices that do not depend on it.
-5. The slice is done when every test criterion passes and the full suite is green. Set `Status: done`, point Current state at the next action, and append results, decisions and deviations to the Log.
+5. When the slice is done by the `canon-tdd` skill's definition, set `Status: done`, point Current state at the next action, and append results, decisions and deviations to the Log.
 6. Run `canon.py check --fix`, then commit the slice: code plus plan, Conventional Commits, `Refs: <design>, <plan>` trailer.
 
 ## 3. Finish
