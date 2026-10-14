@@ -39,7 +39,7 @@ Design, plan and implementation are separate phases, started with `/canon-design
 - **Code review.** Every finished change, L0 included, gets a Spec reviewer (against its designs and plan) and a Standards reviewer (against the project's stated standards) as parallel subagents, so the session that wrote the code never reviews it. L2 adds the cross-family reviewer.
 - **Docs step.** Before the final commit, designs absorb the details the code settled, finished plans and reviews are archived, and the commit names the designs it was checked against in a `Refs:` trailer, which lets `canon.py audit` flag code commits nobody checked against their design.
 
-Workers and reviewers inherit the session's model and reasoning effort, so the session you start sets both; start a risky implementation at high effort. The exception is the cross-family reviewer, whose tool, model and effort are set per machine in `.canon/canon-blind-review/reviewer.md`, which `/canon-init` writes after a test run. Without that file, the review falls back to a prompt you run in another tool.
+Workers and reviewers inherit the session's model and reasoning effort, so the session you start sets both; start a risky implementation at high effort. The exception is the cross-family reviewer. `/canon-init` lists this machine's reviewers, with their tools, models and efforts, in `.canon/canon-blind-review/reviewer.md` after a test run of each; a review uses the first one whose family differs from the session's, so a machine whose sessions run on both Claude and GPT needs one of each. Without such a reviewer, the review falls back to a prompt you run in another tool.
 
 ## Skills
 
@@ -121,9 +121,9 @@ After installing on a new host, after a major host upgrade, or after changing de
 | Manual invocation | Run `/canon-sync` (`$canon-sync` in Codex) | The skill loads and follows its steps |
 | Manual skills stay manual | In a new session, say "sync the docs" without naming a skill | `canon-sync` does not load |
 | Implicit invocation | In a new session, say "this test fails intermittently, find out why" | `canon-investigate` loads |
-| Reviewer setup | Run `/canon-init` in a new project | It asks for the cross-family reviewer's tool, model and effort, test-runs it, and writes `.canon/canon-blind-review/reviewer.md` |
+| Reviewer setup | Run `/canon-init` in a new project | It asks which model families your sessions run on, then for each reviewer's tool, model and effort, test-runs each, and writes `.canon/canon-blind-review/reviewer.md` |
 | Subagents | Run the review gate on an L2 design | The same-model reviewer is a new subagent, the cross-family reviewer runs as the reviewer file says, and both get only the reviewer prompt. Confirmation resumes the same-model reviewer and reruns the cross-family one with its first-round findings |
-| Fallback | Run an L2 review gate on a machine without the reviewer file | One line gives the reason and suggests `/canon-init`, then a reviewer prompt to copy into another tool |
+| Fallback | Run an L2 review gate without the reviewer file, and again in a session of the same family as every reviewer it lists | Each time, one line gives the reason and suggests `/canon-init`, then a reviewer prompt to copy into another tool |
 | Workers per slice | Implement a plan with `/canon-implement` | Each slice gets a new worker on the session's model and effort; the main session updates the plan and commits, and a stuck worker's slice is paused and reported at the end |
 
 In Cursor, subagents come from the Task tool, which runs them on the session's model by default. The reasoning effort is part of the model name, and a subagent can use another model only when the user asks for it, from a fixed list. Canon's workers and same-model reviewers keep the default, so they need no setup in Cursor. For a GPT cross-family reviewer, use the codex CLI rather than the Task tool, since the list offers few GPT models and fixes their efforts; codex has to run outside Cursor's sandbox because it writes to `~/.codex`. A reviewer from another family can be a Task subagent on a model from the list.
