@@ -13,7 +13,7 @@ import sys
 import urllib.parse
 from pathlib import Path
 
-CANON_VERSION = "1"
+CANON_VERSION = "2"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -47,6 +47,7 @@ SEVERITIES = ("blocker", "major", "minor")
 DISPOSITIONS = ("open", "fixed", "moved", "declined")
 SLICE_STATUSES = ("todo", "in-progress", "done", "paused")
 SETUP_LABELS = ("Commit", "Environment", "Command")
+SOURCES_LABEL = "Sources"
 RESOLUTION_LABELS = ("Root cause", "Fix", "Verification")
 
 MAX_DOC_LINES = 500
@@ -78,7 +79,7 @@ This repo follows the canon documentation system (`canon` skill). Engineering do
 
 - Tool: `python3 {script}` from the repo root (`-h` lists commands). Run `check --fix` before committing and after every merge or rebase.
 - Before editing code, run `which <file>` and read the governing design sections with `show D00X#slug`.
-- State each change's tier (L0, L1, L2) before starting. Designs and plans pass the blind-review gate defined by the `canon` skill.
+- State each change's tier (L0, L1, L2) before starting. Designs and plans pass the review gate defined by the `canon` skill.
 - Skip `docs/archived/` unless researching history.
 """ + AGENTS_END
 SUB_AGENTS = "Module docs: [docs/README.md](docs/README.md). The repo root `AGENTS.md` defines the docs rules.\n"
@@ -129,7 +130,7 @@ TEMPLATES = {
 
 ## Slices
 
-<!-- canon: Ordered slices as `### S1: name`. Each starts with a `Status: todo` line (todo, in-progress, done, paused), then lists its changes and the test criteria that prove it done. -->
+<!-- canon: Ordered slices as `### S1: name`. Each starts with a `Status: todo` line (todo, in-progress, done, paused), then lists its changes and the test criteria that prove it done, naming the seam (public interface) each test exercises. -->
 
 ## Notes
 
@@ -162,11 +163,11 @@ TEMPLATES = {
 - Environment:
 - Command:
 
-<!-- canon: Keep raw data and attachments in the sibling directory {id}/. -->
+<!-- canon: Fill Commit, Environment and Command for a run. For research, replace them with `- Sources:` and the primary sources consulted, one per indented line. -->
 
 ## Results
 
-<!-- canon: Measurements, with links to raw data. -->
+<!-- canon: Measurements or findings, each linked to its raw data or cited source. -->
 
 ## Conclusion
 
@@ -342,6 +343,15 @@ def git_pathspec(project_rel, pattern):
     return [spec(project_rel, p), spec(project_rel, p, "**")]
 
 
+def code_pathspec(repo, root):
+    """Pathspecs for a project's files outside its docs/ and outside nested projects."""
+    specs = [":(glob)" + (root.rel + "/**" if root.rel else "**"), ":(glob,exclude)" + root.docs_rel + "/**"]
+    for other in repo.roots:
+        if other is not root and other.rel and (not root.rel or other.rel.startswith(root.rel + "/")):
+            specs.append(":(glob,exclude)" + other.rel + "/**")
+    return specs
+
+
 def parse_date(value):
     try:
         return datetime.date.fromisoformat(value)
@@ -399,11 +409,18 @@ class Doc:
         return None
 
     def labels(self, section_name):
-        out = {}
+        """Map `- Label: value` lines to their values; indented lines below a label extend its value."""
+        out, last = {}, None
         for line in self.section(section_name) or []:
+            indented = line[:1].isspace()
             match = LABEL_RE.match(line.replace("*", ""))
-            if match:
-                out[match.group(1).strip()] = match.group(2)
+            if match and not (indented and last):
+                last = match.group(1).strip()
+                out[last] = match.group(2)
+            elif last and indented and line.strip():
+                out[last] = (out[last] + " " + line.strip()).strip()
+            elif line.strip():
+                last = None
         return out
 
     def sort_key(self):
@@ -477,7 +494,8 @@ class Repo:
                         self.problem("ERROR", where, "unknown entry; allowed: README.md, archived/, guides/, assets/, "
                                      + ", ".join(i["dir"] + "/" for i in TYPES.values()))
                     continue
-                if len(parts) >= 3 and letter == "E" and re.match(r"^E\d{3,}$", parts[1]):
+                id_match = FULL_ID_RE.match(parts[1]) if len(parts) >= 3 else None
+                if id_match and id_match.group(1) == letter:
                     self.attachments.append((root, archived, parts[1], rel))
                     continue
                 match = FILE_RE.match(parts[-1]) if len(parts) == 2 else None
@@ -688,10 +706,14 @@ def terminal_problems(doc, status=None):
         for fid, _sev, disp in review_findings(doc)[0]:
             if disp.split(" ", 1)[0] == "open":
                 out.append("finding {} is still open".format(fid))
-    if doc.type in ("E", "I"):
-        section = "Setup" if doc.type == "E" else "Reproduction"
-        labels = doc.labels(section)
-        out += ["{}: `{}` is empty".format(section, k) for k in SETUP_LABELS if not labels.get(k)]
+    if doc.type == "E":
+        labels = doc.labels("Setup")
+        if not labels.get(SOURCES_LABEL):
+            out += ["Setup: `{}` is empty (research lists `- {}:` instead)".format(k, SOURCES_LABEL)
+                    for k in SETUP_LABELS if not labels.get(k)]
+    if doc.type == "I":
+        labels = doc.labels("Reproduction")
+        out += ["Reproduction: `{}` is empty".format(k) for k in SETUP_LABELS if not labels.get(k)]
     if doc.type == "I":
         labels = doc.labels("Resolution")
         out += ["Resolution: `{}` is empty".format(k) for k in RESOLUTION_LABELS if not labels.get(k)]
@@ -792,7 +814,7 @@ def check_doc(repo, doc, changed):
             err("`reviewers` must list who reviewed revision {}".format(reviewed))
     gate = (doc.type == "D" and status in ("accepted", "active")) or (doc.type == "P" and status == "accepted")
     if gate and reviewed != doc.revision:
-        err("revision {} is not reviewed (reviewed: {}); blind-review it, then set `reviewed` and `reviewers`"
+        err("revision {} is not reviewed (reviewed: {}); pass the review gate, then set `reviewed` and `reviewers`"
             .format(doc.revision, reviewed))
     if doc.type == "P" and status == "in-progress" and reviewed is None:
         err("plan in progress without `reviewed`")
@@ -864,8 +886,8 @@ def run_check(repo, base=None):
 
     for root, archived, name, rel in repo.attachments:
         doc = repo.by_id.get(name)
-        if not doc or doc.root is not root or doc.type != "E" or doc.archived != archived:
-            repo.problem("ERROR", rel, "attachment directory {} has no matching experiment beside it".format(name))
+        if not doc or doc.root is not root or doc.archived != archived:
+            repo.problem("ERROR", rel, "attachment directory {} has no matching doc beside it".format(name))
 
     for path in repo.scope_md:
         if not path.is_file():
@@ -1127,7 +1149,7 @@ def cmd_archive(repo, args):
     archive_dir = doc.root.docs / "archived" / info["dir"]
     moves = {doc.path: archive_dir / doc.path.name}
     attachment = doc.root.docs / info["dir"] / doc.id
-    if doc.type == "E" and attachment.is_dir():
+    if attachment.is_dir():
         moves[attachment] = archive_dir / doc.id
     rewrite_for_moves(repo, moves)
     move_paths(repo, moves)
@@ -1313,7 +1335,7 @@ def cmd_renumber(repo, args):
         renamed[d.path] = (d.id, new_id)
         moves[d.path] = d.path.with_name("{}-{}.md".format(new_id, d.slug))
         attachment = d.path.parent / d.id
-        if d.type == "E" and attachment.is_dir():
+        if attachment.is_dir():
             moves[attachment] = d.path.parent / new_id
     touched = rewrite_for_moves(repo, moves, renamed)
     id_map = dict(renamed.values())
@@ -1463,9 +1485,14 @@ def cmd_audit(repo, args):
         last = max([r for r in reviews if r] or [datetime.date.min])
         done = [d for d in repo.docs if d.root is root and d.type == "P" and d.status == "done"
                 and (parse_date(d.get("updated")) or datetime.date.min) > last]
-        if len(done) >= args.review_after:
-            report.append("{}: {} plans finished since the last review; consider a review (R)".format(
-                root.label, len(done)))
+        commits = 0
+        if repo.has_head:
+            since = [] if last == datetime.date.min else ["--since=" + (last + datetime.timedelta(days=1)).isoformat()]
+            out = git(repo.root, "log", *since, "--format=%H", "--", *code_pathspec(repo, root)) or ""
+            commits = len(set(out.split()))
+        if len(done) >= args.review_after or commits >= args.review_commits:
+            report.append("{}: {} plans finished and {} code commits since the last review; consider a review (R)"
+                          .format(root.label, len(done), commits))
     print("\n".join(report) if report else "canon audit: nothing to report")
     return 0
 
@@ -1544,7 +1571,9 @@ def main(argv=None):
 
     p = sub.add_parser("audit", help="report stale designs, idle open docs, and due reviews")
     p.add_argument("--days", type=int, default=30, help="idle threshold (default 30)")
-    p.add_argument("--review-after", type=int, default=5, help="finished plans before a review is due")
+    p.add_argument("--review-after", type=int, default=5, help="finished plans before a review is due (default 5)")
+    p.add_argument("--review-commits", type=int, default=50,
+                   help="code commits before a review is due (default 50)")
     p.set_defaults(func=cmd_audit)
 
     args = parser.parse_args(argv)

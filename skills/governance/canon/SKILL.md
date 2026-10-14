@@ -24,7 +24,7 @@ Execute `canon.py`; do not read it. Use the project's copy at the path named in 
 | `which FILE...` | List the designs whose `paths` govern the files. |
 | `affected [--base REF]` | Designs and plans governing the uncommitted (or branch) changes. |
 | `audit` | Designs with code commits since their last update, idle open docs, due reviews. |
-| `init`, `adopt` | Project setup, upgrades and migration; see the `canon-init` skill. |
+| `init`, `adopt` | Project setup, upgrades and migration; the user runs them through the `canon-init` skill. |
 
 ## Reading docs
 
@@ -41,11 +41,13 @@ Execute `canon.py`; do not read it. Use the project's copy at the path named in 
 └── docs/
     ├── README.md           hand-written intro + generated index
     ├── concepts/  designs/  plans/  reviews/  experiments/  investigations/
-    ├── experiments/E00X/   optional data and attachments of E00X
+    ├── reviews/R003/       attachments of R003; every numbered doc may have one
     ├── guides/             unnumbered docs for users and operators
-    ├── assets/             images
+    ├── assets/             images and files shared by several docs or guides
     └── archived/           same categories, docs in a terminal status only
 ```
+
+Attachments of a numbered doc (data, scripts, reports, prototypes, images used only by it) live in `<category>/<ID>/` beside the doc, e.g. `designs/D003/flow.svg`; `archive` and `renumber` move them with it. Create the directory when the first attachment appears. Link large binaries instead of committing them.
 
 A more specific `AGENTS.md` and its `docs/` govern their subtree and override broader rules. Repo-wide and cross-module docs live in the root `docs/`; module docs live in the module's `docs/`. Ids are global across the repo: `D003` exists once, whichever `docs/` holds it.
 
@@ -59,7 +61,7 @@ File names are `<id>-<kebab-slug>.md`, e.g. `designs/D003-auth.md`. The title is
 | D designs | Long-lived authoritative design and spec of one topic. | draft → accepted → active → superseded, retired |
 | P plans | Implementation plan and log of one change. | draft → accepted → in-progress → done, abandoned |
 | R reviews | Findings of a functional, performance, security, architecture or usability review. | open → closed |
-| E experiments | Experiment reports. | planned → running → concluded |
+| E experiments | A question answered with evidence: a run (benchmark, prototype) or research of primary sources. | planned → running → concluded |
 | I investigations | Debugging and profiling. | open → resolved |
 
 Sections and per-type rules: [doc-types.md](doc-types.md).
@@ -110,7 +112,7 @@ Every change has a tier; state it when starting and pick the higher one when uns
 - **L1**: changes specs inside one existing design's owned topics within one module, or needs a plan under an existing design. Revise the design in place, pass the review gate (A1), then implement.
 - **L2**: a new topic, module, cross-module interface or architecture change. Design and plan each pass the review gate (A1 and A2) and need the user's explicit approval.
 
-Tier criteria, flows, the blind-review gate with its reviewer prompt, and the docs step before committing: [workflow.md](workflow.md).
+Tier criteria, flows, the blind-review gate with its reviewer prompt, code review, and the docs step before committing: [workflow.md](workflow.md).
 
 ## Writing
 

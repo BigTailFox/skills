@@ -31,7 +31,7 @@ A design changes only after the user decides, through the tier's flow (revision 
 Every design or plan revision passes this gate before it is accepted, and every revision of an active design passes it before implementation.
 
 1. Run `canon.py check`; reviewers never spend effort on formatting.
-2. Launch the reviewers in parallel, with the `blind-review` skill when it is installed. A blind reviewer is a fresh subagent that carries nothing from the current conversation: never fork the session, and pass only the reviewer prompt below.
+2. Launch the reviewers in parallel, with the `canon-blind-review` skill when it is installed. A blind reviewer is a fresh subagent that carries nothing from the current conversation: never fork the session, and pass only the reviewer prompt below.
    - **A1**: same model as the author. Default reasoning effort for L1, highest available for L2.
    - **A2**: a different model family at its highest reasoning effort. Required for L2, optional for L1. If the host cannot launch another family, give the user the filled reviewer prompt to run in another tool, and wait for the result.
 3. Merge the findings. Accept and fix, decline with a one-line reason for the user, or escalate to the user. A finding raised by both reviewers is accepted unless it is clearly wrong. Declined findings stay out of the doc; record a Decision only when its rationale has lasting value.
@@ -70,16 +70,26 @@ Then list Questions: anything you could not understand from the repository alone
 End with one line: Verdict: approve | revise
 ```
 
+## Code review
+
+Review every change before the docs step, with the `canon-code-review` skill when it is installed: against the governing designs and plan (spec) and the standards their owning designs state. Fix findings in the change. A finding deferred to later work goes into an R doc with disposition `open` so `audit` keeps it visible; code review produces no R doc otherwise.
+
 ## Docs step
 
-Before committing, after implementation and code review:
+Before committing, after implementation and code review. Scope: the uncommitted changes, or a branch with `--base <ref>`.
 
-1. Run `canon.py affected`. Make every listed design describe the code as it now is; a semantic change bumps `revision` and passes the review gate. Set a design `active` once its implementation has landed.
-2. Archive what is finished: the completed plan (`done`), reviews with no open finding (`closed`), fixed investigations (`resolved`), absorbed experiments (`concluded`).
-3. Fix any README, guide or `AGENTS.md` the change made wrong.
-4. Run `canon.py check --fix` until it is clean.
-5. Commit with Conventional Commits; L1 and L2 commits add a trailer naming the docs, e.g. `Refs: D003, P012`.
+1. Run `canon.py affected [--base <ref>]`. For each listed design, compare the diff with its governing sections (`show D00X#slug`):
+   - The change implements an accepted spec or plan: update the spec wherever the code now says more. Set the design `active` once its implementation has landed.
+   - The code contradicts the spec: report it to the user instead of rewriting the spec.
+   - The user decided to change the spec's meaning: bump `revision` and pass the review gate.
+2. For changed files where `which` prints `no design`, add them to the `paths` of the design that owns the area. If no design owns it, tell the user; a new design is L2.
+3. For each listed plan, update slice statuses, Current state and Log. Archive the plan as `done` when every slice is `done`; report paused slices to the user.
+4. Set the dispositions of review findings the change fixed. Archive what is finished: reviews with no open finding (`closed`), fixed investigations (`resolved`), experiments whose conclusion is absorbed into a design (`concluded`).
+5. Search READMEs, guides and `AGENTS.md` for names the change renamed or removed (commands, flags, config keys, paths) and fix them.
+6. Run `canon.py check --fix` until it is clean.
+7. When this change archived a plan, run `canon.py audit`. If it reports a due review, end your report with one line suggesting the user run a codebase review (the `canon-review` skill). Never start a review yourself.
+8. Commit with Conventional Commits; L1 and L2 commits add a trailer naming the docs, e.g. `Refs: D003, P012`.
 
 ## Maintenance
 
-Run `canon.py audit` before large tasks and periodically. Refresh designs with many code commits since their last update, finish or archive idle docs, and run a review (R) when one is due.
+Run `canon.py audit` before large tasks and periodically. Refresh designs with many code commits since their last update, finish or archive idle docs, and tell the user when a review (R) is due.
