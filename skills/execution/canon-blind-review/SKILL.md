@@ -50,7 +50,7 @@ Launch all first-round reviewers in parallel. Each is a new agent, never a fork 
 Use the host's own subagents first, a CLI below when the host cannot run the reviewer's model, and the manual fallback last. Set each reviewer's effort where the route allows; elsewhere it runs at the host's default. On every route the prompt is what forbids modifying files.
 
 - **Cursor**: GPT models run through the codex CLI below, named by their codex model id. Other models run on the Task tool with a new subagent: A1 leaves `model` unset, which inherits the author's model, unless the `Reviewers:` line names one; any other reviewer sets `model` to the slug the line names, because the Task tool accepts a model other than the default only when the user asked for it. A slug fixes its effort; use it as named.
-- **Claude Code**: the Task tool with a new `general-purpose` or custom subagent; the built-in Explore and Plan agents cannot be resumed. Subagents are Claude models, so A2 needs a CLI below or the manual fallback.
+- **Claude Code**: the Agent tool with a new `general-purpose` or custom subagent; the built-in Explore and Plan agents cannot be resumed. Subagents are Claude models, so A2 needs a CLI below or the manual fallback.
 - **Codex**: a new `codex exec` process (below) for A1; A2 needs another family's CLI or the manual fallback.
 
 ## Agent CLIs
