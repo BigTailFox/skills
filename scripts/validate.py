@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""Validate every skill under the category directories.
+"""Validate every skill under the category directories, then run the tests in tests/.
 
 Usage: python3 scripts/validate.py
-Exits non-zero if any skill fails validation.
+Exits non-zero if any skill fails validation or any test fails.
 """
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = ROOT / "skills"
+TESTS_DIR = ROOT / "tests"
 CATEGORIES = ("execution", "governance")
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 BRAND = "canon"
@@ -110,6 +112,19 @@ def validate_skill(skill_dir):
     return errors
 
 
+def run_tests():
+    if not TESTS_DIR.is_dir():
+        return 0
+    result = subprocess.run([sys.executable, "-B", "-m", "unittest", "discover", "-s", str(TESTS_DIR)],
+                            cwd=ROOT, capture_output=True, text=True)
+    if result.returncode == 0:
+        print("ok   tests")
+        return 0
+    print("FAIL tests")
+    print(result.stderr.rstrip())
+    return 1
+
+
 def main():
     seen = {}
     failures = 0
@@ -142,6 +157,7 @@ def main():
             else:
                 print(f"ok   {rel}")
 
+    failures += run_tests()
     print(f"\n{count} skill(s) checked, {failures} problem(s)")
     return 1 if failures else 0
 
