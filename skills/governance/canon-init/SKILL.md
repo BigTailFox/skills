@@ -23,12 +23,12 @@ Read the `canon` skill first; it defines the system. Until the project has its o
 6. **Architecture design.** Fill it from the code: module map (module, path, purpose, owning design), allowed dependency directions, and a glossary of cross-module terms. Make the designs' `paths` cover the main source directories so `which` answers for most files.
 7. **AGENTS.md.** Keep the canon block short and in the project's language. Move spec-like content from the rest of `AGENTS.md` into designs, and remove instructions that conflict with canon, such as old doc conventions. If the project uses Claude Code and has no `CLAUDE.md`, create one containing `@AGENTS.md`.
 8. **CI.** If the project has CI, add `python3 scripts/canon.py check --base origin/<default branch>`, with a fetch depth that includes the merge base.
-9. **Review.** Pass every design that describes existing code through the review gate at L1, so A1 checks it against the code, then set it `active`. Show the user the architecture design.
-10. Run `python3 scripts/canon.py check --fix` until clean, and commit as `docs: adopt canon`.
+9. **Review.** Pass every design that describes existing code through the review gate at L1, so A1 checks it against the code, then set it `active` with `implemented` equal to its revision. Show the user the architecture design.
+10. Run `python3 scripts/canon.py check --fix` until it reports no errors, and commit as `docs: adopt canon`.
 
 ## Upgrade
 
-From the repo root run `python3 <canon>/scripts/canon.py init`. It replaces an older `scripts/canon.py` (by `CANON_VERSION`) and refreshes the `AGENTS.md` block between its markers; everything else is kept. Then run `check` and fix what the new version reports.
+From the repo root run `python3 <canon>/scripts/canon.py init`. It replaces an older `scripts/canon.py` (by `CANON_VERSION`) and refreshes the `AGENTS.md` block between its markers; everything else is kept. Then run `check --fix` and fix what the new version still reports. An active design `--fix` cannot give `implemented` (one with an open plan) gets the revision its code fully implements, found from the plan's `based_on` and the git history.
 
 ## Add a module
 
