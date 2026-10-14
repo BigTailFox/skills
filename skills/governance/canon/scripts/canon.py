@@ -90,6 +90,7 @@ Engineering docs managed with canon. Designs (D) are the source of truth; plans 
 ## Index
 """
 GITATTRIBUTES = ("**/docs/README.md merge=union", "**/docs/archived/README.md merge=union")
+LOCAL_DIR = ".canon/"
 DOCS_PATHSPEC = ":(glob)**/docs/**/*.md"
 
 TEMPLATES = {
@@ -1202,6 +1203,12 @@ def cmd_init(repo, args):
     if missing:
         attributes.write_text("\n".join(lines + missing) + "\n", encoding="utf-8")
         note("updated" if lines else "created", attributes)
+
+    ignore = repo.root / ".gitignore"
+    lines = ignore.read_text(encoding="utf-8").splitlines() if ignore.is_file() else []
+    if not any(line.strip().strip("/") == LOCAL_DIR.strip("/") for line in lines):
+        ignore.write_text("\n".join(lines + [LOCAL_DIR]) + "\n", encoding="utf-8")
+        note("updated" if lines else "created", ignore)
 
     project = Path(os.path.realpath(args.root)) if args.root else repo.root
     top = project == repo.root

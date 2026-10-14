@@ -47,6 +47,8 @@ Execute `canon.py`; do not read it. Use the project's copy at the path named in 
     └── archived/           same categories, docs in a terminal status only
 ```
 
+`.canon/` at the repo root holds local working state of canon skills, such as teaching workspaces. `init` adds it to `.gitignore`; nothing in it is a doc.
+
 Attachments of a numbered doc (data, scripts, reports, prototypes, images used only by it) live in `<category>/<ID>/` beside the doc, e.g. `designs/D003/flow.svg`; `archive` and `renumber` move them with it. Create the directory when the first attachment appears. Link large binaries instead of committing them.
 
 A more specific `AGENTS.md` and its `docs/` govern their subtree and override broader rules. Repo-wide and cross-module docs live in the root `docs/`; module docs live in the module's `docs/`. Ids are global across the repo: `D003` exists once, whichever `docs/` holds it.
