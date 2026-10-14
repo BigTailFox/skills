@@ -113,12 +113,12 @@ based_on: [D003@r4]                  # P only
 Every change has a tier; state it when starting and pick the higher one when unsure.
 
 - **L0**: changes no spec in any design: bug fixes that restore specified behavior, refactors, dependency bumps, test and tooling changes. Implement, keep docs factually true, commit.
-- **L1**: changes or extends specs inside the owned topics of one existing design, within one module; or multi-step work under an existing design that needs a plan. Revise the design in place, pass the review gate (A1), then implement.
-- **L2**: a new topic with no owning design, a new module, a change to a cross-module interface or the architecture, a revision that rewrites an existing design's goals or core approach, or the user asks for it. Design and plan each pass the review gate (A1 and A2) and need the user's approval, which starting the next phase gives.
+- **L1**: changes or extends specs inside the owned topics of one existing design, within one module; or multi-step work under an existing design that needs a plan. Revise the design in place, pass the review gate (same-model reviewer), then implement.
+- **L2**: a new topic with no owning design, a new module, a change to a cross-module interface or the architecture, a revision that rewrites an existing design's goals or core approach, or the user asks for it. Design and plan each pass the review gate (same-model and cross-family reviewers) and need the user's approval, which starting the next phase gives.
 
 A commit that touches a design's `paths`, in any tier, names the designs it was checked against in a `Refs:` trailer (`affected` lists them); `audit` treats commits without one as unchecked.
 
-Flows, the blind-review gate with its reviewer prompt, code review depths, reviewer models and reasoning efforts, and the docs step before committing: [workflow.md](workflow.md).
+Flows, the blind-review gate with its reviewer prompt, code review, how subagents launch (and the cross-family reviewer's local file), and the docs step before committing: [workflow.md](workflow.md).
 
 ## Writing
 
