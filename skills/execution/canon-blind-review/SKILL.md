@@ -39,7 +39,7 @@ End with one line: Verdict: approve | revise
 ## Reviewers
 
 - **Same-model reviewer**: a new subagent from the host's own tool, launched without a model or effort so it runs on the session's (the `canon` skill's workflow, Subagents). In Claude Code use a `general-purpose` or custom subagent; the built-in Explore and Plan agents cannot be resumed.
-- **Cross-family reviewer**: runs as `.canon/canon-blind-review/reviewer.md` says (the same workflow section). For a command, write the filled prompt to a file, substitute `<prompt>` and `<out>` with paths, run it in the background from the repo root, and read `<out>` when it finishes. For a host subagent, launch it like the same-model reviewer with the named model.
+- **Cross-family reviewer**: the first reviewer in `.canon/canon-blind-review/reviewer.md` whose model is of another family than yours, run as the file says (the same workflow section). For a command, write the filled prompt to a file, substitute `<prompt>` and `<out>` with paths, run it in the background from the repo root, and read `<out>` when it finishes. For a host subagent, launch it like the same-model reviewer with the named model.
 
 The review gate and code review say when the cross-family reviewer runs; other reviews run the same-model reviewer, plus the cross-family reviewer when the user asks for another family.
 
@@ -47,7 +47,7 @@ Launch all first-round reviewers in parallel. Each is a new agent, never a fork 
 
 ## Manual fallback
 
-Without the reviewer file, or when its command fails, tell the user why in one line (a missing file is set up by `/canon-init`), give them the filled prompt in one code block and say that any tool able to read the repository can run it. Wait for the pasted result. Record the reviewer as `manual:<model>`.
+When the reviewer file is missing or names no reviewer of another family than yours, or when its command fails, tell the user why in one line (`/canon-init` sets up a missing reviewer), give them the filled prompt in one code block and say that any tool able to read the repository can run it. Wait for the pasted result. Record the reviewer as `manual:<model>`.
 
 ## Merge
 
