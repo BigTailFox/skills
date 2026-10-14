@@ -7,11 +7,11 @@ Personal agent skills for long-running software projects, built around **canon**
 The skills refer to each other by name, so install all of them. `-g` installs at user level, for every project:
 
 ```bash
-npx skills add <git-url> -g                                     # pick skills and agents interactively
-npx skills add <git-url> -g -s '*' -a cursor -a claude-code -y  # every skill, for the named agents
-npx skills update -g                                            # pull the latest version
-npx skills ls -g                                                # list installed skills
-npx skills remove canon-teach -g                                # remove one skill
+npx skills add BigTailFox/skills -g                                     # pick skills and agents interactively
+npx skills add BigTailFox/skills -g -s '*' -a cursor -a claude-code -y  # every skill, for the named agents
+npx skills update -g                                                    # pull the latest version
+npx skills ls -g                                                        # list installed skills
+npx skills remove canon-teach -g                                        # remove one skill
 ```
 
 To try unpushed changes, install from the local path instead. That installs a copy, which `npx skills update` does not track, so rerun the same `add` after each change:
@@ -96,7 +96,7 @@ Auto skills load when the context calls for them. Manual skills run only as comm
 `npx skills` discovers skills at `skills/<category>/<skill-name>/SKILL.md`, and would treat a `SKILL.md` anywhere else as an installable skill too, so keep templates and examples under other names. The two categories:
 
 - **governance** builds and maintains the documentation system that carries a project across sessions and models.
-- **execution** does development work (clarifying requirements, TDD, debugging, reviewing) and reads and writes docs only through that system. Most of it is adapted from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT), with the upstream doc conventions replaced by canon's; each ported skill keeps the upstream `LICENSE` and a `NOTICE`.
+- **execution** does development work (clarifying requirements, TDD, debugging, reviewing) and reads and writes docs only through that system. Most of it is adapted from [mattpocock/skills](https://github.com/mattpocock/skills), with the upstream doc conventions replaced by canon's.
 
 ## Adding a skill
 
@@ -127,3 +127,7 @@ After installing on a new host, after a major host upgrade, or after changing de
 | Workers per slice | Implement a plan with `/canon-implement` | Each slice gets a new worker on the session's model and effort; the main session updates the plan and commits, and a stuck worker's slice is paused and reported at the end |
 
 In Cursor, subagents come from the Task tool, which runs them on the session's model by default. The reasoning effort is part of the model name, and a subagent can use another model only when the user asks for it, from a fixed list. Canon's workers and same-model reviewers keep the default, so they need no setup in Cursor. For a GPT cross-family reviewer, use the codex CLI rather than the Task tool, since the list offers few GPT models and fixes their efforts; codex has to run outside Cursor's sandbox because it writes to `~/.codex`. A reviewer from another family can be a Task subagent on a model from the list.
+
+## Releases and license
+
+Releases follow [Semantic Versioning](https://semver.org) and are listed in [CHANGELOG.md](CHANGELOG.md). The skills are released under the [MIT license](LICENSE); those adapted from [mattpocock/skills](https://github.com/mattpocock/skills) also carry its MIT license, with a `NOTICE` of the changes, in their own directories.

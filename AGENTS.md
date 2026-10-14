@@ -39,4 +39,5 @@ Do not create a `SKILL.md` outside `skills/`, templates and examples included: t
 - After changing any skill, run `python3 scripts/validate.py` (it also runs `tests/`) and `npx skills add . --list`, and commit only once both pass.
 - When changing `canon.py`, add regression tests to `tests/test_canon.py` and bump `CANON_VERSION` in the same commit: `init` upgrades a project's copy by version number only, and `validate.py` rejects a `canon.py` whose content changed while its version did not.
 - Commit messages follow Conventional Commits, with the skill name as the scope, e.g. `feat(canon-code-review): add security checklist`; repository-wide changes use no scope or `repo`.
+- Releases follow Semantic Versioning and are tagged `vX.Y.Z`. To release, write the version's entry in `CHANGELOG.md` from the commits since the last tag, in terms of what changes for users; commit it as `chore(repo): release X.Y.Z` and tag that commit. `CANON_VERSION` is separate and changes only with `canon.py`.
 - Write everything in English: skills, `README.md` and `AGENTS.md`.
