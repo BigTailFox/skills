@@ -1,9 +1,11 @@
 ---
 name: canon-research
-description: Researches a question against high-trust primary sources (official docs, specs, source code, first-party APIs) in a background subagent and records the cited findings as a canon experiment, so the main work continues while it reads. Use when a design or decision depends on facts about an external library, service, protocol or standard, when the user wants a topic researched or API facts gathered, or when grill triage routes a question here.
+description: Researches questions against primary sources. Use when a design or decision depends on facts about an external library, service, protocol or standard, when the user wants a topic researched or API facts gathered, or when grill triage routes a question here. Quick facts get a direct answer with source links; findings that back a decision are researched in a background subagent from official docs, specs and source code, and recorded with citations as a canon experiment.
 ---
 
 # Research
+
+A fact one or two primary sources settle (a signature, a default, a limit, a supported version) gets a direct answer: look it up and reply with the source links, no doc. Use the flow below when the answer will back a design decision, needs several sources weighed, or is worth running in the background.
 
 ## 1. Frame
 
