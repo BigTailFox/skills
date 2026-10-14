@@ -1,6 +1,6 @@
 ---
 name: canon-agent-writing
-description: Reference for writing documents agents consume (skills, AGENTS.md and CLAUDE.md, and any doc reached through a pointer). It covers context pointers, context and cognitive load, information hierarchy and progressive disclosure, completion criteria, leading words and pruning, plus skill mechanics (frontmatter, invocation choice, router skills). Use when creating or editing a skill, an AGENTS.md or a CLAUDE.md.
+description: Reference for writing skills, AGENTS.md, CLAUDE.md and other docs agents read.
 disable-model-invocation: true
 ---
 
