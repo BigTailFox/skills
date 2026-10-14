@@ -1,6 +1,6 @@
 ---
 name: canon-init
-description: Sets up canon in a repository or monorepo module, migrates existing docs into it, and upgrades a project's canon.py.
+description: Sets up canon in a repository or monorepo module, migrates existing docs into it, sets up the cross-family reviewer, and upgrades a project's canon.py.
 disable-model-invocation: true
 ---
 
@@ -21,10 +21,21 @@ Read the `canon` skill first; it defines the system. Until the project has its o
    - Fold each ADR into the owning design as a Decision line and remove the ADR file.
    - Archive docs about finished or obsolete work, e.g. `archive P001 done`, `archive D004 superseded`.
 6. **Architecture design.** Fill it from the code: module map (module, path, purpose, owning design), allowed dependency directions, and a glossary of cross-module terms. Make the designs' `paths` cover the main source directories so `which` answers for most files.
-7. **AGENTS.md.** Keep the canon block short and in the project's language. Move spec-like content from the rest of `AGENTS.md` into designs, and remove instructions that conflict with canon, such as old doc conventions. Ask the user for the reviewer models: A2, the flagship of another family than their usual author model, in order of preference (GPT models by their codex model id when the project uses Cursor); A1 and Standards only when reviews should not run on the session's model. Where model names fix the effort (Cursor slugs), also ask which model high-effort workers use. Add the `Reviewers:` and `Workers:` lines from the `canon` skill's workflow (Models and effort) below the canon block, outside its markers, which `init` rewrites. If the project uses Claude Code and has no `CLAUDE.md`, create one containing `@AGENTS.md`.
-8. **CI.** If the project has CI, add `python3 scripts/canon.py check --base origin/<default branch>`, with a fetch depth that includes the merge base.
-9. **Review.** Pass every design that describes existing code through the review gate at L1, so A1 checks it against the code, then set it `active` with `implemented` equal to its revision. Show the user the architecture design.
-10. Run `python3 scripts/canon.py check --fix` until it reports no errors, and commit as `docs: adopt canon`.
+7. **AGENTS.md.** Keep the canon block short and in the project's language. Move spec-like content from the rest of `AGENTS.md` into designs, and remove instructions that conflict with canon, such as old doc conventions. If the project uses Claude Code and has no `CLAUDE.md`, create one containing `@AGENTS.md`.
+8. **Cross-family reviewer.** Set it up as described below.
+9. **CI.** If the project has CI, add `python3 scripts/canon.py check --base origin/<default branch>`, with a fetch depth that includes the merge base.
+10. **Review.** Pass every design that describes existing code through the review gate at L1, so the same-model reviewer checks it against the code, then set it `active` with `implemented` equal to its revision. Show the user the architecture design.
+11. Run `python3 scripts/canon.py check --fix` until it reports no errors, and commit as `docs: adopt canon`.
+
+## Set up the cross-family reviewer
+
+Run this alone when the project is set up but this machine has no `.canon/canon-blind-review/reviewer.md`, e.g. after a fresh clone.
+
+1. Ask the user which tool runs the reviewer: an agent CLI such as codex, claude, gemini or Cursor's agent, which works from every host, or a subagent of their host with a named model. Ask for its model, suggesting the flagship of a family other than their sessions' (a smaller model of another family adds little), and its reasoning effort.
+2. Build the command from the tool's `--help`: a new read-only session at that model and effort, the prompt read from `<prompt>`, the final message left in `<out>`. Run it once on a one-line prompt and fix it until it works, noting what the host needed, such as running outside its sandbox.
+3. Write the reviewer file as the `canon` skill's workflow describes (Subagents).
+
+Without another family, skip this; reviews then use the manual fallback.
 
 ## Upgrade
 
