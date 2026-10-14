@@ -1,6 +1,6 @@
 ---
 name: canon-code-review
-description: Reviews a code change (uncommitted work, or the diff since a commit, branch or merge base) on two separate axes run as parallel subagents. Spec checks the change against its governing designs and plan; Standards checks it against the standards the project's designs and AGENTS.md state plus a code-smell baseline. Use after implementing a change or plan slice and before the docs step, or when the user asks to review a branch, PR, diff or work in progress.
+description: Reviews a code change (uncommitted work, or the diff since a commit, branch or merge base) on two separate axes run as parallel subagents. Spec checks the change against its governing designs and plan; Standards checks it against the standards the project's designs and AGENTS.md state plus a code-smell baseline. Use after implementing a change and before the docs step, or when the user asks to review a branch, PR, diff or work in progress.
 ---
 
 # Code review
@@ -16,7 +16,7 @@ Each axis runs in its own subagent so neither pollutes the other's context; this
 
 Use the user's fixed point (a commit, branch, tag or `HEAD~5`). Otherwise use the start commit a plan's Log records, otherwise the default branch (`origin/HEAD`, else `main`); on the default branch itself, review only the uncommitted work.
 
-Diff the working tree against the merge base so uncommitted work is included: `git diff $(git merge-base <fixed-point> HEAD)`. Note the commits with `git log --oneline <fixed-point>..HEAD`. Confirm the ref resolves and the diff is non-empty before spawning anything.
+Diff the working tree against the merge base so uncommitted work is included: `git diff $(git merge-base <fixed-point> HEAD)`. Untracked new files are missing from that diff; list them with `git ls-files --others --exclude-standard` and pass them as files to read in full. Note the commits with `git log --oneline <fixed-point>..HEAD`. Confirm the ref resolves and the change is non-empty before spawning anything.
 
 ## 2. Collect the spec
 
@@ -34,9 +34,9 @@ When no design governs the change, the Spec axis still runs: it checks that the 
 - Linter, formatter and type-checker config: skip whatever it enforces.
 - The smell baseline in [smells.md](smells.md), pasted in full into the Standards prompt.
 
-## 4. Spawn both subagents in parallel
+## 4. Spawn the reviewers in parallel
 
-Issue both calls together, in the foreground. Each prompt carries the diff command, the commit list, and its sources (paths to read, plus the pasted baseline for Standards). Both report findings with severity `blocker`, `major` or `minor`, under 400 words.
+Issue the calls together, in the foreground: one subagent per axis, plus, for an L2 change, one reviewer from another model family through the `canon-blind-review` skill whose prompt carries both briefs and both sets of sources. Each prompt carries the diff command, the untracked files, the commit list, and its sources (paths to read, plus the pasted baseline for Standards). Reviewers report findings with severity `blocker`, `major` or `minor`, under 400 words per axis.
 
 **Spec brief**: "Report: (a) requirements the spec or plan asks for that are missing or partial; (b) behavior in the diff that nothing asked for; (c) requirements that look implemented but wrong; (d) behavior the diff changes that its governing design does not specify or contradicts, meaning the change needed a design revision first; (e) slice test criteria with no test at the named seam. Cite the section for each finding, e.g. D003§token-refresh."
 
@@ -44,10 +44,10 @@ Issue both calls together, in the foreground. Each prompt carries the diff comma
 
 ## 5. Report
 
-Present the reports under `## Spec` and `## Standards`, verbatim or lightly cleaned. Do not merge or rerank across axes: a change can pass one and fail the other, and separate reports stop one from masking the other. End with one line per axis: finding count and the worst finding.
+Present the reports under `## Spec` and `## Standards`, verbatim or lightly cleaned, and an L2 cross-family report after them under `## Cross-family (<model>)`. Do not merge or rerank across axes: a change can pass one and fail the other, and separate reports stop one from masking the other. End with one line per axis: finding count and the worst finding.
 
 ## 6. Dispose
 
-- Fix findings in the change, then re-run the checks the fix touched. Review once; do not re-review the fixes.
+- Fix findings in the change, then re-run the checks the fix touched. When blocker or major fixes changed the code, the reviewers that raised them confirm the fixes once, as the `canon-blind-review` skill's confirmation describes.
 - A finding the user defers to later work goes into an R doc: `canon.py new R <slug>`, Scope naming the fixed point, `HEAD` and the axes, one row per deferred finding with disposition `open`.
 - A finding that shows the design itself is wrong goes to the user; never change a design's intent yourself.
