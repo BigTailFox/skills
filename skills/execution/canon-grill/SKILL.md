@@ -1,6 +1,6 @@
 ---
 name: canon-grill
-description: Settles open decisions with the user in rounds of numbered questions with recommended answers, after first ruling out everything that can be looked up, read from the project's designs, decided outright, or answered by a prototype or research. Use when a decision blocks the work and only the user can make it, when walking a design or plan's decision tree, or when the user asks to be grilled or to stress-test a plan, design or idea.
+description: Settles open decisions with the user. Use when a decision blocks the work and only the user can make it, when walking a design or plan's decision tree, or when the user asks to be grilled or to stress-test a plan, design or idea. First rules out what can be looked up, read from the designs, decided outright, or answered by a prototype or research, then asks the rest in rounds of numbered questions with recommended answers.
 ---
 
 # Grill

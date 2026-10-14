@@ -1,6 +1,6 @@
 ---
 name: canon-prototype
-description: Builds a throwaway prototype to answer one design or logic question that reading and reasoning cannot settle. The forms are a clickable single-file demo for state models and business rules, switchable UI variants on a real page, or a minimal spike for "will this approach work, and how fast". The question, verdict and prototype are recorded as a canon experiment. Use when a design decision or non-obvious logic question needs evidence, when the user wants to sanity-check a state model or explore what a UI should look like, or when grill triage routes a decision here.
+description: Answers a design question with a throwaway prototype. Use when a design decision or non-obvious logic question needs evidence that reading and reasoning cannot give, when the user wants to sanity-check a state model or explore what a UI should look like, or when grill triage routes a decision here. Builds a clickable single-file demo, switchable UI variants on a real page, or a feasibility and speed spike, and records the question, verdict and prototype as a canon experiment.
 ---
 
 # Prototype

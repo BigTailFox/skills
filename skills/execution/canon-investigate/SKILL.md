@@ -1,6 +1,6 @@
 ---
 name: canon-investigate
-description: Diagnoses hard bugs and performance regressions. Use when a quick fix has failed or the cause is unclear, for intermittent failures and slowdowns, or when the user asks to diagnose or debug. It builds a tight red-capable feedback loop, reproduces and minimises, ranks falsifiable hypotheses, instruments, then fixes with a regression test and cleans up, recording the investigation in a canon investigation doc that survives across sessions.
+description: Diagnoses hard bugs and performance regressions. Use when a quick fix has failed or the cause is unclear, for intermittent failures and slowdowns, or when the user asks to diagnose or debug. Not for bugs whose cause is plain; fix those as L0 with a regression test. Builds a red-capable feedback loop, ranks falsifiable hypotheses from the evidence, instruments, then fixes with a regression test, recording it all in a canon investigation doc that survives across sessions.
 ---
 
 # Investigate

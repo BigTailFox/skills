@@ -1,6 +1,6 @@
 ---
 name: canon-design
-description: Writes or revises a canon design by interviewing the user until every decision is settled, or a concept when the idea is not ready for a design. It sharpens terms against the project glossary, writes each decision into the doc as it is settled, then passes the review gate and gets the user's approval. Use when the user wants to design a feature, module, interface or architecture change, revise a design or spec, or turn an idea into a design.
+description: Writes or revises a canon design, or a concept, by interviewing the user, then passes the review gate.
 disable-model-invocation: true
 ---
 

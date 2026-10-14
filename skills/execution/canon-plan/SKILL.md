@@ -1,6 +1,6 @@
 ---
 name: canon-plan
-description: Writes or revises a canon plan for an accepted design. It drafts vertical slices ordered by dependency, each with test criteria at named seams, settles the open points with the user, then passes the review gate and gets approval. Use when the user wants to plan the implementation of a design, break a change into slices, or revise a plan.
+description: Writes or revises the plan for an accepted design as vertical slices with test criteria, then passes the review gate.
 disable-model-invocation: true
 ---
 

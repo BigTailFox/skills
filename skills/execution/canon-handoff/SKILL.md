@@ -1,6 +1,6 @@
 ---
 name: canon-handoff
-description: Hands the current work to a fresh agent. It first writes every durable piece of state into the canon docs (plan, investigation, design draft, experiment, review), then writes a short temporary handoff file holding only what no doc holds, with the docs to resume from and the skills to use. Use when the user wants to hand off, continue in a new session, or switch agents or models.
+description: Hands the current work to a fresh agent, saving durable state in canon docs and the rest in a short handoff file.
 disable-model-invocation: true
 argument-hint: "What will the next session be used for?"
 ---
