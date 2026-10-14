@@ -176,12 +176,94 @@ class IdAllocationTest(CanonTest):
         self.assertTrue(all((self.root / p).is_file() for p in paths))
 
 
+class UnfinishedDocTest(CanonTest):
+    def test_a_fresh_draft_only_warns_until_checked_against_a_base(self):
+        self.commit()
+        self.ok("new", "D", "half-written")
+        out = self.ok("check")
+        self.assertRegex(out, r"WARN .*`summary` is empty")
+        self.assertRegex(out, r"WARN .*template guidance")
+        self.assertRegex(self.fails("check", "--base", "HEAD"), r"ERROR .*template guidance")
+
+    def test_running_research_only_warns(self):
+        path = self.root / self.ok("new", "E", "research").strip()
+        self.set(path, status="running")
+        self.assertRegex(self.ok("check", "--fix"), r"WARN .*template guidance")
+
+    def test_guidance_fails_once_past_the_review_gate(self):
+        path = self.root / self.ok("new", "D", "gated").strip()
+        self.set(path, status="accepted", reviewed=1, reviewers=["fixture"], summary="Fixture")
+        self.assertRegex(self.fails("check"), r"ERROR .*template guidance")
+
+
+class ChangedFilesTest(CanonTest):
+    def test_affected_reads_names_with_spaces_and_non_ascii(self):
+        self.design()
+        self.commit()
+        names = ["src/a b.py", "src/中文.py"]
+        for name in names:
+            (self.root / name).write_text("x = 1\n")
+        untracked = self.ok("affected")
+        self.commit()
+        for name in names:
+            (self.root / name).write_text("x = 2\n")
+        modified = self.ok("affected")
+        for name in names:
+            self.assertIn("  " + name + "\n", untracked)
+            self.assertIn("  " + name + "\n", modified)
+
+
+class FrontmatterTest(CanonTest):
+    def test_brackets_make_lists_only_in_list_fields(self):
+        concept = self.doc("C", "idea")
+        self.set(concept, summary="[a, b]")
+        self.ok("check", "--fix")
+        self.assertIn(" - [a, b]", self.ok("find", "C001"))
+
+
+class AuditTest(CanonTest):
+    def code_commit(self, message):
+        code = self.root / "src/base.py"
+        code.write_text(code.read_text() + "x = 1\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", message)
+
+    def test_counts_commits_whose_trailer_omits_the_design(self):
+        self.design()
+        self.commit()
+        self.code_commit("fix: same day")
+        self.code_commit("fix: checked\n\nRefs: D001, P001")
+        self.code_commit("fix: other design\n\nRefs: D002")
+        self.assertRegex(self.ok("audit"), r"2 commits since [0-9a-f]+  D001 ")
+
+    def test_changing_the_design_moves_the_baseline(self):
+        design = self.design()
+        self.commit()
+        self.code_commit("fix: unchecked")
+        design.write_text(design.read_text() + "\nChecked against the code.\n")
+        self.commit()
+        self.assertNotIn("D001", self.ok("audit"))
+
+    def test_idle_docs_skip_concepts(self):
+        self.doc("C", "backlog", created="2020-01-01", updated="2020-01-01")
+        self.doc("I", "flaky", created="2020-01-01", updated="2020-01-01")
+        out = self.ok("audit")
+        self.assertIn("I001", out)
+        self.assertNotIn("C001", out)
+
+
 class InitTest(CanonTest):
     def test_init_replaces_an_older_script_copy(self):
         copy = self.root / "scripts/canon.py"
         copy.write_text(re.sub(r'^CANON_VERSION = "\d+"', 'CANON_VERSION = "2"', SCRIPT.read_text(), flags=re.M))
         self.assertIn("updated scripts/canon.py", self.ok("init", "--no-architecture"))
         self.assertEqual(copy.read_text(), SCRIPT.read_text())
+
+    def test_init_warns_about_a_same_version_copy_that_differs(self):
+        copy = self.root / "scripts/canon.py"
+        copy.write_text(SCRIPT.read_text() + "# local edit\n")
+        self.assertIn("differs from this canon.py", self.ok("init", "--no-architecture"))
+        self.assertTrue(copy.read_text().endswith("# local edit\n"))
 
 
 if __name__ == "__main__":

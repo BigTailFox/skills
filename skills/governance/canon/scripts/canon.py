@@ -15,7 +15,7 @@ import time
 import urllib.parse
 from pathlib import Path
 
-CANON_VERSION = "3"
+CANON_VERSION = "4"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -219,7 +219,7 @@ def git(cwd, *args):
 
 
 def parse_value(key, raw):
-    if raw.startswith("[") and raw.endswith("]"):
+    if key in LIST_FIELDS and raw.startswith("[") and raw.endswith("]"):
         return [item.strip().strip("'\"") for item in raw[1:-1].split(",") if item.strip()]
     if key in INT_FIELDS and raw.isdigit():
         return int(raw)
@@ -545,11 +545,11 @@ class Repo:
 
     def tree_ids(self, ref):
         """Map id -> path for the doc files in a commit's tree."""
-        listing = git(self.root, "ls-tree", "-r", "--name-only", ref)
+        listing = git(self.root, "ls-tree", "-r", "-z", "--name-only", ref)
         if listing is None:
             sys.exit("canon: unknown ref " + ref)
         ids = {}
-        for rel in listing.splitlines():
+        for rel in listing.split("\0"):
             match = FILE_RE.match(rel.rsplit("/", 1)[-1])
             if match and (rel.startswith("docs/") or "/docs/" in rel):
                 ids.setdefault(match.group(1) + match.group(2) + match.group(3), rel)
@@ -562,10 +562,11 @@ class Repo:
         ranges = [["HEAD"]] + ([[base + "...HEAD"]] if base else [])
         deleted = set()
         for rng in ranges:
-            out = git(self.root, "diff", "-M", "--name-status", "--diff-filter=D", *rng, "--", DOCS_PATHSPEC)
+            out = git(self.root, "diff", "-z", "-M", "--name-status", "--diff-filter=D", *rng, "--", DOCS_PATHSPEC)
             if out is None:
                 sys.exit("canon: cannot diff against " + rng[0])
-            deleted |= {line.split("\t", 1)[1] for line in out.splitlines() if "\t" in line}
+            fields = out.split("\0")
+            deleted |= {path for status, path in zip(fields[::2], fields[1::2]) if status.startswith("D")}
         return sorted(deleted)
 
     def project_files(self, root):
@@ -575,14 +576,13 @@ class Repo:
     def changed_files(self, base=None):
         if not self.has_head:
             return list(self.files)
-        changed = set((git(self.root, "diff", "--name-only", "HEAD") or "").split())
-        changed |= set((git(self.root, "ls-files", "-o", "--exclude-standard") or "").split())
+        outs = [git(self.root, "diff", "-z", "--name-only", "HEAD"),
+                git(self.root, "ls-files", "-z", "-o", "--exclude-standard")]
         if base:
-            out = git(self.root, "diff", "--name-only", base + "...HEAD")
-            if out is None:
+            outs.append(git(self.root, "diff", "-z", "--name-only", base + "...HEAD"))
+            if outs[-1] is None:
                 sys.exit("canon: cannot diff against {}".format(base))
-            changed |= set(out.split())
-        return sorted(changed)
+        return sorted({f for out in outs for f in (out or "").split("\0") if f})
 
     def designs_for(self, abs_path):
         hits = []
@@ -776,6 +776,9 @@ def check_doc(repo, doc, changed, strict=False):
             err("`{}` must be a list like [a, b]".format(key))
 
     status = fm.get("status")
+    past_gate = (doc.type == "D" and status in ("accepted", "active")) or \
+        (doc.type == "P" and status in ("accepted", "in-progress"))
+    unfinished_level = "WARN" if not strict and status in info["active"] and not past_gate else "ERROR"
     if status not in info["active"] + info["terminal"]:
         err("status `{}` invalid; use one of {}".format(status, ", ".join(info["active"] + info["terminal"])))
     elif (status in info["terminal"]) != doc.archived:
@@ -795,7 +798,7 @@ def check_doc(repo, doc, changed, strict=False):
         err("`revision` must be a positive integer")
     summary = str(fm.get("summary", "")).strip()
     if not summary:
-        err("`summary` is empty")
+        repo.problem(unfinished_level, rel, "`summary` is empty")
     elif len(summary) > MAX_SUMMARY:
         repo.problem("WARN", rel, "`summary` is {} chars (max {})".format(len(summary), MAX_SUMMARY))
 
@@ -807,7 +810,7 @@ def check_doc(repo, doc, changed, strict=False):
         if name not in names:
             err("missing section `## {}`".format(name))
     if GUIDANCE in doc.text:
-        err("template guidance `<!-- canon: ... -->` left in the doc")
+        repo.problem(unfinished_level, rel, "template guidance `<!-- canon: ... -->` left in the doc")
     if len(doc.lines) > MAX_DOC_LINES:
         hint = "; split into sub-designs ({0}A, {0}B, ...)".format(doc.id) if doc.type == "D" else ""
         repo.problem("WARN", rel, "{} lines (max {}){}".format(len(doc.lines), MAX_DOC_LINES, hint))
@@ -1259,6 +1262,9 @@ def cmd_init(repo, args):
             note("updated" if current else "created", script)
         elif current > int(CANON_VERSION):
             print("warning: {} is v{}, newer than this canon.py (v{}); kept it".format(script_rel, current, CANON_VERSION))
+        elif script.read_text(encoding="utf-8") != me.read_text(encoding="utf-8"):
+            print("warning: {0} differs from this canon.py though both are v{1}; kept it. Unless it has local edits "
+                  "to keep, replace it: cp {2} {0}".format(script_rel, current, me))
 
     attributes = repo.root / ".gitattributes"
     lines = attributes.read_text(encoding="utf-8").splitlines() if attributes.is_file() else []
@@ -1559,32 +1565,46 @@ def cmd_affected(repo, args):
     return 0
 
 
+def unchecked_commits(repo, doc):
+    """The last commit that changed a design's file, and the later commits touching its `paths` whose
+    `Refs:` trailers do not name it."""
+    base = (git(repo.root, "log", "-1", "--format=%H", "--", doc.rel) or "").strip()
+    if not base:
+        return None, []
+    specs = []
+    for pattern in doc.as_list("paths"):
+        specs += git_pathspec(doc.root.rel, pattern)
+    out = git(repo.root, "log", "--format=%H%x00%B%x01", base + "..HEAD", "--", *specs) or ""
+    commits = []
+    for entry in out.split("\x01"):
+        sha, _, message = entry.strip("\n").partition("\0")
+        named = set()
+        for line in message.splitlines():
+            if line.lower().startswith("refs:"):
+                named |= set(re.findall(r"\b[CDPREI]\d{3,}[A-Z]?\b", line))
+        if sha and doc.id not in named:
+            commits.append(sha)
+    return base, commits
+
+
 def cmd_audit(repo, args):
     now = datetime.date.today()
     report = []
     stale = []
     for doc in repo.docs:
-        if doc.type != "D" or doc.archived or not doc.as_list("paths") or not repo.has_head:
-            continue
-        updated = parse_date(doc.get("updated"))
-        if not updated:
-            continue
-        specs = []
-        for pattern in doc.as_list("paths"):
-            specs += git_pathspec(doc.root.rel, pattern)
-        since = (updated + datetime.timedelta(days=1)).isoformat()
-        out = git(repo.root, "log", "--since=" + since, "--format=%H", "--", *specs) or ""
-        count = len(set(out.split()))
-        if count:
-            stale.append((count, doc))
+        if doc.type == "D" and not doc.archived and doc.as_list("paths") and repo.has_head:
+            base, commits = unchecked_commits(repo, doc)
+            if commits:
+                stale.append((len(commits), base, doc))
     if stale:
-        report.append("Designs with code commits since their last update (most first):")
-        for count, doc in sorted(stale, key=lambda x: -x[0]):
-            report.append("  {} commits  {}".format(count, doc_line(doc)))
+        report.append("Designs with code commits since the design last changed that no `Refs:` trailer names "
+                      "(most first; review `git log <since>..HEAD` on its paths):")
+        for count, base, doc in sorted(stale, key=lambda x: -x[0]):
+            report.append("  {} commits since {}  {}".format(count, base[:12], doc_line(doc)))
     idle = []
     for doc in repo.docs:
         updated = parse_date(doc.get("updated"))
-        in_work = not doc.archived and not (doc.type == "D" and doc.status == "active")
+        in_work = not doc.archived and doc.type != "C" and not (doc.type == "D" and doc.status == "active")
         if in_work and updated and (now - updated).days > args.days:
             idle.append(doc)
     if idle:
@@ -1615,7 +1635,7 @@ def main(argv=None):
     p = sub.add_parser("check", help="validate all docs; exit 1 on errors")
     p.add_argument("--fix", action="store_true", help="apply mechanical fixes (refs, updated, implemented, indexes)")
     p.add_argument("--base", help="also check this branch against a ref, e.g. origin/main: deleted docs, id "
-                                  "collisions, and revisions still pending review fail")
+                                  "collisions, revisions pending review and unfinished docs fail")
     p.set_defaults(func=cmd_check)
 
     p = sub.add_parser("new", help="create a doc from its template with the next free id")
@@ -1680,7 +1700,7 @@ def main(argv=None):
     p.add_argument("--base", help="include changes since the merge base with this ref")
     p.set_defaults(func=cmd_affected)
 
-    p = sub.add_parser("audit", help="report stale designs, idle open docs, and due reviews")
+    p = sub.add_parser("audit", help="report designs with unchecked code commits, idle open docs, and due reviews")
     p.add_argument("--days", type=int, default=30, help="idle threshold (default 30)")
     p.add_argument("--review-after", type=int, default=5, help="finished plans before a review is due (default 5)")
     p.add_argument("--review-commits", type=int, default=50,

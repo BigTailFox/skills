@@ -1,14 +1,8 @@
 # Workflow
 
-## Tiers
-
-State the tier when starting a change; pick the higher one when unsure.
-
-- **L0**: changes no spec in any design. Bug fixes that restore specified behavior, refactors, dependency bumps, test and tooling changes.
-- **L1**: changes or extends specs inside the owned topics of one existing design, within one module; or multi-step work under an existing design that needs a plan.
-- **L2**: a new topic with no owning design, a new module, a change to a cross-module interface or the architecture, a revision that rewrites an existing design's goals or core approach, or the user asks for it.
-
 ## Flows
+
+The tiers are defined in [SKILL.md](SKILL.md#workflow).
 
 - **L2**: (concept) → design draft → review gate → user approval, `accepted` → plan draft → review gate → user approval, `accepted` → implement → code review → docs step → commit.
 - **L1**: revise the design in place (revision +1) → review gate → [plan → review gate] → implement → code review → docs step → commit.
@@ -74,7 +68,13 @@ End with one line: Verdict: approve | revise
 
 ## Code review
 
-Review every change before the docs step, with the `canon-code-review` skill when it is installed: against the governing designs and plan (spec) and the standards their owning designs state. L2 changes add a reviewer from another model family in the first round. Fix findings in the change; when blocker or major fixes changed it, the reviewers that raised them confirm the fixes once. A finding deferred to later work goes into an R doc with disposition `open` so it stays tracked; code review produces no R doc otherwise.
+Review every change once it is complete, before the docs step, with the `canon-code-review` skill when it is installed: against the governing designs and plan (spec) and the standards their owning designs state. Plan slices are not reviewed one by one. The depth follows the change:
+
+- **Self-review**: a small L0 change that alters no behavior (rename, dependency bump, test or tooling change). Read your own diff against the spec and standards; no subagent.
+- **One reviewer**: any other L0 change, and L1 changes. One fresh subagent checks both spec and standards.
+- **Two axes**: L2 changes and wide changes (several modules or a large diff). Spec and standards reviewers run in parallel; L2 adds a reviewer from another model family in the first round.
+
+Fix findings in the change; when blocker or major fixes changed it, the reviewers that raised them confirm the fixes once. A finding deferred to later work goes into an R doc with disposition `open` so it stays tracked; code review produces no R doc otherwise.
 
 ## Docs step
 
@@ -90,8 +90,8 @@ Before committing, after implementation and code review. Scope: the uncommitted 
 5. Search READMEs, guides and `AGENTS.md` for names the change renamed or removed (commands, flags, config keys, paths) and fix them.
 6. Run `canon.py check --fix` until it reports no errors.
 7. When this change archived a plan, run `canon.py audit`. If it reports a due review, end your report with one line suggesting the user run a codebase review (the `canon-review` skill). Never start a review yourself.
-8. Commit with Conventional Commits; L1 and L2 commits add a trailer naming the docs, e.g. `Refs: D003, P012`.
+8. Commit with Conventional Commits. Every commit that touches a design's `paths`, L0 included, names the designs it was checked against and the plans it updated in a trailer, e.g. `Refs: D003, P012`; `audit` counts code commits whose trailer omits their design as unchecked.
 
 ## Maintenance
 
-Run `canon.py audit` before large tasks and periodically. Refresh designs with many code commits since their last update, finish or archive idle docs, and tell the user when a review (R) is due.
+Run `canon.py audit` before large tasks and periodically. For a design with unchecked code commits, compare it with those commits and update what they changed, then commit the design, bumping only `updated` when nothing else changed, so the count restarts. Finish or archive idle docs, and tell the user when a review (R) is due.

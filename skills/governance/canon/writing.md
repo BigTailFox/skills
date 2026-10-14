@@ -14,4 +14,4 @@ Agents and people both read these docs, usually after reaching them through a po
 - `AGENTS.md` holds only what every session needs: pointers and rules. Move detail into designs.
 - Design for the project's real constraints. A feature's input validation, the permissions its spec states and protection of the data it handles are part of the feature. Add security hardening beyond that only when the project or feature is security-related or the user asks, and state that requirement in the design; the environment usually provides network isolation.
 - Avoid wording that rots, such as "currently", "new" or "recently"; the frontmatter carries time.
-- Write docs in the project's documentation language.
+- Write docs in the project's documentation language. Keep the template's section headings (`## Goals`), labels (`Status:`, `Commit:`, `Root cause:`) and table headers in English: `canon.py` parses them.

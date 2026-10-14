@@ -1,6 +1,6 @@
 ---
 name: canon
-description: Canon is the project documentation system for long-running, multi-session, multi-model development. It defines numbered concepts, designs, plans, reviews, experiments and investigations under docs/, their frontmatter, references, lifecycle and archiving, the L0/L1/L2 change tiers with blind-review gates, and ships canon.py to create, check, query and archive docs. Use whenever reading, creating, updating, referencing, reviewing or archiving project docs, when designing or planning a change, when deciding whether a change needs a design or plan, or when AGENTS.md says the project follows canon.
+description: Canon project documentation system. Use whenever reading, creating, updating, referencing or archiving docs under docs/, when choosing a change's tier (L0, L1, L2) or whether it needs a design or plan, or when AGENTS.md says the project follows canon. Defines numbered concepts, designs, plans, reviews, experiments and investigations for long-running, multi-session, multi-model work, with frontmatter, lifecycle and blind-review gates, and ships canon.py to create, check, query and archive them.
 ---
 
 # Canon
@@ -13,7 +13,7 @@ Execute `canon.py`; do not read it. Use the project's copy at the path named in 
 
 | Command | Purpose |
 |---|---|
-| `check [--fix] [--base REF]` | Validate all docs. `--fix` applies mechanical fixes (`refs`, `updated`, `implemented`, indexes). `--base origin/main` also checks the branch against that ref: deleted docs, id collisions, and revisions still pending review fail. |
+| `check [--fix] [--base REF]` | Validate all docs. `--fix` applies mechanical fixes (`refs`, `updated`, `implemented`, indexes). `--base origin/main` also checks the branch against that ref: deleted docs, id collisions, revisions pending review and unfinished docs fail. |
 | `new TYPE SLUG [--title T] [--from D00X] [--parent D00X] [--root DIR]` | Create a doc from its template with the next free id. `--from` links a plan to its design; `--parent` creates a sub-design. |
 | `archive ID STATUS` | Set a terminal status, move the doc to `archived/`, rewrite every link to it. |
 | `rename ID SLUG` | Change a doc's file slug and rewrite every link to it. |
@@ -23,7 +23,7 @@ Execute `canon.py`; do not read it. Use the project's copy at the path named in 
 | `find WORDS [--archived]` | Search ids, titles, summaries, owned topics, modules and headings. |
 | `which FILE...` | List the designs whose `paths` govern the files. |
 | `affected [--base REF]` | Designs and plans governing the uncommitted (or branch) changes. |
-| `audit` | Designs with code commits since their last update, idle open docs, due reviews. |
+| `audit` | Designs with code commits since the design last changed that no `Refs:` trailer names, idle open docs other than concepts, due reviews. |
 | `init`, `adopt` | Project setup, upgrades and migration; the user runs them through the `canon-init` skill. |
 
 ## Reading docs
@@ -105,18 +105,20 @@ based_on: [D003@r4]                  # P only
 - Reference a section as `[D003§token-refresh: refresh flow](../designs/D003-auth.md#token-refresh)` and a whole doc as `[D003: auth design](../designs/D003-auth.md)`. Never reference by line number.
 - Each standard lives only in the design that owns its topic; everywhere else links to it.
 - A design or plan revision must pass the review gate before it is accepted or implemented: `reviewed` equals `revision`. `check` warns while a revision is pending; `check --base` fails.
-- Replace every `<!-- canon: ... -->` guidance comment with content.
+- Replace every `<!-- canon: ... -->` guidance comment with content. While a doc is unfinished (a design or plan before its review gate, any other doc before archiving), `check` only warns about guidance and an empty `summary`; `check --base` fails.
 - After a merge or rebase, run `check --fix`; generated indexes merge line by line and may need regenerating.
 
 ## Workflow
 
 Every change has a tier; state it when starting and pick the higher one when unsure.
 
-- **L0**: changes no spec. Implement, keep docs factually true, commit.
-- **L1**: changes specs inside one existing design's owned topics within one module, or needs a plan under an existing design. Revise the design in place, pass the review gate (A1), then implement.
-- **L2**: a new topic, module, cross-module interface or architecture change, or a rewrite of a design's goals or core approach. Design and plan each pass the review gate (A1 and A2) and need the user's approval, which starting the next phase gives.
+- **L0**: changes no spec in any design: bug fixes that restore specified behavior, refactors, dependency bumps, test and tooling changes. Implement, keep docs factually true, commit.
+- **L1**: changes or extends specs inside the owned topics of one existing design, within one module; or multi-step work under an existing design that needs a plan. Revise the design in place, pass the review gate (A1), then implement.
+- **L2**: a new topic with no owning design, a new module, a change to a cross-module interface or the architecture, a revision that rewrites an existing design's goals or core approach, or the user asks for it. Design and plan each pass the review gate (A1 and A2) and need the user's approval, which starting the next phase gives.
 
-Tier criteria, flows, the blind-review gate with its reviewer prompt, code review, and the docs step before committing: [workflow.md](workflow.md).
+A commit that touches a design's `paths`, in any tier, names the designs it was checked against in a `Refs:` trailer (`affected` lists them); `audit` treats commits without one as unchecked.
+
+Flows, the blind-review gate with its reviewer prompt, code review depths, and the docs step before committing: [workflow.md](workflow.md).
 
 ## Writing
 
