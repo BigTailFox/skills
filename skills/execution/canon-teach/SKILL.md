@@ -9,7 +9,7 @@ The user has asked you to teach them something. This is a stateful request - the
 
 ## Teaching Workspace
 
-Treat the current directory as a teaching workspace. When the current directory is inside a project repository, use `.learn/<topic>/` at the repository root instead and add `.learn/` to `.git/info/exclude`: teaching material never goes into the project's `docs/` or its history. Workspace paths (`./lessons/` and the rest) resolve from the workspace; only the `*-FORMAT.md` links resolve from this skill's folder. The state of their learning is captured in the workspace in several files:
+Treat the current directory as a teaching workspace. When the current directory is inside a project repository, use `.canon/canon-teach/<topic>/` at the repository root instead: teaching material never goes into the project's `docs/` or its history. If `git check-ignore -q .canon` fails, add `.canon/` to the repository's `.gitignore`. Workspace paths (`./lessons/` and the rest) resolve from the workspace; only the `*-FORMAT.md` links resolve from this skill's folder. The state of their learning is captured in the workspace in several files:
 
 - `MISSION.md`: A document capturing the _reason_ the user is interested in the topic. This should be used to ground all teaching. Use the format in [MISSION-FORMAT.md](./MISSION-FORMAT.md).
 - `TERMS.md`: The canonical terms of the topic, added once the user can use them correctly. Use the format in [TERMS-FORMAT.md](./TERMS-FORMAT.md).
