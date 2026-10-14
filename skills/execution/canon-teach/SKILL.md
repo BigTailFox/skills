@@ -1,11 +1,11 @@
 ---
 name: canon-teach
-description: Teaches the user a new skill or concept over multiple sessions, keeping a stateful teaching workspace (mission, resources, lessons, reference sheets, learning records). When the topic is the current project, it grounds every lesson in the project's canon docs and code. Use when the user asks to be taught, to learn a topic, or to get up to speed on this codebase.
+description: Teaches a topic, with one explanation for a single question or a multi-session course in a teaching workspace.
 disable-model-invocation: true
 argument-hint: "What would you like to learn about?"
 ---
 
-The user has asked you to teach them something. This is a stateful request - they intend to learn the topic over multiple sessions.
+The user has asked you to teach them something. A single question gets one explanation in the conversation, grounded in sources, with no workspace. When the user wants to learn a topic over time (a course, several sessions, getting up to speed on a codebase), the request is stateful: keep the teaching workspace below.
 
 ## Teaching Workspace
 
