@@ -1,6 +1,6 @@
 ---
 name: canon-blind-review
-description: Runs a blind review by launching fresh reviewers that carry nothing from the current conversation, optionally from a different model family, and passing them only a self-contained prompt about an artifact in the repository (design, plan, doc, code or anything else); after fixes, the same reviewers confirm them. Covers Cursor, Claude Code and Codex subagents, cross-family reviewers through agent CLIs, and the manual fallback. Use for the canon review gate (A1 and A2 reviewers), or when the user asks for a blind, independent or second-opinion review.
+description: Runs blind reviews with fresh reviewers. Use for the canon review gate (A1 and A2), the cross-family pass of an L2 code review, or when the user asks for a blind, independent or second-opinion review. Reviewers see only a self-contained prompt about files in the repository, can run on another model family (host subagents, agent CLIs or a manual fallback), and confirm the fixes after a revision.
 ---
 
 # Blind review
@@ -41,25 +41,30 @@ End with one line: Verdict: approve | revise
 - **A1**: the author's model, at the reasoning effort the caller asks for (the `canon` skill's gate: default for L1, highest for L2).
 - **A2**: a different model family at its highest reasoning effort.
 
+The project's `AGENTS.md` or the user's rules may name the models in a line like `Reviewers: A1 = <model>; A2 = <model>, <model>`. Use the first available model of each list.
+
 Launch all first-round reviewers in parallel. Each is a new agent, never a fork of the current session. Keep each reviewer's agent or session id beside its prompt and output in `.canon/canon-blind-review/<topic>/` (topic: the doc id or change under review); the confirmation round resumes it.
 
 ## Launching by host
 
-- **Cursor**: the Task tool with a new subagent, `model` set to the reviewer's slug; the prompt keeps it read-only. For A2, pick a slug of another family from the available models.
-- **Claude Code**: the Task tool with a new `general-purpose` or custom subagent restricted to read-only tools; the built-in Explore and Plan agents cannot be resumed. Subagents are Claude models, so A2 needs a CLI below or the manual fallback.
-- **Codex**: a new `codex exec` process (below) for A1 as well as A2.
+Use the host's own subagents first, a CLI below when the host cannot run the reviewer's model, and the manual fallback last. On every route the prompt is what forbids modifying files.
 
-## Cross-family CLIs
+- **Cursor**: the Task tool with a new subagent. A1 leaves `model` unset, which inherits the author's model, unless the `Reviewers:` line names one. A2 sets `model` to a slug of another family; the Task tool accepts a model other than the default only when the user asked for it, and the `Reviewers:` line is that request. Without the line, ask the user once for A2's model and suggest adding the line to `AGENTS.md`.
+- **Claude Code**: the Task tool with a new `general-purpose` or custom subagent; the built-in Explore and Plan agents cannot be resumed. Subagents are Claude models, so A2 needs a CLI below or the manual fallback.
+- **Codex**: a new `codex exec` process (below) for A1; A2 needs another family's CLI or the manual fallback.
 
-Use whichever is installed (`command -v`). Write the filled prompt to `.canon/canon-blind-review/<topic>/`, run in the background from the repo root with the output in the same directory, and read the final message when it finishes:
+## Agent CLIs
+
+For another family, use whichever CLI is installed (`command -v`). Write the filled prompt to `.canon/canon-blind-review/<topic>/`, run in the background from the repo root with the output in the same directory, and read the final message when it finishes:
 
 ```bash
 codex exec -s read-only --json -m <model> -c model_reasoning_effort=xhigh -o <out.md> - < <prompt.txt> > <events.jsonl>
 claude -p --model <model> --permission-mode plan --session-id <new-uuid> "$(cat <prompt.txt>)" > <out.md>
 agent -p --mode=ask --model <model> --output-format json "$(cat <prompt.txt>)" > <out.json>
+gemini -p "$(cat <prompt.txt>)" -m <model> --approval-mode plan -o stream-json > <events.jsonl>
 ```
 
-The session id to keep: for codex the `thread_id` of the `thread.started` event in `<events.jsonl>`, for claude the UUID you passed, for agent the `session_id` in `<out.json>` (the review is its `result` field). Check `<cli> --help` when a flag is rejected. Without an installed and authenticated CLI for another family, use the manual fallback.
+The session id to keep: for codex the `thread_id` of the `thread.started` event in `<events.jsonl>`, for claude the UUID you passed, for agent the `session_id` in `<out.json>` (the review is its `result` field), for gemini the session id in the `init` event of `<events.jsonl>` (the review is the text of its assistant `message` events). Check `<cli> --help` when a flag is rejected. Without an installed and authenticated CLI for another family, use the manual fallback.
 
 ## Manual fallback
 
@@ -77,6 +82,7 @@ After the author fixes accepted blocker or major findings, the reviewers that ra
 codex exec -s read-only -o <out2.md> resume <thread_id> "$(cat <confirm.txt>)"
 claude -p --permission-mode plan --resume <uuid> "$(cat <confirm.txt>)" > <out2.md>
 agent -p --mode=ask --resume <session_id> --output-format json "$(cat <confirm.txt>)" > <out2.json>
+gemini -r <session_id> -p "$(cat <confirm.txt>)" --approval-mode plan -o stream-json > <events2.jsonl>
 ```
 
 Send only this prompt, never the author's reasoning:
