@@ -44,9 +44,9 @@ Every finding is one `<article>` with its finding id (`R00X-F3`), severity badge
 
 ## Architecture candidate card
 
-The diagrams carry the weight. Prose is sparse, plain, and uses the `canon-codebase-design` glossary terms without ceremony.
+The diagrams carry the weight. Prose is sparse, plain, and uses the `canon-codebase-design` glossary terms without ceremony. Other architecture findings (cycles, data ownership, concurrency, evolution, failure handling) use the finding card.
 
-Each architecture candidate is one `<article>`:
+Each deepening candidate is one `<article>`:
 
 - **Title**: short, names the deepening (e.g. "Collapse the Order intake pipeline").
 - **Badge row**: recommendation strength (`Strong` = emerald, `Worth exploring` = amber, `Speculative` = slate), plus a tag for the dependency category (`in-process`, `local-substitutable`, `ports & adapters`, `mock`).
@@ -110,11 +110,7 @@ One larger card closing each angle's section. Finding id and name, one sentence 
 
 ## Tone
 
-Plain English, concise. In architecture cards, the nouns and verbs come straight from the `canon-codebase-design` skill. Concision is not an excuse to drift.
-
-**Use exactly:** module, interface, implementation, depth, deep, shallow, seam, adapter, leverage, locality.
-
-**Never substitute:** component, service, unit (for module) · API, signature (for interface) · boundary (for seam) · layer, wrapper (for module, when you mean module).
+Plain English, concise. Architecture cards take their nouns and verbs from the `canon-codebase-design` glossary (module, interface, implementation, depth, deep, shallow, seam, adapter, leverage, locality) and name domain things with the project's own terms.
 
 **Phrasings that fit the style:**
 
@@ -123,6 +119,6 @@ Plain English, concise. In architecture cards, the nouns and verbs come straight
 - "Deepen: one interface, one place to test."
 - "Two adapters justify the seam: HTTP in prod, in-memory in tests."
 
-**Wins bullets** name the gain in glossary terms: *"locality: bugs concentrate in one module"*, *"leverage: one interface, N call sites"*, *"interface shrinks; implementation absorbs the wrappers"*. Don't write *"easier to maintain"* or *"cleaner code"*, because those terms aren't in the glossary and don't earn their place.
+**Wins bullets** name the concrete gain in glossary terms: *"locality: bugs concentrate in one module"*, *"leverage: one interface, N call sites"*, *"interface shrinks; implementation absorbs the wrappers"*.
 
-No hedging, no throat-clearing, no "it's worth noting that…". If a sentence could be a bullet, make it a bullet. If a bullet could be cut, cut it. If a term isn't in the `canon-codebase-design` glossary, reach for one that is before inventing a new one.
+Open each card with its claim, give each point its own bullet, and keep only the bullets a reader would act on.

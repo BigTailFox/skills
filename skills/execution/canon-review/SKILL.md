@@ -1,6 +1,6 @@
 ---
 name: canon-review
-description: Runs a periodic review of a module or the whole repository from chosen angles (architecture, performance, security, functional, usability), one parallel subagent per angle. It records the findings in a canon review doc with a visual HTML report, then takes every finding through the user's decision, proposing a fix plan for each small L0 or L1 finding. A finding is fixed, moved into a design, plan, investigation or backlog concept, or declined with its reason recorded. Use when the user asks for a codebase, module, architecture, performance, security or usability review, or when canon audit reports a review is due.
+description: Reviews a module or the whole codebase from chosen angles and takes every finding through the user's decision.
 disable-model-invocation: true
 ---
 
@@ -15,7 +15,7 @@ Use the modules and angles the user names. Otherwise propose a scope and wait fo
 - `canon.py audit`: stale designs and due reviews per docs root.
 - Hot spots: the files changed most since the last review, from `git log --since=<last R created> --name-only` within the module's paths.
 - Design coverage: designs `check` reports as over 500 lines, and source files where `which` prints `no design`.
-- Angles: **architecture** after many changes; **performance** when designs have Budgets or slowness was reported; **functional** when active designs have code commits since their last update; **usability** for user-visible surfaces (CLI, API, UI, config); **security** only when the project or feature is security-related or the user asks.
+- Angles: **architecture** after many changes; **performance** when designs have Budgets or slowness was reported; **functional** when audit reports designs with unchecked code commits; **usability** for user-visible surfaces (CLI, API, UI, config); **security** only when the project or feature is security-related or the user asks.
 
 ## 2. Create the doc
 
@@ -33,8 +33,8 @@ Spawn one subagent per angle, in parallel, in the foreground. Each brief carries
 ## 4. Report
 
 1. Fill Findings: one row per finding, ids `R00X-F1`, `R00X-F2`, ..., the angle as a prefix (`architecture: Order intake is shallow`), disposition `open`.
-2. Write `reviews/R00X/report.html` following [html-report.md](html-report.md), link it from Scope, and open it for the user (`xdg-open`, `open` or `start`).
-3. Present the findings grouped by angle, with each angle's top recommendation. Do not rerank across angles: each angle answers a different question.
+2. Present the findings grouped by angle, with each angle's top recommendation. Keep each angle's own ranking: each angle answers a different question.
+3. When the user wants a visual report (offer it in one line when architecture candidates would read better as diagrams), write `reviews/R00X/report.html` following [html-report.md](html-report.md), link it from Scope, and open it for the user (`xdg-open`, `open` or `start`).
 
 ## 5. Decide with the user
 
