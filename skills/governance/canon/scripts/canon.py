@@ -15,7 +15,13 @@ import time
 import urllib.parse
 from pathlib import Path
 
-CANON_VERSION = "4"
+try:
+    import fcntl
+except ImportError:  # Windows
+    fcntl = None
+    import msvcrt
+
+CANON_VERSION = "5"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -68,6 +74,7 @@ HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 FENCE_RE = re.compile(r"^\s*(```|~~~)")
 INLINE_CODE_RE = re.compile(r"`[^`]*`")
 STATUS_LINE_RE = re.compile(r"^\s*(?:-\s+)?Status:\s*(.*?)\s*$")
+MOVED_RE = re.compile(r"(?m)^(\s*\|\s*)([^|\s]+)(\s*\|.*\|\s*moved\s+)([CDPREI]\d{3,}[A-Z]?)(\s*\|\s*)$")
 LABEL_RE = re.compile(r"^\s*(?:-\s+)?([A-Za-z ]+?):\s*(.*?)\s*$")
 GUIDANCE = "<!-- canon:"
 INDEX_START = "<!-- canon:index:start -->"
@@ -208,6 +215,14 @@ def today():
 
 def posix_rel(path, start):
     return os.path.relpath(str(path), str(start)).replace(os.sep, "/")
+
+
+def path_id(rel):
+    """The id of a doc file, given its path from the repo root; None for any other file."""
+    match = FILE_RE.match(rel.rsplit("/", 1)[-1])
+    if match and (rel.startswith("docs/") or "/docs/" in rel):
+        return match.group(1) + match.group(2) + match.group(3)
+    return None
 
 
 def git(cwd, *args):
@@ -510,18 +525,22 @@ class Repo:
                 doc = Doc(root, path, rel, match, archived)
                 self.docs.append(doc)
                 if doc.id in self.by_id:
-                    self.problem("ERROR", rel, "duplicate id {}, also {}; run `canon.py renumber <path>` on the doc "
-                                 "this branch added".format(doc.id, self.by_id[doc.id].rel))
+                    self.problem("ERROR", rel, "duplicate id {}, also {}; run `canon.py renumber <path> --base <ref>` "
+                                 "on the doc this branch added, with the branch it merged or rebased onto"
+                                 .format(doc.id, self.by_id[doc.id].rel))
                 else:
                     self.by_id[doc.id] = doc
                 self.by_path[path] = doc
         self.docs.sort(key=Doc.sort_key)
 
     def get(self, doc_id):
-        doc = self.by_id.get(doc_id)
-        if doc is None:
+        docs = [d for d in self.docs if d.id == doc_id]
+        if not docs:
             sys.exit("canon: unknown document {}".format(doc_id))
-        return doc
+        if len(docs) > 1:
+            sys.exit("canon: {} is the id of {}; renumber one of them first".format(
+                doc_id, " and ".join(d.rel for d in docs)))
+        return docs[0]
 
     def slugs(self, path):
         doc = self.by_path.get(path)
@@ -543,16 +562,20 @@ class Repo:
             return Path(os.path.normpath(str(self.root / path.lstrip("/")))), anchor
         return Path(os.path.normpath(str(src_dir / path))), anchor
 
-    def tree_ids(self, ref):
-        """Map id -> path for the doc files in a commit's tree."""
+    def tree_files(self, ref):
+        """Paths of the files in a commit's tree."""
         listing = git(self.root, "ls-tree", "-r", "-z", "--name-only", ref)
         if listing is None:
             sys.exit("canon: unknown ref " + ref)
+        return {rel for rel in listing.split("\0") if rel}
+
+    def tree_ids(self, ref):
+        """Map id -> path for the doc files in a commit's tree."""
         ids = {}
-        for rel in listing.split("\0"):
-            match = FILE_RE.match(rel.rsplit("/", 1)[-1])
-            if match and (rel.startswith("docs/") or "/docs/" in rel):
-                ids.setdefault(match.group(1) + match.group(2) + match.group(3), rel)
+        for rel in sorted(self.tree_files(ref)):
+            doc_id = path_id(rel)
+            if doc_id:
+                ids.setdefault(doc_id, rel)
         return ids
 
     def deleted_docs(self, base=None):
@@ -830,12 +853,11 @@ def check_doc(repo, doc, changed, strict=False):
             err("`reviewed` must be an integer revision not above `revision`")
         if not doc.as_list("reviewers"):
             err("`reviewers` must list who reviewed revision {}".format(reviewed))
-    gate = (doc.type == "D" and status in ("accepted", "active")) or (doc.type == "P" and status == "accepted")
-    if gate and reviewed != doc.revision:
-        repo.problem("ERROR" if strict else "WARN", rel, "revision {} is not reviewed (reviewed: {}); pass the review "
-                     "gate, then set `reviewed` and `reviewers`".format(doc.revision, reviewed))
     if doc.type == "P" and status == "in-progress" and reviewed is None:
         err("plan in progress without `reviewed`")
+    elif past_gate and reviewed != doc.revision:
+        repo.problem("ERROR" if strict else "WARN", rel, "revision {} is not reviewed (reviewed: {}); pass the review "
+                     "gate, then set `reviewed` and `reviewers`".format(doc.revision, reviewed))
 
     if doc.type == "D":
         implemented = fm.get("implemented")
@@ -849,9 +871,10 @@ def check_doc(repo, doc, changed, strict=False):
                 err("`implemented` is set but status is `{}`; a design whose code has landed is `active`"
                     .format(status))
         elif status == "active":
-            landed = old_fm.get("reviewed", reviewed)
+            # A design became active once its code landed, so one never revised implements r1; for a revised
+            # design only the code and the history can tell.
             planned = any(p.type == "P" and not p.archived and doc.id in plan_designs(p) for p in repo.docs)
-            fix = (doc, "implemented", landed) if isinstance(landed, int) and not planned else None
+            fix = (doc, "implemented", 1) if old_fm.get("revision", doc.revision) == 1 and not planned else None
             err("active design needs `implemented`: the revision its code fully implements", fix=fix)
         if doc.suffix and "D" + doc.digits not in repo.by_id:
             err("sub-design needs parent D{}".format(doc.digits))
@@ -986,10 +1009,8 @@ def rewrite_for_moves(repo, moves, renamed=None, adopted=None):
 
     `renamed` maps a moved doc's old path to (old id, new id); link texts naming it are rewritten too.
     `adopted` maps a file becoming a canon doc to its id; link texts to it get the reference format.
-    Returns the files whose link texts changed.
     """
     renamed, adopted = renamed or {}, adopted or {}
-    touched = set()
 
     def mapped(p):
         for src, dst in moves.items():
@@ -1018,11 +1039,9 @@ def rewrite_for_moves(repo, moves, renamed=None, adopted=None):
             ref = REF_TEXT_RE.match(match.group(2))
             if ids and ref and ref.group(1) == ids[0]:
                 edits.setdefault(i, []).append((match.start(2), match.start(2) + len(ids[0]), ids[1]))
-                touched.add(path)
             if dest in adopted and not ref and not match.group(1):
                 label = adopted[dest] + ("§" + anchor if anchor else "") + ": " + (match.group(2) or adopted[dest])
                 edits.setdefault(i, []).append((match.start(2), match.end(2), label))
-                touched.add(path)
             new_dest = mapped(dest)
             if new_dest == dest and new_dir == path.parent:
                 continue
@@ -1038,7 +1057,6 @@ def rewrite_for_moves(repo, moves, renamed=None, adopted=None):
                     line = line[:start] + value + line[end:]
                 lines[i] = line
             path.write_text("\n".join(lines), encoding="utf-8")
-    return touched
 
 
 def move_paths(repo, moves):
@@ -1059,30 +1077,30 @@ def used_numbers(repo, letter):
 
 @contextlib.contextmanager
 def id_lock(repo):
-    """Serialise id allocation between canon commands running in this checkout."""
+    """Serialise id allocation between canon commands in this checkout. The lock belongs to the process holding
+    it, so the OS releases it however that process ends; nothing ever breaks it."""
     path = repo.root / LOCAL_DIR / "id.lock"
     path.parent.mkdir(parents=True, exist_ok=True)
-    deadline = time.time() + 60
-    while True:
-        try:
-            os.close(os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY))
-            break
-        except FileExistsError:
-            try:
-                if time.time() - path.stat().st_mtime > 30:
-                    path.unlink()
-                    continue
-            except FileNotFoundError:
-                continue
-            if time.time() > deadline:
-                sys.exit("canon: {} is held by another canon command; delete it if none is running"
-                         .format(posix_rel(path, repo.root)))
-            time.sleep(0.05)
+    fd = os.open(str(path), os.O_RDWR | os.O_CREAT)
+    deadline, locked = time.time() + 60, False
     try:
+        while not locked:
+            try:
+                if fcntl:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                else:
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                locked = True
+            except (BlockingIOError, PermissionError):
+                if time.time() > deadline:
+                    sys.exit("canon: another canon command has held {} for a minute; let it finish"
+                             .format(posix_rel(path, repo.root)))
+                time.sleep(0.05)
         yield
     finally:
-        with contextlib.suppress(FileNotFoundError):
-            path.unlink()
+        if locked and not fcntl:
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        os.close(fd)
 
 
 # ---------------------------------------------------------------- commands
@@ -1382,6 +1400,11 @@ def adopt_doc(repo, args):
 
 def cmd_renumber(repo, args):
     require_clean_merge(repo)
+    with id_lock(repo):
+        return renumber_doc(Repo(), args)
+
+
+def renumber_doc(repo, args):
     if FULL_ID_RE.match(args.target):
         matches = [d for d in repo.docs if d.id == args.target]
         if not matches:
@@ -1393,81 +1416,167 @@ def cmd_renumber(repo, args):
         doc = repo.by_path.get(Path(os.path.realpath(args.target)))
         if doc is None:
             sys.exit("canon: {} is not a canon doc".format(args.target))
-    if doc.suffix:
-        sys.exit("canon: renumber the parent design; sub-designs follow it")
-    used = used_numbers(repo, doc.type)
-    if args.base:
-        used |= {int(FULL_ID_RE.match(i).group(2)) for i in repo.tree_ids(args.base) if i[0] == doc.type}
-    if args.new:
-        match = FULL_ID_RE.match(args.new)
-        if not match or match.group(1) != doc.type or match.group(3):
-            sys.exit("canon: new id must be a top-level {} id".format(doc.type))
-        number = int(match.group(2))
-        if number in used:
-            sys.exit("canon: {} is already used".format(args.new))
-    else:
-        number = max(used) + 1
-    digits = str(number).zfill(3)
-    group = [doc] + [d for d in repo.docs if d.type == "D" and d.suffix and d.number == doc.number
-                     and d.root is doc.root and doc.type == "D"]
-    renamed, moves = {}, {}
+    on_base = repo.tree_files(args.base) if args.base else None
+    new_id = renumbered_id(repo, doc, args.new, on_base)
+    links = {}
+
+    def linked(src, path):
+        if src.path not in links:
+            links[src.path] = doc_links(repo, src)
+        return path in links[src.path]
+
+    def side(ours, theirs, there, ours_linked, theirs_linked):
+        """Whose a sub-design, attachment or reference is when `ours` shares its id with `theirs`: 'ours',
+        'theirs', or None when nothing tells or the evidence conflicts. It belongs to the doc on its side of the
+        base (`there`: it exists on the base), when only one of them exists there, and to the doc links alone reach.
+        """
+        votes = set()
+        if on_base is not None and all((t.rel in on_base) != (ours.rel in on_base) for t in theirs):
+            votes.add("ours" if there == (ours.rel in on_base) else "theirs")
+        if ours_linked != theirs_linked:
+            votes.add("ours" if ours_linked else "theirs")
+        return votes.pop() if len(votes) == 1 else None
+
+    group, unclear = [doc], []
+    rivals = [d for d in repo.docs if d.id == doc.id and d is not doc and d.root is doc.root]
+    for child in repo.docs:
+        if doc.type != "D" or doc.suffix or child.type != "D" or not child.suffix or child.number != doc.number \
+                or child.root is not doc.root:
+            continue
+        owner = side(doc, rivals, on_base is not None and child.rel in on_base,
+                     linked(child, doc.path) or linked(doc, child.path),
+                     any(linked(child, r.path) or linked(r, child.path) for r in rivals)) if rivals else "ours"
+        if owner == "ours":
+            group.append(child)
+        elif owner is None:
+            unclear.append(child.rel)
+    if unclear:
+        sys.exit("canon: cannot tell which {} owns {}; link each sub-design from its parent design{}, then rerun"
+                 .format(doc.id, ", ".join(unclear), "" if args.base else " or pass --base <ref>"))
+    if len({d.id for d in group}) < len(group):
+        sys.exit("canon: sub-designs of {} share an id; renumber the one this branch added first".format(doc.id))
+
+    renamed, moves, notes = {}, {}, []
     for d in group:
-        new_id = d.type + digits + d.suffix
-        renamed[d.path] = (d.id, new_id)
-        moves[d.path] = d.path.with_name("{}-{}.md".format(new_id, d.slug))
+        new = new_id if d is doc else new_id + d.suffix
+        renamed[d.path] = (d.id, new)
+        moves[d.path] = d.path.with_name("{}-{}.md".format(new, d.slug))
         attachment = d.path.parent / d.id
-        if attachment.is_dir():
-            moves[attachment] = d.path.parent / new_id
-    touched = rewrite_for_moves(repo, moves, renamed)
+        if not attachment.is_dir():
+            continue
+        others = [x for x in repo.docs if x.id == d.id and x is not d and x.path.parent == d.path.parent]
+        owners = {side(d, others, on_base is not None and posix_rel(f, repo.root) in on_base, linked(d, f),
+                       any(linked(x, f) for x in others)) for f in attachment.rglob("*") if f.is_file()} \
+            if others else {"ours"}
+        if owners <= {"ours"}:
+            moves[attachment] = d.path.parent / new
+        elif owners != {"theirs"}:
+            notes.append("kept {}: it also holds attachments of another {}; move this doc's files to {} and fix "
+                         "their links".format(posix_rel(attachment, repo.root), d.id,
+                                              posix_rel(d.path.parent / new, repo.root)))
+    rewrite_for_moves(repo, moves, renamed)
+
     id_map = dict(renamed.values())
-    # An id another doc still has (a collision after rebase) changes only where a link shows which doc is meant.
-    shared = {old for old in id_map if any(d.id == old and d.path not in renamed for d in repo.docs)}
-    unshared = {old: new for old, new in id_map.items() if old not in shared}
-    kept = []
+    holder = {old: repo.by_path[path] for path, (old, _new) in renamed.items()}
+    others = {old: [d for d in repo.docs if d.id == old and d.path not in renamed] for old in id_map}
+    kept = {}
     for d in repo.docs:
-        mapping = id_map if d.path in renamed or d.path in touched else unshared
+        before = set()
+        if on_base is not None and d.rel in on_base:
+            before = id_entries(d.type, git(repo.root, "show", "{}:{}".format(args.base, d.rel)) or "")
+
+        def pick(field, key, old, d=d, before=before):
+            if old not in id_map or not others[old]:
+                return id_map.get(old)
+            owner = side(holder[old], others[old], (field, key, old) in before, linked(d, holder[old].path),
+                         any(linked(d, x.path) for x in others[old]))
+            if owner is None:
+                kept.setdefault(old, set()).add(d.rel)
+            return id_map[old] if owner == "ours" else None
+
         text = d.path.read_text(encoding="utf-8")
-        new_text = remap_ids(d, text, mapping, renamed.get(d.path))
+        new_text = remap_ids(d, text, pick, renamed.get(d.path))
         if new_text != text:
             d.path.write_text(new_text, encoding="utf-8")
-        if mapping is unshared and shared & referenced_ids(d):
-            kept.append(d.rel)
     move_paths(repo, moves)
     write_indexes(Repo())
     for old, new in id_map.items():
         print("{} -> {}".format(old, new))
-    if kept:
-        print("kept {} in {}: another doc still has that id; change the entries that meant this doc"
-              .format(", ".join(sorted(shared)), ", ".join(kept)))
-    print("run `canon.py check --fix` to finish")
+    for old, rels in sorted(kept.items()):
+        print("kept {} in {}: another doc still has that id; change the entries there that mean {}"
+              .format(old, ", ".join(sorted(rels)), id_map[old]))
+    print("\n".join(notes + ["run `canon.py check --fix` to finish"]))
     return 0
 
 
-def referenced_ids(doc):
-    """Ids a doc names in `refs`, `based_on` and `moved` dispositions."""
-    ids = set(doc.as_list("refs")) | plan_designs(doc)
-    if doc.type == "R":
-        ids |= {disp.split(" ", 1)[1].strip() for _f, _s, disp in review_findings(doc)[0] if disp.startswith("moved ")}
-    return ids
+def renumbered_id(repo, doc, wanted, on_base):
+    """`wanted`, once checked, or the next free id; a sub-design keeps its parent and takes a free letter. Ids in
+    the base's files (`on_base`) stay taken."""
+    taken = {d.id for d in repo.docs} | {i for i in map(path_id, on_base or ()) if i}
+    if doc.suffix:
+        parent = doc.type + doc.digits
+        letters = [parent + c for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"]
+        free = [i for i in letters if i not in taken]
+        if wanted and wanted not in letters:
+            sys.exit("canon: new id must be a sub-design of {}".format(parent))
+        if wanted and wanted not in free:
+            sys.exit("canon: {} is already used".format(wanted))
+        if not free:
+            sys.exit("canon: {} has no free sub-design letter".format(parent))
+        return wanted or free[0]
+    used = {int(FULL_ID_RE.match(i).group(2)) for i in taken if i[0] == doc.type}
+    if not wanted:
+        return doc.type + str(max(used) + 1).zfill(3)
+    match = FULL_ID_RE.match(wanted)
+    if not match or match.group(1) != doc.type or match.group(3):
+        sys.exit("canon: new id must be a top-level {} id".format(doc.type))
+    if int(match.group(2)) in used:
+        sys.exit("canon: {} is already used".format(wanted))
+    return wanted
 
 
-def remap_ids(doc, text, id_map, own=None):
-    """Rewrite ids in `refs`, `based_on` and `moved` dispositions; when the doc itself is renumbered
-    (`own` = (old, new)), also its H1 and its finding ids."""
+def doc_links(repo, doc):
+    """Paths of the files a doc's body links to."""
+    paths = set()
+    for _i, match in iter_links(doc.lines, doc.fm_end + 1):
+        resolved = repo.resolve(doc.path.parent, match.group(3))
+        if resolved and resolved[0] != "self":
+            paths.add(resolved[0])
+    return paths
+
+
+def id_entries(doc_type, text):
+    """(field, key, id) for each id a doc's text names in `refs`, `based_on` and `moved` dispositions; the key is
+    the entry, or for `moved` the finding id."""
     fm = parse_frontmatter(text.split("\n"))[0] or {}
-    for key in ("refs", "based_on"):
-        values = fm.get(key)
+    entries = {(field, value, value.partition("@")[0]) for field in ("refs", "based_on")
+               for value in (fm.get(field) if isinstance(fm.get(field), list) else [])}
+    if doc_type == "R":
+        entries |= {("moved", m.group(2), m.group(4)) for m in MOVED_RE.finditer(text)}
+    return entries
+
+
+def remap_ids(doc, text, pick, own=None):
+    """Rewrite each id in `refs`, `based_on` and `moved` dispositions for which `pick(field, key, id)` returns a new
+    id (keys as in `id_entries`); when the doc itself is renumbered (`own` = (old, new)), also its H1 and its
+    finding ids."""
+    fm = parse_frontmatter(text.split("\n"))[0] or {}
+    for field in ("refs", "based_on"):
+        values = fm.get(field)
         if isinstance(values, list):
             mapped = []
             for value in values:
                 head, sep, tail = value.partition("@")
-                mapped.append(id_map.get(head, head) + sep + tail)
+                mapped.append((pick(field, value, head) or head) + sep + tail)
             if mapped != values:
-                text = set_field(text, key, mapped)
-    if doc.type == "R" and id_map:
-        alt = "|".join(re.escape(i) for i in sorted(id_map, key=len, reverse=True))
-        text = re.sub(r"(?m)^(\s*\|.*\|\s*moved\s+)(" + alt + r")(\s*\|\s*)$",
-                      lambda m: m.group(1) + id_map[m.group(2)] + m.group(3), text)
+                text = set_field(text, field, mapped)
+
+    def moved(m):
+        return m.group(1) + m.group(2) + m.group(3) + (pick("moved", m.group(2), m.group(4)) or m.group(4)) \
+            + m.group(5)
+
+    if doc.type == "R":
+        text = MOVED_RE.sub(moved, text)
     if own:
         old, new = own
         text = re.sub(r"^# {}:".format(re.escape(old)), "# {}:".format(new), text, count=1, flags=re.M)
@@ -1673,10 +1782,12 @@ def main(argv=None):
     p.add_argument("slug")
     p.set_defaults(func=cmd_rename)
 
-    p = sub.add_parser("renumber", help="give a doc a new id and rewrite every link to it")
+    p = sub.add_parser("renumber", help="give a doc a new id, or a sub-design a new letter, and rewrite the links "
+                                        "and references to it")
     p.add_argument("target", help="doc id, or its path when the id is duplicated")
     p.add_argument("new", nargs="?", help="new id (default: next free)")
-    p.add_argument("--base", help="also avoid ids present on this ref, e.g. origin/main")
+    p.add_argument("--base", help="the branch merged or rebased onto, e.g. origin/main: its ids stay taken, and "
+                                  "what exists there belongs to the doc that exists there")
     p.set_defaults(func=cmd_renumber)
 
     p = sub.add_parser("index", help="regenerate docs/README.md and docs/archived/README.md indexes")
