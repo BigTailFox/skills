@@ -5,15 +5,17 @@ Single file, Python 3.8+ standard library only. Run `canon.py -h` for commands.
 """
 
 import argparse
+import contextlib
 import datetime
 import os
 import re
 import subprocess
 import sys
+import time
 import urllib.parse
 from pathlib import Path
 
-CANON_VERSION = "2"
+CANON_VERSION = "3"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -40,9 +42,9 @@ EXTRA_DIRS = ("guides", "assets")
 
 COMMON_FIELDS = ("status", "created", "updated", "revision", "modules", "summary", "refs")
 TYPE_FIELDS = {"D": ("owns", "paths"), "P": ("based_on",)}
-OPTIONAL_FIELDS = {"D": ("reviewed", "reviewers"), "P": ("reviewed", "reviewers")}
+OPTIONAL_FIELDS = {"D": ("reviewed", "reviewers", "implemented"), "P": ("reviewed", "reviewers")}
 LIST_FIELDS = {"modules", "refs", "owns", "paths", "based_on", "reviewers"}
-INT_FIELDS = {"revision", "reviewed"}
+INT_FIELDS = {"revision", "reviewed", "implemented"}
 SEVERITIES = ("blocker", "major", "minor")
 DISPOSITIONS = ("open", "fixed", "moved", "declined")
 SLICE_STATUSES = ("todo", "in-progress", "done", "paused")
@@ -78,7 +80,7 @@ AGENTS_BLOCK = AGENTS_START + """
 This repo follows the canon documentation system (`canon` skill). Engineering docs live in `docs/` and in module `docs/` directories; start at [docs/README.md](docs/README.md).
 
 - Tool: `python3 {script}` from the repo root (`-h` lists commands). Run `check --fix` before committing and after every merge or rebase.
-- Before editing code, run `which <file>` and read the governing design sections with `show D00X#slug`.
+- When a change may alter behavior or standards a design specifies, run `which <file>` and read the governing sections with `show D00X#slug` first.
 - State each change's tier (L0, L1, L2) before starting. Designs and plans pass the review gate defined by the `canon` skill.
 - Skip `docs/archived/` unless researching history.
 """ + AGENTS_END
@@ -739,7 +741,16 @@ def review_findings(doc):
     return findings, errors
 
 
-def check_doc(repo, doc, changed):
+def plan_designs(doc):
+    return {entry.split("@")[0] for entry in doc.as_list("based_on")}
+
+
+def content_lines(lines):
+    """Lines that count as a content change for `updated`; `implemented` tracks the code, not the doc."""
+    return [line for line in lines if not line.startswith("implemented:")]
+
+
+def check_doc(repo, doc, changed, strict=False):
     rel, fm, info = doc.rel, doc.fm, TYPES[doc.type]
 
     def err(msg, fix=None):
@@ -748,6 +759,9 @@ def check_doc(repo, doc, changed):
     if fm is None:
         err("missing or unterminated `---` frontmatter")
         return
+    old = git(repo.root, "show", "HEAD:" + rel) if rel in changed and repo.has_head else None
+    old_lines = old.split("\n") if old is not None else None
+    old_fm = (parse_frontmatter(old_lines)[0] or {}) if old_lines else {}
     for line in doc.fm_bad:
         err("unparseable frontmatter line: " + line)
     allowed = COMMON_FIELDS + TYPE_FIELDS.get(doc.type, ()) + OPTIONAL_FIELDS.get(doc.type, ())
@@ -815,12 +829,27 @@ def check_doc(repo, doc, changed):
             err("`reviewers` must list who reviewed revision {}".format(reviewed))
     gate = (doc.type == "D" and status in ("accepted", "active")) or (doc.type == "P" and status == "accepted")
     if gate and reviewed != doc.revision:
-        err("revision {} is not reviewed (reviewed: {}); pass the review gate, then set `reviewed` and `reviewers`"
-            .format(doc.revision, reviewed))
+        repo.problem("ERROR" if strict else "WARN", rel, "revision {} is not reviewed (reviewed: {}); pass the review "
+                     "gate, then set `reviewed` and `reviewers`".format(doc.revision, reviewed))
     if doc.type == "P" and status == "in-progress" and reviewed is None:
         err("plan in progress without `reviewed`")
 
     if doc.type == "D":
+        implemented = fm.get("implemented")
+        if implemented is not None:
+            if not isinstance(implemented, int) or not 1 <= implemented <= doc.revision:
+                err("`implemented` must be an integer revision from 1 to `revision`")
+            elif isinstance(reviewed, int) and implemented > reviewed:
+                err("`implemented` r{} is above `reviewed` r{}; implement only reviewed revisions"
+                    .format(implemented, reviewed))
+            if status in ("draft", "accepted"):
+                err("`implemented` is set but status is `{}`; a design whose code has landed is `active`"
+                    .format(status))
+        elif status == "active":
+            landed = old_fm.get("reviewed", reviewed)
+            planned = any(p.type == "P" and not p.archived and doc.id in plan_designs(p) for p in repo.docs)
+            fix = (doc, "implemented", landed) if isinstance(landed, int) and not planned else None
+            err("active design needs `implemented`: the revision its code fully implements", fix=fix)
         if doc.suffix and "D" + doc.digits not in repo.by_id:
             err("sub-design needs parent D{}".format(doc.digits))
         for topic in doc.as_list("owns"):
@@ -864,18 +893,15 @@ def check_doc(repo, doc, changed):
             elif word == "moved" and arg.strip() not in repo.by_id:
                 err("{} moved to unknown doc `{}`".format(fid, arg.strip()))
 
-    if rel in changed and repo.has_head:
-        old = git(repo.root, "show", "HEAD:" + rel)
-        if old is not None:
-            old_fm = parse_frontmatter(old.split("\n"))[0] or {}
-            if old.split("\n") != doc.lines and old_fm.get("updated") == fm.get("updated") != today():
-                err("content changed but `updated` was not bumped", fix=(doc, "updated", today()))
+    if old_lines is not None and content_lines(old_lines) != content_lines(doc.lines) \
+            and old_fm.get("updated") == fm.get("updated") != today():
+        err("content changed but `updated` was not bumped", fix=(doc, "updated", today()))
 
 
 def run_check(repo, base=None):
     changed = set(repo.changed_files()) if repo.has_head else set()
     for doc in repo.docs:
-        check_doc(repo, doc, changed)
+        check_doc(repo, doc, changed, strict=bool(base))
 
     owners = {}
     for doc in repo.docs:
@@ -1028,6 +1054,34 @@ def used_numbers(repo, letter):
     return {d.number for d in repo.docs if d.type == letter}
 
 
+@contextlib.contextmanager
+def id_lock(repo):
+    """Serialise id allocation between canon commands running in this checkout."""
+    path = repo.root / LOCAL_DIR / "id.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.time() + 60
+    while True:
+        try:
+            os.close(os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            break
+        except FileExistsError:
+            try:
+                if time.time() - path.stat().st_mtime > 30:
+                    path.unlink()
+                    continue
+            except FileNotFoundError:
+                continue
+            if time.time() > deadline:
+                sys.exit("canon: {} is held by another canon command; delete it if none is running"
+                         .format(posix_rel(path, repo.root)))
+            time.sleep(0.05)
+    try:
+        yield
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            path.unlink()
+
+
 # ---------------------------------------------------------------- commands
 
 def find_root(repo, root_arg):
@@ -1096,11 +1150,20 @@ def write_doc(root, letter, doc_id, slug, title, fields, implements=""):
     path = root.docs / TYPES[letter]["dir"] / "{}-{}.md".format(doc_id, slug)
     body = TEMPLATES[letter].replace("{implements}", implements).replace("{id}", doc_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(render_frontmatter(fields) + "\n# {}: {}\n{}".format(doc_id, title, body), encoding="utf-8")
+    try:
+        with path.open("x", encoding="utf-8") as f:
+            f.write(render_frontmatter(fields) + "\n# {}: {}\n{}".format(doc_id, title, body))
+    except FileExistsError:
+        sys.exit("canon: {} already exists".format(path))
     return path
 
 
 def cmd_new(repo, args):
+    with id_lock(repo):
+        return new_doc(Repo(), args)
+
+
+def new_doc(repo, args):
     letter = parse_type(args.type)
     if not SLUG_RE.match(args.slug):
         sys.exit("canon: slug must be kebab-case")
@@ -1263,6 +1326,11 @@ def slugify(text):
 
 def cmd_adopt(repo, args):
     require_clean_merge(repo)
+    with id_lock(repo):
+        return adopt_doc(Repo(), args)
+
+
+def adopt_doc(repo, args):
     letter = parse_type(args.type)
     src = Path(os.path.realpath(args.file))
     if not src.is_file() or src.suffix != ".md":
@@ -1346,29 +1414,59 @@ def cmd_renumber(repo, args):
             moves[attachment] = d.path.parent / new_id
     touched = rewrite_for_moves(repo, moves, renamed)
     id_map = dict(renamed.values())
-
-    def remap(entry):
-        head, sep, tail = entry.partition("@")
-        return id_map.get(head, head) + sep + tail
-
-    for path in touched | set(renamed):
-        if path not in repo.by_path:
-            continue
-        text = path.read_text(encoding="utf-8")
-        fm = parse_frontmatter(text.split("\n"))[0] or {}
-        for key in ("refs", "based_on"):
-            if isinstance(fm.get(key), list) and [remap(v) for v in fm[key]] != fm[key]:
-                text = set_field(text, key, [remap(v) for v in fm[key]])
-        if path in renamed:
-            old, new = renamed[path]
-            text = re.sub(r"^# {}:".format(re.escape(old)), "# {}:".format(new), text, count=1, flags=re.M)
-        path.write_text(text, encoding="utf-8")
+    # An id another doc still has (a collision after rebase) changes only where a link shows which doc is meant.
+    shared = {old for old in id_map if any(d.id == old and d.path not in renamed for d in repo.docs)}
+    unshared = {old: new for old, new in id_map.items() if old not in shared}
+    kept = []
+    for d in repo.docs:
+        mapping = id_map if d.path in renamed or d.path in touched else unshared
+        text = d.path.read_text(encoding="utf-8")
+        new_text = remap_ids(d, text, mapping, renamed.get(d.path))
+        if new_text != text:
+            d.path.write_text(new_text, encoding="utf-8")
+        if mapping is unshared and shared & referenced_ids(d):
+            kept.append(d.rel)
     move_paths(repo, moves)
     write_indexes(Repo())
     for old, new in id_map.items():
         print("{} -> {}".format(old, new))
+    if kept:
+        print("kept {} in {}: another doc still has that id; change the entries that meant this doc"
+              .format(", ".join(sorted(shared)), ", ".join(kept)))
     print("run `canon.py check --fix` to finish")
     return 0
+
+
+def referenced_ids(doc):
+    """Ids a doc names in `refs`, `based_on` and `moved` dispositions."""
+    ids = set(doc.as_list("refs")) | plan_designs(doc)
+    if doc.type == "R":
+        ids |= {disp.split(" ", 1)[1].strip() for _f, _s, disp in review_findings(doc)[0] if disp.startswith("moved ")}
+    return ids
+
+
+def remap_ids(doc, text, id_map, own=None):
+    """Rewrite ids in `refs`, `based_on` and `moved` dispositions; when the doc itself is renumbered
+    (`own` = (old, new)), also its H1 and its finding ids."""
+    fm = parse_frontmatter(text.split("\n"))[0] or {}
+    for key in ("refs", "based_on"):
+        values = fm.get(key)
+        if isinstance(values, list):
+            mapped = []
+            for value in values:
+                head, sep, tail = value.partition("@")
+                mapped.append(id_map.get(head, head) + sep + tail)
+            if mapped != values:
+                text = set_field(text, key, mapped)
+    if doc.type == "R" and id_map:
+        alt = "|".join(re.escape(i) for i in sorted(id_map, key=len, reverse=True))
+        text = re.sub(r"(?m)^(\s*\|.*\|\s*moved\s+)(" + alt + r")(\s*\|\s*)$",
+                      lambda m: m.group(1) + id_map[m.group(2)] + m.group(3), text)
+    if own:
+        old, new = own
+        text = re.sub(r"^# {}:".format(re.escape(old)), "# {}:".format(new), text, count=1, flags=re.M)
+        text = re.sub(r"\b{}-F(\d+)\b".format(re.escape(old)), new + r"-F\1", text)
+    return text
 
 
 def cmd_index(repo, args):
@@ -1400,8 +1498,15 @@ def cmd_show(repo, args):
     return 0
 
 
+def lead_note(doc):
+    implemented = doc.get("implemented")
+    if doc.type == "D" and isinstance(implemented, int) and implemented < doc.revision:
+        return " [spec r{} leads code r{}]".format(doc.revision, implemented)
+    return ""
+
+
 def doc_line(doc):
-    return "{} {} {} - {}".format(doc.id, doc.status, doc.rel, doc.get("summary", ""))
+    return "{} {} {} - {}{}".format(doc.id, doc.status, doc.rel, doc.get("summary", ""), lead_note(doc))
 
 
 def cmd_find(repo, args):
@@ -1431,7 +1536,7 @@ def cmd_which(repo, args):
         if not hits:
             print("{}: no design".format(rel))
         for doc in hits:
-            print("{}: {} {} - {}".format(rel, doc.id, doc.rel, doc.get("summary", "")))
+            print("{}: {} {} - {}{}".format(rel, doc.id, doc.rel, doc.get("summary", ""), lead_note(doc)))
     return 0
 
 
@@ -1449,10 +1554,8 @@ def cmd_affected(repo, args):
         for rel in rels:
             print("  " + rel)
     for doc in repo.docs:
-        if doc.type == "P" and not doc.archived:
-            ids = {e.split("@")[0] for e in doc.as_list("based_on")}
-            if ids & set(designs):
-                print("plan " + doc_line(doc))
+        if doc.type == "P" and not doc.archived and plan_designs(doc) & set(designs):
+            print("plan " + doc_line(doc))
     return 0
 
 
@@ -1510,8 +1613,9 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("check", help="validate all docs; exit 1 on errors")
-    p.add_argument("--fix", action="store_true", help="apply mechanical fixes (refs, updated, indexes)")
-    p.add_argument("--base", help="also check this branch against a ref, e.g. origin/main: deleted docs, id collisions")
+    p.add_argument("--fix", action="store_true", help="apply mechanical fixes (refs, updated, implemented, indexes)")
+    p.add_argument("--base", help="also check this branch against a ref, e.g. origin/main: deleted docs, id "
+                                  "collisions, and revisions still pending review fail")
     p.set_defaults(func=cmd_check)
 
     p = sub.add_parser("new", help="create a doc from its template with the next free id")

@@ -17,7 +17,7 @@ Sections: Goals, Spec, Decisions; Budgets when there are quantitative targets.
 - **Spec**: the authoritative, precise specification of every topic in `owns`. Give interfaces as code: signatures, schemas, CLI usage, config keys. User-visible behavior (CLI, API, UI) is specified here.
 - **Budgets**: numeric targets such as latency, memory or size, each with how it is measured.
 - **Decisions**: one line per key decision with its reason.
-- **Status**: `draft` until the review gate passes, then `accepted`. Set `active` once the implementation has landed; an active design describes the current code. Revising an active design keeps it `active`; its spec leads the code until the plan lands. Archive as `superseded` (successor in `refs`) or `retired` (feature removed).
+- **Status**: `draft` until the review gate passes (and, in L2, the user approves), then `accepted`. Once an implementation has landed, set `active` and `implemented` to the revision the code matches. Revising an active design keeps it `active`; its spec leads the code until the next implementation lands and raises `implemented`. Archive as `superseded` (successor in `refs`) or `retired` (feature removed).
 - **Split**: when a design outgrows one doc (`check` warns at 500 lines), run `new D <slug> --parent D00X` to create `D00XA`, `D00XB`, ... Move the sub-topic's spec, `owns` and `paths` into the sub-design; the parent keeps the overview and links to its children. Only one suffix level exists: a sub-design that outgrows itself becomes a new top-level design.
 - The repo root has an architecture design: module map, allowed dependency directions, and a glossary of cross-module terms. Module-specific terms belong to the design that owns them.
 
@@ -30,7 +30,7 @@ Sections: Current state, Slices, Notes, Log.
 - **Slices**: ordered `### S1: name` subsections. Each starts with a `Status:` line (`todo`, `in-progress`, `done`, `paused`), then lists its changes and the test criteria that prove it done. Each criterion names its seam: the public interface, as the design's Spec defines it, where the test observes behavior. Seams in an accepted plan are agreed with the user; tests go only there.
 - **Notes**: risks and constraints the implementer must keep in mind.
 - **Log**: append decisions, results, evidence and deviations as they happen. How to handle deviations: [workflow.md](workflow.md#implementation).
-- **Status**: `accepted` after the review gate, `in-progress` while implementing. Archive as `done` once every slice is `done`, in the commit that completes the implementation, or as `abandoned`.
+- **Status**: `accepted` after the review gate (and, in L2, the user's approval), `in-progress` while implementing. Archive as `done` once every slice is `done`, in the commit that completes the implementation, or as `abandoned`.
 
 ## Reviews (R)
 

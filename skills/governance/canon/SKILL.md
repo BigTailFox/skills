@@ -13,7 +13,7 @@ Execute `canon.py`; do not read it. Use the project's copy at the path named in 
 
 | Command | Purpose |
 |---|---|
-| `check [--fix] [--base REF]` | Validate all docs. `--fix` applies mechanical fixes (`refs`, `updated`, indexes). `--base origin/main` also checks the branch against that ref: deleted docs and id collisions. |
+| `check [--fix] [--base REF]` | Validate all docs. `--fix` applies mechanical fixes (`refs`, `updated`, `implemented`, indexes). `--base origin/main` also checks the branch against that ref: deleted docs, id collisions, and revisions still pending review fail. |
 | `new TYPE SLUG [--title T] [--from D00X] [--parent D00X] [--root DIR]` | Create a doc from its template with the next free id. `--from` links a plan to its design; `--parent` creates a sub-design. |
 | `archive ID STATUS` | Set a terminal status, move the doc to `archived/`, rewrite every link to it. |
 | `rename ID SLUG` | Change a doc's file slug and rewrite every link to it. |
@@ -28,7 +28,7 @@ Execute `canon.py`; do not read it. Use the project's copy at the path named in 
 
 ## Reading docs
 
-- Before editing code, run `which <file>` and read the governing design sections with `show ID#slug`. Read a whole doc only when you are writing it.
+- When a change may alter behavior or standards a design specifies, run `which <file>` and read the governing sections with `show ID#slug` first. Read a whole doc only when you are writing it.
 - Look topics up with `find`; `docs/README.md` is the generated index.
 - Skip `docs/archived/` unless researching history (`find --archived`).
 - A design is the source of truth. A plan records progress and history; when they disagree, the design wins.
@@ -83,6 +83,7 @@ owns: [auth-token, session]          # D only
 paths: [src/auth/**, src/session/]   # D only
 reviewed: 4                          # D and P
 reviewers: [claude-opus-high, gpt-high]
+implemented: 4                       # D only
 based_on: [D003@r4]                  # P only
 ---
 ```
@@ -94,6 +95,7 @@ based_on: [D003@r4]                  # P only
 - `owns`: topics this design is the single authority for, unique across non-archived designs.
 - `paths`: code globs relative to the project directory; they drive `which`, `affected` and `audit`.
 - `reviewed`, `reviewers`: the revision that passed the review gate and who reviewed it (`manual:<model>` for a review the user ran).
+- `implemented`: the revision the code fully implements; required once a design is `active`. Below `revision`, the spec leads the code and the difference is an open plan's work, not a defect.
 - `based_on`: design revisions a plan was written against; `check` warns when a design moves past them.
 
 ## Rules
@@ -102,7 +104,7 @@ based_on: [D003@r4]                  # P only
 - Ids are unique on the current branch. When `check` reports a collision with another branch, renumber the doc your branch added: `renumber <path> --base <ref>` before rebasing, `renumber <path>` after.
 - Reference a section as `[D003§token-refresh: refresh flow](../designs/D003-auth.md#token-refresh)` and a whole doc as `[D003: auth design](../designs/D003-auth.md)`. Never reference by line number.
 - Each standard lives only in the design that owns its topic; everywhere else links to it.
-- A design or plan revision must pass the review gate before it is accepted: `reviewed` equals `revision`.
+- A design or plan revision must pass the review gate before it is accepted or implemented: `reviewed` equals `revision`. `check` warns while a revision is pending; `check --base` fails.
 - Replace every `<!-- canon: ... -->` guidance comment with content.
 - After a merge or rebase, run `check --fix`; generated indexes merge line by line and may need regenerating.
 
@@ -112,7 +114,7 @@ Every change has a tier; state it when starting and pick the higher one when uns
 
 - **L0**: changes no spec. Implement, keep docs factually true, commit.
 - **L1**: changes specs inside one existing design's owned topics within one module, or needs a plan under an existing design. Revise the design in place, pass the review gate (A1), then implement.
-- **L2**: a new topic, module, cross-module interface or architecture change. Design and plan each pass the review gate (A1 and A2) and need the user's explicit approval.
+- **L2**: a new topic, module, cross-module interface or architecture change, or a rewrite of a design's goals or core approach. Design and plan each pass the review gate (A1 and A2) and need the user's approval, which starting the next phase gives.
 
 Tier criteria, flows, the blind-review gate with its reviewer prompt, code review, and the docs step before committing: [workflow.md](workflow.md).
 

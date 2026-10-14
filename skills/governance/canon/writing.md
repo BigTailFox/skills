@@ -12,6 +12,6 @@ Agents and people both read these docs, usually after reaching them through a po
 - Record what the repository cannot tell: reasons, unwritten conventions, gotchas. Name the command or file for facts the environment already states (scripts, config, `--help`) instead of copying them.
 - Cut every sentence that changes nothing a capable reader would do anyway.
 - `AGENTS.md` holds only what every session needs: pointers and rules. Move detail into designs.
-- Design for the project's real constraints. Add security measures only when the project or feature is security-related or the user asks; the environment usually provides network isolation.
+- Design for the project's real constraints. A feature's input validation, the permissions its spec states and protection of the data it handles are part of the feature. Add security hardening beyond that only when the project or feature is security-related or the user asks, and state that requirement in the design; the environment usually provides network isolation.
 - Avoid wording that rots, such as "currently", "new" or "recently"; the frontmatter carries time.
 - Write docs in the project's documentation language.
