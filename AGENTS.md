@@ -25,8 +25,8 @@
 - `npx skills` 按技能名平铺安装，分类目录不会保留。技能之间按名字引用（如「遵循 `canon` 技能」），不要用跨技能目录的相对路径；调用 `canon.py` 时使用项目 `AGENTS.md` 中给出的路径。
 - `SKILL.md` 必须以 YAML frontmatter 开头，包含：
   - `name`：与目录名一致。
-  - `description`：非空，不超过 1024 字符，第三人称，同时写明「做什么」和「何时使用」，包含触发关键词。
-- 默认加 `disable-model-invocation: true`，只有确实需要根据上下文自动触发的技能才去掉。
+  - `description`：非空，不超过 1024 字符，第三人称，不含 `: `（会破坏 YAML 解析）。自动触发的技能先用一个短句说做什么，紧接着写「Use when …」触发条件，必要时写明不适用的情况；触发词放在前 190 个字符内，因为宿主会截断过长的 description。手动技能只写一行给人看的摘要。
+- 默认手动触发：frontmatter 加 `disable-model-invocation: true`（Claude Code、Cursor 读这个），技能目录下放 `agents/openai.yaml`，内容为 `policy:` 下的 `allow_implicit_invocation: false`（Codex 读这个）。只有确实需要根据上下文自动触发的技能才两者都去掉；`validate.py` 检查两者成对出现。
 - `SKILL.md` 正文控制在 500 行以内；详细资料拆到同目录的其他 `.md` 文件，并从 `SKILL.md` 直接链接（只引用一层）。
 - 只写 Agent 不知道的内容，不解释常识。给一个默认做法，而不是罗列多个选项。
 - 路径使用 `/`，不写有时效性的内容（如「2026 年之前用旧 API」）。
@@ -34,9 +34,9 @@
 
 ## 工作流程
 
-- 新建技能：在 `skills/<分类>/` 下运行 `npx skills init <name>`，然后按上面的规范补全 frontmatter（包括 `disable-model-invocation`）。
-- 新增、删除技能，或改变技能的用途、触发方式时，同步更新 `README.md` 的「技能列表」。
+- 新建技能：在 `skills/<分类>/` 下运行 `npx skills init <name>`，然后按上面的规范补全 frontmatter（包括 `disable-model-invocation`）和 `agents/openai.yaml`。
+- 新增、删除技能，或改变技能的用途、触发方式时，同步更新 `README.md` 的「技能列表」；`validate.py` 检查列表里的技能名、分类和触发方式与 frontmatter 一致，简介需要自己核对。
 - 修改任何技能后运行 `python3 scripts/validate.py`（同时运行 `tests/`）和 `npx skills add . --list`，两者都通过后再提交。
-- 修改 `canon.py` 时在 `tests/test_canon.py` 补回归测试；改动会影响已初始化的项目时 bump `CANON_VERSION`，因为 `init` 只按版本号升级项目里的副本。
+- 修改 `canon.py` 时在 `tests/test_canon.py` 补回归测试，并在同一个提交里 bump `CANON_VERSION`：`init` 只按版本号升级项目里的副本，`validate.py` 会拒绝内容变了而版本号没变的 `canon.py`。
 - 提交信息使用 Conventional Commits，scope 用技能名，例如 `feat(canon-code-review): add security checklist`；仓库级改动不带 scope 或用 `repo`。
 - 文档（`README.md`、`AGENTS.md`）用中文；技能内容用英文。
