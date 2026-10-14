@@ -1,6 +1,6 @@
 ---
 name: canon-codebase-design
-description: Shared vocabulary and principles for designing deep modules (module, interface, depth, seam, adapter, leverage, locality, the deletion test), deepening shallow modules by dependency category, and designing an interface twice with parallel subagents. Use when designing or changing a module's interface, writing the interfaces of a design's Spec, deciding where a seam or test belongs, judging whether code is too shallow or tangled, or when another canon skill needs this vocabulary.
+description: Vocabulary and principles for deep modules. Use when designing or changing a module's interface, writing the interfaces of a design's Spec, deciding where a seam or test belongs, judging whether code is too shallow or tangled, or when another canon skill needs the vocabulary. Covers module, interface, depth, seam, adapter, leverage, locality and the deletion test, deepening by dependency category, and designing an interface twice with parallel subagents.
 ---
 
 # Codebase design
@@ -9,7 +9,7 @@ Design **deep modules**: a lot of behaviour behind a small interface, placed at 
 
 ## Glossary
 
-Use these terms exactly: don't substitute "component," "service," "API," or "boundary." Consistent language is the whole point.
+Use these terms for design analysis, so skills, reviewers and docs mean the same thing by them. Where the project already gives a word its own meaning (a "service" as a deployable unit, a "component" of its UI framework), keep the project's meaning and use the glossary term for the analysis concept.
 
 **Module**: anything with an interface and an implementation. Deliberately scale-agnostic: a function, class, package, or tier-spanning slice. _Avoid_: unit, component, service.
 
@@ -17,7 +17,7 @@ Use these terms exactly: don't substitute "component," "service," "API," or "bou
 
 **Implementation**: what's inside a module, its body of code. Distinct from **Adapter**: a thing can be a small adapter with a large implementation (a Postgres repo) or a large adapter with a small implementation (an in-memory fake). Reach for "adapter" when the seam is the topic; "implementation" otherwise.
 
-**Depth**: leverage at the interface. The amount of behaviour a caller (or test) can exercise per unit of interface they have to learn. A module is **deep** when a large amount of behaviour sits behind a small interface, **shallow** when the interface is nearly as complex as the implementation.
+**Depth**: leverage at the interface. The amount of behaviour a caller (or test) can exercise per unit of interface they have to learn. A module is **deep** when a large amount of behaviour sits behind a small interface, **shallow** when the interface is nearly as complex as the implementation. The ratio of implementation lines to interface lines does not measure it: padding the implementation would raise that ratio.
 
 **Seam** _(Michael Feathers)_: a place where you can alter behaviour without editing in that place; the *location* at which a module's interface lives. Where to put the seam is its own design decision, distinct from what goes behind it. _Avoid_: boundary (overloaded with DDD's bounded context).
 
@@ -47,12 +47,6 @@ When designing an interface, ask: can I reduce the number of entry points, simpl
 - A design's Spec gives each module's interface in the full sense above: signatures as code, plus invariants, ordering, error modes, configuration and performance characteristics. Budgets hold the numeric performance targets.
 - Seams named in the Spec are the default places for tests, and plan slices name the seam each test criterion exercises.
 - Name modules with the project's terms: the architecture design's glossary for cross-module terms, the governing design for module terms.
-
-## Rejected framings
-
-- **Depth as ratio of implementation-lines to interface-lines** (Ousterhout): rewards padding the implementation. Depth here is leverage.
-- **"Interface" as the TypeScript `interface` keyword or a class's public methods**: too narrow; the interface includes every fact a caller must know.
-- **"Boundary"**: overloaded with DDD's bounded context. Say **seam** or **interface**.
 
 ## Going deeper
 
