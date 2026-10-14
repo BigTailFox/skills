@@ -10,7 +10,7 @@ Read the `canon` skill first; its workflow governs tiers, deviations, code revie
 
 ## 1. Start
 
-1. Identify the work: the plan or design the user named (`canon.py find <words>` when only a topic is given), or an L0 change. State the tier. Work without a plan is one slice built in this session; when it involves complex logic, concurrency, performance, security or data migration, a worker at high effort builds it instead (Workers below), with the worker prompt naming the design revision or describing the change in place of a plan slice.
+1. Identify the work: the plan or design the user named (`canon.py find <words>` when only a topic is given), or an L0 change. State the tier. Work without a plan is one slice built in this session.
 2. Check the work against the tier's flow in the `canon` skill's workflow:
    - A plan must be `accepted` or `in-progress`. An L2 plan still `draft` after its gate awaits the user's approval, and invoking this skill on it gives that approval: say so in one line and set it `accepted`.
    - An L1 design revision that passed the gate and needs no plan: follow L1 without a plan below.
@@ -20,13 +20,13 @@ Read the `canon` skill first; its workflow governs tiers, deviations, code revie
 
 ## 2. Each slice
 
-This session orchestrates, and a fresh worker builds each slice, so every slice starts in an empty context window at its own reasoning effort. Run one worker at a time, in plan order. Only this session edits the plan, commits and asks the user.
+This session orchestrates, and a fresh worker builds each slice, so every slice starts in an empty context window. Run one worker at a time, in plan order. Only this session edits the plan, commits and asks the user.
 
 1. Set the slice's `Status: in-progress`.
-2. Launch a worker with the worker prompt below, at medium reasoning effort, or high when the slice has a `Risk:` line. Wait for its report.
+2. Launch a worker with the worker prompt below and wait for its report.
 3. Act on the report:
    - **done**: re-run the slice's tests and check the diff: it stays within the slice and edits no plan or design.
-   - **stuck** on a failure it could not explain: launch a new worker at high, with the report appended to its prompt and the instruction to diagnose the failure with the `canon-investigate` skill instead of stopping. When that worker is stuck as well, pause the slice.
+   - **stuck** on a failure it could not explain: pause the slice without retrying; the user decides the next step.
    - **blocked** on a question: settle it with the `canon-grill` skill's triage and resume the worker with the answer. A question only the user can answer is a pending decision: pause the slice.
    - **blocked** on the plan or design: apply the workflow's deviation rules. For a plan problem with one clear fix, edit the plan, log it and resume the worker. Otherwise pause the slice.
 
@@ -36,7 +36,7 @@ This session orchestrates, and a fresh worker builds each slice, so every slice 
 
 ### Worker prompt
 
-Fill the placeholders and add only what the steps above name; the plan carries the context.
+Fill the placeholders and pass nothing else; the plan carries the context.
 
 ```text
 You are implementing one slice of a plan in this repository, with no prior context.
@@ -55,17 +55,7 @@ Report in under 300 words: status (done | stuck | blocked), files changed, tests
 
 ### Workers
 
-A worker is a new general-purpose subagent, never a fork of this session. It runs on the session's model unless the `Workers:` line (the `canon` skill's workflow, Models and effort) names one for its effort. Keep its id so you can resume it.
-
-- **Claude Code**: the Agent tool, passing `effort`, or a custom subagent whose definition sets it.
-- **Codex**, and GPT models in Cursor: `codex exec` from the repo root, with the prompt, report and events in `.canon/canon-implement/<plan id>/`. Cursor must run it outside its sandbox, because codex writes its session under the home directory. The id to keep is the `thread_id` of the `thread.started` event.
-
-  ```bash
-  codex exec -s workspace-write --json -m <model> -c model_reasoning_effort=<effort> -o <report.md> - < <prompt.txt> > <events.jsonl>
-  codex exec -s workspace-write -m <model> -o <report2.md> resume <thread_id> "$(cat <reply.txt>)"
-  ```
-
-- **Cursor**: the Task tool. A slug fixes its effort: leave `model` unset to inherit the session's, or set the slug the `Workers:` line names for the worker's effort.
+A worker is a new general-purpose subagent from the host's own tool, never a fork of this session, launched without a model or effort so it runs on the session's (the `canon` skill's workflow, Subagents). Keep its id so you can resume it.
 
 ## 3. Finish
 
