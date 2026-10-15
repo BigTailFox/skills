@@ -386,7 +386,7 @@ class InitTest(CanonTest):
         self.assertTrue(copy.read_text().endswith("# local edit\n"))
 
 
-class TraceTest(CanonTest):
+class TraceCase(CanonTest):
     HOST_VARS = ("CURSOR_AGENT", "CURSOR_CONVERSATION_ID", "CODEX_THREAD_ID", "CLAUDECODE")
 
     def setUp(self):
@@ -423,6 +423,8 @@ class TraceTest(CanonTest):
         self.assertRegex(self.trace(*args, **env), r"^trace error: ")
         self.assertEqual(self.events.read_bytes() if self.events.exists() else None, before, args)
 
+
+class TraceTest(TraceCase):
     @unittest.skipIf(os.name == "nt", "the recording git is a shell script")
     def test_tracing_off_writes_nothing_and_runs_no_git(self):
         bin_dir, log = self.config / "bin", self.config / "git.log"
@@ -468,8 +470,8 @@ class TraceTest(CanonTest):
         self.ok("new", "D", "part", "--root", "mod")
         unit = self.start("design", "D001", "D002", "D003", "D999")
         [line] = self.lines()
-        self.assertEqual(set(line), {"v", "type", "id", "kind", "at", "parent", "docs", "tier", "host", "conversation",
-                                     "model", "skill"})
+        self.assertEqual(set(line), {"v", "type", "id", "kind", "at", "parent", "docs", "tier", "base", "head",
+                                     "snapshot", "skipped", "host", "conversation", "model", "skill"})
         self.assertEqual([line[k] for k in ("v", "type", "id", "kind", "parent", "tier", "model", "skill")],
                          [1, "start", unit, "design", None, None, None, None])
         self.assertEqual(line["docs"], ["D001@r3", "D002@r1", "D003@r1", "D999"])
@@ -532,7 +534,7 @@ class TraceTest(CanonTest):
         self.trace("end", implement, "escalated", "--to", "plan")
         self.trace("end", check, "raised")
         ends = [line for line in self.lines() if line["type"] == "end"]
-        self.assertEqual(set(ends[0]), {"v", "type", "id", "kind", "at", "outcome"})
+        self.assertEqual(set(ends[0]), {"v", "type", "id", "kind", "at", "outcome", "head"})
         self.assertEqual([[end.get(k) for k in ("v", "id", "kind", "outcome", "to")] for end in ends],
                          [[1, design, "design", "delivered", None], [1, implement, "implement", "escalated", "plan"],
                           [1, check, "end-check", "raised", None]])
@@ -646,6 +648,326 @@ class TraceTest(CanonTest):
         (top / "AGENTS.md").unlink()
         self.start("design", cwd=top / "a/b")
         self.assertEqual(len(self.lines(top / "a/b/.canon/canon/trace/events.jsonl")), 1)
+
+
+class SnapshotTest(TraceCase):
+    def setUp(self):
+        super().setUp()
+        self.trace("on")
+
+    def snap(self, *args):
+        """Run git in the snapshot repository, as `git -C .canon/canon/trace`; return its stripped output."""
+        return self.git("-C", ".canon/canon/trace", *args)
+
+    def start_line(self, *args, **env):
+        unit = self.start(*args, **env)
+        return next(line for line in self.lines() if line["id"] == unit)
+
+    def tmpdir(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        return Path(tmp.name)
+
+    def project_state(self):
+        """The project's work tree outside .canon/, HEAD, refs, the files under its object directory, and its index."""
+        def files(top, skip=()):
+            return {p.relative_to(top).as_posix(): p.read_bytes() for p in top.rglob("*")
+                    if p.is_file() and p.relative_to(top).parts[0] not in skip}
+        git_dir = self.root / ".git"
+        return {"work tree": files(self.root, (".git", ".canon")), "HEAD": (git_dir / "HEAD").read_bytes(),
+                "refs": self.git("for-each-ref", "--format=%(refname) %(objectname)"),
+                "objects": files(git_dir / "objects"), "index": (git_dir / "index").read_bytes()}
+
+    def snapshot_objects(self):
+        return set(self.snap("cat-file", "--batch-all-objects", "--batch-check=%(objectname)").split())
+
+    def stored_once(self):
+        """Whether the snapshot repository stores each of its objects once, loose or in a single pack."""
+        counts = dict(line.split(": ") for line in self.snap("count-objects", "-v").splitlines())
+        return int(counts["count"]) + int(counts["in-pack"]) == len(self.snapshot_objects())
+
+    def test_a_clean_checkouts_snapshot_and_its_parent_have_heads_tree_and_end_records_a_later_head(self):
+        self.commit()
+        head, tree = self.git("rev-parse", "HEAD"), self.git("rev-parse", "HEAD^{tree}")
+        line = self.start_line("implement")
+        self.assertEqual([line[k] for k in ("base", "head", "skipped")], [None, head, None])
+        self.assertEqual(self.snap("rev-parse", "refs/trace/" + line["id"]), line["snapshot"])
+        self.assertEqual([self.snap("rev-parse", line["snapshot"] + rev) for rev in ("^{tree}", "^^{tree}")],
+                         [tree, tree])
+        self.assertEqual(self.snap("rev-list", "--count", line["snapshot"]), "2")
+        (self.root / "src/base.py").write_text("value = 2\n")
+        self.git("commit", "-qam", "during the unit")
+        self.trace("end", line["id"], "delivered")
+        self.assertEqual(self.lines()[-1]["head"], self.git("rev-parse", "HEAD"))
+
+    def test_a_dirty_checkouts_snapshot_holds_what_a_commit_would_and_leaves_the_project_unchanged(self):
+        origin = self.tmpdir()
+        (origin / "lib.txt").write_text("lib 1\n")
+        identity = ["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid"]
+        for args in (["init", "-q"], ["add", "-A"], [*identity, "commit", "-qm", "lib"]):
+            subprocess.run(["git", *args], cwd=str(origin), check=True, capture_output=True)
+        self.git("-c", "protocol.file.allow=always", "submodule", "add", "-q", str(origin), "sub")
+        with (self.root / ".gitignore").open("a") as ignore:
+            ignore.write("*.log\n")
+        (self.root / ".git/info").mkdir(exist_ok=True)
+        (self.root / ".git/info/exclude").write_text("*.tmp\n")
+        excludes = self.tmpdir() / "excludes"
+        excludes.write_text("*.secret\n")
+        self.git("config", "core.excludesFile", str(excludes))
+        for name in ("staged.txt", "unstaged.txt", "touched.txt"):
+            (self.root / name).write_text("v1\n")
+        self.commit()
+        (self.root / "staged.txt").write_text("v2 staged\n")
+        self.git("add", "staged.txt")
+        (self.root / "unstaged.txt").write_text("v2 unstaged\n")
+        (self.root / "untracked.txt").write_text("new\n")
+        for name in ("build.log", "scratch.tmp", "key.secret"):
+            (self.root / name).write_text("ignored\n")
+        (self.root / "sub/lib.txt").write_text("lib 2\n")
+        self.git("-C", "sub", *identity, "commit", "-qam", "lib 2")
+        (self.root / "sub/lib.txt").write_text("lib 3, not committed\n")
+        touched = self.root / "touched.txt"
+        os.utime(str(touched), ns=(touched.stat().st_atime_ns, touched.stat().st_mtime_ns - 10 ** 10))
+        before = self.project_state()
+        snapshot = self.start_line("implement")["snapshot"]
+        after = self.project_state()
+        self.assertEqual([part for part in before if after[part] != before[part]], [])
+        files = set(self.snap("ls-tree", "-r", "--name-only", snapshot).splitlines())
+        self.assertEqual(files & {"build.log", "scratch.tmp", "key.secret"}, set())
+        self.assertEqual({name: self.snap("show", "{}:{}".format(snapshot, name)) for name in
+                          ("staged.txt", "unstaged.txt", "untracked.txt", "touched.txt")},
+                         {"staged.txt": "v2 staged", "unstaged.txt": "v2 unstaged", "untracked.txt": "new",
+                          "touched.txt": "v1"})
+        self.assertEqual(self.snap("ls-tree", snapshot, "sub").split()[:3],
+                         ["160000", "commit", self.git("-C", "sub", "rev-parse", "HEAD")])
+
+    def test_on_an_unborn_branch_without_an_index_the_snapshot_has_no_parent_and_head_is_null(self):
+        self.assertFalse((self.root / ".git/index").exists())
+        line = self.start_line("design")
+        self.assertEqual([line[k] for k in ("base", "head", "skipped")], [None, None, None])
+        self.assertEqual(self.snap("rev-list", "--parents", "-n", "1", line["snapshot"]), line["snapshot"])
+        self.assertIn("src/base.py", self.snap("ls-tree", "-r", "--name-only", line["snapshot"]).splitlines())
+        self.assertFalse((self.root / ".git/index").exists())
+
+    def test_a_failed_step_records_its_reason_and_gits_message_and_status_counts_each_skip(self):
+        self.commit()
+        copies = self.root / ".canon/canon/trace/.git"
+        self.start_line("design")
+        self.assertEqual(list(copies.glob("index-*")), [])
+        self.assertRegex(self.trace("status"), r"(?m)^snapshots: 1, [\d.]+ [KMG]iB on disk\nskipped starts: none$")
+        index = self.root / ".git/index"
+        good = index.read_bytes()
+        index.write_bytes(b"XXXX" + good[4:])
+        line = self.start_line("design", LC_ALL="C")
+        self.assertEqual([line["snapshot"], line["skipped"]], [None, "git status: exit 128"])
+        error = self.root / ".canon/canon/trace" / line["id"] / "snapshot-error.txt"
+        self.assertIn("index file corrupt", error.read_text())
+        index.write_bytes(good)
+        with (self.root / ".gitattributes").open("a") as attributes:
+            attributes.write("*.dat filter=noisy\n")
+        noise = "import sys; sys.stderr.write('x' * 100000); sys.exit(3)"
+        self.git("config", "filter.noisy.clean", "\"{}\" -c \"{}\"".format(sys.executable, noise))
+        self.git("config", "filter.noisy.required", "true")
+        (self.root / "data.dat").write_text("data\n")
+        line = self.start_line("design", LC_ALL="C")
+        self.assertEqual([line["snapshot"], line["skipped"]], [None, "git add: exit 128"])
+        message = (self.root / ".canon/canon/trace" / line["id"] / "snapshot-error.txt").read_bytes()
+        self.assertEqual(len(message), 64 * 1024)
+        self.assertEqual(message[:3], b"xxx")
+        self.assertTrue(message.endswith(b"\nfatal: data.dat: clean filter 'noisy' failed\n"), message[-100:])
+        self.assertEqual(list(copies.glob("index-*")), [])
+        skips = re.search(r"(?m)^skipped starts: (.*)$", self.trace("status")).group(1)
+        self.assertEqual(sorted(skips.split("; ")), ["1 git add: exit 128", "1 git status: exit 128"])
+
+    def test_base_is_the_merge_base_and_the_snapshot_diff_is_the_change_under_review(self):
+        (self.root / "shared.txt").write_text("1\n")
+        self.commit()
+        fork = self.git("rev-parse", "HEAD")
+        self.git("checkout", "-qb", "topic")
+        (self.root / "topic.txt").write_text("topic\n")
+        self.git("add", "topic.txt")
+        self.git("commit", "-qm", "topic")
+        self.git("checkout", "-q", "main")
+        (self.root / "shared.txt").write_text("2\n")
+        self.git("commit", "-qam", "main moves on")
+        self.git("checkout", "-q", "topic")
+        (self.root / "topic.txt").write_text("topic, edited\n")
+        (self.root / "fresh.txt").write_text("fresh\n")
+        line = self.start_line("code-review", "--base", "main")
+        self.assertEqual(line["base"], fork)
+        snapshot = line["snapshot"]
+        self.assertEqual(self.snap("diff", "--full-index", snapshot + "^", snapshot, "--", ".", ":(exclude)fresh.txt"),
+                         self.git("diff", "--full-index", fork))
+        self.assertEqual(self.snap("diff", "--name-status", snapshot + "^", snapshot, "--", "fresh.txt"),
+                         "A\tfresh.txt")
+        unrelated = self.git("commit-tree", "-m", "unrelated", fork + "^{tree}")
+        line = self.start_line("code-review", "--base", unrelated)
+        self.assertIsNone(line["base"])
+        self.assertEqual(self.snap("rev-parse", line["snapshot"] + "^^{tree}"), self.git("rev-parse", "HEAD^{tree}"))
+        for ref in ("no-such-ref", "--git-dir=x"):
+            self.rejects("start", "code-review", "--base=" + ref)
+
+    def test_a_snapshot_adds_only_the_objects_its_repository_lacks(self):
+        (self.root / "src/deep").mkdir()
+        for name in ("src/deep/one.txt", "src/deep/two.txt", "src/three.txt"):
+            (self.root / name).write_text(name + "\n")
+        self.commit()
+        self.start("implement")
+        before = self.snapshot_objects()
+        (self.root / "src/deep/one.txt").write_text("changed\n")
+        snapshot = self.start_line("implement")["snapshot"]
+        added = self.snapshot_objects() - before
+        self.assertIn(snapshot, added)
+        self.assertEqual(added - {snapshot, self.snap("rev-parse", snapshot + "^")},
+                         {self.snap("rev-parse", snapshot + suffix) for suffix in
+                          (":src/deep/one.txt", ":src/deep", ":src", "^{tree}")})
+        self.git("checkout", "-q", "src/deep/one.txt")
+        self.git("checkout", "-qb", "topic")
+        for name in ("src/deep/two.txt", "src/three.txt"):
+            (self.root / name).write_text("topic\n")
+        self.git("commit", "-qam", "topic")
+        self.start("implement")
+        self.git("checkout", "-q", "main")
+        before = self.snapshot_objects()
+        snapshot = self.start_line("implement")["snapshot"]
+        self.assertEqual(self.snapshot_objects() - before - {snapshot, self.snap("rev-parse", snapshot + "^")}, set())
+        self.assertTrue(self.stored_once())
+
+    def test_no_push_clone_or_bundle_of_the_project_carries_a_snapshot(self):
+        self.commit()
+        snapshot = self.start_line("implement")["snapshot"]
+        copies = self.tmpdir()
+        self.git("init", "-q", "--bare", str(copies / "pushed.git"))
+        self.git("push", "-q", "--mirror", str(copies / "pushed.git"))
+        self.git("clone", "-q", "--mirror", str(self.root), str(copies / "cloned.git"))
+        self.git("bundle", "create", str(copies / "all.bundle"), "--all")
+        self.assertNotIn("refs/trace/", self.git("bundle", "list-heads", str(copies / "all.bundle")))
+        self.git("init", "-q", "--bare", str(copies / "unbundled.git"))
+        self.git("-C", str(copies / "unbundled.git"), "bundle", "unbundle", str(copies / "all.bundle"))
+        for repo in (self.root, copies / "pushed.git", copies / "cloned.git", copies / "unbundled.git"):
+            self.assertNotIn("refs/trace/", self.git("-C", str(repo), "for-each-ref"))
+            self.assertNotEqual(self.run_here("git", "-C", str(repo), "cat-file", "-e", snapshot).returncode, 0, repo)
+
+    def test_snapshots_survive_a_reset_reflog_expiry_and_gc_in_the_project(self):
+        self.commit()
+        start = self.git("rev-parse", "HEAD")
+        (self.root / "gone.txt").write_text("only in a dropped commit\n")
+        self.git("add", "gone.txt")
+        self.git("commit", "-qm", "dropped later")
+        dropped = self.git("rev-parse", "HEAD:gone.txt")
+        self.start("implement")
+        (self.root / "src/base.py").write_text("value = 3\n")
+        self.git("add", "src/base.py")
+        self.start("implement")
+        self.git("reset", "-q", "--hard", start)
+        self.git("reflog", "expire", "--expire=now", "--all")
+        self.git("gc", "-q", "--prune=now")
+        self.assertNotEqual(self.run_here("git", "cat-file", "-e", dropped).returncode, 0)
+        self.snap("fsck", "--strict")
+        refs = self.snap("for-each-ref", "--format=%(refname)", "refs/trace/").splitlines()
+        self.assertEqual(len(refs), 2)
+        for ref in refs:
+            self.snap("ls-tree", "-r", ref)
+        self.assertEqual(self.snap("cat-file", "blob", dropped), "only in a dropped commit")
+
+    def test_without_any_ignore_rule_git_neither_adds_nor_cleans_the_trace_directory(self):
+        (self.root / ".gitignore").write_text("")
+        self.commit()
+        self.start("implement")
+        (self.root / ".canon/canon/.gitignore").unlink()
+        self.git("clean", "-qfdx")
+        self.assertTrue((self.root / ".canon/canon/trace/events.jsonl").is_file())
+        self.git("add", "-A")
+        self.assertIn(self.git("ls-files", "-s", ".canon"),
+                      ["", "160000 {} 0\t.canon/canon/trace".format(self.snap("rev-parse", "HEAD"))])
+        self.git("status")
+
+    def test_a_failed_creation_of_the_snapshot_repository_leaves_nothing_behind(self):
+        trace = self.root / ".canon/canon/trace"
+        trace.mkdir(parents=True)
+        (trace / ".git").write_text("not a repository\n")
+        line = self.start_line("design")
+        self.assertRegex(line["skipped"], r"^git init: E[A-Z]+$")
+        self.assertEqual([path.name for path in trace.iterdir() if path.name.startswith(".init-")], [])
+
+    def test_snapshots_need_no_git_identity_and_their_commits_carry_canon_trace(self):
+        self.commit()
+        self.git("config", "--unset", "user.name")
+        self.git("config", "--unset", "user.email")
+        empty = self.tmpdir() / "gitconfig"
+        empty.write_text("")
+        snapshot = self.start_line("implement", GIT_CONFIG_GLOBAL=str(empty), GIT_CONFIG_NOSYSTEM="1")["snapshot"]
+        self.assertIsNotNone(snapshot)
+        self.assertEqual(self.snap("log", "--format=%an <%ae>, %cn <%ce>", snapshot).splitlines(),
+                         ["canon-trace <trace@canon.invalid>, canon-trace <trace@canon.invalid>"] * 2)
+
+    def test_ten_parallel_first_starts_each_record_a_snapshot(self):
+        self.commit()
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            units = list(pool.map(lambda _: self.start("implement"), range(10)))
+        lines = {line["id"]: line for line in self.lines()}
+        self.assertEqual([lines[unit]["skipped"] for unit in units], [None] * 10)
+        self.assertEqual(sorted(self.snap("for-each-ref", "--format=%(refname:lstrip=2) %(objectname)",
+                                          "refs/trace/").splitlines()),
+                         sorted("{} {}".format(unit, lines[unit]["snapshot"]) for unit in units))
+        self.snap("fsck", "--strict")
+
+    def committed_project(self, object_format):
+        """A project of its own with one commit, made with `git init --object-format=<object_format>`; None when this
+        Git cannot make it."""
+        project = self.tmpdir()
+        if self.run_here("git", "init", "-q", "--object-format=" + object_format, str(project)).returncode:
+            return None
+        (project / "a.txt").write_text("a\n")
+        self.git("-C", str(project), "add", "-A")
+        self.git("-C", str(project), "-c", "user.name=fixture", "-c", "user.email=f@example.invalid",
+                 "commit", "-qm", "a")
+        return project
+
+    def test_a_sha256_project_gets_snapshots(self):
+        project = self.committed_project("sha256")
+        if project is None:
+            self.skipTest("this Git cannot create a SHA-256 repository")
+        self.start("implement", cwd=project)
+        [line] = self.lines(project / ".canon/canon/trace/events.jsonl")
+        self.assertRegex(line["snapshot"] or line["skipped"], r"^[0-9a-f]{64}$")
+        snap = str(project / ".canon/canon/trace")
+        self.assertEqual(self.git("-C", snap, "rev-parse", line["snapshot"] + "^{tree}"),
+                         self.git("-C", str(project), "rev-parse", "HEAD^{tree}"))
+        self.git("-C", snap, "fsck", "--strict")
+
+    def test_a_sha1_project_gets_snapshots_when_sha256_is_the_default_object_format(self):
+        if self.committed_project("sha256") is None:
+            self.skipTest("this Git cannot create a SHA-256 repository")
+        config = self.tmpdir() / "gitconfig"
+        config.write_text("[init]\n\tdefaultObjectFormat = sha256\n")
+        for env in ({"GIT_CONFIG_GLOBAL": str(config)}, {"GIT_DEFAULT_HASH": "sha256"}):
+            project = self.committed_project("sha1")
+            self.start("implement", cwd=project, **env)
+            [line] = self.lines(project / ".canon/canon/trace/events.jsonl")
+            self.assertRegex(line["snapshot"] or line["skipped"], r"^[0-9a-f]{40}$", env)
+            snap = str(project / ".canon/canon/trace")
+            self.assertEqual(self.git("-C", snap, "rev-parse", "--show-object-format"), "sha1")
+
+    def test_a_directory_outside_git_records_no_git_with_null_head_and_base(self):
+        outside = self.tmpdir()
+        (outside / "AGENTS.md").write_text("# AGENTS.md\n")
+        self.start("code-review", "--base", "main", cwd=outside)
+        [line] = self.lines(outside / ".canon/canon/trace/events.jsonl")
+        self.assertEqual([line[k] for k in ("base", "head", "snapshot", "skipped")], [None, None, None, "no-git"])
+        self.assertRegex(self.trace("status", cwd=outside), r"(?m)^skipped starts: 1 no-git$")
+
+    def test_untracked_and_unstaged_files_over_10_mib_skip_the_snapshot(self):
+        big = self.root / "big.bin"
+        big.write_bytes(b"\0" * (5 << 20))
+        self.commit()
+        big.write_bytes(b"\1" * (5 << 20))
+        self.git("add", "big.bin")
+        (self.root / "new.bin").write_bytes(b"\0" * (6 << 20))
+        self.assertIsNotNone(self.start_line("design")["snapshot"])
+        big.write_bytes(b"\2" * (5 << 20))
+        line = self.start_line("design")
+        self.assertEqual([line["snapshot"], line["skipped"]], [None, "changes-over-10MiB"])
 
 
 if __name__ == "__main__":

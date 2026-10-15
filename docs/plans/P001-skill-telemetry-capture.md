@@ -17,7 +17,7 @@ Implements [D001: Skill telemetry with canon trace](../designs/D001-skill-teleme
 
 ## Current state
 
-Next: S2.
+Next: S3.
 
 ## Slices
 
@@ -53,14 +53,14 @@ Test criteria; seam: the `canon.py trace` command line and the files it writes:
 
 ### S2: Snapshots
 
-Status: todo
+Status: done
 Risk: complex logic, performance, security
 
 Builds on `D001#snapshots`, `D001#switch-and-storage`, `D001#commands` and `D001#event-lines`.
 
 Changes in `canon.py` and `tests/test_canon.py`:
 
-- The snapshot repository and the six snapshot steps of `D001#snapshots`, run on every start, with `snapshot.lock` guarding the repository's creation. `--object-format=sha256` is passed only when the project uses SHA-256. The index copy lives in the snapshot repository's Git directory. `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY` and `GIT_ALTERNATE_OBJECT_DIRECTORIES` hold absolute paths, and the fixed identity goes through the `GIT_AUTHOR_*` and `GIT_COMMITTER_*` variables.
+- The snapshot repository and the six snapshot steps of `D001#snapshots`, run on every start, with `snapshot.lock` guarding the repository's creation. `git init` gets `--object-format=sha256` when the project uses SHA-256 and runs with `GIT_DEFAULT_HASH=sha1` otherwise, so a configured SHA-256 default cannot give a SHA-1 project a SHA-256 snapshot repository. The index copy lives in the snapshot repository's Git directory. `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY` and `GIT_ALTERNATE_OBJECT_DIRECTORIES` hold absolute paths, and the fixed identity goes through the `GIT_AUTHOR_*` and `GIT_COMMITTER_*` variables.
 - `--base` resolution as `D001#commands` states. Inside Git, a `--base` that names no commit is invalid input; outside Git, `base` is null and the start records `no-git`.
 - Start lines gain `base`, `head`, `snapshot` and `skipped`, end lines gain `head`. A failed step deletes its index copy and records `skipped` and `snapshot-error.txt` as `D001#event-lines` states.
 - `status` adds the snapshot count, the skipped starts by reason, and the snapshot repository's disk size.
@@ -69,7 +69,7 @@ Changes in `canon.py` and `tests/test_canon.py`:
 Test criteria; seams: `trace start` and `trace end` with their lines, the snapshot repository read with `git -C .canon/canon/trace`, and the project's Git state:
 
 1. In a clean checkout, the snapshot's tree and its parent's tree both equal HEAD's. After a commit during the unit, its end line carries that commit as `head`.
-2. In a dirty checkout, the snapshot holds unstaged, staged and untracked changes and a submodule at its checked-out commit, and no file ignored by `.gitignore`, `.git/info/exclude` or `core.excludesFile`. The project's work tree, HEAD, refs and the files under its object directory are unchanged, and its index is byte-identical, also after a tracked file's timestamp changed without its content.
+2. In a dirty checkout, the snapshot holds unstaged, staged and untracked changes and a submodule at its checked-out commit, and no file ignored by `.gitignore`, `.git/info/exclude` or `core.excludesFile`. The project's work tree, HEAD and refs are unchanged, so are the names and contents of the files under its object directory, and its index is byte-identical, also after a tracked file's timestamp changed without its content.
 3. On an unborn branch without an index, the snapshot has no parent and `head` is null.
 4. Untracked and unstaged files over 10 MiB give `"skipped": "changes-over-10MiB"`. A directory outside Git gives `no-git` with null `head` and `base`, also when `--base` is passed. A corrupt project index gives the failed step and its exit status in `skipped` and Git's message, at most 64 KiB, in `.canon/canon/trace/<id>/snapshot-error.txt`; `status` counts each skip under its reason. Each start still prints only the id and writes the line, and no `index-*` copy remains, as after a successful start.
 5. With `--base main` after `main` moved past the fork, `base` is the merge base, and `git diff <snapshot>^ <snapshot>` equals the project's `git diff <merge base>` plus the untracked files. A `--base` on an unrelated history gives a null `base` and a snapshot whose parent has HEAD's tree.
@@ -79,7 +79,7 @@ Test criteria; seams: `trace start` and `trace end` with their lines, the snapsh
 9. With `.canon/` gone from the project's `.gitignore` and `.canon/canon/.gitignore` deleted, `git add -A` in the project stages no file under the trace directory, `git status` succeeds, and `git clean -fdx` leaves the directory in place.
 10. Snapshots succeed with no Git identity configured (`GIT_CONFIG_GLOBAL` naming an empty file, no `user.*` in the project), and their commits carry `canon-trace <trace@canon.invalid>`.
 11. Ten starts run in parallel in a checkout without a snapshot repository each record a snapshot, and `git fsck --strict` passes there.
-12. A project made with `git init --object-format=sha256` gets snapshots; the test is skipped where Git cannot create such a project.
+12. A project made with `git init --object-format=sha256` gets snapshots, and so does a SHA-1 project with `init.defaultObjectFormat=sha256` in the global configuration or `GIT_DEFAULT_HASH=sha256` set; the tests are skipped where Git cannot create a SHA-256 repository.
 13. Measured rather than tested: in a generated checkout of 20,000 files with an events file of 20,000 lines, the p95 of 20 starts after the first is under 300 ms. The figures go in the Log.
 
 ### S3: Review dispositions and archives
@@ -127,11 +127,11 @@ Risk: concurrency
 
 Builds on `D001#commands`.
 
-Changes in `canon.py` and `tests/test_canon.py`: `trace prune --days N` as `D001#commands` states, choosing what to delete by the time in each snapshot ref's and archive's id, so it needs no event line. It keeps `refs/skills/*`, deletes index copies older than an hour, which an interrupted start leaves, prints what it removed and the repository's size, and works with tracing off. `CANON_VERSION` 11.
+Changes in `canon.py` and `tests/test_canon.py`: `trace prune --days N` as `D001#commands` states, choosing what to delete by the time in each snapshot ref's and archive's id, so it needs no event line. It keeps `refs/skills/*`, deletes index copies and `.init-*` build directories older than an hour, which an interrupted start leaves, prints what it removed and the repository's size, and works with tracing off. `CANON_VERSION` 11.
 
 Test criteria; seams: `trace prune`, the trace directory and the snapshot repository:
 
-1. Snapshot refs and archives whose ids are more than N days old are deleted, and so is an index copy older than an hour; newer ones, every line and `refs/skills/*` stay. Old units are written into the fixture in the documented formats.
+1. Snapshot refs and archives whose ids are more than N days old are deleted, and so are an index copy and a `.init-*` directory older than an hour; newer ones, every line and `refs/skills/*` stay. Old units are written into the fixture in the documented formats.
 2. With the pruned snapshots' object files dated more than an hour back, prune shrinks the snapshot repository and `git fsck` passes; objects written in the last hour remain.
 3. Prune runs with the machine switch absent.
 
@@ -187,7 +187,7 @@ Test criteria; seam: the skill texts as an agent follows them, run through the `
 - Clean filters run in snapshot step 3 as in a commit. Git LFS's stores a changed file's content under the project's `.git/lfs/`; under Codex's read-only `.git` it fails, and the snapshot is skipped.
 - A change to a file's executable bit alone keeps its skill's digest, which covers content only (`D001#skill-digests`), so the stored tree keeps the mode first stored. Skills run `canon.py` through `python3`, and their one executable file is a template the agent copies, edits and runs, so replays are unaffected.
 - A checkout's first snapshot copies the whole tree. Where it outlasts a host's command timeout, the start prints no id and the unit goes untraced; the pilot watches for this.
-- The docs step writes into D001 the details this plan settles within its intent: `end` with tracing off; the `slice` field; `skill` and `manifest` null without `--skill`; `dispositions` null without `--input`; the limits on `model` and `id`; where the index copy lives; the non-bare snapshot repository. It adds `skills/governance/canon/trace.md` to D001's `paths`; `canon.py`, its tests and the skill texts serve all of canon and stay outside them.
+- The docs step writes into D001 the details this plan settles within its intent: `end` with tracing off; the `slice` field; `skill` and `manifest` null without `--skill`; `dispositions` null without `--input`; the limits on `model` and `id`; where the index copy lives; the non-bare snapshot repository; that the project's object store keeps the names and contents of its files, while Git refreshes the modification time of an existing object a snapshot step writes again, as it does on any such write. It adds `skills/governance/canon/trace.md` to D001's `paths`; `canon.py`, its tests and the skill texts serve all of canon and stay outside them.
 - `CODEX_THREAD_ID` and `CLAUDECODE` come from the Codex binary and Claude Code's documentation, not from a live session; the pilot confirms them.
 - D001's snapshot timings and sizes come from measurements that no experiment doc records; S2's last criterion measures them again.
 
@@ -198,3 +198,7 @@ Test criteria; seam: the skill texts as an agent follows them, run through the `
 - The user approved the plan by starting its implementation. Started at 5bd0cff.
 - S1 done: 14 tests in `TraceTest`, 46 in the suite, all passing. A held `events.lock` gives `trace error` after 5.07 s; with a 20,000-line events file, calls take 56–75 ms. Python 3.8 is not installed here, so 3.8 compatibility was checked by reading.
 - S1 decisions: `--parent` on a kind of `D001#units`'s first row is a `trace error`, since that row has no parent; `off --here` also writes `.canon/canon/.gitignore`, so the `off` file cannot be committed; any unexpected exception prints `trace error` and exits 0. The docs step adds the first two to D001. `id_lock` now shares a `file_lock` helper with the trace locks, its behavior unchanged.
+- S2 plan fixes, from the worker's questions: a SHA-1 project's snapshot repository is created with `GIT_DEFAULT_HASH=sha1`, since a configured SHA-256 default would make every snapshot fail. Criterion 2 compares the names and contents of the project's object files: Git refreshes the modification time of an existing object that `git add` or `git write-tree` writes again, no option turns that off, and under Codex's read-only `.git` the refresh fails and Git writes the object into the snapshot repository instead. S5's prune also deletes the `.init-*` directories an interrupted repository creation leaves.
+- S2 done: 16 tests in `SnapshotTest`, 62 in the suite, all passing. Criterion 13, on a local ext4 disk with 20,002 files and a 20,000-line events file: the first start took 565 ms; later starts 139 ms at p95 when clean and 148 ms when dirty; `end` 80–81 ms at p95; the snapshot repository held 17.2 MiB. A held `snapshot.lock` skips the snapshot after 5.08 s.
+- S2 decisions: every start line has `skipped`, null when the snapshot was recorded. On an unborn branch `--base` is ignored, and a `--base` starting with `-` is invalid input. The snapshot repository is built in `.init-<id>` under the lock and renamed to `.git`; a failed rename gives `git init: <errno>`. Step 5's pack goes through a temporary file in the snapshot repository's Git directory rather than a pipe, and an `OSError` there gives `git pack-objects: <errno>`, checked with a script because no seam can trigger it. The index copy keeps the index's modification time, which Git compares entries against to find racily clean ones. The docs step writes the temporary pack file and the `.init-<id>` directory into D001.
+- S2's worker stalled for about three hours on a tool call that never returned, after writing the SHA-1 test and before running it; resumed and limited to the sandbox, it finished in minutes.

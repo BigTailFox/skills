@@ -7,11 +7,15 @@ Single file, Python 3.8+ standard library only. Run `canon.py -h` for commands.
 import argparse
 import contextlib
 import datetime
+import errno
 import json
 import os
 import re
+import shutil
+import stat
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.parse
 from pathlib import Path
@@ -22,7 +26,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "7"
+CANON_VERSION = "8"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -1755,6 +1759,12 @@ UNIT_RE = re.compile(r"^\d{8}T\d{6}Z-[0-9a-f]{6}$")
 SLICE_RE = re.compile(r"^S\d+$")
 TRACE_LOCK_WAIT = 5
 MAX_EVENT = 16 * 1024
+MAX_CHANGES = 10 * 1024 * 1024
+MAX_SNAPSHOT_ERROR = 64 * 1024
+REPO_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE")
+SNAPSHOT_IDENTITY = {"GIT_AUTHOR_NAME": "canon-trace", "GIT_AUTHOR_EMAIL": "trace@canon.invalid",
+                     "GIT_COMMITTER_NAME": "canon-trace", "GIT_COMMITTER_EMAIL": "trace@canon.invalid"}
 TRACE_NOTICE = ("Tracing keeps, in each checkout's {}/, an event line at each canon unit boundary and a snapshot of the "
                 "work tree at each unit start, untracked files that are not ignored included. No commit or push reaches "
                 "that directory, but packaging that does not read .gitignore, such as a Docker build context, must "
@@ -1763,6 +1773,15 @@ TRACE_NOTICE = ("Tracing keeps, in each checkout's {}/, an event line at each ca
 
 class TraceError(Exception):
     """Invalid input or an events file that cannot be written; `trace` prints it and exits 0."""
+
+
+class SnapshotSkip(Exception):
+    """A snapshot that was not recorded: `reason` goes in the start line's `skipped`, Git's `message` in the unit's
+    snapshot-error.txt."""
+
+    def __init__(self, reason, message=b""):
+        super().__init__(reason)
+        self.reason, self.message = reason, message
 
 
 def trace_root():
@@ -1920,6 +1939,218 @@ def append_event(trace_dir, line, check):
         raise TraceError("wrote {} of the {} bytes of the event line".format(written, len(data)))
 
 
+def trace_env(**extra):
+    """The environment of trace's Git commands: the caller's, without the variables that point Git at another
+    repository, index or object store, and with GIT_OPTIONAL_LOCKS=0 so that no command rewrites the project's index."""
+    env = {key: value for key, value in os.environ.items() if key not in REPO_ENV}
+    env.update(GIT_OPTIONAL_LOCKS="0", **extra)
+    return env
+
+
+def errno_name(error):
+    return errno.errorcode.get(error.errno, "OSError")
+
+
+def trace_git(cwd, env, *args, data=None, stdin=None, stdout=subprocess.PIPE):
+    """Run `git *args` and return its output; raise SnapshotSkip naming the Git command and how it failed."""
+    command = "git " + next(arg for arg in args if not arg.startswith("-"))
+    try:
+        result = subprocess.run(["git", *args], cwd=str(cwd), env=env, input=data, stdin=stdin, stdout=stdout,
+                                stderr=subprocess.PIPE)
+    except OSError as error:
+        raise SnapshotSkip("{}: {}".format(command, errno_name(error)))
+    if result.returncode:
+        raise SnapshotSkip("{}: exit {}".format(command, result.returncode), result.stderr)
+    return result.stdout
+
+
+def trace_head(root, is_git):
+    """The commit HEAD names; None on an unborn branch or outside Git."""
+    if not is_git:
+        return None
+    try:
+        return trace_git(root, trace_env(), "rev-parse", "--verify", "-q", "HEAD^{commit}").decode().strip()
+    except SnapshotSkip:
+        return None
+
+
+def resolve_base(root, ref, head):
+    """The merge base of commit `ref` and HEAD; None without `ref`, on an unborn branch, outside Git (`head` is None
+    in both) and without a merge base. A `ref` that names no commit is invalid input."""
+    if ref is None or head is None:
+        return None
+    env, invalid = trace_env(), TraceError("--base {} names no commit".format(ref))
+    if ref.startswith("-"):
+        raise invalid
+    try:
+        commit = trace_git(root, env, "rev-parse", "--verify", "-q", ref + "^{commit}").decode().strip()
+    except SnapshotSkip:
+        raise invalid
+    try:
+        return trace_git(root, env, "merge-base", commit, head).decode().strip()
+    except SnapshotSkip:
+        return None
+
+
+def snapshot_repo(trace_dir, unit, env, sha256):
+    """The snapshot repository's Git directory, created under snapshot.lock on first use."""
+    git_dir = trace_dir / ".git"
+    if git_dir.is_dir():
+        return git_dir
+    try:
+        with file_lock(trace_dir / "snapshot.lock", TRACE_LOCK_WAIT, SnapshotSkip("snapshot lock: timeout")):
+            if not git_dir.is_dir():
+                build_snapshot_repo(trace_dir, unit, env, sha256)
+    except OSError as error:
+        raise SnapshotSkip("snapshot lock: " + errno_name(error))
+    return git_dir
+
+
+def build_snapshot_repo(trace_dir, unit, env, sha256):
+    """Create the snapshot repository in the project's object format, whatever default object format Git is
+    configured with: non-bare, its HEAD on an empty commit. It is built aside and renamed into place, so a .git in the
+    trace directory is always complete."""
+    build = trace_dir / (".init-" + unit)
+    built = "--git-dir=" + str(build / ".git")
+    try:
+        if sha256:
+            trace_git(trace_dir, env, "init", "-q", "--template=", "--object-format=sha256", str(build))
+        else:
+            trace_git(trace_dir, dict(env, GIT_DEFAULT_HASH="sha1"), "init", "-q", "--template=", str(build))
+        tree = trace_git(trace_dir, env, built, "mktree", data=b"").decode().strip()
+        commit = trace_git(trace_dir, env, built, "commit-tree", tree, "-m", "canon trace").decode().strip()
+        trace_git(trace_dir, env, built, "update-ref", "HEAD", commit)
+        try:
+            os.rename(str(build / ".git"), str(trace_dir / ".git"))
+        except OSError as error:
+            raise SnapshotSkip("git init: " + errno_name(error))
+    finally:
+        shutil.rmtree(str(build), ignore_errors=True)
+
+
+def copy_index(source, target):
+    """Copy the index at `source` to `target` with its modification time, which Git compares entries against to
+    find racily clean ones; copy nothing when there is no index."""
+    if not os.path.exists(source):
+        return
+    try:
+        with open(source, "rb") as src, open(str(target), "wb") as dst:
+            info = os.fstat(src.fileno())
+            shutil.copyfileobj(src, dst)
+        os.utime(str(target), ns=(info.st_atime_ns, info.st_mtime_ns))
+    except OSError as error:
+        raise SnapshotSkip("index copy: " + errno_name(error))
+
+
+def changes_size(root, status):
+    """The total size of the untracked files and of the files with unstaged changes in the output of
+    `git status --porcelain -z`."""
+    total, records = 0, iter(status.split(b"\0"))
+    for record in records:
+        if len(record) < 4:
+            continue
+        if record[0:1] in b"RC" or record[1:2] in b"RC":
+            next(records, None)
+        if record[1:2] != b" ":
+            with contextlib.suppress(OSError):
+                info = os.lstat(os.path.join(str(root), os.fsdecode(record[3:])))
+                total += info.st_size if stat.S_ISREG(info.st_mode) else 0
+    return total
+
+
+def take_snapshot(root, trace_dir, unit, parent):
+    """Record the work tree at refs/trace/<unit> in the snapshot repository, as a commit whose parent holds the tree
+    of commit `parent`, or that has no parent when `parent` is None (D001#snapshots); return the snapshot commit."""
+    env = trace_env(**SNAPSHOT_IDENTITY)
+    status = trace_git(root, env, "status", "--porcelain", "-z", "--untracked-files=all")
+    if changes_size(root, status) > MAX_CHANGES:
+        raise SnapshotSkip("changes-over-10MiB")
+    lines = trace_git(root, env, "rev-parse", "--git-path", "index", "--git-path", "objects",
+                      "--show-object-format").splitlines()
+    index, objects = (os.path.abspath(os.path.join(str(root), os.fsdecode(path))) for path in lines[:2])
+    git_dir = snapshot_repo(trace_dir, unit, env, sha256=lines[2:] == [b"sha256"])
+    copy = git_dir / ("index-" + unit)
+    try:
+        copy_index(index, copy)
+        steps = dict(env, GIT_INDEX_FILE=str(copy), GIT_OBJECT_DIRECTORY=str(git_dir / "objects"),
+                     GIT_ALTERNATE_OBJECT_DIRECTORIES=objects)
+        trace_git(root, steps, "add", "-A")
+        tree = trace_git(root, steps, "write-tree").decode().strip()
+        parents = []
+        if parent:
+            base = trace_git(root, steps, "commit-tree", parent + "^{tree}", "-m", "trace {} base".format(unit))
+            parents = ["-p", base.decode().strip()]
+        commit = trace_git(root, steps, "commit-tree", tree, *parents, "-m", "trace " + unit).decode().strip()
+        copy_borrowed(root, steps, trace_dir, env, git_dir, commit)
+        trace_git(trace_dir, env, "--git-dir=" + str(git_dir), "update-ref", "refs/trace/" + unit, commit)
+    finally:
+        with contextlib.suppress(OSError):
+            copy.unlink()
+    with contextlib.suppress(OSError):
+        subprocess.run(["git", "--git-dir=" + str(git_dir), "-c", "gc.autoDetach=false", "gc", "--auto", "--quiet"],
+                       cwd=str(trace_dir), env=env, capture_output=True)
+    return commit
+
+
+def copy_borrowed(root, steps, trace_dir, env, git_dir, commit):
+    """Copy into the snapshot repository the objects `commit` reaches that it lacks, which the snapshot steps
+    borrowed from the project, so the snapshot repository depends on nothing outside it."""
+    repo = "--git-dir=" + str(git_dir)
+    listing = trace_git(root, steps, "rev-list", "--objects", commit)
+    found = trace_git(trace_dir, env, repo, "cat-file", "--batch-check",
+                      data=b"".join(line.split(b" ", 1)[0] + b"\n" for line in listing.splitlines()))
+    missing = b"".join(line.split(b" ", 1)[0] + b"\n" for line in found.splitlines() if line.endswith(b" missing"))
+    if missing:
+        try:
+            with tempfile.TemporaryFile(dir=str(git_dir)) as pack:
+                trace_git(root, steps, "pack-objects", "--stdout", "-q", data=missing, stdout=pack)
+                pack.seek(0)
+                trace_git(trace_dir, env, repo, "index-pack", "--stdin", stdin=pack)
+        except OSError as error:
+            raise SnapshotSkip("git pack-objects: " + errno_name(error))
+
+
+def record_snapshot(root, is_git, trace_dir, unit, parent):
+    """Take the unit's snapshot; return the snapshot commit and the reason none was recorded, one of them None."""
+    if not is_git:
+        return None, "no-git"
+    try:
+        return take_snapshot(root, trace_dir, unit, parent), None
+    except SnapshotSkip as skip:
+        if skip.message:
+            with contextlib.suppress(OSError):
+                (trace_dir / unit).mkdir(parents=True, exist_ok=True)
+                (trace_dir / unit / "snapshot-error.txt").write_bytes(skip.message[-MAX_SNAPSHOT_ERROR:])
+        return None, skip.reason
+
+
+def human_size(size):
+    for unit in ("KiB", "MiB", "GiB"):
+        size /= 1024
+        if size < 1024 or unit == "GiB":
+            return "{:.1f} {}".format(size, unit)
+
+
+def snapshot_summary(trace_dir):
+    """The status lines on snapshots: how many the snapshot repository holds and its size on disk, and the starts
+    that recorded none, by reason."""
+    git_dir, count, size = trace_dir / ".git", 0, 0
+    if git_dir.is_dir():
+        with contextlib.suppress(SnapshotSkip):
+            count = len(trace_git(trace_dir, trace_env(), "--git-dir=" + str(git_dir), "for-each-ref",
+                                  "--format=%(refname)", "refs/trace/").splitlines())
+        for path, _dirs, names in os.walk(str(git_dir)):
+            for name in names:
+                with contextlib.suppress(OSError):
+                    size += os.lstat(os.path.join(path, name)).st_size
+    reasons = {}
+    for event in read_events(trace_dir, b'"skipped":"'):
+        if event.get("type") == "start" and isinstance(event.get("skipped"), str):
+            reasons[event["skipped"]] = reasons.get(event["skipped"], 0) + 1
+    skipped = "; ".join("{} {}".format(n, reason) for reason, n in sorted(reasons.items(), key=lambda r: (-r[1], r[0])))
+    return ["snapshots: {}, {} on disk".format(count, human_size(size)), "skipped starts: " + (skipped or "none")]
+
+
 def trace_start(args):
     root, is_git = trace_root()
     if not trace_state(root)[0]:
@@ -1931,17 +2162,22 @@ def trace_start(args):
     parent = start_parent(trace_dir, args)
     host, conversation = trace_host()
     now = datetime.datetime.now(datetime.timezone.utc)
-    line = {"v": 1, "type": "start", "id": now.strftime("%Y%m%dT%H%M%SZ-") + os.urandom(3).hex(), "kind": args.kind,
+    unit = now.strftime("%Y%m%dT%H%M%SZ-") + os.urandom(3).hex()
+    line = {"v": 1, "type": "start", "id": unit, "kind": args.kind,
             "at": now.astimezone().isoformat(timespec="seconds"), "parent": args.parent,
             "docs": trace_docs(root, is_git, args.docs)}
     if args.slice:
         line["slice"] = args.slice
-    line.update(tier=args.tier or (parent or {}).get("tier"), host=host, conversation=conversation,
+    head = trace_head(root, is_git)
+    base = resolve_base(root, args.base, head)
+    ignore_trace_dir(root)
+    snapshot, skipped = record_snapshot(root, is_git, trace_dir, unit, base or head)
+    line.update(tier=args.tier or (parent or {}).get("tier"), base=base, head=head, snapshot=snapshot,
+                skipped=skipped, host=host, conversation=conversation,
                 model=args.model.lower() if args.model else None,
                 skill=os.path.abspath(args.skill) if args.skill else None)
     if args.kind == "slice":
         line.update(model=parent.get("model"), skill=parent.get("skill"))
-    ignore_trace_dir(root)
     append_event(trace_dir, line, lambda: start_parent(trace_dir, args))
     print("trace " + line["id"])
     return 0
@@ -1966,7 +2202,7 @@ def end_unit(trace_dir, args):
 
 
 def trace_end(args):
-    root, _is_git = trace_root()
+    root, is_git = trace_root()
     if not trace_state(root)[0]:
         print("trace off")
         return 0
@@ -1977,6 +2213,7 @@ def trace_end(args):
             "at": now.astimezone().isoformat(timespec="seconds"), "outcome": args.outcome}
     if args.to:
         line["to"] = args.to
+    line["head"] = trace_head(root, is_git)
     append_event(trace_dir, line, lambda: end_unit(trace_dir, args))
     print("trace {} ended".format(args.unit))
     return 0
@@ -1999,6 +2236,7 @@ def trace_status(args):
         docs = "".join(" " + doc for doc in event.get("docs") or [])
         mine = " (this conversation)" if conversation and event.get("conversation") == conversation else ""
         print("  {} {}{} started {}{}".format(event["id"], event.get("kind"), docs, event.get("at"), mine))
+    print("\n".join(snapshot_summary(root / TRACE_DIR)))
     return 0
 
 
@@ -2124,6 +2362,8 @@ def main(argv=None):
     t.add_argument("--parent", metavar="UNIT", help="id of the open unit this one runs inside")
     t.add_argument("--tier", choices=("L0", "L1", "L2"))
     t.add_argument("--slice", metavar="S<n>", help="the plan slice a slice unit builds")
+    t.add_argument("--base", metavar="REF", help="the commit the unit's change starts from; the snapshot's parent "
+                                                 "holds the tree of its merge base with HEAD")
     t.add_argument("--skill", metavar="DIR", help="directory of the SKILL.md being followed")
     t.add_argument("--model", metavar="ID", help="the session's model id")
     t.set_defaults(func=trace_start)
