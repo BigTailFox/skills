@@ -38,6 +38,7 @@ Design, plan and implementation are separate phases, started with `/canon-design
 - **Implementation.** Each plan slice goes to a fresh worker subagent that builds it test-first. The main session verifies the slice, updates the plan and commits; a slice whose worker gets stuck is paused for you to decide.
 - **Code review.** Every finished change, L0 included, gets a Spec reviewer (against its designs and plan) and a Standards reviewer (against the project's stated standards) as parallel subagents, so the session that wrote the code never reviews it. L2 adds the cross-family reviewer.
 - **Docs step.** Before the final commit, designs absorb the details the code settled, finished plans and reviews are archived, and the commit names the designs it was checked against in a `Refs:` trailer, which lets `canon.py audit` flag code commits nobody checked against their design.
+- **Retro.** A workflow that hit friction in the tooling or the agent workflow, such as a correction, a command that would not run or a long search, ends with a look back: `canon-retro` proposes at most three fixes that concrete events justify (a check, a fix to the development environment, a design standard, a pointer), and you answer them in one reply. Smooth workflows skip it, and the project's architecture, performance and functionality stay with reviews.
 
 Workers and reviewers inherit the session's model and reasoning effort, so the session you start sets both; start a risky implementation at high effort. The exception is the cross-family reviewer. `/canon-init` lists this machine's reviewers, with their tools, models and efforts, in `.canon/canon-blind-review/reviewer.md` after a test run of each; a review uses the first one whose family differs from the session's, so a machine whose sessions run on both Claude and GPT needs one of each. Without such a reviewer, the review falls back to a prompt you run in another tool.
 
@@ -70,6 +71,7 @@ Auto skills load when the context calls for them. Manual skills run only as comm
 | `canon-investigate` | Diagnoses hard bugs and performance regressions: a feedback loop that reproduces the failure, falsifiable hypotheses, instrumentation, then a fix with a regression test, all recorded in an I doc that survives across sessions. A bug with a plain cause is fixed directly as L0. | Auto |
 | `canon-codebase-design` | Shared vocabulary and principles for deep modules (module, interface, depth, seam, adapter), deepening a module by its dependency category, and designing an interface twice with parallel subagents. The design, TDD and review skills build on it. | Auto |
 | `canon-handoff` | Hands the current work to a fresh agent: durable state goes into canon docs, the rest into a short handoff file under `.canon/canon-handoff/` that says where to resume and which skills to use. | Manual |
+| `canon-retro` | Turns friction in the tooling, docs and agent workflow into fixes (a check, a development-environment fix, a design standard or a pointer), proposed at the end of a workflow that hit friction or when you ask for a retro. Records canon's own friction in a local log. | Auto |
 | `canon-teach` | Teaches a topic: one explanation for a single question, or a course over several sessions with a teaching workspace (goals, resources, lessons, cheat sheet, learning log), kept under `.canon/canon-teach/` inside a project. | Manual |
 | `canon-agent-writing` | Reference for writing docs that agents read (skills, `AGENTS.md`, `CLAUDE.md` and docs reached through pointers): context pointers, progressive disclosure, completion criteria, pruning, skill frontmatter and each host's invocation switches. | Manual |
 
@@ -117,7 +119,7 @@ After installing on a new host, after a major host upgrade, or after changing de
 
 | Check | Do | Expect |
 |---|---|---|
-| Discovery | Open the host's skill list (`/skills` in Codex) | All 18 skills are listed, and no auto skill's triggers are cut off |
+| Discovery | Open the host's skill list (`/skills` in Codex) | All 19 skills are listed, and no auto skill's triggers are cut off |
 | Manual invocation | Run `/canon-sync` (`$canon-sync` in Codex) | The skill loads and follows its steps |
 | Manual skills stay manual | In a new session, say "sync the docs" without naming a skill | `canon-sync` does not load |
 | Implicit invocation | In a new session, say "this test fails intermittently, find out why" | `canon-investigate` loads |
@@ -125,6 +127,7 @@ After installing on a new host, after a major host upgrade, or after changing de
 | Subagents | Run the review gate on an L2 design | The same-model reviewer is a new subagent, the cross-family reviewer runs as the reviewer file says, and both get only the reviewer prompt. Confirmation resumes the same-model reviewer and reruns the cross-family one with its first-round findings |
 | Fallback | Run an L2 review gate without the reviewer file, and again in a session of the same family as every reviewer it lists | Each time, one line gives the reason and suggests `/canon-init`, then a reviewer prompt to copy into another tool |
 | Workers per slice | Implement a plan with `/canon-implement` | Each slice gets a new worker on the session's model and effort; the main session updates the plan and commits, and a stuck worker's slice is paused and reported at the end |
+| Retro | In one session, make an L0 change with `/canon-implement` and correct how it ran the tests, then make a clean L0 change | The first change ends with one retro item, such as a narrower test command or a pointer to it; the second ends without one and does not load `canon-retro` |
 
 In Cursor, subagents come from the Task tool, which runs them on the session's model by default. The reasoning effort is part of the model name, and a subagent can use another model only when the user asks for it, from a fixed list. Canon's workers and same-model reviewers keep the default, so they need no setup in Cursor. For a GPT cross-family reviewer, use the codex CLI rather than the Task tool, since the list offers few GPT models and fixes their efforts; codex has to run outside Cursor's sandbox because it writes to `~/.codex`. A reviewer from another family can be a Task subagent on a model from the list.
 
@@ -133,6 +136,7 @@ In Cursor, subagents come from the Task tool, which runs them on the session's m
 Canon is built for new projects first. Planned:
 
 - **As-built designs for existing code.** In a project with few docs, most code has no governing design, so `which`, `affected`, `audit` and the Spec review have little to check against. `canon.py` will report the source directories no design covers, ranked by recent commits. Designs that record existing behavior will be drafted from the code module by module, pass the review gate at L1 and become `active` without a plan, and the docs step will suggest one for uncovered code instead of escalating to L2.
+- **Judging the retro.** `canon-retro` stays automatic only while it pays off. A requested retro reports how often it raised items, how many were declined, and how many applied fixes have seen no recurrence; if it interrupts more than it helps, it becomes manual. A few valuable fixes can justify it.
 
 ## Releases and license
 
