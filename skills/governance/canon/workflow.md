@@ -8,19 +8,19 @@ The tiers are defined in [SKILL.md](SKILL.md#workflow).
 - **L1**: revise the design in place (revision +1) → review gate → [plan → review gate] → implement → code review → docs step → commit.
 - **L0**: implement → code review → docs step → commit.
 
-Design, plan and implementation are separate phases, and each can start in a fresh session because the docs carry the state. A phase ends by giving the user the command that starts the next one, e.g. `/canon-plan D012`; the user runs it in this session or a new one.
+Design, plan and implementation are separate phases, and each can start in a fresh session because the docs carry the state. A phase ends by giving the user the command that starts the next one, e.g. `/canon-plan D012`; the user runs it in this session or a new one. A [design problem](#design-problems) found while planning or implementing is the exception: that session revises the design and carries on, unless the fix is L2.
 
 ## Design problems
 
 A design problem is a flaw found in an accepted or active design while working from it: the design contradicts itself or another design, no implementation can satisfy it, the work would have to change what it states, or it lacks a decision only its intent can settle. Planning, review gates, implementation and code review can all find one. Wherever it is found:
 
 1. Tell the user, with the fix you would propose. Never change the design's intent yourself, even when it is plainly wrong.
-2. Once the user decides on a change, revise the design in place in the current session: bump `revision` and pass the review gate at L1. A fix that rewrites the design's goals or core approach is L2: give the user `/canon-design D00X` and pause the work that depends on it.
+2. Once the user decides on a change, revise the design in place in the current session: bump `revision` and pass the review gate at L1. A fix the tiers put at L2, such as a rewrite of the design's goals or core approach, goes through `/canon-design D00X`: give the user the command and pause the work that depends on it.
 3. When a plan builds on the design, check its slices against the design's diff, move its `based_on` to the new revision and log why. In a plan's review gate, do this before the confirmation round, so the reviewers confirm against the revised design.
 
 A detail the design leaves unstated, which the plan can settle within the design's goals and spec, is not a design problem: the plan settles it and lists it in its Notes for the docs step to write into the design. Changing what the design states never counts as such a detail.
 
-An L0 change that turns out to alter a spec is L1 work, not a design problem: the `canon-implement` skill stops it.
+An L0 change that turns out to alter a spec takes the same steps; once the design revision passes its gate, the change continues as L1 work.
 
 ## Implementation
 
