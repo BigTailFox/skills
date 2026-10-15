@@ -8,6 +8,7 @@ import argparse
 import contextlib
 import datetime
 import errno
+import hashlib
 import json
 import os
 import re
@@ -26,7 +27,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "9"
+CANON_VERSION = "10"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -1926,15 +1927,24 @@ def ignore_trace_dir(root):
             ignore.write(b"*\n")
 
 
-def append_event(trace_dir, line, check):
-    """Append `line` to events.jsonl in one write, under events.lock and once `check` passes there again."""
+def event_bytes(line):
+    """`line` as one compact UTF-8 JSON line of at most 16 KiB."""
     data = json.dumps(line, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     if len(data) > MAX_EVENT:
         raise TraceError("the event line would be {} bytes, over the 16 KiB limit".format(len(data)))
-    data += b"\n"
+    return data + b"\n"
+
+
+def append_event(trace_dir, line, check, manifest=None):
+    """Append `line` to events.jsonl in one write, under events.lock and once `check` passes there again, preceded by
+    the `manifest` line of its digest when the file holds none."""
+    data, entry = event_bytes(line), event_bytes(manifest) if manifest else b""
     trace_dir.mkdir(parents=True, exist_ok=True)
     with file_lock(trace_dir / "events.lock", TRACE_LOCK_WAIT, TraceError("timed out waiting for events.lock")):
         check()
+        if entry and not any(event.get("type") == "manifest" and event.get("digest") == manifest["digest"]
+                             for event in read_events(trace_dir, manifest["digest"].encode())):
+            data = entry + data
         fd = os.open(str(trace_dir / "events.jsonl"),
                      os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0), 0o666)
         try:
@@ -1942,7 +1952,7 @@ def append_event(trace_dir, line, check):
         finally:
             os.close(fd)
     if written != len(data):
-        raise TraceError("wrote {} of the {} bytes of the event line".format(written, len(data)))
+        raise TraceError("wrote {} of the {} bytes to append to events.jsonl".format(written, len(data)))
 
 
 def trace_env(**extra):
@@ -2157,6 +2167,84 @@ def snapshot_summary(trace_dir):
     return ["snapshots: {}, {} on disk".format(count, human_size(size)), "skipped starts: " + (skipped or "none")]
 
 
+def skill_dirs(skill):
+    """The directories named canon or canon-* that hold a SKILL.md beside the directory `skill`, or in every category
+    directory when `skill` sits in the skills repository's skills/<category>/<name>/ layout, by name."""
+    skill = Path(skill)
+    tops = [skill.parent]
+    if skill.parent.parent.name == "skills":
+        with contextlib.suppress(OSError):
+            tops = sorted(path for path in skill.parent.parent.iterdir() if path.is_dir())
+    found = {}
+    for top in tops:
+        with contextlib.suppress(OSError):
+            for path in sorted(top.iterdir()):
+                if (path.name == "canon" or path.name.startswith("canon-")) and (path / "SKILL.md").is_file():
+                    found.setdefault(path.name, path)
+    return found
+
+
+def covered_files(directory, prefix=""):
+    """The files a skill's digest covers, as (path from the skill directory, executable, content): every regular file
+    under `directory` but LICENSE, NOTICE and *.pyc, and none under __pycache__/ or named with a leading dot."""
+    files = []
+    with os.scandir(str(directory)) as entries:
+        for entry in entries:
+            if entry.name.startswith(".") or entry.name in ("LICENSE", "NOTICE", "__pycache__") \
+                    or entry.name.endswith(".pyc"):
+                continue
+            if entry.is_dir(follow_symlinks=False):
+                files += covered_files(entry.path, prefix + entry.name + "/")
+            elif entry.is_file(follow_symlinks=False):
+                with open(entry.path, "rb") as file:
+                    executable = bool(os.fstat(file.fileno()).st_mode & stat.S_IXUSR)
+                    files.append((prefix + entry.name, executable, file.read()))
+    return files
+
+
+def sha256_json(value, **options):
+    """The SHA-256 of `value` as compact UTF-8 JSON."""
+    text = json.dumps(value, ensure_ascii=False, separators=(",", ":"), **options)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def skill_manifest(skill):
+    """The `manifest` line of the skills found from the directory `skill`, and the files its digests cover as (tree
+    path, executable, content), each skill directory under its name. A skill's digest is the SHA-256 of its covered
+    files' sorted [path, Git blob id] pairs, and the manifest's that of its skills (D001#skill-digests)."""
+    skills, files = {}, []
+    for name, directory in sorted(skill_dirs(skill).items()):
+        covered = covered_files(directory)
+        skills[name] = sha256_json(sorted([path, hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()]
+                                          for path, _executable, data in covered))
+        files += [(name + "/" + path, executable, data) for path, executable, data in covered]
+    return {"v": 1, "type": "manifest", "digest": sha256_json(skills, sort_keys=True), "skills": skills}, files
+
+
+def quoted(path):
+    """`path` as a C-style quoted string, the form in which git fast-import takes a path holding any byte."""
+    return b'"' + b"".join(b"\\%03o" % byte if byte < 32 or byte in b'"\\\x7f' else bytes([byte])
+                           for byte in os.fsencode(path)) + b'"'
+
+
+def store_skills(trace_dir, manifest, files):
+    """Store the files of a manifest the snapshot repository lacks there, as a parentless commit at
+    refs/skills/<manifest digest>; best-effort, since the next start with that manifest stores it."""
+    repo, ref, env = "--git-dir=" + str(trace_dir / ".git"), "refs/skills/" + manifest["digest"], trace_env()
+    with contextlib.suppress(SnapshotSkip):
+        if trace_git(trace_dir, env, repo, "for-each-ref", ref):
+            return
+        committer = "{GIT_COMMITTER_NAME} <{GIT_COMMITTER_EMAIL}> {when} +0000".format(when=int(time.time()),
+                                                                                    **SNAPSHOT_IDENTITY)
+        message = "skills " + manifest["digest"]
+        stream = [b"commit %s\ncommitter %s\ndata %d\n%s\n" % (ref.encode(), committer.encode(), len(message),
+                                                                message.encode())]
+        for path, executable, data in files:
+            mode = b"100755" if executable else b"100644"
+            stream.append(b"M %s inline %s\ndata %d\n%s\n" % (mode, quoted(path), len(data), data))
+        trace_git(trace_dir, env, repo, "fast-import", "--quiet", data=b"".join(stream))
+
+
 def trace_start(args):
     root, is_git = trace_root()
     if not trace_state(root)[0]:
@@ -2184,7 +2272,11 @@ def trace_start(args):
                 skill=os.path.abspath(args.skill) if args.skill else None)
     if args.kind == "slice":
         line.update(model=parent.get("model"), skill=parent.get("skill"))
-    append_event(trace_dir, line, lambda: start_parent(trace_dir, args))
+    manifest, files = skill_manifest(line["skill"]) if line["skill"] else (None, [])
+    if manifest and is_git and (trace_dir / ".git").is_dir():
+        store_skills(trace_dir, manifest, files)
+    line["manifest"] = manifest["digest"] if manifest else None
+    append_event(trace_dir, line, lambda: start_parent(trace_dir, args), manifest)
     print("trace " + line["id"])
     return 0
 
@@ -2338,10 +2430,14 @@ def trace_end(args):
     if args.to:
         line["to"] = args.to
     line["head"] = trace_head(root, is_git)
+    manifest = None
+    if start.get("parent") is None:
+        manifest = skill_manifest(start["skill"])[0] if start.get("skill") else None
+        line["manifest"] = manifest["digest"] if manifest else None
     if kind in REVIEW_ROLES:
         line["dispositions"] = dispositions
     line["archive"] = archive_files(source, trace_dir / args.unit, unit_started(args.unit)) if source else None
-    append_event(trace_dir, line, lambda: end_unit(trace_dir, args))
+    append_event(trace_dir, line, lambda: end_unit(trace_dir, args), manifest)
     print("trace {} ended".format(args.unit))
     return 0
 

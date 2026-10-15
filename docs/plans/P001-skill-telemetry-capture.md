@@ -17,7 +17,7 @@ Implements [D001: Skill telemetry with canon trace](../designs/D001-skill-teleme
 
 ## Current state
 
-Next: S4.
+Next: S5.
 
 ## Slices
 
@@ -103,7 +103,7 @@ Test criteria; seams: `trace end` with `--input` and `--dir`, its line, and `.ca
 
 ### S4: Skill digests and stored versions
 
-Status: todo
+Status: done
 
 Builds on `D001#skill-digests` and `D001#event-lines`.
 
@@ -205,3 +205,5 @@ Test criteria; seam: the skill texts as an agent follows them, run through the `
 - S2's worker stalled for about three hours on a tool call that never returned, after writing the SHA-1 test and before running it; resumed and limited to the sandbox, it finished in minutes.
 - S3 done: 8 tests in `DispositionsTest` and `ArchiveTest`, 70 in the suite, all passing.
 - S3 decisions: every end line carries `archive`, null without `--dir`, since `D001#event-lines` gives it no condition. A `--dir` under `.canon/` that does not exist gives `copy: ENOENT` and still ends the unit. Every documented key is required except `confirmed`, and `id` may be null; `by` is not empty, F numbers have no leading zero, each role is listed once and `model` is not empty. All input is checked before anything is copied; a failed read copies nothing, and a failed write deletes what it wrote. Files open with `O_NOFOLLOW` and `O_NONBLOCK` and must be regular once open, so a file swapped after the listing is skipped; that race was checked by hand with a FIFO and a symlink to `/etc/passwd`. The docs step adds the null `archive` and the `copy: ENOENT` case to D001.
+- S4 done: 4 tests in `SkillDigestTest`, 74 in the suite, all passing. With 20 skill directories totalling 1 MiB, `--skill` added no measurable time: start p95 194 ms with it, 198 ms without.
+- S4 decisions: a skill directory beside `--skill` may be a symlink, as `npx skills` installs them. A `--skill` with no skill beside it gives the manifest `{}`, which is written and stored like any other; only a start without `--skill` has a null `manifest`. Only a start stores skill files, through one `git fast-import`, and only once the snapshot repository exists. The excluded names are excluded at any depth. The manifest line goes out in the same write as the first line that uses its digest.

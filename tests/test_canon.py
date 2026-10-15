@@ -2,6 +2,7 @@
 
 import contextlib
 import datetime
+import hashlib
 import importlib.util
 import json
 import os
@@ -414,6 +415,10 @@ class TraceCase(CanonTest):
         self.assertRegex(out, r"^trace \d{8}T\d{6}Z-[0-9a-f]{6}\n$")
         return out.split()[1]
 
+    def start_line(self, *args, **env):
+        unit = self.start(*args, **env)
+        return next(line for line in self.lines() if line.get("id") == unit)
+
     def lines(self, events=None):
         return [json.loads(line) for line in (events or self.events).read_text(encoding="utf-8").splitlines()]
 
@@ -422,6 +427,28 @@ class TraceCase(CanonTest):
         before = self.events.read_bytes() if self.events.exists() else None
         self.assertRegex(self.trace(*args, **env), r"^trace error: ")
         self.assertEqual(self.events.read_bytes() if self.events.exists() else None, before, args)
+
+    def tmpdir(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        return Path(tmp.name)
+
+    def snap(self, *args):
+        """Run git in the snapshot repository, as `git -C .canon/canon/trace`; return its stripped output."""
+        return self.git("-C", ".canon/canon/trace", *args)
+
+    def snapshot_objects(self):
+        return set(self.snap("cat-file", "--batch-all-objects", "--batch-check=%(objectname)").split())
+
+    @contextlib.contextmanager
+    def events_lock_held(self):
+        """Hold events.lock as a trace call does, so calls started meanwhile queue on it after their first checks."""
+        if fcntl is None:
+            yield
+            return
+        with open(str(self.events.with_name("events.lock")), "a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            yield
 
 
 class TraceTest(TraceCase):
@@ -471,9 +498,9 @@ class TraceTest(TraceCase):
         unit = self.start("design", "D001", "D002", "D003", "D999")
         [line] = self.lines()
         self.assertEqual(set(line), {"v", "type", "id", "kind", "at", "parent", "docs", "tier", "base", "head",
-                                     "snapshot", "skipped", "host", "conversation", "model", "skill"})
-        self.assertEqual([line[k] for k in ("v", "type", "id", "kind", "parent", "tier", "model", "skill")],
-                         [1, "start", unit, "design", None, None, None, None])
+                                     "snapshot", "skipped", "host", "conversation", "model", "skill", "manifest"})
+        self.assertEqual([line[k] for k in ("v", "type", "id", "kind", "parent", "tier", "model", "skill", "manifest")],
+                         [1, "start", unit, "design", None, None, None, None, None])
         self.assertEqual(line["docs"], ["D001@r3", "D002@r1", "D003@r1", "D999"])
         self.assertRegex(line["at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d$")
         at = datetime.datetime.fromisoformat(line["at"])
@@ -502,7 +529,7 @@ class TraceTest(TraceCase):
         gate = self.start("gate", "D001", "--parent", implement)
         piece = self.start("slice", "P001", "--slice", "S1", "--parent", implement)
         lone_gate, check = self.start("gate", "D001"), self.start("end-check")
-        lines = {line["id"]: line for line in self.lines()}
+        lines = {line["id"]: line for line in self.lines() if line["type"] != "manifest"}
         self.assertEqual((lines[gate]["parent"], lines[gate]["tier"]), (implement, "L1"))
         self.assertEqual([lines[piece][k] for k in ("parent", "slice", "tier", "skill", "model")],
                          [implement, "S1", "L1", os.path.join(os.path.realpath(self.root), "skills", "canon-implement"),
@@ -534,21 +561,11 @@ class TraceTest(TraceCase):
         self.trace("end", implement, "escalated", "--to", "plan")
         self.trace("end", check, "raised")
         ends = [line for line in self.lines() if line["type"] == "end"]
-        self.assertEqual(set(ends[0]), {"v", "type", "id", "kind", "at", "outcome", "head", "archive"})
-        self.assertEqual([end.get("archive", "absent") for end in ends], [None] * 3)
+        self.assertEqual(set(ends[0]), {"v", "type", "id", "kind", "at", "outcome", "head", "manifest", "archive"})
+        self.assertEqual([[end.get(k, "absent") for k in ("manifest", "archive")] for end in ends], [[None, None]] * 3)
         self.assertEqual([[end.get(k) for k in ("v", "id", "kind", "outcome", "to")] for end in ends],
                          [[1, design, "design", "delivered", None], [1, implement, "implement", "escalated", "plan"],
                           [1, check, "end-check", "raised", None]])
-
-    @contextlib.contextmanager
-    def events_lock_held(self):
-        """Hold events.lock as a trace call does, so calls started meanwhile queue on it after their first checks."""
-        if fcntl is None:
-            yield
-            return
-        with open(str(self.events.with_name("events.lock")), "a") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            yield
 
     def test_of_two_parallel_ends_of_a_unit_one_closes_it(self):
         self.trace("on")
@@ -656,19 +673,6 @@ class SnapshotTest(TraceCase):
         super().setUp()
         self.trace("on")
 
-    def snap(self, *args):
-        """Run git in the snapshot repository, as `git -C .canon/canon/trace`; return its stripped output."""
-        return self.git("-C", ".canon/canon/trace", *args)
-
-    def start_line(self, *args, **env):
-        unit = self.start(*args, **env)
-        return next(line for line in self.lines() if line["id"] == unit)
-
-    def tmpdir(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        return Path(tmp.name)
-
     def project_state(self):
         """The project's work tree outside .canon/, HEAD, refs, the files under its object directory, and its index."""
         def files(top, skip=()):
@@ -678,9 +682,6 @@ class SnapshotTest(TraceCase):
         return {"work tree": files(self.root, (".git", ".canon")), "HEAD": (git_dir / "HEAD").read_bytes(),
                 "refs": self.git("for-each-ref", "--format=%(refname) %(objectname)"),
                 "objects": files(git_dir / "objects"), "index": (git_dir / "index").read_bytes()}
-
-    def snapshot_objects(self):
-        return set(self.snap("cat-file", "--batch-all-objects", "--batch-check=%(objectname)").split())
 
     def stored_once(self):
         """Whether the snapshot repository stores each of its objects once, loose or in a single pack."""
@@ -1146,6 +1147,131 @@ class ArchiveTest(TraceCase):
             self.rejects("end", unit, "delivered", "--dir", path)
         self.assertFalse((self.root / ".canon/canon/trace" / unit).exists())
         self.assertEqual(self.end(unit), ("none", {}))
+
+
+class SkillDigestTest(TraceCase):
+    def setUp(self):
+        super().setUp()
+        self.trace("on")
+
+    def skill(self, top, name, files=()):
+        """Create the skill directory `top/name` holding a SKILL.md and `files`, given by relative path; return it."""
+        directory = top / name
+        for rel in ("SKILL.md", *files):
+            (directory / rel).parent.mkdir(parents=True, exist_ok=True)
+            (directory / rel).write_text("{} of {}\n".format(rel, name), encoding="utf-8")
+        return directory
+
+    def manifest(self, *args, **env):
+        """Start a unit; return the manifest line of the digest its start line records, None when it records none."""
+        digest = self.start_line(*args, **env).get("manifest")
+        return next((line for line in self.lines() if line["type"] == "manifest" and line["digest"] == digest), None)
+
+    def blob(self, path):
+        return self.git("hash-object", "--no-filters", str(path))
+
+    def test_a_skills_digest_is_the_design_formula_over_the_blob_ids_of_its_covered_files(self):
+        top = self.tmpdir()
+        self.skill(top, "canon")
+        skill = self.skill(top, "canon-x", ("notes-é.md", "scripts/run.py"))
+
+        def digest(directory, covered):
+            pairs = sorted([rel, self.blob(directory / rel)] for rel in covered)
+            return hashlib.sha256(json.dumps(pairs, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+
+        def expected():
+            return {"canon": digest(top / "canon", ["SKILL.md"]),
+                    "canon-x": digest(skill, ["SKILL.md", "notes-é.md", "scripts/run.py"])}
+
+        first = self.manifest("design", "--skill", str(skill))
+        self.assertEqual(first and first["skills"], expected())
+        self.assertEqual(first["digest"], hashlib.sha256(json.dumps(first["skills"], sort_keys=True,
+                                                                    separators=(",", ":")).encode()).hexdigest())
+        (skill / "scripts/run.py").write_text("edited\n")
+        edited = self.manifest("design", "--skill", str(skill))
+        self.assertEqual(edited["skills"], expected())
+        self.assertNotEqual(edited["skills"]["canon-x"], first["skills"]["canon-x"])
+        for rel in ("LICENSE", "NOTICE", "__pycache__/x.pyc", ".DS_Store"):
+            (skill / rel).parent.mkdir(exist_ok=True)
+            (skill / rel).write_text("not covered\n")
+        self.assertEqual(self.manifest("design", "--skill", str(skill)), edited)
+
+    def test_the_installed_and_the_source_layouts_find_every_canon_skill_and_no_other_directory(self):
+        installed = self.tmpdir()
+        for name in ("canon", "canon-design", "canonical", "other", "more/canon-nested"):
+            self.skill(installed, name)
+        (installed / "canon-empty").mkdir()
+        (installed / "canon-file").write_text("not a directory\n")
+        found = {"canon", "canon-design"}
+        if os.name != "nt":
+            (installed / "canon-linked").symlink_to(self.skill(self.tmpdir(), "canon-linked"), target_is_directory=True)
+            found.add("canon-linked")
+        self.assertEqual(set(self.manifest("design", "--skill", str(installed / "canon-design"))["skills"]), found)
+        source = self.tmpdir() / "skills"
+        for name in ("governance/canon", "execution/canon-tdd", "execution/other"):
+            self.skill(source, name)
+        (source / "execution/canon-empty").mkdir()
+        self.skill(source.parent, "canon-beside")
+        self.assertEqual(set(self.manifest("design", "--skill", str(source / "execution/canon-tdd"))["skills"]),
+                         {"canon", "canon-tdd"})
+
+    def test_each_manifest_line_appears_once_before_its_first_use_and_top_level_ends_compute_their_own(self):
+        skill = self.skill(self.tmpdir(), "canon-x")
+        plan = self.start("plan")
+        with ThreadPoolExecutor(max_workers=10) as pool, self.events_lock_held():
+            starts = [pool.submit(self.start, "design", "--skill", str(skill)) for _ in range(10)]
+            time.sleep(2)
+        self.assertEqual(len({start.result() for start in starts}), 10)
+        implement = self.start("implement", "--skill", str(skill))
+        gate = self.start("gate", "--parent", implement, "--skill", str(skill))
+        (skill / "SKILL.md").write_text("edited\n")
+        piece = self.start("slice", "P001", "--slice", "S1", "--parent", implement)
+        self.trace("end", gate, "delivered")
+        self.trace("end", implement, "delivered")
+        lines = self.lines()
+        manifests = [line["digest"] for line in lines if line["type"] == "manifest"]
+        self.assertEqual(len(manifests), 2)
+        self.assertEqual(len(set(manifests)), 2)
+        for n, line in enumerate(lines):
+            if line.get("manifest"):
+                self.assertIn(line["manifest"], [other.get("digest") for other in lines[:n]], n)
+        starts = {line["id"]: line for line in lines if line["type"] == "start"}
+        ends = {line["id"]: line for line in lines if line["type"] == "end"}
+        self.assertIsNone(starts[plan]["manifest"])
+        self.assertEqual(starts[gate]["manifest"], starts[implement]["manifest"])
+        self.assertEqual(ends[implement].get("manifest"), starts[piece]["manifest"])
+        self.assertNotEqual(ends[implement].get("manifest"), starts[implement]["manifest"])
+        self.assertNotIn("manifest", ends[gate])
+
+    @unittest.skipIf(os.name == "nt", "Windows has no executable bit")
+    def test_a_manifest_the_snapshot_repository_lacks_is_stored_once_with_each_files_mode(self):
+        self.commit()
+        top = self.tmpdir()
+        self.skill(top, "canon")
+        skill = self.skill(top, "canon-x", ("scripts/run.sh", "LICENSE"))
+        (skill / "scripts/run.sh").chmod(0o755)
+        digest = self.start_line("design", "--skill", str(skill))["manifest"]
+        refs = self.snap("for-each-ref", "--format=%(refname) %(objectname)", "refs/skills/")
+        self.assertEqual(refs.split(" ")[0], "refs/skills/" + digest)
+        tree = {}
+        for entry in self.snap("ls-tree", "-r", "refs/skills/" + digest).splitlines():
+            info, path = entry.split("\t")
+            tree[path] = (info.split()[0], info.split()[2])
+        self.assertEqual(tree, {"canon/SKILL.md": ("100644", self.blob(top / "canon/SKILL.md")),
+                                "canon-x/SKILL.md": ("100644", self.blob(skill / "SKILL.md")),
+                                "canon-x/scripts/run.sh": ("100755", self.blob(skill / "scripts/run.sh"))})
+        self.assertEqual(self.snap("rev-list", "--parents", "refs/skills/" + digest), refs.split(" ")[1])
+        before = self.snapshot_objects()
+        line = self.start_line("design", "--skill", str(skill))
+        self.assertEqual(line["manifest"], digest)
+        self.assertEqual(self.snapshot_objects() - before,
+                         {line["snapshot"], self.snap("rev-parse", line["snapshot"] + "^")})
+        self.assertEqual(self.snap("for-each-ref", "--format=%(refname) %(objectname)", "refs/skills/"), refs)
+        outside = self.tmpdir()
+        (outside / "AGENTS.md").write_text("# AGENTS.md\n")
+        self.start("design", "--skill", str(skill), cwd=outside)
+        self.assertEqual(self.lines(outside / ".canon/canon/trace/events.jsonl")[-1]["manifest"], digest)
+        self.assertFalse((outside / ".canon/canon/trace/.git").exists())
 
 
 if __name__ == "__main__":
