@@ -39,8 +39,10 @@ Write each answer where it belongs the moment it is settled, never in a batch at
 
 - Writing a design: its Spec, Goals or Decisions. Writing a concept: Ideas or Open questions.
 - Writing a plan: its slices or Notes.
-- Implementing: the plan's Log, with the reason. An answer that changes a design's meaning goes through the change tiers in the `canon` skill.
+- Implementing: the plan's Log, with the reason.
 - No doc (L0): the commit message, when the choice would surprise a reader.
+
+An answer that changes a design you are not writing is a design problem: follow the `canon` skill's workflow (Design problems).
 
 A Decision line is worth adding only when the choice is hard to reverse, surprising without context, and the result of a real trade-off.
 

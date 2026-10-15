@@ -10,6 +10,18 @@ The tiers are defined in [SKILL.md](SKILL.md#workflow).
 
 Design, plan and implementation are separate phases, and each can start in a fresh session because the docs carry the state. A phase ends by giving the user the command that starts the next one, e.g. `/canon-plan D012`; the user runs it in this session or a new one.
 
+## Design problems
+
+A design problem is a flaw found in an accepted or active design while working from it: the design contradicts itself or another design, no implementation can satisfy it, the work would have to change what it states, or it lacks a decision only its intent can settle. Planning, review gates, implementation and code review can all find one. Wherever it is found:
+
+1. Tell the user, with the fix you would propose. Never change the design's intent yourself, even when it is plainly wrong.
+2. Once the user decides on a change, revise the design in place in the current session: bump `revision` and pass the review gate at L1. A fix that rewrites the design's goals or core approach is L2: give the user `/canon-design D00X` and pause the work that depends on it.
+3. When a plan builds on the design, check its slices against the design's diff, move its `based_on` to the new revision and log why. In a plan's review gate, do this before the confirmation round, so the reviewers confirm against the revised design.
+
+A detail the design leaves unstated, which the plan can settle within the design's goals and spec, is not a design problem: the plan settles it and lists it in its Notes for the docs step to write into the design. Changing what the design states never counts as such a detail.
+
+An L0 change that turns out to alter a spec is L1 work, not a design problem: the `canon-implement` skill stops it.
+
 ## Implementation
 
 Implement slice by slice, each slice in a fresh worker subagent (the `canon-implement` skill). Only the orchestrating session edits the plan and commits: after each slice it sets the slice's `Status:` and updates the plan's Current state and Log.
@@ -17,10 +29,8 @@ Implement slice by slice, each slice in a fresh worker subagent (the `canon-impl
 When the implementation cannot follow the plan or the design:
 
 - **Plan problem with one clear fix**: edit the plan and continue without asking; log the deviation and the decision. Such a fix keeps the plan's `revision`. When the plan problem needs a decision, or its fix would change what the plan delivers, mark the slice `paused` and ask the user: that is a new plan revision, made with the `canon-plan` skill, and it passes the review gate before the slices resume.
-- **Design problem**: no implementation can satisfy the design, or the design contradicts itself. Mark the slice `paused` and tell the user. Never change the design's intent yourself, even when it is plainly wrong.
+- **[Design problem](#design-problems)**: mark the slice `paused` and tell the user.
 - While a slice is paused for a design problem or a pending decision, finish the slices that do not depend on it, then report every paused slice with its problem.
-
-A design changes only after the user decides, through the tier's flow (revision bump and review gate).
 
 ## Review gate
 
@@ -30,7 +40,7 @@ Every design or plan revision passes this gate before it is accepted, and every 
 2. Launch the first-round reviewers in parallel, with the `canon-blind-review` skill when it is installed. A blind reviewer is a fresh subagent that carries nothing from the current conversation: never fork the session, and pass only the reviewer prompt below.
    - **Same-model reviewer**: a subagent on the author's model and effort (Subagents below).
    - **Cross-family reviewer**: a model of another family than the session's, run as the reviewer file says (Subagents below), in the first round only. Required for L2, optional for L1. When the file names no such reviewer, or the run fails, give the user the filled reviewer prompt to run in another tool, and wait for the result.
-3. Merge the findings. Accept and fix, decline with a one-line reason for the user, or escalate to the user. A finding raised by both reviewers is accepted unless it is clearly wrong. Declined findings stay out of the doc; record a Decision only when its rationale has lasting value.
+3. Merge the findings. Accept and fix, decline with a one-line reason for the user, or escalate to the user. A finding about a design other than the target, such as a plan finding about its design, follows [Design problems](#design-problems). A finding raised by both reviewers is accepted unless it is clearly wrong. Declined findings stay out of the doc; record a Decision, in the design that owns the topic, only when its rationale has lasting value.
 4. When accepted blocker or major findings were fixed, the reviewers that raised them confirm the fixes in one more round, as the `canon-blind-review` skill's confirmation describes. Blockers still open after it go to the user; there is no third round.
 5. Set `reviewed: <revision>` and `reviewers: [<model ids>]`, using `manual:<model>` for user-run reviews.
 6. Status. L1: a draft becomes `accepted`. L2: report the accepted, declined and escalated findings and the reviewer models, including any fallback, and get the user's answer on each escalated finding. The user then approves, here or by starting the next phase on the doc; a draft becomes `accepted` at that point and until then stays a `draft` whose `reviewed` equals `revision`. A revised active design stays `active`, and a revised plan in progress stays `in-progress`, in both tiers.
@@ -83,7 +93,7 @@ The cross-family reviewer runs as the reviewer file, `.canon/canon-blind-review/
 Before committing, after implementation and code review. Scope: the uncommitted changes, or a branch with `--base <ref>`; after per-slice commits, the plan's `Started at` commit is the base.
 
 1. Run `canon.py affected [--base <ref>]`. For each listed design, compare the diff with its governing sections (`show D00X#slug`):
-   - The change implements an accepted spec or plan: write into the spec the details the code settled within its accepted intent; they need no revision bump. Once a revision's implementation has fully landed, set `implemented` to that revision and the design `active`.
+   - The change implements an accepted spec or plan: write into the spec the details the code settled within its accepted intent, including those the plan's Notes list; they need no revision bump. Once a revision's implementation has fully landed, set `implemented` to that revision and the design `active`.
    - The code contradicts the spec: report it to the user instead of rewriting the spec.
    - The user decided to change the spec's meaning: bump `revision` and pass the review gate.
 2. For changed files where `which` prints `no design`, add them to the `paths` of the design that owns the area. If no design owns it, tell the user; a new design is L2.

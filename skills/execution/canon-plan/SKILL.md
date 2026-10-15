@@ -21,10 +21,12 @@ Draft the whole plan yourself before asking anything:
 - **Vertical slices.** Each slice delivers one observable behavior end to end, a tracer bullet, so it can be verified on its own. Never one slice for all the tests and another for all the code.
 - **Order by dependency**, riskiest first among independent slices. When a slice depends on an unanswered design question, its first step is an experiment (`canon-prototype`) whose conclusion feeds the design.
 - **Each slice**: `### S<n>: <name>`, a `Status: todo` line, a `Risk:` line when the slice involves complex logic, concurrency, performance, security or data migration, the changes (modules, files, migrations), and test criteria. Each criterion names its seam, the interface from the design's Spec where the test observes behavior (`canon-codebase-design` vocabulary), and the expected behavior.
-- **Notes**: risks, constraints, migration and rollout concerns the implementer must keep in mind.
+- **Notes**: risks, constraints, migration and rollout concerns the implementer must keep in mind, and the details the plan settles that the design leaves unstated, for the docs step to write into the design.
 - **Current state**: `Next: S1`.
 
 Then settle what the draft leaves open with the `canon-grill` skill: slice boundaries, order, seams and risk. Write each answer into the plan at once.
+
+When drafting or the gate finds a design problem, as when a slice would have to change what the design states, follow the `canon` skill's workflow (Design problems); the slices it touches wait for the revised design.
 
 ## 3. Gate
 

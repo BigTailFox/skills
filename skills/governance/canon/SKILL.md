@@ -31,7 +31,7 @@ Execute `canon.py`; do not read it. Use the project's copy at the path named in 
 - When a change may alter behavior or standards a design specifies, run `which <file>` and read the governing sections with `show ID#slug` first. Read a whole doc only when you are writing it.
 - Look topics up with `find`; `docs/README.md` is the generated index.
 - Skip `docs/archived/` unless researching history (`find --archived`).
-- A design is the source of truth. A plan records progress and history; when they disagree, the design wins.
+- A design is the source of truth. A plan records progress and history; when they disagree, the design wins. A flaw in the design itself is a [design problem](workflow.md#design-problems).
 
 ## Layout
 
