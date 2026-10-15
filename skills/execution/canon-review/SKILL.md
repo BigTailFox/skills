@@ -19,7 +19,7 @@ Use the modules and angles the user names. Otherwise propose a scope and wait fo
 
 ## 2. Create the doc
 
-Run `canon.py new R <slug>`. Scope records the commit (`git rev-parse HEAD`), the modules and paths, and the angles. Attachments go in `reviews/R00X/`.
+Run `canon.py new R <slug>`. Scope records the commit (`git rev-parse HEAD`), the modules and paths, and the angles. Attachments go in `reviews/R00X/`. Then run `canon.py trace start canon-review <R id> --skill <skill> --model <model>`.
 
 ## 3. Review each angle
 
@@ -55,3 +55,5 @@ Before deciding on an architecture candidate, the user may explore it: walk it w
 Once no finding is `open`, run `canon.py archive R00X closed` and `canon.py check --fix`, then commit (Conventional Commits, `docs` type, `Refs: R00X`).
 
 Then run the `canon-retro` skill's end check only if this work hit concrete friction in the development infrastructure or the agent workflow that could recur, such as a correction to how you worked, a finding a check could have caught, a command that would not run, a check that failed after you thought you were done, a search that took far too long, or a canon step that got in the way. Use only evidence already in context; do not search for reasons to run it.
+
+Then run `canon.py trace end <id> <outcome>`.

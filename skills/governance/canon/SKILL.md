@@ -26,7 +26,7 @@ Execute `canon.py`; do not read it. Use the project's copy at the path named in 
 | `audit` | Designs with code commits since the design last changed that no `Refs:` trailer names, idle open docs other than concepts, due reviews. |
 | `init`, `adopt` | Project setup, upgrades and migration; the user runs them through the `canon-init` skill. |
 
-In `canon.py trace` calls, `<skill>` is the path of the directory holding the `SKILL.md` being followed (in the review gate, `canon-blind-review`'s, or `canon`'s without it), `<model>` your model id as the host's model setting names it, and `<parent>` the id of the invoking workflow's open unit, if any. The first `start` of a skill or gate decides: unless it prints `trace <id>`, skip its other trace calls; when it does, follow [trace.md](trace.md).
+In `canon.py trace` calls, `<skill>` is the path of the directory holding the `SKILL.md` being followed (in the review gate, `canon-blind-review`'s, or `canon`'s without it), `<model>` your model id as the host's model setting names it, and `<parent>` the id of the invoking workflow's open unit, if any. The first `start` of a skill or gate decides: unless it prints `trace <id>`, skip its other trace calls; when it does, follow [trace.md](trace.md), and use that `<id>` in its other calls.
 
 ## Reading docs
 

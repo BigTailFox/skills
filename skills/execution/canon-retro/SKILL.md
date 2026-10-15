@@ -7,8 +7,8 @@ description: Turns friction a session hit in tooling, docs and the agent workflo
 
 A retro improves how work gets done in the project: checks and CI, the development environment, docs navigation, steering files, review standards and canon itself. The project's own architecture, performance, functionality, security and usability are out of scope even when the session exposed a problem in them; code review, the `canon-review` skill and the `canon-investigate` skill own those. Only the session the user talks to runs a retro; subagents leave it to that session. Read the `canon` skill first; `canon.py` means the project copy named in `AGENTS.md`.
 
-- **End check**: a canon workflow's closing step runs it when the work hit friction in the development infrastructure or the agent workflow that could recur. It covers the work since the previous retro in this session, or since the session began. When one workflow runs inside another, such as code review inside implement, only the outer one runs it.
-- **Requested retro**: the user asks for one. It covers this whole session and always reports, if only that nothing qualified.
+- **End check**: a canon workflow's closing step runs it when the work hit friction in the development infrastructure or the agent workflow that could recur. It covers the work since the previous retro in this session, or since the session began. When one workflow runs inside another, such as code review inside implement, only the outer one runs it. It opens with `canon.py trace start end-check --skill <skill> --model <model> [--parent <parent>]`.
+- **Requested retro**: the user asks for one. It covers this whole session and always reports, if only that nothing qualified. It opens with `canon.py trace start retro --skill <skill> --model <model>`.
 
 ## 1. Find events
 
@@ -57,7 +57,7 @@ Give each change its tier by the `canon` skill's tier rules, not by where it lan
 
 ## 3. Pick
 
-With no candidate and no new friction for `skills.jsonl`, the end check adds nothing to the report. Otherwise read `.canon/canon-retro/notes.md`.
+With no candidate and no new friction for `skills.jsonl`, the end check adds nothing to the report and ends with `canon.py trace end <id> quiet`. Otherwise read `.canon/canon-retro/notes.md`.
 
 Each event counts once. An event already listed under its cause, with the same session and evidence, is not new, and seeing it again in a later check is not a recurrence. A recurrence is a new event with the same cause, later in this session or in another one. List each new candidate under its cause, then act on the cause's state:
 
@@ -69,7 +69,7 @@ Raise at most three, ranked by what their events cost times how likely they are 
 
 ## 4. Report and apply
 
-Put the items at the end of the workflow's report, before any closing command or prompt line it ends with. One line each: the event with its evidence, the change with its place and tier, and whether to apply it now. Then one line for each friction added to `skills.jsonl`. Set each raised cause to `raised`. The user answers every item in one reply:
+Put the items at the end of the workflow's report, before any closing command or prompt line it ends with. One line each: the event with its evidence, the change with its place and tier, and whether to apply it now. Then one line for each friction added to `skills.jsonl`. Set each raised cause to `raised`. Then run `canon.py trace end <id> <outcome>`: for an end check, `raised` if it raised an item, else `quiet`. The user answers every item in one reply:
 
 - **Apply**, when it fits in this session. Commit docs edits that change no spec's meaning (pointers, summaries, headings, `paths`, guides, `AGENTS.md` lines) after `canon.py check --fix`; build an L0 change through its flow, code review and docs step included. Commit each change on its own and set `applied <commit>`. For an L1 or L2 change, follow **Later** below, then give the user the `/canon-design` command.
 - **Later**: add it as an Idea to the module's backlog concept (`canon.py find backlog`, else `canon.py new C <module>-backlog`). Run `canon.py check --fix` until it reports no errors, then commit the concept and its index changes separately (Conventional Commits, `docs` type, `Refs: C00X`). Set `later C00X` only after the commit succeeds; otherwise keep `raised` and report the failure.

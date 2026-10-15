@@ -12,7 +12,8 @@ Read the `canon` skill first. `canon.py` means the project copy named in `AGENTS
 
 1. The design must have passed the review gate (`reviewed` equals `revision`) and be `accepted` or `active`. An L2 design still `draft` after its gate awaits the user's approval, and invoking this skill on it gives that approval: say so in one line, naming the gate's reviewers, and set it `accepted`. Otherwise stop and give the user `/canon-design D00X` to finish it.
 2. New plan: `canon.py new P <slug> --from D00X`. Revising a plan: edit it in place and bump `revision`.
-3. Read the whole design, the code its `paths` govern, the existing tests and the commands that run them.
+3. Run `canon.py trace start plan <P id> <D id> --tier <tier> --skill <skill> --model <model>`.
+4. Read the whole design, the code its `paths` govern, the existing tests and the commands that run them.
 
 ## 2. Draft
 
@@ -33,5 +34,6 @@ Then settle what the draft leaves open with the `canon-grill` skill: slice bound
 3. Set the status as the gate's last step describes.
 4. Commit the plan (Conventional Commits, `docs` type, `Refs:` trailer).
 5. Run the `canon-retro` skill's end check only if this work hit concrete friction in the development infrastructure or the agent workflow that could recur, such as a correction to how you worked, a finding a check could have caught, a command that would not run, a check that failed after you thought you were done, a search that took far too long, or a canon step that got in the way. Use only evidence already in context; do not search for reasons to run it.
+6. Run `canon.py trace end <id> <outcome>`.
 
 End with the command for the next phase, `/canon-implement P00X`. In L2, the user starting it approves the plan. When slices carry a `Risk:` line, name them beside the command and suggest high reasoning effort for the implementation session, since every worker runs at the session's effort.

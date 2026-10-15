@@ -42,6 +42,31 @@ Design, plan and implementation are separate phases, started with `/canon-design
 
 Workers and reviewers inherit the session's model and reasoning effort, so the session you start sets both; start a risky implementation at high effort. The exception is the cross-family reviewer. `/canon-init` lists this machine's reviewers, with their tools, models and efforts, in `.canon/canon-blind-review/reviewer.md` after a test run of each; a review uses the first one whose family differs from the session's, so a machine whose sessions run on both Claude and GPT needs one of each. Without such a reviewer, the review falls back to a prompt you run in another tool.
 
+## Tracing
+
+Tracing records how canon's workflows run in your projects, so the skills can be judged and improved on real work. It is off until you turn it on, and nothing it records leaves the machine. Run these with a project's `canon.py`, at the path its `AGENTS.md` names:
+
+```bash
+python3 scripts/canon.py trace on          # turn tracing on for every checkout on this machine
+python3 scripts/canon.py trace off         # turn it off again
+python3 scripts/canon.py trace off --here  # opt this checkout out; `trace on --here` opts it back in
+python3 scripts/canon.py trace status      # whether tracing is on and why, open units, snapshots
+```
+
+`trace on` creates the machine switch, `~/.config/canon/trace` (under `$XDG_CONFIG_HOME` when that is set). It lies outside the project, so run it yourself: a sandboxed agent cannot write there. Installing the skills and running `/canon-init` never turn tracing on, and a project whose `canon.py` predates tracing stays untraced until `/canon-init` upgrades it.
+
+With tracing on, the session you talk to calls `canon.py trace` at the boundaries of each unit of work: a design, plan, implementation and each of its slices, review gate, code review, investigation, codebase review or retro. Everything lands in the checkout's `.canon/canon/trace/`:
+
+- `events.jsonl`: one line per call, with ids, kinds, outcomes, the severities and dispositions of review findings, commit ids, times, doc ids, host and model names, the skill's path and digests of the skill files in use; never prompts, outputs, source code or free text.
+- Snapshots, kept in a Git repository of their own at `.canon/canon/trace/.git`: one per unit start, holding what `git add -A` would commit, untracked files that are not ignored included, so that a review or slice can be replayed later. The skill versions in use are stored there too. The first snapshot copies the whole tree, later ones only what changed.
+- `<unit id>/`: the reviewer files of each review gate and code review, copied when it ends, and a failed snapshot's Git message.
+
+`trace status` shows whether tracing is on and why, the units opened in the last 24 hours that have not ended, marking those of the current conversation, the number of snapshots, the starts that skipped one and why, and the snapshot repository's size on disk.
+
+No commit or push of the project can carry the directory: `.canon/canon/.gitignore` ignores it even when the project's own `.gitignore` lacks `.canon/`, and the snapshot repository's refs are not the project's. Packaging that does not read `.gitignore` copies it, snapshots and all, and a snapshot can hold untracked files such as local configuration or secrets. Exclude `.canon/` there: in `.dockerignore` for a Docker build context, and from any archive or copy of the checkout.
+
+The directory is not scratch: until it is pruned, it holds the only copy of its data. Each checkout, a linked worktree included, has its own, so removing a worktree removes its trace data. `trace prune --days N` deletes the snapshots and archives of units started more than N days ago, keeps every event line, and runs `git gc` in the snapshot repository so the space comes back at once. Like `git gc`, run it while no session works in the checkout: a unit starting meanwhile can lose objects its snapshot shares with a pruned one.
+
 ## Skills
 
 Auto skills load when the context calls for them. Manual skills run only as commands: `/canon-init` in Cursor and Claude Code, `$canon-init` in Codex.
