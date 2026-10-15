@@ -128,6 +128,12 @@ After installing on a new host, after a major host upgrade, or after changing de
 
 In Cursor, subagents come from the Task tool, which runs them on the session's model by default. The reasoning effort is part of the model name, and a subagent can use another model only when the user asks for it, from a fixed list. Canon's workers and same-model reviewers keep the default, so they need no setup in Cursor. For a GPT cross-family reviewer, use the codex CLI rather than the Task tool, since the list offers few GPT models and fixes their efforts; codex has to run outside Cursor's sandbox because it writes to `~/.codex`. A reviewer from another family can be a Task subagent on a model from the list.
 
+## Roadmap
+
+Canon is built for new projects first. Planned:
+
+- **As-built designs for existing code.** In a project with few docs, most code has no governing design, so `which`, `affected`, `audit` and the Spec review have little to check against. `canon.py` will report the source directories no design covers, ranked by recent commits. Designs that record existing behavior will be drafted from the code module by module, pass the review gate at L1 and become `active` without a plan, and the docs step will suggest one for uncovered code instead of escalating to L2.
+
 ## Releases and license
 
 Releases follow [Semantic Versioning](https://semver.org) and are listed in [CHANGELOG.md](CHANGELOG.md). The skills are released under the [MIT license](LICENSE); those adapted from [mattpocock/skills](https://github.com/mattpocock/skills) also carry its MIT license, with a `NOTICE` of the changes, in their own directories.
