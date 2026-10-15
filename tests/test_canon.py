@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import tempfile
@@ -1272,6 +1273,150 @@ class SkillDigestTest(TraceCase):
         self.start("design", "--skill", str(skill), cwd=outside)
         self.assertEqual(self.lines(outside / ".canon/canon/trace/events.jsonl")[-1]["manifest"], digest)
         self.assertFalse((outside / ".canon/canon/trace/.git").exists())
+
+
+class PruneTest(TraceCase):
+    def setUp(self):
+        super().setUp()
+        self.trace("on")
+        self.commit()
+        self.trace_dir = self.root / ".canon/canon/trace"
+
+    def backdate(self, unit, days):
+        """Turn `unit` into a unit started `days` days earlier, in the documented formats: its id and start time in
+        the events file, its snapshot ref and its archive; return its new id."""
+        ago = datetime.timedelta(days=days)
+        started = datetime.datetime.strptime(unit[:16], "%Y%m%dT%H%M%SZ").replace(tzinfo=datetime.timezone.utc)
+        old = (started - ago).strftime("%Y%m%dT%H%M%SZ") + unit[16:]
+        lines = self.lines()
+        for line in lines:
+            if line.get("id") == unit:
+                line.update(id=old, at=(datetime.datetime.fromisoformat(line["at"]) - ago).isoformat())
+        self.events.write_text("".join(json.dumps(line, separators=(",", ":")) + "\n" for line in lines),
+                               encoding="utf-8")
+        if self.snap("for-each-ref", "refs/trace/" + unit):
+            self.snap("update-ref", "refs/trace/" + old, "refs/trace/" + unit)
+            self.snap("update-ref", "-d", "refs/trace/" + unit)
+        if (self.trace_dir / unit).exists():
+            (self.trace_dir / unit).rename(self.trace_dir / old)
+        return old
+
+    def unit_id(self, ago, number):
+        """The id of a unit started `ago` before now, in the documented format."""
+        started = datetime.datetime.now(datetime.timezone.utc) - ago
+        return started.strftime("%Y%m%dT%H%M%SZ-") + "{:06x}".format(number)
+
+    def snapshot_refs(self):
+        return sorted(self.snap("for-each-ref", "--format=%(refname)", "refs/trace/").splitlines())
+
+    def reviewed_gate(self):
+        """Start a gate and end it with its review file archived; return its id."""
+        topic = self.root / ".canon/canon-blind-review/D001"
+        topic.mkdir(parents=True, exist_ok=True)
+        unit = self.start("gate", "D001")
+        (topic / "same-model.md").write_text("### F1 [major] {}\n".format(unit))
+        self.trace("end", unit, "delivered", "--dir", ".canon/canon-blind-review/D001")
+        self.assertEqual(self.lines()[-1]["archive"], "ok")
+        return unit
+
+    def test_snapshots_and_archives_of_units_started_more_than_n_days_ago_go_and_lines_and_skills_stay(self):
+        skill = self.tmpdir() / "canon-x"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text("canon-x\n")
+        old = [self.backdate(self.start("design", "--skill", str(skill)), 8), self.backdate(self.reviewed_gate(), 8)]
+        kept = [self.backdate(self.reviewed_gate(), 6), self.start("design")]
+        skills = self.snap("for-each-ref", "refs/skills/")
+        self.assertNotEqual(skills, "")
+        events = self.events.read_bytes()
+        self.assertRegex(self.trace("prune", "--days", "7"),
+                         r"^removed 2 snapshots and 1 archive of units started more than 7 days ago\n"
+                         r"removed 0 index copies and 0 build directories left by interrupted starts\n"
+                         r"snapshots: 2, [\d.]+ [KMG]iB on disk\n$")
+        self.assertEqual(self.snapshot_refs(), sorted("refs/trace/" + unit for unit in kept))
+        self.assertEqual([unit for unit in old + kept if (self.trace_dir / unit).exists()], [kept[0]])
+        self.assertEqual([path.name for path in (self.trace_dir / kept[0]).iterdir()], ["same-model.md"])
+        self.assertEqual(self.snap("for-each-ref", "refs/skills/"), skills)
+        self.assertEqual(self.events.read_bytes(), events)
+
+    def test_index_copies_and_build_directories_of_starts_more_than_an_hour_ago_go(self):
+        self.start("design")
+        git_dir, index_time = self.trace_dir / ".git", time.time() - 3 * 86400
+        units = {}
+        for minutes in (90, 30):
+            unit = units[minutes] = self.unit_id(datetime.timedelta(minutes=minutes), minutes)
+            copy = git_dir / ("index-" + unit)
+            copy.write_bytes((self.root / ".git/index").read_bytes())
+            os.utime(str(copy), (index_time, index_time))
+            self.git("init", "-q", "--template=", str(self.trace_dir / (".init-" + unit)))
+        self.assertIn("\nremoved 1 index copy and 1 build directory left by interrupted starts\n",
+                      self.trace("prune", "--days", "7"))
+        self.assertEqual(sorted(path.name for path in git_dir.glob("index-*")), ["index-" + units[30]])
+        self.assertEqual(sorted(path.name for path in self.trace_dir.glob(".init-*")), [".init-" + units[30]])
+
+    def test_pruned_snapshots_objects_dated_over_an_hour_back_free_their_space_and_newer_objects_stay(self):
+        kept = self.start("implement")
+        pruned, size = self.root / "src/pruned.bin", 1 << 20
+        pruned.write_bytes(os.urandom(size))
+        old = self.backdate(self.start("implement"), 2)
+        blob = self.snap("rev-parse", "refs/trace/{}:src/pruned.bin".format(old))
+        pruned.unlink()
+        git_dir = self.trace_dir / ".git"
+        hours_ago = time.time() - 2 * 3600
+        for path in (git_dir / "objects").rglob("*"):
+            if path.is_file():
+                os.utime(str(path), (hours_ago, hours_ago))
+        in_progress = self.tmpdir() / "in-progress.txt"
+        in_progress.write_text("written by a start in progress\n")
+        recent = self.snap("hash-object", "-w", str(in_progress))
+
+        def disk_size():
+            return sum(path.stat().st_size for path in git_dir.rglob("*") if path.is_file())
+
+        before = disk_size()
+        self.trace("prune", "--days", "1")
+        self.assertLess(disk_size(), before - size // 2)
+        self.snap("fsck", "--strict")
+        self.assertNotEqual(self.run_here("git", "-C", str(self.trace_dir), "cat-file", "-e", blob).returncode, 0)
+        self.snap("cat-file", "-e", recent)
+        self.assertIn("src/base.py", self.snap("ls-tree", "-r", "--name-only", "refs/trace/" + kept).splitlines())
+
+    def test_prune_runs_with_the_machine_switch_absent(self):
+        old = self.backdate(self.reviewed_gate(), 2)
+        self.trace("off")
+        self.assertFalse((self.config / "canon/trace").exists())
+        self.assertRegex(self.trace("prune", "--days", "1"),
+                         r"^removed 1 snapshot and 1 archive of units started more than 1 day ago\n")
+        self.assertEqual(self.snapshot_refs(), [])
+        self.assertFalse((self.trace_dir / old).exists())
+
+    def test_days_must_be_a_whole_number_of_zero_or_more(self):
+        old = self.backdate(self.start("design"), 2)
+        for days in ("-1", "x"):
+            result = self.canon("trace", "prune", "--days", days)
+            self.assertEqual(result.returncode, 2, days + ": " + result.stdout + result.stderr)
+        self.assertEqual(self.snapshot_refs(), ["refs/trace/" + old])
+
+    def test_a_gc_already_running_in_the_snapshot_repository_is_a_trace_error_after_the_deletions(self):
+        self.backdate(self.reviewed_gate(), 2)
+        (self.trace_dir / ".git/gc.pid").write_text("{} {}".format(os.getpid(), socket.gethostname()))
+        out = self.trace("prune", "--days", "1")
+        self.assertRegex(out, r"^removed 1 snapshot and 1 archive of units started more than 1 day ago\n"
+                              r"removed 0 index copies and 0 build directories left by interrupted starts\n"
+                              r"trace error: git gc: exit 128\n$")
+        self.assertEqual(self.snapshot_refs(), [])
+
+    def test_outside_git_prune_deletes_old_archives_and_creates_nothing(self):
+        outside = self.tmpdir()
+        (outside / "AGENTS.md").write_text("# AGENTS.md\n")
+        out = self.trace("prune", "--days", "7", cwd=outside)
+        self.assertEqual(out.splitlines()[-1], "snapshots: 0, 0.0 KiB on disk")
+        self.assertEqual([path.name for path in outside.iterdir()], ["AGENTS.md"])
+        archive = outside / ".canon/canon/trace" / self.unit_id(datetime.timedelta(days=8), 1)
+        archive.mkdir(parents=True)
+        (archive / "snapshot-error.txt").write_text("fatal: index file corrupt\n")
+        self.assertRegex(self.trace("prune", "--days", "7", cwd=outside),
+                         r"^removed 0 snapshots and 1 archive of units started more than 7 days ago\n")
+        self.assertEqual(list(archive.parent.iterdir()), [])
 
 
 if __name__ == "__main__":

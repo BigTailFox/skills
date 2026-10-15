@@ -27,7 +27,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "10"
+CANON_VERSION = "11"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -1967,6 +1967,23 @@ def errno_name(error):
     return errno.errorcode.get(error.errno, "OSError")
 
 
+def remove_tree(path):
+    """Remove the directory `path` and what it holds, as far as possible. Windows refuses to delete a read-only file,
+    and Git makes loose objects read-only, so an entry whose removal fails is made writable and removed again; a
+    symlink is never followed. Python 3.12 deprecates rmtree's onerror in favour of onexc."""
+    def retry(function, failed, _error):
+        with contextlib.suppress(OSError):
+            mode = os.lstat(failed).st_mode
+            if function in (os.unlink, os.rmdir) and not stat.S_ISLNK(mode):
+                os.chmod(failed, stat.S_IMODE(mode) | stat.S_IWRITE)
+                function(failed)
+
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(str(path), onexc=retry)
+    else:
+        shutil.rmtree(str(path), onerror=retry)
+
+
 def trace_git(cwd, env, *args, data=None, stdin=None, stdout=subprocess.PIPE):
     """Run `git *args` and return its output; raise SnapshotSkip naming the Git command and how it failed."""
     command = "git " + next(arg for arg in args if not arg.startswith("-"))
@@ -2041,7 +2058,7 @@ def build_snapshot_repo(trace_dir, unit, env, sha256):
         except OSError as error:
             raise SnapshotSkip("git init: " + errno_name(error))
     finally:
-        shutil.rmtree(str(build), ignore_errors=True)
+        remove_tree(build)
 
 
 def copy_index(source, target):
@@ -2147,9 +2164,8 @@ def human_size(size):
             return "{:.1f} {}".format(size, unit)
 
 
-def snapshot_summary(trace_dir):
-    """The status lines on snapshots: how many the snapshot repository holds and its size on disk, and the starts
-    that recorded none, by reason."""
+def snapshot_line(trace_dir):
+    """The line saying how many snapshots the snapshot repository holds and its size on disk."""
     git_dir, count, size = trace_dir / ".git", 0, 0
     if git_dir.is_dir():
         with contextlib.suppress(SnapshotSkip):
@@ -2159,12 +2175,17 @@ def snapshot_summary(trace_dir):
             for name in names:
                 with contextlib.suppress(OSError):
                     size += os.lstat(os.path.join(path, name)).st_size
+    return "snapshots: {}, {} on disk".format(count, human_size(size))
+
+
+def snapshot_summary(trace_dir):
+    """The status lines on snapshots: the snapshot line, and the starts that recorded none, by reason."""
     reasons = {}
     for event in read_events(trace_dir, b'"skipped":"'):
         if event.get("type") == "start" and isinstance(event.get("skipped"), str):
             reasons[event["skipped"]] = reasons.get(event["skipped"], 0) + 1
     skipped = "; ".join("{} {}".format(n, reason) for reason, n in sorted(reasons.items(), key=lambda r: (-r[1], r[0])))
-    return ["snapshots: {}, {} on disk".format(count, human_size(size)), "skipped starts: " + (skipped or "none")]
+    return [snapshot_line(trace_dir), "skipped starts: " + (skipped or "none")]
 
 
 def skill_dirs(skill):
@@ -2485,6 +2506,84 @@ def trace_switch(args):
     return 0
 
 
+def counted(n, one, many):
+    return "{} {}".format(n, one if n == 1 else many)
+
+
+def day_count(text):
+    """`--days N`, a whole number of days, 0 or more."""
+    try:
+        days = int(text)
+    except ValueError:
+        days = -1
+    if days < 0:
+        raise argparse.ArgumentTypeError("N is a whole number of days, 0 or more, not {}".format(text))
+    return days
+
+
+def stale(name, prefix, cutoff):
+    """Whether `name` is `prefix` followed by the id of a unit started before `cutoff`, a time in the form ids begin
+    with; ids sort by their start time."""
+    unit = name[len(prefix):]
+    return name.startswith(prefix) and bool(UNIT_RE.match(unit)) and unit[:16] < cutoff
+
+
+def prune_git(trace_dir, *args, data=None):
+    """Run `git *args` in the snapshot repository and return its output; a failure is a trace error naming the Git
+    command and how it failed."""
+    try:
+        return trace_git(trace_dir, trace_env(), "--git-dir=" + str(trace_dir / ".git"), *args, data=data)
+    except SnapshotSkip as failed:
+        raise TraceError(failed.reason)
+
+
+def prune_snapshots(trace_dir, cutoff):
+    """Delete the snapshot refs of the units started before `cutoff`; return how many went."""
+    if not (trace_dir / ".git").is_dir():
+        return 0
+    refs = prune_git(trace_dir, "for-each-ref", "--format=%(refname)", "refs/trace/").decode().split()
+    old = [ref for ref in refs if stale(ref, "refs/trace/", cutoff)]
+    if old:
+        prune_git(trace_dir, "update-ref", "--stdin", data="".join("delete {}\n".format(ref) for ref in old).encode())
+    return len(old)
+
+
+def remove_stale(directory, prefix, cutoff):
+    """Remove the entries of `directory` named `prefix` and the id of a unit started before `cutoff`, a directory with
+    what it holds and a symlink without its target; return how many went."""
+    try:
+        with os.scandir(str(directory)) as entries:
+            found = [entry for entry in entries if stale(entry.name, prefix, cutoff)]
+    except FileNotFoundError:
+        return 0
+    for entry in found:
+        if entry.is_dir(follow_symlinks=False):
+            remove_tree(entry.path)
+        else:
+            with contextlib.suppress(OSError):
+                os.unlink(entry.path)
+    return sum(not os.path.lexists(entry.path) for entry in found)
+
+
+def trace_prune(args):
+    root, _is_git = trace_root()
+    trace_dir = root / TRACE_DIR
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cutoff = (now - datetime.timedelta(days=args.days)).strftime("%Y%m%dT%H%M%SZ")
+    hour_ago = (now - datetime.timedelta(hours=1)).strftime("%Y%m%dT%H%M%SZ")
+    snapshots, archives = prune_snapshots(trace_dir, cutoff), remove_stale(trace_dir, "", cutoff)
+    copies, builds = remove_stale(trace_dir / ".git", "index-", hour_ago), remove_stale(trace_dir, ".init-", hour_ago)
+    print("removed {} and {} of units started more than {} ago".format(
+        counted(snapshots, "snapshot", "snapshots"), counted(archives, "archive", "archives"),
+        counted(args.days, "day", "days")))
+    print("removed {} and {} left by interrupted starts".format(
+        counted(copies, "index copy", "index copies"), counted(builds, "build directory", "build directories")))
+    if (trace_dir / ".git").is_dir():
+        prune_git(trace_dir, "gc", "--prune=1.hour.ago", "--quiet")
+    print(snapshot_line(trace_dir))
+    return 0
+
+
 def cmd_trace(args):
     try:
         return args.func(args)
@@ -2607,6 +2706,10 @@ def main(argv=None):
     t = actions.add_parser("off", help="turn tracing off for this machine; --here opts this checkout out")
     t.add_argument("--here", action="store_true")
     t.set_defaults(func=trace_switch)
+    t = actions.add_parser("prune", help="delete the snapshots and archives of units started more than N days ago, "
+                                         "tracing on or off")
+    t.add_argument("--days", type=day_count, required=True, metavar="N")
+    t.set_defaults(func=trace_prune)
 
     args = parser.parse_args(argv)
     if args.command == "trace":

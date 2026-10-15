@@ -1,7 +1,7 @@
 ---
 status: in-progress
 created: 2026-10-15
-updated: 2026-10-15
+updated: 2026-10-16
 revision: 1
 modules: [canon]
 summary: Builds canon.py trace (event log, snapshots, review dispositions and archives, skill digests, prune), then the skill call sites and the README section.
@@ -17,7 +17,7 @@ Implements [D001: Skill telemetry with canon trace](../designs/D001-skill-teleme
 
 ## Current state
 
-Next: S5.
+Next: S6.
 
 ## Slices
 
@@ -122,7 +122,7 @@ Test criteria; seams: `trace start` and `trace end` with `--skill`, their lines,
 
 ### S5: Prune
 
-Status: todo
+Status: done
 Risk: concurrency
 
 Builds on `D001#commands`.
@@ -164,7 +164,7 @@ Changes:
 
 - The call sites of `canon-design`, `canon-plan`, `canon-implement`, `canon-code-review`, `canon-investigate`, `canon-review`, `canon-retro` and `canon-handoff`, at the steps `D001#call-sites` names.
 - `skills/execution/canon-code-review/SKILL.md`: its axis reviewers' files named by role, as `D001#review-files` gives them.
-- `README.md`: a Tracing section on turning tracing on and off, what it stores and where, why packaging that ignores `.gitignore` must exclude `.canon/`, `trace status` and `trace prune`.
+- `README.md`: a Tracing section on turning tracing on and off, what it stores and where, why packaging that ignores `.gitignore` must exclude `.canon/`, `trace status`, and `trace prune`, which, like `git gc`, should run while no session works in the checkout.
 
 Test criteria; seam: the skill texts as an agent follows them, run through the `trace` command line:
 
@@ -187,7 +187,7 @@ Test criteria; seam: the skill texts as an agent follows them, run through the `
 - Clean filters run in snapshot step 3 as in a commit. Git LFS's stores a changed file's content under the project's `.git/lfs/`; under Codex's read-only `.git` it fails, and the snapshot is skipped.
 - A change to a file's executable bit alone keeps its skill's digest, which covers content only (`D001#skill-digests`), so the stored tree keeps the mode first stored. Skills run `canon.py` through `python3`, and their one executable file is a template the agent copies, edits and runs, so replays are unaffected.
 - A checkout's first snapshot copies the whole tree. Where it outlasts a host's command timeout, the start prints no id and the unit goes untraced; the pilot watches for this.
-- The docs step writes into D001 the details this plan settles within its intent: `end` with tracing off; the `slice` field; `skill` and `manifest` null without `--skill`; `dispositions` null without `--input`; the limits on `model` and `id`; where the index copy lives; the non-bare snapshot repository; that the project's object store keeps the names and contents of its files, while Git refreshes the modification time of an existing object a snapshot step writes again, as it does on any such write. It adds `skills/governance/canon/trace.md` to D001's `paths`; `canon.py`, its tests and the skill texts serve all of canon and stay outside them.
+- The docs step writes into D001 the details this plan settles within its intent: `end` with tracing off; the `slice` field; `skill` and `manifest` null without `--skill`; `dispositions` null without `--input`; the limits on `model` and `id`; where the index copy lives; the non-bare snapshot repository; that the project's object store keeps the names and contents of its files, while Git refreshes the modification time of an existing object a snapshot step writes again, as it does on any such write; that `prune`, like `git gc`, can delete an object that a start running at the same time reuses from a pruned snapshot. It adds `skills/governance/canon/trace.md` to D001's `paths`; `canon.py`, its tests and the skill texts serve all of canon and stay outside them.
 - Workers run the tests inside the host's sandbox, where the suite passes, without requesting extra permissions and with a timeout on each run; the orchestrating session runs `scripts/validate.py` and `npx skills add . --list`.
 - `CODEX_THREAD_ID` and `CLAUDECODE` come from the Codex binary and Claude Code's documentation, not from a live session; the pilot confirms them.
 - D001's snapshot timings and sizes come from measurements that no experiment doc records; S2's last criterion measures them again.
@@ -207,3 +207,6 @@ Test criteria; seam: the skill texts as an agent follows them, run through the `
 - S3 decisions: every end line carries `archive`, null without `--dir`, since `D001#event-lines` gives it no condition. A `--dir` under `.canon/` that does not exist gives `copy: ENOENT` and still ends the unit. Every documented key is required except `confirmed`, and `id` may be null; `by` is not empty, F numbers have no leading zero, each role is listed once and `model` is not empty. All input is checked before anything is copied; a failed read copies nothing, and a failed write deletes what it wrote. Files open with `O_NOFOLLOW` and `O_NONBLOCK` and must be regular once open, so a file swapped after the listing is skipped; that race was checked by hand with a FIFO and a symlink to `/etc/passwd`. The docs step adds the null `archive` and the `copy: ENOENT` case to D001.
 - S4 done: 4 tests in `SkillDigestTest`, 74 in the suite, all passing. With 20 skill directories totalling 1 MiB, `--skill` added no measurable time: start p95 194 ms with it, 198 ms without.
 - S4 decisions: a skill directory beside `--skill` may be a symlink, as `npx skills` installs them. A `--skill` with no skill beside it gives the manifest `{}`, which is written and stored like any other; only a start without `--skill` has a null `manifest`. Only a start stores skill files, through one `git fast-import`, and only once the snapshot repository exists. The excluded names are excluded at any depth. The manifest line goes out in the same write as the first line that uses its digest.
+- S5 done: 7 tests in `PruneTest`, 81 in the suite, all passing.
+- S5 decisions: index copies and `.init-*` directories are judged by the id in their names, not their modification time, since an index copy keeps the project index's time. `--days` is a whole number, 0 or more. A failed Git step is a `trace error` naming it; refs go first, in one transaction, so a failure there deletes nothing. Refs and directories whose names are not ids stay. Directories are removed by a helper that clears the read-only bit Git gives loose objects and retries, since Windows refuses to delete read-only files; no seam shows that on Linux, so a script checked it.
+- S5 known limitation: like `git gc`, prune can delete an object that a start running at the same time reuses from a pruned snapshot, leaving that snapshot incomplete. Git accepts the same risk for its own gc; the README tells users to prune while no session works in the checkout.
