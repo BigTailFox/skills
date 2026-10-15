@@ -17,7 +17,7 @@ Implements [D001: Skill telemetry with canon trace](../designs/D001-skill-teleme
 
 ## Current state
 
-Next: S6.
+Next: S7.
 
 ## Slices
 
@@ -137,7 +137,7 @@ Test criteria; seams: `trace prune`, the trace directory and the snapshot reposi
 
 ### S6: Agent instructions and the gate
 
-Status: todo
+Status: done
 
 Builds on `D001#call-sites`, `D001#review-files` and `D001#review-dispositions`.
 
@@ -210,3 +210,6 @@ Test criteria; seam: the skill texts as an agent follows them, run through the `
 - S5 done: 7 tests in `PruneTest`, 81 in the suite, all passing.
 - S5 decisions: index copies and `.init-*` directories are judged by the id in their names, not their modification time, since an index copy keeps the project index's time. `--days` is a whole number, 0 or more. A failed Git step is a `trace error` naming it; refs go first, in one transaction, so a failure there deletes nothing. Refs and directories whose names are not ids stay. Directories are removed by a helper that clears the read-only bit Git gives loose objects and retries, since Windows refuses to delete read-only files; no seam shows that on Linux, so a script checked it.
 - S5 known limitation: like `git gc`, prune can delete an object that a start running at the same time reuses from a pruned snapshot, leaving that snapshot incomplete. Git accepts the same risk for its own gc; the README tells users to prune while no session works in the checkout.
+- S6 done. Token counts with tiktoken's `cl100k_base`: `trace.md` 393, the gate's start call site 40 and its end call site 37; as characters divided by 4, 388, 35 and 32.
+- S6 deviation: `D001#call-sites` defines `<skill>`, `<model>`, `<parent>` and the first-start rule without saying where agents read them. They went into `canon/SKILL.md` beside the link to `trace.md`, a 123-token paragraph, because the first call needs them and `trace.md` is read only once tracing is on. The docs step names that place in D001. A manual-fallback reviewer's files are named as the `cross-family` role's, without an id file.
+- S6 dry run: a fresh subagent given only the skill texts ran the gate on an L2 design draft in a scratch project with tracing on. At step 2 it ran `trace start gate D002 --tier L2 --skill <canon-blind-review's directory> --model <its model>`, which printed an id; after step 5, `trace end <id> delivered --dir .canon/canon-blind-review/D002 --input -` with both reviewers, a merged major finding accepted and confirmed resolved, a minor one declined and `new_blockers` 0. The events file gained a manifest line, a start line with a snapshot, and an end line with the dispositions unchanged and `archive` `ok`. The archive held each role's prompt, findings, id, confirmation prompt and confirmation. With tracing off, the first call printed `trace off` and wrote nothing. The subagent could not tell whether `<skill>` was a path or a name, so the paragraph now says path. It guessed its model id, which the pilot watches, and noted that a confirmation run's own session id has no file.
