@@ -59,7 +59,7 @@ Give each change its tier by the `canon` skill's tier rules, not by where it lan
 
 With no candidate and no new friction for `skills.jsonl`, the end check adds nothing to the report. Otherwise read `.canon/canon-retro/notes.md`.
 
-Each event counts once. An event already listed under its cause, with the same session and evidence, is not new, and seeing it again in a later check is not a recurrence. A recurrence is a new event with the same cause, later in this session or in another one. List each new event under its cause, then act on the cause's state:
+Each event counts once. An event already listed under its cause, with the same session and evidence, is not new, and seeing it again in a later check is not a recurrence. A recurrence is a new event with the same cause, later in this session or in another one. List each new candidate under its cause, then act on the cause's state:
 
 - **None yet, or `noted`**: raise it when the event is costly or a recurrence; otherwise set `noted`.
 - **`raised`, `later C00X` or `declined`**: raise nothing.
