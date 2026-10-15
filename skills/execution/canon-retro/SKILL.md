@@ -63,9 +63,9 @@ Each event counts once. An event already listed under its cause, with the same s
 
 - **None yet, or `noted`**: raise it when the event is costly or a recurrence; otherwise set `noted`.
 - **`raised`, `later C00X` or `declined`**: raise nothing.
-- **`applied <commit>`**: a recurrence means the fix did not hold; raise that, citing the commit.
+- **`applied <commit>`**: inspect the recorded fix and the checkout where the new event occurred; commit ancestry alone misleads after a revert, cherry-pick, rebase or squash merge. If the fix was present, raise its failure, citing the commit. If it was absent or you cannot tell, raise nothing. Only events with the fix present count against its effectiveness.
 
-Raise at most three, ranked by what their events cost times how likely they are to recur, and set the rest `noted`. A requested retro raises up to five, minor events included, and also lists the causes still `raised` and those with three or more events. It ends with one line on how the retro itself is doing since the first date in `notes.md`: the causes by latest state, how many items were raised and how many of those were declined, and how many applied causes have had no new event since their commit.
+Raise at most three, ranked by what their events cost times how likely they are to recur, and set the rest `noted`. A requested retro raises up to five, minor events included, and also lists the causes still `raised` and those with three or more events. It ends with one line on how the retro itself is doing since the first date in `notes.md`: the causes by latest state, how many items were raised and how many of those were declined, and how many applied causes have had no recurrence while their fix was present, excluding unverified cases and reporting those separately.
 
 ## 4. Report and apply
 
@@ -81,5 +81,5 @@ Without an answer the cause stays `raised`.
 
 `.canon/canon-retro/` holds two local files; replace secrets with `<REDACTED>` in both. `<session>` is the conversation id, else the time of this session's first retro as `YYYYMMDD-HHMM`.
 
-- `notes.md`: one section per cause, headed `## <cause>: <state>`, where `<cause>` is a short kebab-case slug and `<state>` is `noted`, `raised`, `declined`, `later C00X` or `applied <commit>`. Under it, one line per event, `- <date> <session>: <event> (<evidence>)`, and one line per state change, `- <date> <session>: set <state>`; a state change also updates the heading. State lines are not events.
+- `notes.md`: one section per cause, headed `## <cause>: <state>`, where `<cause>` is a short kebab-case slug and `<state>` is `noted`, `raised`, `declined`, `later C00X` or `applied <commit>`. Under it, one line per event, `- <date> <session>: <event> (<evidence>)`, and one line per state change, `- <date> <session>: set <state>`; a state change also updates the heading. State lines are not events. For an event assessed against an applied fix, include the fix commit and `fix=present|absent|unverified` in its evidence.
 - `skills.jsonl`: one JSON object per line, appended, with keys `date`, `session`, `host`, `model`, `skill`, `skill_hash`, `canon`, `step`, `event` and `suggestion`. `skill_hash` is the skill's `skillFolderHash` in the global `npx skills` lock (`$XDG_STATE_HOME/skills/.skill-lock.json`, else `~/.agents/.skill-lock.json`), or its `computedHash` in the project's `skills-lock.json`. `canon` is the output of `canon.py --version`. Write `unknown` for anything you cannot get.
