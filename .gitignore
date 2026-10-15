@@ -17,6 +17,7 @@ __pycache__/
 skills-lock.json
 
 # Local secrets and scratch
+.canon/
 .env
 .env.*
 *.local.md
