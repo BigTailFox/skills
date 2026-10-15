@@ -72,4 +72,4 @@ The design revision that passed the gate is the work. Build its spec change with
 
 ## L0 change
 
-No plan: build the change with `canon-tdd` as one slice, without plan updates. Then review it from the commit you started at (or the uncommitted diff), run the docs step, commit, and take the retro and trace steps in [Finish](#3-finish). When the change turns out to alter a spec, run `canon.py trace end <id> escalated --to L1`. Then stop and tell the user it is L1, to be revised with `/canon-design D00X`.
+No plan: build the change with `canon-tdd` as one slice, without plan updates. Then review it from the commit you started at (or the uncommitted diff), run the docs step, commit, and take the retro and trace steps in [Finish](#3-finish). When the change turns out to alter a spec, run `canon.py trace end <id> escalated --to L1`; when it needs a new design, `--to L2`. Then stop and tell the user its tier, with `/canon-design D00X` to revise the design or `/canon-design` for a new one.
