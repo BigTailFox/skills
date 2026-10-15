@@ -26,7 +26,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "8"
+CANON_VERSION = "9"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -1755,12 +1755,18 @@ TRACE_KINDS = ("design", "plan", "implement", "investigate", "canon-review", "re
 TOP_LEVEL_KINDS = TRACE_KINDS[:6]
 OUTCOMES = ("delivered", "blocked", "handoff", "cancelled")
 KIND_OUTCOMES = {"implement": OUTCOMES + ("partial", "escalated"), "end-check": ("quiet", "raised")}
+REVIEW_ROLES = {"gate": ("same-model", "cross-family"), "code-review": ("spec", "standards", "cross-family")}
+REVIEW_DISPOSITIONS = {"gate": ("accepted", "declined", "escalated"),
+                       "code-review": ("accepted", "declined", "escalated", "deferred")}
+FINDING_ID_RE = re.compile(r"F[1-9][0-9]*")
 UNIT_RE = re.compile(r"^\d{8}T\d{6}Z-[0-9a-f]{6}$")
 SLICE_RE = re.compile(r"^S\d+$")
 TRACE_LOCK_WAIT = 5
 MAX_EVENT = 16 * 1024
 MAX_CHANGES = 10 * 1024 * 1024
 MAX_SNAPSHOT_ERROR = 64 * 1024
+MAX_ARCHIVE = 2 * 1024 * 1024
+MAX_REVIEWER_FIELD = 200
 REPO_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
             "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE")
 SNAPSHOT_IDENTITY = {"GIT_AUTHOR_NAME": "canon-trace", "GIT_AUTHOR_EMAIL": "trace@canon.invalid",
@@ -2201,6 +2207,121 @@ def end_unit(trace_dir, args):
     return start
 
 
+def read_dispositions(kind, source):
+    """The dispositions `--input` reads, from file `source` or from stdin for `-`, once checked against
+    D001#review-dispositions for a `kind` unit."""
+    if kind not in REVIEW_ROLES:
+        raise TraceError("--input comes with gate and code-review units only")
+    try:
+        data = sys.stdin.buffer.read() if source == "-" else Path(source).read_bytes()
+    except OSError as error:
+        raise TraceError("cannot read --input {}: {}".format(source, errno_name(error)))
+    try:
+        dispositions = json.loads(data)
+    except ValueError as error:
+        raise TraceError("--input is not JSON: {}".format(error))
+    check_dispositions(kind, dispositions)
+    return dispositions
+
+
+def check_dispositions(kind, dispositions):
+    """Raise TraceError unless `dispositions` holds what D001#review-dispositions defines for a `kind` unit and
+    nothing else, so that no free text reaches the line."""
+    def expect(ok, where, what):
+        if not ok:
+            raise TraceError("dispositions{} must be {}".format(where, what))
+
+    def entry(value, where, keys, optional=()):
+        expect(isinstance(value, dict), where, "an object")
+        unknown = [key for key in value if key not in keys + optional]
+        if unknown:
+            raise TraceError("dispositions{} has keys a {} does not take: {}".format(where, kind, ", ".join(unknown)))
+        missing = [key for key in keys if key not in value]
+        if missing:
+            raise TraceError("dispositions{} lacks {}".format(where, ", ".join(missing)))
+
+    def short(value):
+        return isinstance(value, str) and len(value) <= MAX_REVIEWER_FIELD and value.splitlines() == [value]
+
+    roles, review = REVIEW_ROLES[kind], kind == "code-review"
+    entry(dispositions, "", ("reviewers", "findings", "new_blockers"))
+    expect(isinstance(dispositions["reviewers"], list), ".reviewers", "a list")
+    listed = []
+    for n, reviewer in enumerate(dispositions["reviewers"]):
+        where = ".reviewers[{}]".format(n)
+        entry(reviewer, where, ("role", "model", "id"))
+        expect(reviewer["role"] in roles and reviewer["role"] not in listed, where + ".role",
+               "one of {}, each listed once".format(", ".join(roles)))
+        listed.append(reviewer["role"])
+        expect(short(reviewer["model"]), where + ".model", "a single-line string of at most 200 characters")
+        expect(reviewer["id"] is None or short(reviewer["id"]), where + ".id",
+               "null or a single-line string of at most 200 characters")
+    expect(isinstance(dispositions["findings"], list), ".findings", "a list")
+    for n, finding in enumerate(dispositions["findings"]):
+        where = ".findings[{}]".format(n)
+        entry(finding, where, ("by", "severity", "disposition") + (("axis",) if review else ()), ("confirmed",))
+        by = finding["by"]
+        expect(isinstance(by, list) and by and all(isinstance(ref, str) and ref.partition(":")[0] in listed
+                                                   and FINDING_ID_RE.fullmatch(ref.partition(":")[2]) for ref in by),
+               where + ".by", "a non-empty list of <role>:F<n>, each naming a listed reviewer")
+        expect(finding["severity"] in SEVERITIES, where + ".severity", " or ".join(SEVERITIES))
+        expect(finding["disposition"] in REVIEW_DISPOSITIONS[kind], where + ".disposition",
+               " or ".join(REVIEW_DISPOSITIONS[kind]))
+        if review:
+            expect(finding["axis"] in ("spec", "standards"), where + ".axis", "spec or standards")
+        if "confirmed" in finding:
+            expect(finding["confirmed"] in ("resolved", "not-resolved"), where + ".confirmed",
+                   "resolved or not-resolved")
+    blockers = dispositions["new_blockers"]
+    expect(type(blockers) is int and blockers >= 0, ".new_blockers", "a non-negative integer")
+
+
+def archive_source(root, path):
+    """`--dir` with symlinks resolved, once checked that it lies under the checkout's .canon/."""
+    source = Path(os.path.realpath(path))
+    if Path(os.path.realpath(str(root / LOCAL_DIR))) not in source.parents:
+        raise TraceError("--dir {} lies outside {} once symlinks are resolved".format(path, LOCAL_DIR))
+    return source
+
+
+def unit_started(unit):
+    """The start time in the id of `unit`, in seconds since the epoch."""
+    when = datetime.datetime.strptime(unit[:16], "%Y%m%dT%H%M%SZ").replace(tzinfo=datetime.timezone.utc)
+    return int(when.timestamp())
+
+
+def archive_files(source, target, since):
+    """Copy the regular files directly in `source` modified at second `since` or later into `target` when they total
+    at most 2 MiB; return the end line's `archive`."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
+    written = []
+    try:
+        with os.scandir(str(source)) as entries:
+            names = sorted(entry.name for entry in entries if entry.is_file(follow_symlinks=False)
+                           and entry.stat(follow_symlinks=False).st_mtime_ns >= since * 10 ** 9)
+        files, total = {}, 0
+        for name in names:
+            with open(os.open(os.path.join(str(source), name), flags), "rb") as file:
+                if not stat.S_ISREG(os.fstat(file.fileno()).st_mode):
+                    continue
+                files[name] = file.read(MAX_ARCHIVE + 1 - total)
+            total += len(files[name])
+            if total > MAX_ARCHIVE:
+                return "over-2MiB"
+        if not files:
+            return "none"
+        target.mkdir(parents=True, exist_ok=True)
+        for name, data in files.items():
+            written.append(target / name)
+            written[-1].write_bytes(data)
+    except OSError as error:
+        for path in written:
+            with contextlib.suppress(OSError):
+                path.unlink()
+        return "copy: " + errno_name(error)
+    return "ok"
+
+
 def trace_end(args):
     root, is_git = trace_root()
     if not trace_state(root)[0]:
@@ -2208,12 +2329,18 @@ def trace_end(args):
         return 0
     trace_dir = root / TRACE_DIR
     start = end_unit(trace_dir, args)
+    kind = start.get("kind")
+    dispositions = read_dispositions(kind, args.input) if args.input is not None else None
+    source = archive_source(root, args.dir) if args.dir is not None else None
     now = datetime.datetime.now(datetime.timezone.utc)
-    line = {"v": 1, "type": "end", "id": args.unit, "kind": start.get("kind"),
+    line = {"v": 1, "type": "end", "id": args.unit, "kind": kind,
             "at": now.astimezone().isoformat(timespec="seconds"), "outcome": args.outcome}
     if args.to:
         line["to"] = args.to
     line["head"] = trace_head(root, is_git)
+    if kind in REVIEW_ROLES:
+        line["dispositions"] = dispositions
+    line["archive"] = archive_files(source, trace_dir / args.unit, unit_started(args.unit)) if source else None
     append_event(trace_dir, line, lambda: end_unit(trace_dir, args))
     print("trace {} ended".format(args.unit))
     return 0
@@ -2371,6 +2498,10 @@ def main(argv=None):
     t.add_argument("unit")
     t.add_argument("outcome")
     t.add_argument("--to", choices=("L1", "L2", "plan"), help="the tier or plan an escalated unit needs")
+    t.add_argument("--dir", metavar="DIR", help="directory under .canon/ whose files changed since the unit started "
+                                                "are archived with it")
+    t.add_argument("--input", metavar="FILE|-", help="a gate's or code review's dispositions as JSON, from FILE or "
+                                                     "from stdin for -")
     t.set_defaults(func=trace_end)
     t = actions.add_parser("status", help="say whether tracing is on and why, and list the open units")
     t.set_defaults(func=trace_status)

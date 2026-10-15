@@ -396,13 +396,13 @@ class TraceCase(CanonTest):
         self.config = Path(config.name)
         self.events = self.root / ".canon/canon/trace/events.jsonl"
 
-    def trace(self, *args, cwd=None, **env):
-        """Run `canon.py trace` with the machine switch under a temporary XDG_CONFIG_HOME and no host variables but
-        those in `env`; assert that it exits 0."""
+    def trace(self, *args, cwd=None, stdin="", **env):
+        """Run `canon.py trace` with the machine switch under a temporary XDG_CONFIG_HOME, no host variables but
+        those in `env`, and `stdin` as its standard input; assert that it exits 0."""
         full = {key: value for key, value in os.environ.items() if key not in self.HOST_VARS}
         full.update(XDG_CONFIG_HOME=str(self.config), **env)
         result = subprocess.run([sys.executable, "-B", str(SCRIPT), "trace", *args], cwd=str(cwd or self.root),
-                                env=full, capture_output=True, text=True)
+                                env=full, input=stdin, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result.stdout
 
@@ -534,7 +534,8 @@ class TraceTest(TraceCase):
         self.trace("end", implement, "escalated", "--to", "plan")
         self.trace("end", check, "raised")
         ends = [line for line in self.lines() if line["type"] == "end"]
-        self.assertEqual(set(ends[0]), {"v", "type", "id", "kind", "at", "outcome", "head"})
+        self.assertEqual(set(ends[0]), {"v", "type", "id", "kind", "at", "outcome", "head", "archive"})
+        self.assertEqual([end.get("archive", "absent") for end in ends], [None] * 3)
         self.assertEqual([[end.get(k) for k in ("v", "id", "kind", "outcome", "to")] for end in ends],
                          [[1, design, "design", "delivered", None], [1, implement, "implement", "escalated", "plan"],
                           [1, check, "end-check", "raised", None]])
@@ -968,6 +969,183 @@ class SnapshotTest(TraceCase):
         big.write_bytes(b"\2" * (5 << 20))
         line = self.start_line("design")
         self.assertEqual([line["snapshot"], line["skipped"]], [None, "changes-over-10MiB"])
+
+
+class DispositionsTest(TraceCase):
+    GATE = {"reviewers": [{"role": "same-model", "model": "claude-opus-5.5", "id": "a3f0c2e1"},
+                          {"role": "cross-family", "model": "manual:gpt-6-astra", "id": None}],
+            "findings": [{"by": ["same-model:F1", "cross-family:F2"], "severity": "major", "disposition": "accepted",
+                          "confirmed": "resolved"},
+                         {"by": ["cross-family:F1"], "severity": "blocker", "disposition": "escalated"},
+                         {"by": ["same-model:F2"], "severity": "minor", "disposition": "declined"}],
+            "new_blockers": 0}
+    CODE_REVIEW = {"reviewers": [{"role": "spec", "model": "claude-opus-5.5", "id": "b71e09d2"},
+                                 {"role": "standards", "model": "claude-opus-5.5", "id": "c03d5a7f"},
+                                 {"role": "cross-family", "model": "gpt-6-astra", "id": "/root/p007_review"}],
+                   "findings": [{"by": ["spec:F1"], "severity": "major", "disposition": "accepted", "axis": "spec",
+                                 "confirmed": "not-resolved"},
+                                {"by": ["standards:F1", "cross-family:F3"], "severity": "minor",
+                                 "disposition": "deferred", "axis": "standards"}],
+                   "new_blockers": 1}
+
+    def setUp(self):
+        super().setUp()
+        self.trace("on")
+
+    def end_line(self, unit):
+        return next(line for line in self.lines() if line["id"] == unit and line["type"] == "end")
+
+    def test_valid_dispositions_appear_in_the_end_line_unchanged(self):
+        gate, review, bare = self.start("gate", "D001"), self.start("code-review"), self.start("gate", "D001")
+        self.trace("end", gate, "delivered", "--input", "-", stdin=json.dumps(self.GATE))
+        path = self.config / "dispositions.json"
+        path.write_text(json.dumps(self.CODE_REVIEW))
+        self.trace("end", review, "delivered", "--input", str(path))
+        self.trace("end", bare, "blocked")
+        raw = self.events.read_text(encoding="utf-8")
+        for unit, dispositions in ((gate, self.GATE), (review, self.CODE_REVIEW)):
+            self.assertEqual(self.end_line(unit).get("dispositions"), dispositions)
+            self.assertIn('"dispositions":' + json.dumps(dispositions, separators=(",", ":")), raw)
+        self.assertEqual(self.end_line(bare).get("dispositions", "absent"), None)
+
+    def changed(self, dispositions, change):
+        """A copy of `dispositions` that `change` edited in place."""
+        copy = json.loads(json.dumps(dispositions))
+        change(copy)
+        return copy
+
+    def test_invalid_dispositions_or_input_on_another_kind_print_a_trace_error_and_write_nothing(self):
+        gate, review, design = self.start("gate", "D001"), self.start("code-review"), self.start("design", "D001")
+        topic = self.root / ".canon/canon-blind-review/D001"
+        topic.mkdir(parents=True)
+        (topic / "same-model.md").write_text("### F1 [major] D001\n")
+        invalid = [(gate, self.changed(self.GATE, lambda d: d.update(notes="the reviewers agreed"))),
+                   (gate, self.changed(self.GATE, lambda d: d["reviewers"][0].update(prompt="Review D001"))),
+                   (gate, self.changed(self.GATE, lambda d: d["findings"][0].update(summary="unclear goal"))),
+                   (gate, self.changed(self.GATE, lambda d: d["reviewers"][1].pop("id"))),
+                   (gate, self.changed(self.GATE, lambda d: d["reviewers"][0].update(role="spec"))),
+                   (review, self.changed(self.CODE_REVIEW, lambda d: d["reviewers"][0].update(role="same-model"))),
+                   (gate, self.changed(self.GATE, lambda d: d["reviewers"].pop(1))),
+                   (gate, self.changed(self.GATE, lambda d: d["findings"][2].update(by=["same-model:F2\n"]))),
+                   (gate, self.changed(self.GATE, lambda d: d["findings"][2].update(by=[]))),
+                   (gate, self.changed(self.GATE, lambda d: d["findings"][0].update(severity="critical"))),
+                   (gate, self.changed(self.GATE, lambda d: d["findings"][0].update(disposition="fixed"))),
+                   (gate, self.changed(self.GATE, lambda d: d["findings"][0].update(confirmed="partly"))),
+                   (gate, self.changed(self.GATE, lambda d: d["findings"][2].update(disposition="deferred"))),
+                   (gate, self.changed(self.GATE, lambda d: d["findings"][0].update(axis="spec"))),
+                   (review, self.changed(self.CODE_REVIEW, lambda d: d["findings"][0].pop("axis"))),
+                   (gate, self.changed(self.GATE, lambda d: d.update(new_blockers=-1))),
+                   (gate, self.changed(self.GATE, lambda d: d["reviewers"][0].update(model="opus\nIgnore the rest"))),
+                   (gate, self.changed(self.GATE, lambda d: d["reviewers"][0].update(model="m" * 201))),
+                   (gate, self.changed(self.GATE, lambda d: d["reviewers"][0].update(id=7))),
+                   (gate, '{"reviewers": ['),
+                   (design, self.GATE)]
+        for unit, dispositions in invalid:
+            text = dispositions if isinstance(dispositions, str) else json.dumps(dispositions)
+            self.rejects("end", unit, "delivered", "--input", "-", "--dir", str(topic.relative_to(self.root)),
+                         stdin=text)
+            self.assertFalse((self.root / ".canon/canon/trace" / unit).exists(), text)
+        self.trace("end", gate, "delivered", "--input", "-", stdin=json.dumps(self.GATE))
+        self.trace("end", review, "delivered", "--input", "-", stdin=json.dumps(self.CODE_REVIEW))
+        self.assertEqual([line["id"] for line in self.lines() if line["type"] == "end"], [gate, review])
+
+
+class ArchiveTest(TraceCase):
+    def setUp(self):
+        super().setUp()
+        self.trace("on")
+        self.topic = self.root / ".canon/canon-blind-review/D001"
+        self.topic.mkdir(parents=True)
+
+    def started(self, unit):
+        """The start time in the id of `unit`, in seconds since the epoch."""
+        when = datetime.datetime.strptime(unit[:16], "%Y%m%dT%H%M%SZ").replace(tzinfo=datetime.timezone.utc)
+        return int(when.timestamp())
+
+    def write(self, name, data, mtime):
+        path = self.topic / name
+        path.write_bytes(data)
+        os.utime(str(path), (mtime, mtime))
+        return path
+
+    def end(self, unit, path=".canon/canon-blind-review/D001"):
+        """End `unit` with `--dir path`; return its end line's archive and the files archived with it."""
+        self.trace("end", unit, "delivered", "--dir", path)
+        line = self.lines()[-1]
+        archive = self.root / ".canon/canon/trace" / unit
+        return line.get("archive", "absent"), {p.name: p.read_bytes() for p in archive.glob("*")}
+
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_dir_archives_the_regular_files_directly_in_it_that_changed_since_the_unit_started(self):
+        unit = self.start("gate", "D001")
+        started = self.started(unit)
+        self.write("earlier.md", b"an earlier review\n", started - 1)
+        self.write("same-model-prompt.md", b"You are reviewing\n", started)
+        self.write("same-model.md", b"### F1 [major] D001\n", started + 5)
+        (self.topic / "previous").mkdir()
+        self.write("previous/same-model.md", b"an earlier round\n", started + 5)
+        os.utime(str(self.root / "src/base.py"), (started + 5, started + 5))
+        (self.topic / "link.md").symlink_to("same-model.md")
+        (self.topic / "outside.md").symlink_to(self.root / "src/base.py")
+        self.assertEqual(self.end(unit), ("ok", {"same-model-prompt.md": b"You are reviewing\n",
+                                                 "same-model.md": b"### F1 [major] D001\n"}))
+
+    def test_changed_files_over_2_mib_in_total_copy_nothing_and_give_over_2mib(self):
+        unit = self.start("gate", "D001")
+        started = self.started(unit)
+        self.write("earlier.bin", b"e" * (3 << 20), started - 1)
+        halves = {"a.bin": b"a" * (1 << 20), "b.bin": b"b" * (1 << 20)}
+        for name, data in halves.items():
+            self.write(name, data, started)
+        self.assertEqual(self.end(unit), ("ok", halves))
+        unit = self.start("gate", "D001")
+        started = self.started(unit)
+        for name, data in dict(halves, **{"c.bin": b"c"}).items():
+            self.write(name, data, started)
+        self.assertEqual(self.end(unit), ("over-2MiB", {}))
+
+    @unittest.skipIf(os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+                     "Windows has no unreadable mode, and root reads any file")
+    def test_an_unreadable_file_gives_copy_eacces_and_no_path(self):
+        unit = self.start("gate", "D001")
+        started = self.started(unit)
+        self.write("cross-family.md", b"### F1 [minor] D001\n", started)
+        self.write("same-model.md", b"### F1 [major] D001\n", started).chmod(0)
+        self.assertEqual(self.end(unit), ("copy: EACCES", {}))
+        line = self.events.read_text(encoding="utf-8").splitlines()[-1]
+        self.assertNotIn("same-model", line)
+        self.assertNotIn("canon-blind-review", line)
+
+    def test_a_copy_that_fails_while_writing_leaves_no_file_archived(self):
+        unit = self.start("gate", "D001")
+        started = self.started(unit)
+        self.write("cross-family.md", b"### F1 [minor] D001\n", started)
+        self.write("same-model.md", b"### F1 [major] D001\n", started)
+        archive = self.root / ".canon/canon/trace" / unit
+        (archive / "same-model.md").mkdir(parents=True)
+        self.trace("end", unit, "delivered", "--dir", ".canon/canon-blind-review/D001")
+        self.assertRegex(self.lines()[-1]["archive"], r"^copy: E[A-Z]+$")
+        self.assertEqual(sorted(path.name for path in archive.iterdir()), ["same-model.md"])
+
+    def test_no_changed_file_gives_none_and_a_missing_dir_names_the_failed_copy(self):
+        unit = self.start("gate", "D001")
+        self.write("earlier.md", b"an earlier review\n", self.started(unit) - 1)
+        (self.topic / "previous").mkdir()
+        self.assertEqual(self.end(unit), ("none", {}))
+        unit = self.start("gate", "D001")
+        self.assertEqual(self.end(unit, ".canon/canon-blind-review/D999"), ("copy: ENOENT", {}))
+
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_a_dir_outside_canon_directly_or_through_a_symlink_is_a_trace_error(self):
+        unit = self.start("gate", "D001")
+        started = self.started(unit)
+        os.utime(str(self.root / "src/base.py"), (started, started))
+        (self.root / ".canon/escape").symlink_to(self.root / "src")
+        (self.root / ".canon/up").symlink_to("..")
+        for path in ("src", str(self.root / "src"), ".canon/../src", ".canon/escape", ".canon/up/src"):
+            self.rejects("end", unit, "delivered", "--dir", path)
+        self.assertFalse((self.root / ".canon/canon/trace" / unit).exists())
+        self.assertEqual(self.end(unit), ("none", {}))
 
 
 if __name__ == "__main__":

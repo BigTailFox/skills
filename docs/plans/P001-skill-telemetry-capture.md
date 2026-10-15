@@ -17,7 +17,7 @@ Implements [D001: Skill telemetry with canon trace](../designs/D001-skill-teleme
 
 ## Current state
 
-Next: S3.
+Next: S4.
 
 ## Slices
 
@@ -84,7 +84,7 @@ Test criteria; seams: `trace start` and `trace end` with their lines, the snapsh
 
 ### S3: Review dispositions and archives
 
-Status: todo
+Status: done
 Risk: security
 
 Builds on `D001#review-dispositions`, `D001#commands` and `D001#privacy`.
@@ -188,6 +188,7 @@ Test criteria; seam: the skill texts as an agent follows them, run through the `
 - A change to a file's executable bit alone keeps its skill's digest, which covers content only (`D001#skill-digests`), so the stored tree keeps the mode first stored. Skills run `canon.py` through `python3`, and their one executable file is a template the agent copies, edits and runs, so replays are unaffected.
 - A checkout's first snapshot copies the whole tree. Where it outlasts a host's command timeout, the start prints no id and the unit goes untraced; the pilot watches for this.
 - The docs step writes into D001 the details this plan settles within its intent: `end` with tracing off; the `slice` field; `skill` and `manifest` null without `--skill`; `dispositions` null without `--input`; the limits on `model` and `id`; where the index copy lives; the non-bare snapshot repository; that the project's object store keeps the names and contents of its files, while Git refreshes the modification time of an existing object a snapshot step writes again, as it does on any such write. It adds `skills/governance/canon/trace.md` to D001's `paths`; `canon.py`, its tests and the skill texts serve all of canon and stay outside them.
+- Workers run the tests inside the host's sandbox, where the suite passes, without requesting extra permissions and with a timeout on each run; the orchestrating session runs `scripts/validate.py` and `npx skills add . --list`.
 - `CODEX_THREAD_ID` and `CLAUDECODE` come from the Codex binary and Claude Code's documentation, not from a live session; the pilot confirms them.
 - D001's snapshot timings and sizes come from measurements that no experiment doc records; S2's last criterion measures them again.
 
@@ -202,3 +203,5 @@ Test criteria; seam: the skill texts as an agent follows them, run through the `
 - S2 done: 16 tests in `SnapshotTest`, 62 in the suite, all passing. Criterion 13, on a local ext4 disk with 20,002 files and a 20,000-line events file: the first start took 565 ms; later starts 139 ms at p95 when clean and 148 ms when dirty; `end` 80–81 ms at p95; the snapshot repository held 17.2 MiB. A held `snapshot.lock` skips the snapshot after 5.08 s.
 - S2 decisions: every start line has `skipped`, null when the snapshot was recorded. On an unborn branch `--base` is ignored, and a `--base` starting with `-` is invalid input. The snapshot repository is built in `.init-<id>` under the lock and renamed to `.git`; a failed rename gives `git init: <errno>`. Step 5's pack goes through a temporary file in the snapshot repository's Git directory rather than a pipe, and an `OSError` there gives `git pack-objects: <errno>`, checked with a script because no seam can trigger it. The index copy keeps the index's modification time, which Git compares entries against to find racily clean ones. The docs step writes the temporary pack file and the `.init-<id>` directory into D001.
 - S2's worker stalled for about three hours on a tool call that never returned, after writing the SHA-1 test and before running it; resumed and limited to the sandbox, it finished in minutes.
+- S3 done: 8 tests in `DispositionsTest` and `ArchiveTest`, 70 in the suite, all passing.
+- S3 decisions: every end line carries `archive`, null without `--dir`, since `D001#event-lines` gives it no condition. A `--dir` under `.canon/` that does not exist gives `copy: ENOENT` and still ends the unit. Every documented key is required except `confirmed`, and `id` may be null; `by` is not empty, F numbers have no leading zero, each role is listed once and `model` is not empty. All input is checked before anything is copied; a failed read copies nothing, and a failed write deletes what it wrote. Files open with `O_NOFOLLOW` and `O_NONBLOCK` and must be regular once open, so a file swapped after the listing is skipped; that race was checked by hand with a FIFO and a symlink to `/etc/passwd`. The docs step adds the null `archive` and the `copy: ENOENT` case to D001.
