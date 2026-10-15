@@ -21,7 +21,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "5"
+CANON_VERSION = "6"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -1510,8 +1510,8 @@ def renumber_doc(repo, args):
 
 
 def renumbered_id(repo, doc, wanted, on_base):
-    """`wanted`, once checked, or the next free id; a sub-design keeps its parent and takes a free letter. Ids in
-    the base's files (`on_base`) stay taken."""
+    """`wanted`, once checked and normalized, or the next free id; a sub-design keeps its parent and takes a free
+    letter. Ids in the base's files (`on_base`) stay taken."""
     taken = {d.id for d in repo.docs} | {i for i in map(path_id, on_base or ()) if i}
     if doc.suffix:
         parent = doc.type + doc.digits
@@ -1530,9 +1530,10 @@ def renumbered_id(repo, doc, wanted, on_base):
     match = FULL_ID_RE.match(wanted)
     if not match or match.group(1) != doc.type or match.group(3):
         sys.exit("canon: new id must be a top-level {} id".format(doc.type))
-    if int(match.group(2)) in used:
+    number = int(match.group(2))
+    if number in used:
         sys.exit("canon: {} is already used".format(wanted))
-    return wanted
+    return doc.type + str(number).zfill(3)
 
 
 def doc_links(repo, doc):

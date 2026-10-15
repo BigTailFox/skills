@@ -147,6 +147,29 @@ class ImplementedTest(CanonTest):
 
 
 class RenumberTest(CanonTest):
+    def test_renumber_normalizes_requested_id(self):
+        design = self.design()
+        child = self.design("part", parent="D001")
+        body = "Implements [D001: Area](../designs/D001-area.md).\n\n" + PLAN.format("None.")
+        plan = self.doc("P", "work", body=body, refs=["D001"], based_on=["D001@r1"])
+        self.commit()
+        self.ok("renumber", "D001", "D0002")
+        self.ok("check", "--fix")
+        self.assertTrue(design.with_name("D002-area.md").is_file())
+        self.assertTrue(child.with_name("D002A-part.md").is_file())
+        self.assertIn("based_on: [D002@r1]", plan.read_text())
+        self.assertIn("refs: [D002]", plan.read_text())
+        self.assertIn("[D002: Area](../designs/D002-area.md)", plan.read_text())
+        self.ok("show", "D002")
+
+    def test_padded_requested_id_cannot_reuse_an_existing_id(self):
+        self.design()
+        self.design("other")
+        self.commit()
+        self.assertIn("already used", self.fails("renumber", "D001", "D0002"))
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.ok("check")
+
     def test_renumber_rewrites_structured_references(self):
         self.design()
         concept = self.doc("C", "refs-only", refs=["D001"])
