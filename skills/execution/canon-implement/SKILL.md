@@ -70,4 +70,4 @@ The design revision that passed the gate is the work. Build its spec change with
 
 ## L0 change
 
-No plan: build the change with `canon-tdd` as one slice, without plan updates. Then review it from the commit you started at (or the uncommitted diff), run the docs step, commit, and take the retro step in [Finish](#3-finish). When the change turns out to alter a spec, follow the `canon` skill's workflow (Design problems); once the design revision passes its gate, finish the change as [L1 without a plan](#l1-without-a-plan).
+No plan: build the change with `canon-tdd` as one slice, without plan updates. Then review it from the commit you started at (or the uncommitted diff), run the docs step, commit, and take the retro step in [Finish](#3-finish). When the change turns out to alter a spec, follow the `canon` skill's workflow (Design problems); once the design revision passes its gate, finish the change as [L1 without a plan](#l1-without-a-plan), from the step it had reached.
