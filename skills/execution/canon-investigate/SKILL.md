@@ -94,3 +94,4 @@ Before declaring done:
 - [ ] Every `[DEBUG-...]` line is removed (grep the prefix).
 - [ ] Throwaway harnesses are deleted or kept in `investigations/I00X/`.
 - [ ] Resolution is filled. The commit message states the root cause and carries `Refs: I00X`. The docs step archives the investigation as `resolved`.
+- [ ] The `canon-retro` skill's end check has run if this work hit concrete friction in the development infrastructure or the agent workflow that could recur, such as a correction to how you worked, a defect class the project's checks let through, a command that would not run, a check that failed after you thought you were done, a search that took far too long, or a canon step that got in the way. Use only evidence already in context; do not search for reasons to run it.

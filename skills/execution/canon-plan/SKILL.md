@@ -32,5 +32,6 @@ Then settle what the draft leaves open with the `canon-grill` skill: slice bound
 2. Pass the review gate from the `canon` skill's workflow.
 3. Set the status as the gate's last step describes.
 4. Commit the plan (Conventional Commits, `docs` type, `Refs:` trailer).
+5. Run the `canon-retro` skill's end check only if this work hit concrete friction in the development infrastructure or the agent workflow that could recur, such as a correction to how you worked, a finding a check could have caught, a command that would not run, a check that failed after you thought you were done, a search that took far too long, or a canon step that got in the way. Use only evidence already in context; do not search for reasons to run it.
 
 End with the command for the next phase, `/canon-implement P00X`. In L2, the user starting it approves the plan. When slices carry a `Risk:` line, name them beside the command and suggest high reasoning effort for the implementation session, since every worker runs at the session's effort.

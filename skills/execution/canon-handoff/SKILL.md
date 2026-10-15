@@ -34,4 +34,6 @@ Reference docs, commits and files by id or path; never copy their content. Repla
 
 ## 3. Report
 
-Give the user the file path and a one-line prompt for the next agent: `Read <path> and continue.`
+Run the `canon-retro` skill's end check only if this work hit concrete friction in the development infrastructure or the agent workflow that could recur, such as a correction to how you worked, a finding a check could have caught, a command that would not run, a check that failed after you thought you were done, a search that took far too long, or a canon step that got in the way. Use only evidence already in context; do not search for reasons to run it.
+
+Then give the user the file path and a one-line prompt for the next agent: `Read <path> and continue.`

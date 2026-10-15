@@ -37,5 +37,6 @@ The interview is done when the frontier is empty and every guidance comment is r
 3. Set the status as the gate's last step describes.
 4. Archive a concept the design absorbed as `adopted`, linked from the design.
 5. Commit the docs (Conventional Commits, `docs` type, `Refs:` trailer).
+6. Run the `canon-retro` skill's end check only if this work hit concrete friction in the development infrastructure or the agent workflow that could recur, such as a correction to how you worked, a finding a check could have caught, a command that would not run, a check that failed after you thought you were done, a search that took far too long, or a canon step that got in the way. Use only evidence already in context; do not search for reasons to run it.
 
 End with the command for the next phase: `/canon-plan D00X` when the change needs a plan (always in L2), otherwise `/canon-implement D00X`. In L2, the user starting it approves the design.

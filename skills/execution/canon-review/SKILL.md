@@ -53,3 +53,5 @@ Before deciding on an architecture candidate, the user may explore it: walk it w
 ## 6. Close
 
 Once no finding is `open`, run `canon.py archive R00X closed` and `canon.py check --fix`, then commit (Conventional Commits, `docs` type, `Refs: R00X`).
+
+Then run the `canon-retro` skill's end check only if this work hit concrete friction in the development infrastructure or the agent workflow that could recur, such as a correction to how you worked, a finding a check could have caught, a command that would not run, a check that failed after you thought you were done, a search that took far too long, or a canon step that got in the way. Use only evidence already in context; do not search for reasons to run it.

@@ -61,12 +61,13 @@ A worker is a new general-purpose subagent from the host's own tool, never a for
 
 1. Review the whole change with the `canon-code-review` skill from the `Started at` commit. Fix the findings, commit, and record deferred ones as it describes.
 2. Run the docs step from the `canon` skill's workflow with `--base <Started at>`, so it covers the committed slices. It sets the design's `implemented`, archives the plan as `done` once every slice is done, then commits.
-3. Report: slices done, every paused slice with its problem, the R doc holding deferred findings, and the due-review line when the docs step produced one.
+3. Run the `canon-retro` skill's end check only if this work hit concrete friction in the development infrastructure or the agent workflow that could recur, such as a correction to how you worked, a finding a check could have caught, a command that would not run, a check that failed after you thought you were done, a search that took far too long, or a canon step that got in the way. Use only evidence already in context; do not search for reasons to run it.
+4. Report: slices done, every paused slice with its problem, the R doc holding deferred findings, and the due-review line when the docs step produced one.
 
 ## L1 without a plan
 
-The design revision that passed the gate is the work. Build its spec change with `canon-tdd` as one slice, review it from the commit you started at (or the uncommitted diff), run the docs step, which sets `implemented`, and commit. When the work turns out to need several steps, stop and give the user `/canon-plan D00X`.
+The design revision that passed the gate is the work. Build its spec change with `canon-tdd` as one slice, review it from the commit you started at (or the uncommitted diff), run the docs step, which sets `implemented`, commit, and take the retro step in [Finish](#3-finish). When the work turns out to need several steps, stop and give the user `/canon-plan D00X`.
 
 ## L0 change
 
-No plan: build the change with `canon-tdd` as one slice, without plan updates. Then review it from the commit you started at (or the uncommitted diff), run the docs step and commit. When the change turns out to alter a spec, stop and tell the user it is L1, to be revised with `/canon-design D00X`.
+No plan: build the change with `canon-tdd` as one slice, without plan updates. Then review it from the commit you started at (or the uncommitted diff), run the docs step, commit, and take the retro step in [Finish](#3-finish). When the change turns out to alter a spec, stop and tell the user it is L1, to be revised with `/canon-design D00X`.
