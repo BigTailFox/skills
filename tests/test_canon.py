@@ -30,19 +30,23 @@ _spec.loader.exec_module(canon)
 
 FINDINGS = "## Scope\n\nFixture.\n\n## Findings\n\n| ID | Severity | Finding | Disposition |\n|---|---|---|---|\n{}\n"
 PLAN = "## Current state\n\nNext: S1.\n\n## Slices\n\n### S1: First\n\nStatus: todo\n\n## Notes\n\n{}\n\n## Log\n\nStarted.\n"
+UNIT_TIME_FORMAT = "%Y%m%dT%H%M%SZ"
 
 
 class CanonTest(unittest.TestCase):
     def setUp(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.root = Path(tmp.name)
+        self.root = self.tmpdir()
         self.git("init", "-q", "-b", "main")
         self.git("config", "user.name", "canon test")
         self.git("config", "user.email", "canon@example.invalid")
         self.ok("init", "--no-architecture")
         (self.root / "src").mkdir()
         (self.root / "src/base.py").write_text("value = 1\n")
+
+    def tmpdir(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        return Path(tmp.name)
 
     def run_here(self, *args):
         return subprocess.run(args, cwd=self.root, capture_output=True, text=True)
@@ -393,19 +397,17 @@ class TraceCase(CanonTest):
 
     def setUp(self):
         super().setUp()
-        config = tempfile.TemporaryDirectory()
-        self.addCleanup(config.cleanup)
-        self.config = Path(config.name)
+        self.config = self.tmpdir()
         self.events = self.root / ".canon/canon/trace/events.jsonl"
 
-    def trace(self, *args, cwd=None, stdin="", **env):
+    def trace(self, *args, cwd=None, stdin="", returncode=0, **env):
         """Run `canon.py trace` with the machine switch under a temporary XDG_CONFIG_HOME, no host variables but
-        those in `env`, and `stdin` as its standard input; assert that it exits 0."""
+        those in `env`, and `stdin` as its standard input; assert that it exits with `returncode`."""
         full = {key: value for key, value in os.environ.items() if key not in self.HOST_VARS}
         full.update(XDG_CONFIG_HOME=str(self.config), **env)
         result = subprocess.run([sys.executable, "-B", str(SCRIPT), "trace", *args], cwd=str(cwd or self.root),
                                 env=full, input=stdin, capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.returncode, returncode, result.stdout + result.stderr)
         return result.stdout
 
     def files(self):
@@ -429,10 +431,14 @@ class TraceCase(CanonTest):
         self.assertRegex(self.trace(*args, **env), r"^trace error: ")
         self.assertEqual(self.events.read_bytes() if self.events.exists() else None, before, args)
 
-    def tmpdir(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        return Path(tmp.name)
+    def unit_id(self, ago, number):
+        """The id of a unit started `ago` before now, in the documented format."""
+        started = datetime.datetime.now(datetime.timezone.utc) - ago
+        return started.strftime(UNIT_TIME_FORMAT) + "-{:06x}".format(number)
+
+    def started(self, unit):
+        """The UTC start time that the id of `unit` begins with."""
+        return datetime.datetime.strptime(unit[:16], UNIT_TIME_FORMAT).replace(tzinfo=datetime.timezone.utc)
 
     def snap(self, *args):
         """Run git in the snapshot repository, as `git -C .canon/canon/trace`; return its stripped output."""
@@ -442,12 +448,12 @@ class TraceCase(CanonTest):
         return set(self.snap("cat-file", "--batch-all-objects", "--batch-check=%(objectname)").split())
 
     @contextlib.contextmanager
-    def events_lock_held(self):
-        """Hold events.lock as a trace call does, so calls started meanwhile queue on it after their first checks."""
+    def lock_held(self, name):
+        """Hold the trace directory's lock `name` as a trace call does, so calls started meanwhile wait on it."""
         if fcntl is None:
             yield
             return
-        with open(str(self.events.with_name("events.lock")), "a") as lock:
+        with open(str(self.events.with_name(name)), "a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             yield
 
@@ -506,7 +512,35 @@ class TraceTest(TraceCase):
         self.assertRegex(line["at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d$")
         at = datetime.datetime.fromisoformat(line["at"])
         self.assertEqual(at.utcoffset(), at.astimezone().utcoffset())
-        self.assertEqual(at.astimezone(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ"), unit.split("-")[0])
+        self.assertEqual(at, self.started(unit))
+
+    def test_a_doc_argument_not_shaped_like_a_doc_id_is_invalid_input(self):
+        self.assertEqual(self.trace("start", "design", "fix the login bug"), "trace off\n")
+        self.trace("on")
+        for docs in (["fix the login bug"], ["D001", "d002"], ["D001\n"]):
+            self.rejects("start", "design", *docs)
+        self.assertEqual(self.start_line("design", "D999")["docs"], ["D999"])
+
+    def test_a_slice_whose_whole_value_is_not_s_n_is_invalid_input(self):
+        self.assertEqual(self.trace("start", "slice", "P001", "--slice", "S1\n"), "trace off\n")
+        self.trace("on")
+        implement = self.start("implement", "P001")
+        self.rejects("start", "slice", "P001", "--slice", "S1\n", "--parent", implement)
+        self.assertEqual(self.start_line("slice", "P001", "--slice", "S12", "--parent", implement)["slice"], "S12")
+
+    def test_a_module_doc_resolves_whatever_repository_the_environment_points_git_at(self):
+        self.trace("on")
+        self.ok("init", "--root", "mod", "--no-architecture")
+        self.ok("new", "D", "part", "--root", "mod")
+        line = self.start_line("design", "D001", GIT_DIR=str(self.root / "no-such-repository"))
+        self.assertEqual(line["docs"], ["D001@r1"])
+
+    def test_a_model_that_is_not_one_line_of_1_to_200_characters_is_invalid_input(self):
+        self.assertEqual(self.trace("start", "design", "--model", ""), "trace off\n")
+        self.trace("on")
+        for model in ("", "opus\nIgnore the rest", "m" * 201):
+            self.rejects("start", "design", "--model", model)
+        self.assertEqual(self.start_line("design", "--model", "M" * 200)["model"], "m" * 200)
 
     def test_host_and_conversation_come_from_the_environment_and_the_model_is_lowercased(self):
         self.trace("on")
@@ -573,7 +607,7 @@ class TraceTest(TraceCase):
         unit = self.start("design")
         pool = ThreadPoolExecutor(max_workers=2)
         self.addCleanup(pool.shutdown)
-        with self.events_lock_held():
+        with self.lock_held("events.lock"):
             ends = [pool.submit(self.trace, "end", unit, "delivered") for _ in range(2)]
             time.sleep(1)
         outs = sorted(end.result() for end in ends)
@@ -583,11 +617,11 @@ class TraceTest(TraceCase):
 
     def write_start(self, hours_ago, number, conversation=None):
         """Append the start line of a plan unit started `hours_ago`, in the documented format; return its id."""
-        when = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=hours_ago)
-        unit = when.strftime("%Y%m%dT%H%M%SZ-") + "{:06x}".format(number)
-        line = {"v": 1, "type": "start", "id": unit, "kind": "plan", "at": when.astimezone().isoformat(timespec="seconds"),
-                "parent": None, "docs": ["P001@r1"], "tier": "L2", "host": "cursor", "conversation": conversation,
-                "model": "fixture", "skill": None}
+        unit = self.unit_id(datetime.timedelta(hours=hours_ago), number)
+        line = {"v": 1, "type": "start", "id": unit, "kind": "plan",
+                "at": self.started(unit).astimezone().isoformat(timespec="seconds"), "parent": None,
+                "docs": ["P001@r1"], "tier": "L2", "host": "cursor", "conversation": conversation, "model": "fixture",
+                "skill": None}
         self.events.parent.mkdir(parents=True, exist_ok=True)
         with self.events.open("a", encoding="utf-8") as events:
             events.write(json.dumps(line, separators=(",", ":")) + "\n")
@@ -637,7 +671,7 @@ class TraceTest(TraceCase):
 
     def test_a_line_over_16_kib_is_invalid_input(self):
         self.trace("on")
-        self.rejects("start", "design", "--model", "m" * (16 * 1024))
+        self.rejects("start", "design", *["D001"] * 3000)
 
     def test_the_trace_directory_stays_out_of_git_without_the_projects_ignore_rule(self):
         (self.root / ".gitignore").write_text("")
@@ -657,9 +691,7 @@ class TraceTest(TraceCase):
         (self.root / "src/AGENTS.md").write_text("# AGENTS.md\n")
         self.start("design", cwd=self.root / "src")
         self.assertEqual(len(self.lines()), 1)
-        outside = tempfile.TemporaryDirectory()
-        self.addCleanup(outside.cleanup)
-        top = Path(outside.name)
+        top = self.tmpdir()
         (top / "a/b").mkdir(parents=True)
         (top / "AGENTS.md").write_text("# AGENTS.md\n")
         self.start("design", cwd=top / "a/b")
@@ -915,6 +947,19 @@ class SnapshotTest(TraceCase):
                          sorted("{} {}".format(unit, lines[unit]["snapshot"]) for unit in units))
         self.snap("fsck", "--strict")
 
+    @unittest.skipIf(fcntl is None, "the test holds snapshot.lock with flock")
+    def test_a_start_that_cannot_take_snapshot_lock_skips_its_snapshot_and_stores_no_skills(self):
+        self.commit()
+        self.start("design")
+        skill = self.tmpdir() / "canon-x"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text("canon-x\n")
+        with self.lock_held("snapshot.lock"):
+            line = self.start_line("design", "--skill", str(skill))
+        self.assertEqual([line["snapshot"], line["skipped"]], [None, "snapshot lock: timeout"])
+        self.assertIsNotNone(line["manifest"])
+        self.assertEqual(self.snap("for-each-ref", "refs/skills/"), "")
+
     def committed_project(self, object_format):
         """A project of its own with one commit, made with `git init --object-format=<object_format>`; None when this
         Git cannot make it."""
@@ -1059,11 +1104,6 @@ class ArchiveTest(TraceCase):
         self.topic = self.root / ".canon/canon-blind-review/D001"
         self.topic.mkdir(parents=True)
 
-    def started(self, unit):
-        """The start time in the id of `unit`, in seconds since the epoch."""
-        when = datetime.datetime.strptime(unit[:16], "%Y%m%dT%H%M%SZ").replace(tzinfo=datetime.timezone.utc)
-        return int(when.timestamp())
-
     def write(self, name, data, mtime):
         path = self.topic / name
         path.write_bytes(data)
@@ -1080,7 +1120,7 @@ class ArchiveTest(TraceCase):
     @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
     def test_dir_archives_the_regular_files_directly_in_it_that_changed_since_the_unit_started(self):
         unit = self.start("gate", "D001")
-        started = self.started(unit)
+        started = self.started(unit).timestamp()
         self.write("earlier.md", b"an earlier review\n", started - 1)
         self.write("same-model-prompt.md", b"You are reviewing\n", started)
         self.write("same-model.md", b"### F1 [major] D001\n", started + 5)
@@ -1094,14 +1134,14 @@ class ArchiveTest(TraceCase):
 
     def test_changed_files_over_2_mib_in_total_copy_nothing_and_give_over_2mib(self):
         unit = self.start("gate", "D001")
-        started = self.started(unit)
+        started = self.started(unit).timestamp()
         self.write("earlier.bin", b"e" * (3 << 20), started - 1)
         halves = {"a.bin": b"a" * (1 << 20), "b.bin": b"b" * (1 << 20)}
         for name, data in halves.items():
             self.write(name, data, started)
         self.assertEqual(self.end(unit), ("ok", halves))
         unit = self.start("gate", "D001")
-        started = self.started(unit)
+        started = self.started(unit).timestamp()
         for name, data in dict(halves, **{"c.bin": b"c"}).items():
             self.write(name, data, started)
         self.assertEqual(self.end(unit), ("over-2MiB", {}))
@@ -1110,7 +1150,7 @@ class ArchiveTest(TraceCase):
                      "Windows has no unreadable mode, and root reads any file")
     def test_an_unreadable_file_gives_copy_eacces_and_no_path(self):
         unit = self.start("gate", "D001")
-        started = self.started(unit)
+        started = self.started(unit).timestamp()
         self.write("cross-family.md", b"### F1 [minor] D001\n", started)
         self.write("same-model.md", b"### F1 [major] D001\n", started).chmod(0)
         self.assertEqual(self.end(unit), ("copy: EACCES", {}))
@@ -1120,7 +1160,7 @@ class ArchiveTest(TraceCase):
 
     def test_a_copy_that_fails_while_writing_leaves_no_file_archived(self):
         unit = self.start("gate", "D001")
-        started = self.started(unit)
+        started = self.started(unit).timestamp()
         self.write("cross-family.md", b"### F1 [minor] D001\n", started)
         self.write("same-model.md", b"### F1 [major] D001\n", started)
         archive = self.root / ".canon/canon/trace" / unit
@@ -1131,7 +1171,7 @@ class ArchiveTest(TraceCase):
 
     def test_no_changed_file_gives_none_and_a_missing_dir_names_the_failed_copy(self):
         unit = self.start("gate", "D001")
-        self.write("earlier.md", b"an earlier review\n", self.started(unit) - 1)
+        self.write("earlier.md", b"an earlier review\n", self.started(unit).timestamp() - 1)
         (self.topic / "previous").mkdir()
         self.assertEqual(self.end(unit), ("none", {}))
         unit = self.start("gate", "D001")
@@ -1140,7 +1180,7 @@ class ArchiveTest(TraceCase):
     @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
     def test_a_dir_outside_canon_directly_or_through_a_symlink_is_a_trace_error(self):
         unit = self.start("gate", "D001")
-        started = self.started(unit)
+        started = self.started(unit).timestamp()
         os.utime(str(self.root / "src/base.py"), (started, started))
         (self.root / ".canon/escape").symlink_to(self.root / "src")
         (self.root / ".canon/up").symlink_to("..")
@@ -1148,6 +1188,42 @@ class ArchiveTest(TraceCase):
             self.rejects("end", unit, "delivered", "--dir", path)
         self.assertFalse((self.root / ".canon/canon/trace" / unit).exists())
         self.assertEqual(self.end(unit), ("none", {}))
+
+    def test_a_relative_dir_is_taken_from_the_checkout_and_a_relative_input_from_the_working_directory(self):
+        unit = self.start("gate", "D001")
+        self.write("same-model.md", b"### F1 [major] D001\n", self.started(unit).timestamp())
+        dispositions = {"reviewers": [], "findings": [], "new_blockers": 0}
+        (self.root / "src/dispositions.json").write_text(json.dumps(dispositions))
+        out = self.trace("end", unit, "delivered", "--dir", ".canon/canon-blind-review/D001",
+                         "--input", "dispositions.json", cwd=self.root / "src")
+        self.assertEqual(out, "trace {} ended\n".format(unit))
+        line = self.lines()[-1]
+        self.assertEqual([line["archive"], line["dispositions"]], ["ok", dispositions])
+        self.assertEqual([path.name for path in (self.root / ".canon/canon/trace" / unit).iterdir()],
+                         ["same-model.md"])
+
+    def test_of_two_parallel_ends_of_a_unit_only_the_one_that_closes_it_archives_its_files(self):
+        unit = self.start("gate", "D001")
+        started = self.started(unit).timestamp()
+        self.write("same-model.md", b"### F1 [major] D001\n", started)
+        other = self.root / ".canon/canon-blind-review/D002/cross-family.md"
+        other.parent.mkdir()
+        other.write_bytes(b"### F1 [minor] D002\n")
+        os.utime(str(other), (started, started))
+        names = {".canon/canon-blind-review/D001": ["same-model.md"],
+                 ".canon/canon-blind-review/D002": ["cross-family.md"]}
+        pool = ThreadPoolExecutor(max_workers=2)
+        self.addCleanup(pool.shutdown)
+        with self.lock_held("events.lock"):
+            ends = {path: pool.submit(self.trace, "end", unit, "delivered", "--dir", path) for path in names}
+            time.sleep(1)
+        outs = {path: end.result() for path, end in ends.items()}
+        [closed] = [path for path, out in outs.items() if out == "trace {} ended\n".format(unit)]
+        [rejected] = [out for path, out in outs.items() if path != closed]
+        self.assertRegex(rejected, r"^trace error: ")
+        self.assertEqual([line["type"] for line in self.lines()], ["start", "end"])
+        self.assertEqual(sorted(path.name for path in (self.root / ".canon/canon/trace" / unit).iterdir()),
+                         names[closed])
 
 
 class SkillDigestTest(TraceCase):
@@ -1219,7 +1295,7 @@ class SkillDigestTest(TraceCase):
     def test_each_manifest_line_appears_once_before_its_first_use_and_top_level_ends_compute_their_own(self):
         skill = self.skill(self.tmpdir(), "canon-x")
         plan = self.start("plan")
-        with ThreadPoolExecutor(max_workers=10) as pool, self.events_lock_held():
+        with ThreadPoolExecutor(max_workers=10) as pool, self.lock_held("events.lock"):
             starts = [pool.submit(self.start, "design", "--skill", str(skill)) for _ in range(10)]
             time.sleep(2)
         self.assertEqual(len({start.result() for start in starts}), 10)
@@ -1274,6 +1350,21 @@ class SkillDigestTest(TraceCase):
         self.assertEqual(self.lines(outside / ".canon/canon/trace/events.jsonl")[-1]["manifest"], digest)
         self.assertFalse((outside / ".canon/canon/trace/.git").exists())
 
+    def test_two_parallel_starts_with_the_same_new_manifest_store_it_once(self):
+        self.commit()
+        skill = self.skill(self.tmpdir(), "canon-x")
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            units = list(pool.map(lambda _: self.start("design", "--skill", str(skill)), range(2)))
+        starts = {line["id"]: line for line in self.lines() if line["type"] == "start"}
+        self.assertEqual([starts[unit]["skipped"] for unit in units], [None, None])
+        [digest] = {starts[unit]["manifest"] for unit in units}
+        ref = "refs/skills/" + digest
+        self.assertEqual(self.snap("rev-list", "--parents", ref), self.snap("rev-parse", ref))
+        objects = self.snap("cat-file", "--batch-all-objects", "--batch-check=%(objectname) %(objecttype)")
+        commits = [line.split()[0] for line in objects.splitlines() if line.endswith(" commit")]
+        subjects = [self.snap("log", "-1", "--format=%s", commit) for commit in commits]
+        self.assertEqual(subjects.count("skills " + digest), 1)
+
 
 class PruneTest(TraceCase):
     def setUp(self):
@@ -1286,8 +1377,7 @@ class PruneTest(TraceCase):
         """Turn `unit` into a unit started `days` days earlier, in the documented formats: its id and start time in
         the events file, its snapshot ref and its archive; return its new id."""
         ago = datetime.timedelta(days=days)
-        started = datetime.datetime.strptime(unit[:16], "%Y%m%dT%H%M%SZ").replace(tzinfo=datetime.timezone.utc)
-        old = (started - ago).strftime("%Y%m%dT%H%M%SZ") + unit[16:]
+        old = (self.started(unit) - ago).strftime(UNIT_TIME_FORMAT) + unit[16:]
         lines = self.lines()
         for line in lines:
             if line.get("id") == unit:
@@ -1300,11 +1390,6 @@ class PruneTest(TraceCase):
         if (self.trace_dir / unit).exists():
             (self.trace_dir / unit).rename(self.trace_dir / old)
         return old
-
-    def unit_id(self, ago, number):
-        """The id of a unit started `ago` before now, in the documented format."""
-        started = datetime.datetime.now(datetime.timezone.utc) - ago
-        return started.strftime("%Y%m%dT%H%M%SZ-") + "{:06x}".format(number)
 
     def snapshot_refs(self):
         return sorted(self.snap("for-each-ref", "--format=%(refname)", "refs/trace/").splitlines())
@@ -1392,8 +1477,7 @@ class PruneTest(TraceCase):
     def test_days_must_be_a_whole_number_of_zero_or_more(self):
         old = self.backdate(self.start("design"), 2)
         for days in ("-1", "x"):
-            result = self.canon("trace", "prune", "--days", days)
-            self.assertEqual(result.returncode, 2, days + ": " + result.stdout + result.stderr)
+            self.trace("prune", "--days", days, returncode=2)
         self.assertEqual(self.snapshot_refs(), ["refs/trace/" + old])
 
     def test_a_gc_already_running_in_the_snapshot_repository_is_a_trace_error_after_the_deletions(self):
@@ -1404,6 +1488,19 @@ class PruneTest(TraceCase):
                               r"removed 0 index copies and 0 build directories left by interrupted starts\n"
                               r"trace error: git gc: exit 128\n$")
         self.assertEqual(self.snapshot_refs(), [])
+
+    @unittest.skipIf(fcntl is None, "the test holds snapshot.lock with flock")
+    def test_a_prune_that_cannot_take_snapshot_lock_is_a_trace_error_and_deletes_nothing(self):
+        old = self.backdate(self.reviewed_gate(), 2)
+        interrupted = self.unit_id(datetime.timedelta(hours=2), 1)
+        copy, build = self.trace_dir / ".git" / ("index-" + interrupted), self.trace_dir / (".init-" + interrupted)
+        copy.write_bytes(b"")
+        build.mkdir()
+        with self.lock_held("snapshot.lock"):
+            out = self.trace("prune", "--days", "1")
+        self.assertRegex(out, r"^trace error: [^\n]*\n$")
+        self.assertEqual(self.snapshot_refs(), ["refs/trace/" + old])
+        self.assertEqual([path.exists() for path in (self.trace_dir / old, copy, build)], [True, True, True])
 
     def test_outside_git_prune_deletes_old_archives_and_creates_nothing(self):
         outside = self.tmpdir()

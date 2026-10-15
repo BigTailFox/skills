@@ -65,7 +65,7 @@ With tracing on, the session you talk to calls `canon.py trace` at the boundarie
 
 No commit or push of the project can carry the directory: `.canon/canon/.gitignore` ignores it even when the project's own `.gitignore` lacks `.canon/`, and the snapshot repository's refs are not the project's. Packaging that does not read `.gitignore` copies it, snapshots and all, and a snapshot can hold untracked files such as local configuration or secrets. Exclude `.canon/` there: in `.dockerignore` for a Docker build context, and from any archive or copy of the checkout.
 
-The directory is not scratch: until it is pruned, it holds the only copy of its data. Each checkout, a linked worktree included, has its own, so removing a worktree removes its trace data. `trace prune --days N` deletes the snapshots and archives of units started more than N days ago, keeps every event line, and runs `git gc` in the snapshot repository so the space comes back at once. Like `git gc`, run it while no session works in the checkout: a unit starting meanwhile can lose objects its snapshot shares with a pruned one.
+The directory is not scratch: until it is pruned, it holds the only copy of its data. Each checkout, a linked worktree included, has its own, so removing a worktree removes its trace data. `trace prune --days N` deletes the snapshots and archives of units started more than N days ago, keeps every event line, and runs `git gc` in the snapshot repository so the space comes back at once. A unit that starts while a prune runs waits up to 5 seconds for it, then skips its snapshot.
 
 ## Skills
 
@@ -75,7 +75,7 @@ Auto skills load when the context calls for them. Manual skills run only as comm
 
 | Skill | Summary | Trigger |
 |---|---|---|
-| `canon` | The documentation system: doc types, frontmatter, references, lifecycle and archiving, the change tiers, the review gate, how subagents launch, and `canon.py`, which creates, checks, queries and archives docs. | Auto |
+| `canon` | The documentation system: doc types, frontmatter, references, lifecycle and archiving, the change tiers, the review gate, how subagents launch, and `canon.py`, which creates, checks, queries and archives docs, and records workflow runs when tracing is on. | Auto |
 | `canon-init` | Sets up canon in a repository or monorepo module, migrates existing docs (design notes, ADRs, RFCs, plans, postmortems, benchmarks), sets up the cross-family reviewer, and upgrades the project's `canon.py`. Rerun it after a fresh clone to set up the reviewer alone. | Manual |
 | `canon-sync` | Keeps docs in step with the code: runs the docs step after a change, repairs docs after a merge or rebase, and audits doc health (designs with unchecked code commits, idle docs, reviews that are due). | Manual |
 
