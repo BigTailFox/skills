@@ -1,15 +1,16 @@
 ---
-status: accepted
+status: active
 created: 2026-10-15
-updated: 2026-10-15
+updated: 2026-10-16
 revision: 2
 modules: [canon]
 summary: Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions.
 refs: []
 owns: [skill-telemetry]
-paths: []
+paths: [skills/governance/canon/trace.md]
 reviewed: 2
 reviewers: [claude-opus-5.5]
+implemented: 2
 ---
 
 # D001: Skill telemetry with canon trace
@@ -75,13 +76,13 @@ Outcomes, given to `end`. Every kind that ends allows `delivered`, `blocked`, `h
 
 ### Call sites
 
-Each call runs the project's `canon.py`. `<skill>` is the directory of the `SKILL.md` being followed, for a gate `canon-blind-review`'s or else `canon`'s; `<model>` is the session's model id as the host's model setting names it; `<id>` is the id printed by this skill's own `start`, and `<parent>` the id of the open unit of the workflow that invoked the skill, left out with `--parent` when there is none. A skill's first `start` decides: unless it prints `trace <id>`, the skill skips its other trace calls, which also covers a project copy of `canon.py` too old to have `trace`. When it does print an id, the agent follows the `canon` skill's `trace.md`, which states the outcomes and the dispositions format for agents. An agent that lost an id finds it with `trace status`.
+Each call runs the project's `canon.py`. `<skill>` is the directory of the `SKILL.md` being followed, for a gate `canon-blind-review`'s or else `canon`'s; `<model>` is the session's model id as the host's model setting names it; `<id>` is the id printed by this skill's own `start`, and `<parent>` the id of the open unit of the workflow that invoked the skill, left out with `--parent` when there is none. A skill's first `start` decides: unless it prints `trace <id>`, the skill skips its other trace calls, which also covers a project copy of `canon.py` too old to have `trace`. When it does print an id, the agent follows the `canon` skill's `trace.md`, which states the outcomes and the dispositions format for agents. The placeholders and the first-start rule are stated in a paragraph of the `canon` skill itself, after its command table, since the first call needs them before tracing is known to be on. An agent that lost an id finds it with `trace status`.
 
 - `canon-design`, after Frame step 3: `trace start design <D or C id> --tier <tier> --skill <skill> --model <model>`. Before the closing command: `trace end <id> <outcome>`.
 - `canon-plan`, after Start step 2: `trace start plan <P id> <D id> --tier <tier> --skill <skill> --model <model>`. Before the closing command: `trace end <id> <outcome>`.
 - `canon-implement`, after Start step 4: `trace start implement [<P or D id>] --tier <tier> --base <start commit> --skill <skill> --model <model>`. Before launching each worker: `trace start slice <P id> --slice S<n> --parent <id>`. After Finish step 3, or when stopping on a wrong tier: `trace end <id> <outcome> [--to L1|L2|plan]`.
 - `canon-code-review`, after Pin the fixed point: `trace start code-review [<P id>] --base <fixed point> --tier <tier> --skill <skill> --model <model> [--parent <parent>]`. After Dispose, its end check included: `trace end <id> <outcome> --dir .canon/canon-blind-review/<topic> --input -`, with the dispositions on stdin.
-- The review gate in the `canon` workflow, at step 2: `trace start gate <doc id> --tier <tier> --skill <skill> --model <model> [--parent <parent>] [--base <Changes since commit>]`. After step 5: `trace end <gate id> <outcome> --dir .canon/canon-blind-review/<topic> --input -`, where `<gate id>` is what the gate's `start` printed.
+- The review gate in the `canon` workflow, at step 2: `trace start gate <doc id> --tier <tier> --skill <skill> --model <model> [--parent <parent>] [--base <Changes since commit>]`. After step 5: `trace end <gate id> <outcome> --dir .canon/canon-blind-review/<doc id> --input -`, where `<gate id>` is what the gate's `start` printed.
 - `canon-investigate`, when opening the investigation: `trace start investigate <I id> --skill <skill> --model <model>`. After Phase 6: `trace end <id> <outcome>`.
 - `canon-review`, after Create the doc: `trace start canon-review <R id> --skill <skill> --model <model>`. After Close: `trace end <id> <outcome>`.
 - `canon-retro`: the end check opens with `trace start end-check --skill <skill> --model <model> [--parent <parent>]` and closes with `trace end <id> quiet|raised`; a requested retro opens with `trace start retro --skill <skill> --model <model>` and closes with `trace end <id> <outcome>`.
@@ -94,7 +95,7 @@ $XDG_CONFIG_HOME/canon/trace      machine switch, present = on (default ~/.confi
 .canon/canon/trace/off            this checkout opts out
 .canon/canon/trace/events.jsonl   event lines, appended
 .canon/canon/trace/events.lock    held by start and end from their final checks to their append
-.canon/canon/trace/snapshot.lock  held while the snapshot repository is created
+.canon/canon/trace/snapshot.lock  held by each start's snapshot and skill storage, and by prune
 .canon/canon/trace/<id>/          archived review files of unit <id>, and its snapshot-error.txt
 .canon/canon/trace/.git           snapshot repository: refs/trace/<id> per unit, refs/skills/<manifest> per skill version
 ```
@@ -102,7 +103,7 @@ $XDG_CONFIG_HOME/canon/trace      machine switch, present = on (default ~/.confi
 - Tracing is on in a checkout when the machine switch exists and the checkout has no `off` file. Installing skills, `canon-init` and `canon.py init` never turn it on.
 - `trace on` creates the machine switch and prints what tracing stores: snapshots of the work tree, untracked files that are not ignored included, kept in the checkout's `.canon/canon/trace/`, which no commit or push reaches, and that packaging which does not read `.gitignore`, such as a Docker build context, must exclude `.canon/`. It writes outside the workspace, so a sandboxed agent asks the user to run it.
 - Everything else lives in the checkout's trace directory, `.canon/canon/trace/` in the nearest directory above the working directory that holds `.git`, else `AGENTS.md`, else the working directory; locating it runs no Git command. The Cursor and Codex sandboxes let the agent write it; Codex's keeps the project's `.git` read-only. The directory is not scratch: until `prune`, it holds the only copy of its data. Each checkout, linked worktrees included, has its own: its events, archives and snapshots share a lifetime, removing a worktree removes them, and a new worktree's first snapshot copies the whole tree.
-- No commit of the project can hold the trace directory. On first use, `start` writes `.canon/canon/.gitignore` containing `*`, so the project ignores the directory even when its own `.gitignore` lacks `.canon/`. Without either rule, Git sees a nested repository: `git add -A` records at most a pointer to its HEAD commit, never a file inside it, and `git clean -fdx` skips it.
+- No commit of the project can hold the trace directory. `start` and `off --here` write `.canon/canon/.gitignore` containing `*` when it is missing, so the project ignores the directory even when its own `.gitignore` lacks `.canon/`, and an `off` file cannot be committed. Without either rule, Git sees a nested repository: `git add -A` records at most a pointer to its HEAD commit, never a file inside it, and `git clean -fdx` skips it.
 
 ### Commands
 
@@ -116,13 +117,13 @@ canon.py trace off [--here]
 canon.py trace prune --days N
 ```
 
-- `start` prints `trace <id>`, or `trace off` without touching Git or writing anything when tracing is off. It resolves each `DOC` to `<doc>@r<revision>` from the doc's frontmatter, keeping a doc it cannot find as given; checks that `--parent` names an open unit that is neither a slice nor an end check, and an `implement` unit for a slice; resolves `--base` to the merge base of that commit and HEAD, which is the commit itself when HEAD descends from it, and treats a `--base` without a merge base, or on an unborn branch, as absent; takes a [snapshot](#snapshots); computes the [manifest](#skill-digests); and appends one line.
-- `end` closes the open unit `UNIT` and prints `trace <id> ended`; `OUTCOME` must be one the unit's kind allows, and `--to` comes with `escalated` only. `--dir`, which must lie under `.canon/`, copies the regular files directly in it that changed since the unit started into `.canon/canon/trace/<id>/` when they total at most 2 MiB, and otherwise copies nothing; no such file records `none`. `--input` reads the [dispositions](#review-dispositions).
+- `start` prints `trace <id>`, or `trace off` without touching Git or writing anything when tracing is off. It resolves each `DOC`, which must be shaped like a doc id such as `D001`, to `<doc>@r<revision>` from the doc's frontmatter, keeping a doc it cannot find as given; checks that `--model` is one line of at most 200 characters, like a reviewer's `model`; checks that `--parent` names an open unit that is neither a slice nor an end check, and an `implement` unit for a slice, and that a kind of the first row of [Units](#units) has none; resolves `--base` to the merge base of that commit and HEAD, which is the commit itself when HEAD descends from it, and treats a `--base` without a merge base, or on an unborn branch, as absent; takes a [snapshot](#snapshots); computes the [manifest](#skill-digests); and appends one line.
+- `end` closes the open unit `UNIT` and prints `trace <id> ended`, or, like `start`, `trace off` when tracing is off; `OUTCOME` must be one the unit's kind allows, and `--to` comes with `escalated` only. `--dir`, taken from the directory holding `.canon/` when relative, must lie under `.canon/`. It copies the regular files directly in it that changed since the unit started into `.canon/canon/trace/<id>/` when they total at most 2 MiB, and otherwise copies nothing; no such file records `none`, and a missing directory `copy: ENOENT`, the unit ending either way. It copies only once the final check under `events.lock` passes, so a call that fails that check archives nothing. `--input` reads the [dispositions](#review-dispositions).
 - `status` prints whether tracing is on and why; the open units started in the last 24 hours, newest first, with their ids, kinds, docs and start times, marking those of this conversation when the host names it; the number of snapshots, and of skipped ones by reason; and the snapshot repository's disk size.
 - `on` and `off` create and delete the machine switch; with `--here` they delete and create this checkout's `off` file.
-- `prune --days N` deletes the snapshots and archives of units started more than N days ago, keeps their lines, and runs `git gc --prune=1.hour.ago` in the snapshot repository: the space returns at once, while objects written in the last hour stay for a snapshot in progress.
+- `prune --days N` deletes the snapshots and archives of units started more than N days ago, and the index copies and `.init-<id>` directories that interrupted starts left more than an hour ago, keeps every line, and runs `git gc --prune=1.hour.ago` in the snapshot repository: the space returns at once, while objects written in the last hour stay. When the snapshot repository exists, prune holds `snapshot.lock` through its deletions and its `gc`, so no start writes there meanwhile.
 - Every subcommand exits 0 unless its arguments are invalid. Invalid input (an id that is not an open unit, an outcome the kind does not allow, invalid dispositions) or an events file that cannot be written prints `trace error: <reason>` and appends no line; the agent may correct its input and repeat the call once, then carries on either way. What a failed call stored first, such as a snapshot or an archive, is an orphan that readers ignore and `prune` removes by the time in its id. A failed snapshot, or a checkout outside Git, does not fail `start`: it writes the line without a snapshot.
-- A call waits at most 5 s for a lock. A timeout on `events.lock` is a `trace error`; on `snapshot.lock` it skips the snapshot.
+- A call waits at most 5 s for a lock. A timeout on `events.lock` is a `trace error`; on `snapshot.lock`, a start skips its snapshot and skill storage, and a prune is a `trace error` that deletes nothing.
 
 ### Event lines
 
@@ -139,24 +140,24 @@ Each line of `events.jsonl` is one compact UTF-8 JSON object of at most 16 KiB, 
 - `parent`: the `--parent` unit; null for a top-level unit.
 - `head`, `base` and `snapshot` are full commit ids: `base` as `start` resolved it, `snapshot` in the snapshot repository. `head` is null on an unborn branch or outside Git; `snapshot` is null when none was recorded, with `skipped` giving the reason.
 - A reason, in `skipped` or `archive`, is `changes-over-10MiB`, `no-git` or `over-2MiB`, or names the step that failed and how: `<step>: exit <n>` for a Git command, `<step>: <errno name>` for a file operation, `<step>: timeout` for a lock. `<step>` is the Git command (`git add`), `index copy`, `snapshot lock` or `copy`. A reason never holds a path or a message; Git's message, when there is one, goes to `.canon/canon/trace/<id>/snapshot-error.txt`, never to the line or the agent.
-- `tier` defaults to the parent's, and a slice takes its parent's `skill` and `model`. `model` is stored in lowercase. `host` comes from the environment: `cursor` when `CURSOR_AGENT=1`, `codex` when `CODEX_THREAD_ID` is set, `claude-code` when `CLAUDECODE=1`, else `other`. `conversation` is `CURSOR_CONVERSATION_ID` or `CODEX_THREAD_ID`, else null.
-- `manifest` is written on every start and on the end of a top-level unit. A `manifest` line precedes the first use of each digest in the file.
-- An end line carries `outcome`, `to` for `escalated`, `head`, `manifest` for a top-level unit, `dispositions` for a gate or code review, and `archive`: `ok`, `none` or the reason nothing was copied.
+- `tier` defaults to the parent's, and a slice takes its parent's `skill` and `model` and records its `S<n>` as `slice`. `skill` is the absolute path of `--skill`, null without it. `model` is stored in lowercase. `host` comes from the environment: `cursor` when `CURSOR_AGENT=1`, `codex` when `CODEX_THREAD_ID` is set, `claude-code` when `CLAUDECODE=1`, else `other`. `conversation` is `CURSOR_CONVERSATION_ID` or `CODEX_THREAD_ID`, else null.
+- `manifest` is written on every start and on the end of a top-level unit, null when `skill` is. A `manifest` line precedes the first use of each digest in the file.
+- An end line carries `outcome`, `to` for `escalated`, `head`, `manifest` for a top-level unit, `dispositions` for a gate or code review, null without `--input`, and `archive`: `ok`, `none` or the reason nothing was copied, null without `--dir`.
 - A unit other than a slice is open from its start until its end; the analysis treats one with no end after 24 hours as incomplete.
 - Readers skip and count lines that do not parse or carry an unknown `v`.
 
 ### Snapshots
 
-Every start records a snapshot of the work tree in the snapshot repository, a repository with no remote that `start` creates on first use with `git init --template=` and the project's object format, its HEAD on an empty commit. A snapshot holds what `git add -A` and a commit would record: files ignored by `.gitignore`, `.git/info/exclude` or `core.excludesFile` stay out, and a submodule is recorded at its checked-out commit, without changes inside it. Every Git command run against the project sets `GIT_OPTIONAL_LOCKS=0`, so none of them rewrites the project's index, and snapshot commits use the fixed identity `canon-trace <trace@canon.invalid>`, so they need no Git user configuration.
+Every start records a snapshot of the work tree in the snapshot repository, a non-bare repository with no remote that `start` creates on first use with `git init --template=` and the project's object format, its HEAD on an empty commit. It is built in `.init-<id>` and renamed to `.git`, so a `.git` there is always complete; a failed rename records `git init: <errno name>`. A snapshot holds what `git add -A` and a commit would record: files ignored by `.gitignore`, `.git/info/exclude` or `core.excludesFile` stay out, and a submodule is recorded at its checked-out commit, without changes inside it. Every Git command run against the project sets `GIT_OPTIONAL_LOCKS=0`, so none of them rewrites the project's index, and snapshot commits use the fixed identity `canon-trace <trace@canon.invalid>`, so they need no Git user configuration.
 
 1. List the untracked files and the files with unstaged changes with `git status --porcelain -z --untracked-files=all`; when they total more than 10 MiB, record no snapshot and set `"skipped": "changes-over-10MiB"`.
-2. Copy the checkout's index (`git rev-parse --git-path index`) to `index-<id>` in the snapshot repository; when there is no index, start without one.
+2. Copy the checkout's index (`git rev-parse --git-path index`) to `index-<id>` in the snapshot repository's Git directory, keeping its modification time, which Git compares entries against to find racily clean ones; when there is no index, start without one.
 3. With `GIT_INDEX_FILE` set to that copy, `GIT_OBJECT_DIRECTORY` to the snapshot repository's objects and `GIT_ALTERNATE_OBJECT_DIRECTORIES` to the project's, run `git add -A` and `git write-tree`.
 4. With the same variables, `git commit-tree` the tree of the resolved base, or of HEAD without `--base`, as a parentless commit, then the snapshot tree as a commit whose parent is that one; on an unborn branch without `--base`, the snapshot commit has no parent. `git diff <snapshot>^ <snapshot>` then shows the change under review.
-5. List the objects the snapshot reaches with `git rev-list --objects <commit>`, keep those that `git cat-file --batch-check`, run in the snapshot repository without the variables, reports missing, and pipe them through `git pack-objects --stdout` into `git index-pack --stdin` there.
+5. List the objects the snapshot reaches with `git rev-list --objects <commit>`, keep those that `git cat-file --batch-check`, run in the snapshot repository without the variables, reports missing, pack them with `git pack-objects --stdout` into a temporary file in the snapshot repository's Git directory, and feed that to `git index-pack --stdin` there.
 6. Run `git update-ref refs/trace/<id> <commit>` in the snapshot repository, which records the snapshot. Then, best-effort and never setting `skipped`, delete the index copy and run `git -c gc.autoDetach=false gc --auto --quiet` there, which repacks once 50 packs or 6,700 loose objects accumulate.
 
-New objects land only in the snapshot repository, and step 5 copies in each object the snapshot borrows from the project, once: the snapshot repository depends on nothing outside it, so rebasing, deleting branches or `git gc --prune=now` in the project cannot break a snapshot, and switching branches back and forth copies each file version once. The whole tree is copied again only into an empty snapshot repository. The project's work tree, index, HEAD, refs and object store do not change. Starting from `git read-tree HEAD` instead of a copied index rehashes every file, 10 times slower in a 20,000-file checkout.
+New objects land only in the snapshot repository, and step 5 copies in each object the snapshot borrows from the project, once: the snapshot repository depends on nothing outside it, so rebasing, deleting branches or `git gc --prune=now` in the project cannot break a snapshot, and switching branches back and forth copies each file version once. The whole tree is copied again only into an empty snapshot repository. The project's work tree, index, HEAD and refs do not change, nor do the names and contents of the files in its object store; Git refreshes the modification time of an existing object that a snapshot step writes again, as it does on any such write. Starting from `git read-tree HEAD` instead of a copied index rehashes every file, 10 times slower in a 20,000-file checkout.
 
 No push, clone or bundle of the project reaches the snapshot repository, `git push --mirror` and `git bundle create --all` included: its refs are not the project's, and no commit of the project holds its files ([Switch and storage](#switch-and-storage)). In a 20,000-file checkout with 45 MiB of packed objects, the first snapshot copied the whole tree, 45 MiB in 1.3 s; later ones took about 100 ms and added 15 to 100 KiB, about 10 KiB once repacked. Moving to a branch that changes 2,000 files copied their 2,006 objects, 4.6 MiB, once; switching back and forth afterwards copied nothing.
 
@@ -174,14 +175,14 @@ After merging the findings and any confirmation round, the orchestrating session
 ```
 
 - `role`: `same-model` or `cross-family` in a gate; `spec`, `standards` or `cross-family` in a code review.
-- `model`: the reviewer's model id, as a gate writes it to the doc's `reviewers`; a run the user made has `manual:` before it. `id`: the agent id kept for the confirmation round, or the session id a command run reports, such as `codex exec`'s; null for a manual run.
+- `model`: the reviewer's model id, as a gate writes it to the doc's `reviewers`; a run the user made has `manual:` before it. `id`: the agent id kept for the confirmation round, or the session id a command run reports, such as `codex exec`'s; null for a manual run. `model` and a non-null `id` are each one line of at most 200 characters.
 - One entry per merged finding. `by` lists every reviewer finding merged into it as `<role>:<F-id>`; `severity` is the highest among them; in a code review, `axis` is `spec` or `standards`.
 - `disposition`: `accepted` (fixed in this work), `declined`, `escalated` (left to the user) or `deferred` (a code-review finding moved to an R doc).
 - `confirmed`: `resolved` or `not-resolved` for a finding sent to the confirmation round, absent otherwise. `new_blockers`: the blockers that round reported as new, 0 without a round.
 
 ### Review files
 
-`canon-blind-review`, and `canon-code-review` for its axis reviewers, keep each reviewer's files in `.canon/canon-blind-review/<topic>/` under its role: `<role>-prompt.md`, `<role>.md` with its findings and `<role>-id.txt`, then `<role>-confirm-prompt.md` and `<role>-confirm.md` for the confirmation round. A confirmation never overwrites the first round's findings, so each `by` id resolves in the archive.
+`canon-blind-review`, and `canon-code-review` for its axis reviewers, keep each reviewer's files in `.canon/canon-blind-review/<topic>/` under its role: `<role>-prompt.md`, `<role>.md` with its findings and `<role>-id.txt`, then `<role>-confirm-prompt.md` and `<role>-confirm.md` for the confirmation round. A confirmation never overwrites the first round's findings, so each `by` id resolves in the archive. A gate's topic is its doc id; a code review's is `<P id>-code-review`, else a slug of the change, so it never shares its plan gate's directory.
 
 ### Skill digests
 
@@ -262,7 +263,7 @@ Scenarios for step 1, tested through the commands:
 
 - With no machine switch, or with an `off` file, `start` prints `trace off`, runs no Git command and writes nothing.
 - A clean checkout's snapshot has HEAD's tree.
-- A dirty checkout's snapshot holds unstaged, staged and untracked changes and no ignored file, and leaves the project's work tree, index, HEAD, refs and object store unchanged, the index byte for byte even after a tracked file's timestamp changed without its content.
+- A dirty checkout's snapshot holds unstaged, staged and untracked changes and no ignored file, and leaves the project's work tree, index, HEAD, refs and the names and contents of its object files unchanged, the index byte for byte even after a tracked file's timestamp changed without its content.
 - An unborn branch without an index gets a snapshot without a parent. Untracked and unstaged files over 10 MiB in total, a checkout outside Git and a failing Git command skip the snapshot, and the start line records the reason; a failing Git command's message lands in `snapshot-error.txt`, and `start` prints only its id.
 - A code review whose fixed point moved on after the branch forked gets the merge base as `base`, and `git diff <snapshot>^ <snapshot>` equals the review's diff.
 - A snapshot copies only the objects the snapshot repository lacks; switching to another branch and back copies each file version once. `git push --mirror`, `git clone --mirror` and `git bundle create --all` of the project carry no snapshot. After a reset, `git reflog expire --expire=now --all` and `git gc --prune=now` in the project, `git fsck --strict` passes in the snapshot repository and every snapshot can be read. With `.canon/` missing from the project's `.gitignore` and `.canon/canon/.gitignore` deleted, `git add -A` stages no file inside the trace directory and `git clean -fdx` leaves it.
@@ -286,7 +287,7 @@ If capture falls short, it is fixed before the report is built.
 Measured in the pilot.
 
 - Calls: two per unit except a slice, which takes one; one per skill invocation when tracing is off.
-- Text: at most 40 tokens per call site in a skill; `trace.md` at most 400 tokens, read only when tracing is on.
+- Text: at most 40 tokens per call site in a skill; at most 110 for the `canon` skill's paragraph on the placeholders and the first-start rule, read whether tracing is on or off; `trace.md` at most 400 tokens, read only when tracing is on.
 - Latency: `start` and `end` p95 under 300 ms on a local disk, including a snapshot of a 20,000-file checkout and the digests of 20 skill directories of 1 MiB in total; a checkout's first snapshot, which copies the whole tree, is exempt.
 - Size: 16 KiB per line, 2 MiB per archive, 10 MiB of untracked and unstaged files per snapshot, 64 KiB per `snapshot-error.txt`, which keeps the end of Git's message.
 

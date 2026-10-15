@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 created: 2026-10-15
 updated: 2026-10-16
 revision: 1
@@ -13,11 +13,11 @@ reviewers: [claude-opus-5.5, gpt-6.1-sol-high]
 
 # P001: Skill telemetry capture
 
-Implements [D001: Skill telemetry with canon trace](../designs/D001-skill-telemetry.md).
+Implements [D001: Skill telemetry with canon trace](../../designs/D001-skill-telemetry.md).
 
 ## Current state
 
-S1 to S7 done; code review done and its fixes committed. Next: the docs step with `--base 5bd0cff`.
+Done: S1 to S7, the code review's fixes and the docs step are committed, and D001 is `active` at `implemented: 2`. Next: the pilot, step 2 of `D001#delivery-and-acceptance`.
 
 ## Slices
 
@@ -224,3 +224,4 @@ Test criteria; seam: the skill texts as an agent follows them, run through the `
 - Code-review fixes: 9 tests added, 90 in the suite, all passing; `CANON_VERSION` 12. Each new test failed before its fix except the store-once one: `git fast-import` will not move an existing ref, so the race only repeated an import. From the fix worker's report, `--slice` must be `S<n>` as a whole, so a trailing newline cannot reach the line. Holding `snapshot.lock` across each snapshot serializes parallel first starts: in a small test repository, 10 took 0.77 s and 50 took 1.25 s in all, none skipped. The pilot watches whether starts in a large checkout skip on it.
 - Codex's confirmation, in a new session: F1, F2, F4 and F6 resolved, no new blocker. It repeated the declined F3 and F5 as not resolved, so its verdict stayed revise; there is no further round.
 - Reviewer questions left to the pilot, as `D001#budgets` leaves latency: start latency on Windows, where each start runs about 15 Git processes, and `end` latency now that it computes a manifest; and a handoff on a host without a conversation id, such as Claude Code, which finds its units in `trace status` by time alone. Space held by objects a start freshened in the last hour returns at the first prune after that hour, as S5's second criterion has it.
+- Docs step from 5bd0cff: D001 gained the details this plan settled, among them the `canon` skill's paragraph in its Text budget, plus `trace.md` in its `paths`, `implemented: 2` and status `active`. `canon.py`, its tests, the skill texts and the README stay outside its `paths`, as the Notes say.
