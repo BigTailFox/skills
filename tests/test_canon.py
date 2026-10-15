@@ -1,6 +1,9 @@
 """Regression tests for skills/governance/canon/scripts/canon.py; scripts/validate.py runs them."""
 
+import contextlib
+import datetime
 import importlib.util
+import json
 import os
 import re
 import subprocess
@@ -11,6 +14,11 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
+
+try:
+    import fcntl
+except ImportError:  # Windows
+    fcntl = None
 
 SCRIPT = Path(__file__).resolve().parents[1] / "skills/governance/canon/scripts/canon.py"
 sys.dont_write_bytecode = True
@@ -376,6 +384,268 @@ class InitTest(CanonTest):
         copy.write_text(SCRIPT.read_text() + "# local edit\n")
         self.assertIn("differs from this canon.py", self.ok("init", "--no-architecture"))
         self.assertTrue(copy.read_text().endswith("# local edit\n"))
+
+
+class TraceTest(CanonTest):
+    HOST_VARS = ("CURSOR_AGENT", "CURSOR_CONVERSATION_ID", "CODEX_THREAD_ID", "CLAUDECODE")
+
+    def setUp(self):
+        super().setUp()
+        config = tempfile.TemporaryDirectory()
+        self.addCleanup(config.cleanup)
+        self.config = Path(config.name)
+        self.events = self.root / ".canon/canon/trace/events.jsonl"
+
+    def trace(self, *args, cwd=None, **env):
+        """Run `canon.py trace` with the machine switch under a temporary XDG_CONFIG_HOME and no host variables but
+        those in `env`; assert that it exits 0."""
+        full = {key: value for key, value in os.environ.items() if key not in self.HOST_VARS}
+        full.update(XDG_CONFIG_HOME=str(self.config), **env)
+        result = subprocess.run([sys.executable, "-B", str(SCRIPT), "trace", *args], cwd=str(cwd or self.root),
+                                env=full, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return result.stdout
+
+    def files(self):
+        return sorted(p for top in (self.root, self.config) for p in top.rglob("*"))
+
+    def start(self, *args, **env):
+        out = self.trace("start", *args, **env)
+        self.assertRegex(out, r"^trace \d{8}T\d{6}Z-[0-9a-f]{6}\n$")
+        return out.split()[1]
+
+    def lines(self, events=None):
+        return [json.loads(line) for line in (events or self.events).read_text(encoding="utf-8").splitlines()]
+
+    def rejects(self, *args, **env):
+        """Assert that the call prints a trace error, exits 0 and leaves the events file as it was."""
+        before = self.events.read_bytes() if self.events.exists() else None
+        self.assertRegex(self.trace(*args, **env), r"^trace error: ")
+        self.assertEqual(self.events.read_bytes() if self.events.exists() else None, before, args)
+
+    @unittest.skipIf(os.name == "nt", "the recording git is a shell script")
+    def test_tracing_off_writes_nothing_and_runs_no_git(self):
+        bin_dir, log = self.config / "bin", self.config / "git.log"
+        bin_dir.mkdir()
+        (bin_dir / "git").write_text("#!/bin/sh\necho \"$@\" >> '{}'\n".format(log))
+        (bin_dir / "git").chmod(0o755)
+        path = str(bin_dir) + os.pathsep + os.environ["PATH"]
+        for opted_out in (False, True):
+            if opted_out:
+                (self.config / "canon").mkdir()
+                (self.config / "canon/trace").touch()
+                (self.root / ".canon/canon/trace").mkdir(parents=True)
+                (self.root / ".canon/canon/trace/off").touch()
+            files = self.files()
+            for args in (["start", "design", "D001"], ["end", "20261015T081502Z-3f9a1c", "delivered"]):
+                self.assertEqual(self.trace(*args, PATH=path), "trace off\n")
+            self.assertEqual(self.files(), files)
+        self.assertFalse(log.exists())
+
+    def test_switches_and_status_say_why_tracing_is_on_or_off(self):
+        switch, off = self.config / "canon/trace", self.root / ".canon/canon/trace/off"
+        self.assertRegex(self.trace("status"), r"^trace off: no machine switch")
+        notice = self.trace("on")
+        self.assertTrue(switch.is_file())
+        self.assertIn("must exclude .canon/", notice)
+        self.assertRegex(self.trace("status"), r"^trace on: ")
+        self.trace("off", "--here")
+        self.assertTrue(off.is_file())
+        self.assertRegex(self.trace("status"), r"^trace off: this checkout opted out")
+        self.trace("on", "--here")
+        self.assertFalse(off.exists())
+        self.assertRegex(self.trace("status"), r"^trace on: ")
+        self.trace("off")
+        self.assertFalse(switch.exists())
+        self.assertRegex(self.trace("status"), r"^trace off: no machine switch")
+
+    def test_start_prints_an_id_and_records_each_doc_at_its_revision(self):
+        self.trace("on")
+        self.design(revision=3, reviewed=3)
+        self.design("old")
+        self.ok("archive", "D002", "retired")
+        self.ok("init", "--root", "mod", "--no-architecture")
+        self.ok("new", "D", "part", "--root", "mod")
+        unit = self.start("design", "D001", "D002", "D003", "D999")
+        [line] = self.lines()
+        self.assertEqual(set(line), {"v", "type", "id", "kind", "at", "parent", "docs", "tier", "host", "conversation",
+                                     "model", "skill"})
+        self.assertEqual([line[k] for k in ("v", "type", "id", "kind", "parent", "tier", "model", "skill")],
+                         [1, "start", unit, "design", None, None, None, None])
+        self.assertEqual(line["docs"], ["D001@r3", "D002@r1", "D003@r1", "D999"])
+        self.assertRegex(line["at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d$")
+        at = datetime.datetime.fromisoformat(line["at"])
+        self.assertEqual(at.utcoffset(), at.astimezone().utcoffset())
+        self.assertEqual(at.astimezone(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ"), unit.split("-")[0])
+
+    def test_host_and_conversation_come_from_the_environment_and_the_model_is_lowercased(self):
+        self.trace("on")
+        hosts = [({"CURSOR_AGENT": "1", "CURSOR_CONVERSATION_ID": "c-1"}, "cursor", "c-1"),
+                 ({"CODEX_THREAD_ID": "t-1"}, "codex", "t-1"),
+                 ({"CLAUDECODE": "1"}, "claude-code", None),
+                 ({}, "other", None)]
+        for env, _host, _conversation in hosts:
+            self.start("design", **env)
+        self.assertEqual([(line["host"], line["conversation"]) for line in self.lines()],
+                         [(host, conversation) for _env, host, conversation in hosts])
+        self.start("design", "--model", "Claude-Opus-5.5", "--skill", "skills/canon-design", cwd=self.root / "src")
+        line = self.lines()[-1]
+        self.assertEqual(line["model"], "claude-opus-5.5")
+        self.assertEqual(line["skill"], os.path.join(os.path.realpath(self.root), "src", "skills", "canon-design"))
+
+    def test_children_record_their_parent_and_a_slice_takes_its_parents_tier_skill_and_model(self):
+        self.trace("on")
+        implement = self.start("implement", "P001", "--tier", "L1", "--skill", "skills/canon-implement",
+                               "--model", "Opus-X")
+        gate = self.start("gate", "D001", "--parent", implement)
+        piece = self.start("slice", "P001", "--slice", "S1", "--parent", implement)
+        lone_gate, check = self.start("gate", "D001"), self.start("end-check")
+        lines = {line["id"]: line for line in self.lines()}
+        self.assertEqual((lines[gate]["parent"], lines[gate]["tier"]), (implement, "L1"))
+        self.assertEqual([lines[piece][k] for k in ("parent", "slice", "tier", "skill", "model")],
+                         [implement, "S1", "L1", os.path.join(os.path.realpath(self.root), "skills", "canon-implement"),
+                          "opus-x"])
+        self.assertEqual((lines[lone_gate]["parent"], lines[check]["parent"]), (None, None))
+        self.trace("end", lone_gate, "delivered")
+        for args in (["gate", "--parent", "20200101T000000Z-000000"],
+                     ["gate", "--parent", lone_gate],
+                     ["gate", "--parent", piece],
+                     ["gate", "--parent", check],
+                     ["slice", "P001", "--slice", "S2", "--parent", gate],
+                     ["slice", "P001", "--slice", "S2"],
+                     ["slice", "P001", "--parent", implement],
+                     ["gate", "D001", "--slice", "S2"],
+                     ["design", "D001", "--parent", implement]):
+            self.rejects("start", *args)
+
+    def test_end_closes_the_unit_it_names_with_an_outcome_its_kind_allows(self):
+        self.trace("on")
+        design = self.start("design", "D001")
+        self.assertEqual(self.trace("end", design, "delivered"), "trace {} ended\n".format(design))
+        implement = self.start("implement", "P001")
+        piece = self.start("slice", "P001", "--slice", "S1", "--parent", implement)
+        check = self.start("end-check")
+        for args in ([design, "delivered"], [piece, "delivered"], ["20200101T000000Z-000000", "delivered"],
+                     [implement, "quiet"], [check, "delivered"], [implement, "escalated"],
+                     [implement, "delivered", "--to", "L1"]):
+            self.rejects("end", *args)
+        self.trace("end", implement, "escalated", "--to", "plan")
+        self.trace("end", check, "raised")
+        ends = [line for line in self.lines() if line["type"] == "end"]
+        self.assertEqual(set(ends[0]), {"v", "type", "id", "kind", "at", "outcome"})
+        self.assertEqual([[end.get(k) for k in ("v", "id", "kind", "outcome", "to")] for end in ends],
+                         [[1, design, "design", "delivered", None], [1, implement, "implement", "escalated", "plan"],
+                          [1, check, "end-check", "raised", None]])
+
+    @contextlib.contextmanager
+    def events_lock_held(self):
+        """Hold events.lock as a trace call does, so calls started meanwhile queue on it after their first checks."""
+        if fcntl is None:
+            yield
+            return
+        with open(str(self.events.with_name("events.lock")), "a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            yield
+
+    def test_of_two_parallel_ends_of_a_unit_one_closes_it(self):
+        self.trace("on")
+        unit = self.start("design")
+        pool = ThreadPoolExecutor(max_workers=2)
+        self.addCleanup(pool.shutdown)
+        with self.events_lock_held():
+            ends = [pool.submit(self.trace, "end", unit, "delivered") for _ in range(2)]
+            time.sleep(1)
+        outs = sorted(end.result() for end in ends)
+        self.assertEqual(outs[0], "trace {} ended\n".format(unit))
+        self.assertRegex(outs[1], r"^trace error: ")
+        self.assertEqual([line["type"] for line in self.lines()], ["start", "end"])
+
+    def write_start(self, hours_ago, number, conversation=None):
+        """Append the start line of a plan unit started `hours_ago`, in the documented format; return its id."""
+        when = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=hours_ago)
+        unit = when.strftime("%Y%m%dT%H%M%SZ-") + "{:06x}".format(number)
+        line = {"v": 1, "type": "start", "id": unit, "kind": "plan", "at": when.astimezone().isoformat(timespec="seconds"),
+                "parent": None, "docs": ["P001@r1"], "tier": "L2", "host": "cursor", "conversation": conversation,
+                "model": "fixture", "skill": None}
+        self.events.parent.mkdir(parents=True, exist_ok=True)
+        with self.events.open("a", encoding="utf-8") as events:
+            events.write(json.dumps(line, separators=(",", ":")) + "\n")
+        return unit
+
+    def test_status_lists_the_open_units_of_the_last_24_hours_newest_first(self):
+        self.trace("on")
+        self.write_start(25, 1)
+        earlier, later = self.write_start(2, 2, conversation="c-1"), self.write_start(1, 3)
+        mine = self.start("design", "D001", CURSOR_AGENT="1", CURSOR_CONVERSATION_ID="c-1")
+        implement = self.start("implement")
+        self.start("slice", "P001", "--slice", "S1", "--parent", implement)
+        ended = self.start("plan")
+        self.trace("end", ended, "delivered")
+        out = self.trace("status", CURSOR_AGENT="1", CURSOR_CONVERSATION_ID="c-1")
+        listed = [(line.split()[0], line.endswith(" (this conversation)")) for line in out.splitlines()
+                  if line.startswith("  ")]
+        self.assertEqual({unit for unit, _mine in listed[:2]}, {mine, implement})
+        self.assertEqual([unit for unit, _mine in listed[2:]], [later, earlier])
+        self.assertEqual({unit for unit, marked in listed if marked}, {mine, earlier})
+        at = next(line["at"] for line in self.lines() if line["id"] == mine)
+        self.assertIn("  {} design D001 started {} (this conversation)\n".format(mine, at), out)
+
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root can write a read-only file")
+    def test_an_events_file_that_cannot_be_written_is_a_trace_error(self):
+        self.trace("on")
+        self.start("design")
+        self.events.chmod(0o444)
+        self.rejects("start", "design")
+
+    def test_fifty_parallel_starts_append_fifty_lines_that_parse(self):
+        self.trace("on")
+        with ThreadPoolExecutor(max_workers=50) as pool:
+            units = list(pool.map(lambda _: self.start("design"), range(50)))
+        self.assertEqual(sorted(line["id"] for line in self.lines()), sorted(units))
+
+    def test_lines_that_do_not_parse_or_carry_another_version_are_skipped(self):
+        self.trace("on")
+        implement = self.start("implement")
+        with self.events.open("ab") as events:
+            events.write(b'{"v":1,"type":"end","id":"' + implement.encode() + b'"\n')
+            events.write(b"\xff" + implement.encode() + b"\n")
+            events.write(json.dumps({"v": 2, "type": "end", "id": implement, "kind": "implement",
+                                     "outcome": "delivered"}).encode() + b"\n")
+        piece = self.start("slice", "P001", "--slice", "S1", "--parent", implement)
+        self.rejects("start", "gate", "--parent", piece)
+
+    def test_a_line_over_16_kib_is_invalid_input(self):
+        self.trace("on")
+        self.rejects("start", "design", "--model", "m" * (16 * 1024))
+
+    def test_the_trace_directory_stays_out_of_git_without_the_projects_ignore_rule(self):
+        (self.root / ".gitignore").write_text("")
+        ignore = self.root / ".canon/canon/.gitignore"
+        self.trace("off", "--here")
+        self.assertNotIn(".canon", self.git("status", "--porcelain", "--untracked-files=all"))
+        self.trace("on", "--here")
+        self.trace("on")
+        for _ in range(2):
+            ignore.unlink()
+            self.start("design")
+            self.assertEqual(ignore.read_text(), "*\n")
+        self.assertNotIn(".canon", self.git("status", "--porcelain", "--untracked-files=all"))
+
+    def test_the_trace_directory_is_the_nearest_with_git_else_agents_md_else_the_working_directory(self):
+        self.trace("on")
+        (self.root / "src/AGENTS.md").write_text("# AGENTS.md\n")
+        self.start("design", cwd=self.root / "src")
+        self.assertEqual(len(self.lines()), 1)
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        top = Path(outside.name)
+        (top / "a/b").mkdir(parents=True)
+        (top / "AGENTS.md").write_text("# AGENTS.md\n")
+        self.start("design", cwd=top / "a/b")
+        self.assertEqual(len(self.lines(top / ".canon/canon/trace/events.jsonl")), 1)
+        (top / "AGENTS.md").unlink()
+        self.start("design", cwd=top / "a/b")
+        self.assertEqual(len(self.lines(top / "a/b/.canon/canon/trace/events.jsonl")), 1)
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ Single file, Python 3.8+ standard library only. Run `canon.py -h` for commands.
 import argparse
 import contextlib
 import datetime
+import json
 import os
 import re
 import subprocess
@@ -21,7 +22,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "6"
+CANON_VERSION = "7"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -1076,13 +1077,12 @@ def used_numbers(repo, letter):
 
 
 @contextlib.contextmanager
-def id_lock(repo):
-    """Serialise id allocation between canon commands in this checkout. The lock belongs to the process holding
-    it, so the OS releases it however that process ends; nothing ever breaks it."""
-    path = repo.root / LOCAL_DIR / "id.lock"
+def file_lock(path, timeout, error):
+    """Hold an exclusive lock on `path`, raising `error` once `timeout` seconds pass without it. The lock belongs to
+    the process holding it, so the OS releases it however that process ends; nothing ever breaks it."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(str(path), os.O_RDWR | os.O_CREAT)
-    deadline, locked = time.time() + 60, False
+    deadline, locked = time.time() + timeout, False
     try:
         while not locked:
             try:
@@ -1093,14 +1093,20 @@ def id_lock(repo):
                 locked = True
             except (BlockingIOError, PermissionError):
                 if time.time() > deadline:
-                    sys.exit("canon: another canon command has held {} for a minute; let it finish"
-                             .format(posix_rel(path, repo.root)))
+                    raise error
                 time.sleep(0.05)
         yield
     finally:
         if locked and not fcntl:
             msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
         os.close(fd)
+
+
+def id_lock(repo):
+    """Serialise id allocation between canon commands in this checkout."""
+    path = repo.root / LOCAL_DIR / "id.lock"
+    return file_lock(path, 60, SystemExit("canon: another canon command has held {} for a minute; let it finish"
+                                          .format(posix_rel(path, repo.root))))
 
 
 # ---------------------------------------------------------------- commands
@@ -1737,6 +1743,297 @@ def cmd_audit(repo, args):
     return 0
 
 
+# ---------------------------------------------------------------- trace
+
+TRACE_DIR = LOCAL_DIR + "canon/trace"
+TRACE_KINDS = ("design", "plan", "implement", "investigate", "canon-review", "retro", "code-review", "gate", "slice",
+               "end-check")
+TOP_LEVEL_KINDS = TRACE_KINDS[:6]
+OUTCOMES = ("delivered", "blocked", "handoff", "cancelled")
+KIND_OUTCOMES = {"implement": OUTCOMES + ("partial", "escalated"), "end-check": ("quiet", "raised")}
+UNIT_RE = re.compile(r"^\d{8}T\d{6}Z-[0-9a-f]{6}$")
+SLICE_RE = re.compile(r"^S\d+$")
+TRACE_LOCK_WAIT = 5
+MAX_EVENT = 16 * 1024
+TRACE_NOTICE = ("Tracing keeps, in each checkout's {}/, an event line at each canon unit boundary and a snapshot of the "
+                "work tree at each unit start, untracked files that are not ignored included. No commit or push reaches "
+                "that directory, but packaging that does not read .gitignore, such as a Docker build context, must "
+                "exclude .canon/.").format(TRACE_DIR)
+
+
+class TraceError(Exception):
+    """Invalid input or an events file that cannot be written; `trace` prints it and exits 0."""
+
+
+def trace_root():
+    """The checkout holding the working directory, found without running Git: the nearest directory holding `.git`,
+    else `AGENTS.md`, else the working directory; and whether it holds `.git`."""
+    cwd = Path(os.getcwd())
+    for marker in (".git", "AGENTS.md"):
+        for path in (cwd, *cwd.parents):
+            if (path / marker).exists():
+                return path, marker == ".git"
+    return cwd, False
+
+
+def trace_switch_path():
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "canon" / "trace"
+
+
+def trace_state(root):
+    """Whether tracing is on in the checkout at `root`, and the status line that says why."""
+    switch, off = trace_switch_path(), TRACE_DIR + "/off"
+    if not switch.exists():
+        return False, "trace off: no machine switch {}; `canon.py trace on` creates it".format(switch)
+    if (root / off).exists():
+        return False, "trace off: this checkout opted out with {}; `canon.py trace on --here` deletes it".format(off)
+    return True, "trace on: the machine switch {} exists and this checkout has no {}".format(switch, off)
+
+
+def trace_docs(root, is_git, names):
+    """Each doc id as `<id>@r<revision>`, from the doc in docs/ or docs/archived/ at `root`, else in any docs/
+    directory Git lists; a name that finds no doc stays as given."""
+    paths, missing = {}, []
+    for name in dict.fromkeys(names):
+        match = FULL_ID_RE.match(name)
+        if not match:
+            continue
+        category = TYPES[match.group(1)]["dir"]
+        found = sorted(root.glob("docs/{}/{}-*.md".format(category, name))) \
+            or sorted(root.glob("docs/archived/{}/{}-*.md".format(category, name)))
+        if found:
+            paths[name] = found[0]
+        else:
+            missing.append(name)
+    if missing and is_git:
+        out = git(root, "ls-files", "-z", "-co", "--exclude-standard", "--",
+                  *(":(glob)**/docs/**/{}-*.md".format(name) for name in missing)) or ""
+        for rel in sorted(out.split("\0")):
+            doc_id = path_id(rel)
+            if doc_id in missing and doc_id not in paths and rel.split("/")[-2] == TYPES[doc_id[0]]["dir"]:
+                paths[doc_id] = root / rel
+    revisions = {name: doc_revision(path) for name, path in paths.items()}
+    return ["{}@r{}".format(name, revisions[name]) if revisions.get(name) else name for name in names]
+
+
+def doc_revision(path):
+    """The `revision` in a doc file's frontmatter; None when it has none or the file cannot be read."""
+    try:
+        revision = (parse_frontmatter(path.read_text(encoding="utf-8").split("\n"))[0] or {}).get("revision")
+    except (OSError, ValueError):
+        return None
+    return revision if isinstance(revision, int) else None
+
+
+def trace_host():
+    """The agent host and the conversation the environment names."""
+    env = os.environ
+    if env.get("CURSOR_AGENT") == "1":
+        host = "cursor"
+    elif env.get("CODEX_THREAD_ID"):
+        host = "codex"
+    elif env.get("CLAUDECODE") == "1":
+        host = "claude-code"
+    else:
+        host = "other"
+    return host, env.get("CURSOR_CONVERSATION_ID") or env.get("CODEX_THREAD_ID") or None
+
+
+def read_events(trace_dir, *needles):
+    """The lines of events.jsonl holding one of the byte strings `needles`, parsed; lines that do not parse or carry
+    another `v` are skipped."""
+    try:
+        data = (trace_dir / "events.jsonl").read_bytes()
+    except FileNotFoundError:
+        return []
+    events = []
+    for raw in data.split(b"\n"):
+        if any(needle in raw for needle in needles):
+            try:
+                event = json.loads(raw.decode("utf-8"))
+            except ValueError:
+                continue
+            if isinstance(event, dict) and type(event.get("v")) is int and event["v"] == 1:
+                events.append(event)
+    return events
+
+
+def unit_events(trace_dir, unit):
+    """The start and end lines of `unit`, each None when the events file holds none."""
+    start = end = None
+    if UNIT_RE.match(unit):
+        for event in read_events(trace_dir, unit.encode()):
+            if event.get("id") == unit and event.get("type") == "start":
+                start = start or event
+            elif event.get("id") == unit and event.get("type") == "end":
+                end = end or event
+    return start, end
+
+
+def start_parent(trace_dir, args):
+    """The start line of the open unit `--parent` names, once checked that it may hold a unit of this kind."""
+    if args.kind in TOP_LEVEL_KINDS and args.parent:
+        raise TraceError("{} units are top-level and take no --parent".format(args.kind))
+    if not args.parent:
+        if args.kind == "slice":
+            raise TraceError("a slice needs --parent naming its implement unit")
+        return None
+    start, end = unit_events(trace_dir, args.parent)
+    if start is None:
+        raise TraceError("--parent {} names no unit".format(args.parent))
+    kind = start.get("kind")
+    if kind in ("slice", "end-check"):
+        raise TraceError("{} units cannot be parents".format(kind))
+    if end is not None:
+        raise TraceError("--parent {} has ended".format(args.parent))
+    if args.kind == "slice" and kind != "implement":
+        raise TraceError("slice parents are implement units, not {} units".format(kind))
+    return start
+
+
+def ignore_trace_dir(root):
+    """Write .canon/canon/.gitignore when missing, so no commit holds the trace directory even when the project's own
+    .gitignore lacks .canon/."""
+    path = root / LOCAL_DIR / "canon" / ".gitignore"
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with contextlib.suppress(FileExistsError), path.open("xb") as ignore:
+            ignore.write(b"*\n")
+
+
+def append_event(trace_dir, line, check):
+    """Append `line` to events.jsonl in one write, under events.lock and once `check` passes there again."""
+    data = json.dumps(line, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if len(data) > MAX_EVENT:
+        raise TraceError("the event line would be {} bytes, over the 16 KiB limit".format(len(data)))
+    data += b"\n"
+    trace_dir.mkdir(parents=True, exist_ok=True)
+    with file_lock(trace_dir / "events.lock", TRACE_LOCK_WAIT, TraceError("timed out waiting for events.lock")):
+        check()
+        fd = os.open(str(trace_dir / "events.jsonl"),
+                     os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0), 0o666)
+        try:
+            written = os.write(fd, data)
+        finally:
+            os.close(fd)
+    if written != len(data):
+        raise TraceError("wrote {} of the {} bytes of the event line".format(written, len(data)))
+
+
+def trace_start(args):
+    root, is_git = trace_root()
+    if not trace_state(root)[0]:
+        print("trace off")
+        return 0
+    if (args.kind == "slice") != bool(args.slice) or (args.slice and not SLICE_RE.match(args.slice)):
+        raise TraceError("--slice S<n> comes with the slice kind only, which requires it")
+    trace_dir = root / TRACE_DIR
+    parent = start_parent(trace_dir, args)
+    host, conversation = trace_host()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    line = {"v": 1, "type": "start", "id": now.strftime("%Y%m%dT%H%M%SZ-") + os.urandom(3).hex(), "kind": args.kind,
+            "at": now.astimezone().isoformat(timespec="seconds"), "parent": args.parent,
+            "docs": trace_docs(root, is_git, args.docs)}
+    if args.slice:
+        line["slice"] = args.slice
+    line.update(tier=args.tier or (parent or {}).get("tier"), host=host, conversation=conversation,
+                model=args.model.lower() if args.model else None,
+                skill=os.path.abspath(args.skill) if args.skill else None)
+    if args.kind == "slice":
+        line.update(model=parent.get("model"), skill=parent.get("skill"))
+    ignore_trace_dir(root)
+    append_event(trace_dir, line, lambda: start_parent(trace_dir, args))
+    print("trace " + line["id"])
+    return 0
+
+
+def end_unit(trace_dir, args):
+    """The start line of the unit `end` closes, once checked that it is open and its kind allows the outcome."""
+    start, end = unit_events(trace_dir, args.unit)
+    if start is None:
+        raise TraceError("{} names no unit".format(args.unit))
+    kind = start.get("kind")
+    if kind == "slice":
+        raise TraceError("a slice ends with its commit or the next start under its implement unit, not with end")
+    if end is not None:
+        raise TraceError("{} has already ended".format(args.unit))
+    outcomes = KIND_OUTCOMES.get(kind, OUTCOMES)
+    if args.outcome not in outcomes:
+        raise TraceError("{} units end {} or {}".format(kind, ", ".join(outcomes[:-1]), outcomes[-1]))
+    if (args.outcome == "escalated") != bool(args.to):
+        raise TraceError("--to L1|L2|plan comes with escalated only, which requires it")
+    return start
+
+
+def trace_end(args):
+    root, _is_git = trace_root()
+    if not trace_state(root)[0]:
+        print("trace off")
+        return 0
+    trace_dir = root / TRACE_DIR
+    start = end_unit(trace_dir, args)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    line = {"v": 1, "type": "end", "id": args.unit, "kind": start.get("kind"),
+            "at": now.astimezone().isoformat(timespec="seconds"), "outcome": args.outcome}
+    if args.to:
+        line["to"] = args.to
+    append_event(trace_dir, line, lambda: end_unit(trace_dir, args))
+    print("trace {} ended".format(args.unit))
+    return 0
+
+
+def trace_status(args):
+    root, _is_git = trace_root()
+    print(trace_state(root)[1])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    since = (now - datetime.timedelta(hours=24)).strftime("%Y%m%dT%H%M%SZ")
+    events = read_events(root / TRACE_DIR, *{prefix.encode() for prefix in (since[:9], now.strftime("%Y%m%dT"))})
+    ended = {event.get("id") for event in events if event.get("type") == "end"}
+    units = [event for event in events if event.get("type") == "start" and event.get("kind") != "slice"
+             and UNIT_RE.match(event.get("id", "")) and event["id"] >= since and event["id"] not in ended]
+    units.sort(key=lambda event: event["id"], reverse=True)
+    conversation = trace_host()[1]
+    print("open units started in the last 24 hours, newest first:" if units
+          else "no open units started in the last 24 hours")
+    for event in units:
+        docs = "".join(" " + doc for doc in event.get("docs") or [])
+        mine = " (this conversation)" if conversation and event.get("conversation") == conversation else ""
+        print("  {} {}{} started {}{}".format(event["id"], event.get("kind"), docs, event.get("at"), mine))
+    return 0
+
+
+def trace_switch(args):
+    root, _is_git = trace_root()
+    if args.here:
+        off = root / TRACE_DIR / "off"
+        if args.action == "off":
+            ignore_trace_dir(root)
+            off.parent.mkdir(parents=True, exist_ok=True)
+            off.touch()
+        else:
+            off.unlink(missing_ok=True)
+    else:
+        switch = trace_switch_path()
+        if args.action == "on":
+            switch.parent.mkdir(parents=True, exist_ok=True)
+            switch.touch()
+            print(TRACE_NOTICE)
+        else:
+            switch.unlink(missing_ok=True)
+    print(trace_state(root)[1])
+    return 0
+
+
+def cmd_trace(args):
+    try:
+        return args.func(args)
+    except TraceError as error:
+        print("trace error: {}".format(error))
+    except Exception as error:  # a failed call never stops the work
+        print("trace error: {}: {}".format(type(error).__name__, error))
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="canon.py", description="canon documentation system tool")
     parser.add_argument("--version", action="version", version="canon " + CANON_VERSION)
@@ -1819,7 +2116,34 @@ def main(argv=None):
                    help="code commits before a review is due (default 50)")
     p.set_defaults(func=cmd_audit)
 
+    p = sub.add_parser("trace", help="record canon workflow units for skill telemetry; off unless `trace on` ran")
+    actions = p.add_subparsers(dest="action", required=True)
+    t = actions.add_parser("start", help="start a unit and print `trace <id>`")
+    t.add_argument("kind", choices=TRACE_KINDS)
+    t.add_argument("docs", nargs="*", metavar="DOC", help="ids of the docs the unit works on")
+    t.add_argument("--parent", metavar="UNIT", help="id of the open unit this one runs inside")
+    t.add_argument("--tier", choices=("L0", "L1", "L2"))
+    t.add_argument("--slice", metavar="S<n>", help="the plan slice a slice unit builds")
+    t.add_argument("--skill", metavar="DIR", help="directory of the SKILL.md being followed")
+    t.add_argument("--model", metavar="ID", help="the session's model id")
+    t.set_defaults(func=trace_start)
+    t = actions.add_parser("end", help="end an open unit")
+    t.add_argument("unit")
+    t.add_argument("outcome")
+    t.add_argument("--to", choices=("L1", "L2", "plan"), help="the tier or plan an escalated unit needs")
+    t.set_defaults(func=trace_end)
+    t = actions.add_parser("status", help="say whether tracing is on and why, and list the open units")
+    t.set_defaults(func=trace_status)
+    t = actions.add_parser("on", help="turn tracing on for this machine; --here deletes this checkout's off file")
+    t.add_argument("--here", action="store_true")
+    t.set_defaults(func=trace_switch)
+    t = actions.add_parser("off", help="turn tracing off for this machine; --here opts this checkout out")
+    t.add_argument("--here", action="store_true")
+    t.set_defaults(func=trace_switch)
+
     args = parser.parse_args(argv)
+    if args.command == "trace":
+        return cmd_trace(args)
     return args.func(Repo(), args)
 
 

@@ -1,5 +1,5 @@
 ---
-status: draft
+status: in-progress
 created: 2026-10-15
 updated: 2026-10-15
 revision: 1
@@ -17,13 +17,13 @@ Implements [D001: Skill telemetry with canon trace](../designs/D001-skill-teleme
 
 ## Current state
 
-Next: S1.
+Next: S2.
 
 ## Slices
 
 ### S1: Switch and event log
 
-Status: todo
+Status: done
 Risk: concurrency
 
 Builds on `D001#units`, `D001#switch-and-storage`, `D001#commands` and `D001#event-lines`.
@@ -195,3 +195,6 @@ Test criteria; seam: the skill texts as an agent follows them, run through the `
 
 - Drafted from D001@r1. The user settled the scope, the seams and the slicing as drafted.
 - The review gate found that D001 contradicted itself on `skipped`: Git's error in the line, yet no free text in lines. The user chose a bounded reason in the line and Git's message in `snapshot-error.txt`, revised into D001@r2.
+- The user approved the plan by starting its implementation. Started at 5bd0cff.
+- S1 done: 14 tests in `TraceTest`, 46 in the suite, all passing. A held `events.lock` gives `trace error` after 5.07 s; with a 20,000-line events file, calls take 56–75 ms. Python 3.8 is not installed here, so 3.8 compatibility was checked by reading.
+- S1 decisions: `--parent` on a kind of `D001#units`'s first row is a `trace error`, since that row has no parent; `off --here` also writes `.canon/canon/.gitignore`, so the `off` file cannot be committed; any unexpected exception prints `trace error` and exits 0. The docs step adds the first two to D001. `id_lock` now shares a `file_lock` helper with the trace locks, its behavior unchanged.
