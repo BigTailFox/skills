@@ -2,13 +2,13 @@
 status: accepted
 created: 2026-10-15
 updated: 2026-10-15
-revision: 2
+revision: 3
 modules: [canon]
 summary: Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions.
 refs: []
 owns: [skill-telemetry]
 paths: []
-reviewed: 2
+reviewed: 3
 reviewers: [claude-opus-5.5]
 ---
 
@@ -67,7 +67,7 @@ Outcomes, given to `end`. Every kind that ends allows `delivered`, `blocked`, `h
 
 - `delivered`: the unit produced its output: a doc that passed its gate, a committed implementation with every slice done, a resolved investigation, a closed codebase review, a disposed gate or code review, a finished requested retro.
 - `partial`: it ended with paused slices.
-- `escalated`: it stopped because the work needs another tier or a plan: `--to L1` when an L0 change alters a spec, `--to L2` when the change needs a new design or a rewrite of one, `--to plan` when L1 work needs a plan. `--to` comes with `escalated` only. An L1 design revision that turns out to rewrite the design does not stop: its gate runs at L2.
+- `escalated`: it stopped because the work needs another tier or a plan: `--to L1` when an L0 change alters a spec and the unit ends before a design revision has passed its gate, whether the user's decision or the revision is left for later; `--to L2` when the change turns out to be L2 work, such as a new design or a rewrite of one; `--to plan` when L1 work needs a plan. `--to` comes with `escalated` only. An L0 change whose design revision the implementing session makes does not stop: it continues as L1, and that revision's gate, under the `implement` unit, runs at L1. Likewise, a design unit started at L1 whose revision turns out to be L2 work does not stop: its gate runs at L2.
 - `blocked`: stopped on a problem or decision only the user can settle.
 - `handoff`: the work continues in another session.
 - `cancelled`: the user stopped it.
@@ -75,7 +75,7 @@ Outcomes, given to `end`. Every kind that ends allows `delivered`, `blocked`, `h
 
 ### Call sites
 
-Each call runs the project's `canon.py`. `<skill>` is the directory of the `SKILL.md` being followed, for a gate `canon-blind-review`'s or else `canon`'s; `<model>` is the session's model id as the host's model setting names it; `<id>` is the id printed by this skill's own `start`, and `<parent>` the id of the open unit of the workflow that invoked the skill, left out with `--parent` when there is none. A skill's first `start` decides: unless it prints `trace <id>`, the skill skips its other trace calls, which also covers a project copy of `canon.py` too old to have `trace`. When it does print an id, the agent follows the `canon` skill's `trace.md`, which states the outcomes and the dispositions format for agents. An agent that lost an id finds it with `trace status`.
+Each call runs the project's `canon.py`. `<skill>` is the directory of the `SKILL.md` being followed, for a gate `canon-blind-review`'s or else `canon`'s; `<model>` is the session's model id as the host's model setting names it; `<tier>` is the tier the work runs at, for a gate the tier of its review, which can be above the enclosing unit's; `<id>` is the id printed by this skill's own `start`, and `<parent>` the id of the open unit of the workflow that invoked the skill, left out with `--parent` when there is none. A skill's first `start` decides: unless it prints `trace <id>`, the skill skips its other trace calls, which also covers a project copy of `canon.py` too old to have `trace`. When it does print an id, the agent follows the `canon` skill's `trace.md`, which states the outcomes and the dispositions format for agents. An agent that lost an id finds it with `trace status`.
 
 - `canon-design`, after Frame step 3: `trace start design <D or C id> --tier <tier> --skill <skill> --model <model>`. Before the closing command: `trace end <id> <outcome>`.
 - `canon-plan`, after Start step 2: `trace start plan <P id> <D id> --tier <tier> --skill <skill> --model <model>`. Before the closing command: `trace end <id> <outcome>`.
@@ -85,7 +85,7 @@ Each call runs the project's `canon.py`. `<skill>` is the directory of the `SKIL
 - `canon-investigate`, when opening the investigation: `trace start investigate <I id> --skill <skill> --model <model>`. After Phase 6: `trace end <id> <outcome>`.
 - `canon-review`, after Create the doc: `trace start canon-review <R id> --skill <skill> --model <model>`. After Close: `trace end <id> <outcome>`.
 - `canon-retro`: the end check opens with `trace start end-check --skill <skill> --model <model> [--parent <parent>]` and closes with `trace end <id> quiet|raised`; a requested retro opens with `trace start retro --skill <skill> --model <model>` and closes with `trace end <id> <outcome>`.
-- `canon-handoff`, after writing the handoff file: `trace end <id> handoff` for each unit this conversation left open, which `trace status` lists.
+- `canon-handoff`, after writing the handoff file: `trace end <id> handoff` for each unit this conversation left open, which `trace status` lists; an L0 `implement` unit waiting on a spec change ends `escalated --to L1` instead.
 
 ### Switch and storage
 
@@ -176,7 +176,7 @@ After merging the findings and any confirmation round, the orchestrating session
 - `role`: `same-model` or `cross-family` in a gate; `spec`, `standards` or `cross-family` in a code review.
 - `model`: the reviewer's model id, as a gate writes it to the doc's `reviewers`; a run the user made has `manual:` before it. `id`: the agent id kept for the confirmation round, or the session id a command run reports, such as `codex exec`'s; null for a manual run.
 - One entry per merged finding. `by` lists every reviewer finding merged into it as `<role>:<F-id>`; `severity` is the highest among them; in a code review, `axis` is `spec` or `standards`.
-- `disposition`: `accepted` (fixed in this work), `declined`, `escalated` (left to the user) or `deferred` (a code-review finding moved to an R doc).
+- `disposition`: `accepted` (fixed in this work, including by a design revision the user decided on), `declined`, `escalated` (still awaiting the user at `end`) or `deferred` (a code-review finding moved to an R doc).
 - `confirmed`: `resolved` or `not-resolved` for a finding sent to the confirmation round, absent otherwise. `new_blockers`: the blockers that round reported as new, 0 without a round.
 
 ### Review files
@@ -216,7 +216,7 @@ Each question is computed from:
 2. `not-resolved` over confirmed findings; `new_blockers` per confirmation round.
 3. Accepted findings per axis over code reviews, by tier.
 4. Slice outcomes from the plan at the slice's commit, or the Log and stash of a paused slice, and the worker reports in the host record, over slices started, with and without a `Risk:` line.
-5. `escalated` implement units by `--to`, over implement units by starting tier; design units whose gate ran at a higher tier than they started at, over design units started at L1.
+5. Implement units that changed tier or needed a plan, by target, over implement units by starting tier: `escalated` ones by `--to`, and those started at L0 with a gate at L1 under them, at any depth, as `L1`; a unit counts under every target it reached. Design units whose gate ran at a higher tier than they started at, over design units started at L1.
 6. Wall time per kind, from start to end, a slice's ending as [Units](#units) states; subagents launched within a unit's span; tokens where recorded. Cursor wall time includes waiting for the user.
 7. For each `applied <commit>` cause in `notes.md`: its `fix=present` events from traced sessions, matched by `conversation` or, for a session named by time, by the start minute of a traced end check or retro, over the units started after the fix whose snapshot holds it, meaning the fix commit's diff applies to the snapshot in reverse (`git apply --check -R`). Units where neither direction applies, or without a snapshot, are counted as unknown and left out. Also repeated identical commands per unit before and after the fix.
 8. `end-check` units with their time and tokens, and `raised` end checks over top-level units that ended; declined items from `notes.md`.
@@ -224,7 +224,7 @@ Each question is computed from:
 
 Rules:
 
-- Compare only within the same kind, tier, host, model and skill digest.
+- Compare only within the same kind, tier, host, model and skill digest. An implement or design unit's tier is the highest of its starting tier and those of the gates under it.
 - Show every rate as numerator over denominator; with fewer than 20 units, mark it "few units" and list the cases.
 - Write `unknown` for what a host does not record, never an estimate.
 - List the cases behind every number with their unit ids and record locations.
@@ -275,6 +275,7 @@ Pilot exit:
 
 - At least 18 of 20 top-level units have a start and an end, or a genuine interruption.
 - Every review's dispositions match its conversation.
+- Every unit's parent, tier and outcome match its conversation, tier changes included.
 - Every snapshot, cloned from the snapshot repository, reproduces its unit's input: the doc revision, the diff from `base`, the plan at the slice.
 - Every Cursor and Codex unit is found in its host record.
 - No host in use has a snapshot skipped because its sandbox could not write the trace directory.
