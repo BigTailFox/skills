@@ -2,14 +2,14 @@
 status: accepted
 created: 2026-10-15
 updated: 2026-10-15
-revision: 1
+revision: 2
 modules: [canon]
 summary: Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions.
 refs: []
 owns: [skill-telemetry]
 paths: []
-reviewed: 1
-reviewers: [claude-opus-5.5, gpt-6.1-sol-high]
+reviewed: 2
+reviewers: [claude-opus-5.5]
 ---
 
 # D001: Skill telemetry with canon trace
@@ -93,13 +93,15 @@ Each call runs the project's `canon.py`. `<skill>` is the directory of the `SKIL
 $XDG_CONFIG_HOME/canon/trace      machine switch, present = on (default ~/.config/canon/trace)
 .canon/canon/trace/off            this checkout opts out
 .canon/canon/trace/events.jsonl   event lines, appended
-.canon/canon/trace/<id>/          archived review files of unit <id>
+.canon/canon/trace/events.lock    held by start and end from their final checks to their append
+.canon/canon/trace/snapshot.lock  held while the snapshot repository is created
+.canon/canon/trace/<id>/          archived review files of unit <id>, and its snapshot-error.txt
 .canon/canon/trace/.git           snapshot repository: refs/trace/<id> per unit, refs/skills/<manifest> per skill version
 ```
 
 - Tracing is on in a checkout when the machine switch exists and the checkout has no `off` file. Installing skills, `canon-init` and `canon.py init` never turn it on.
 - `trace on` creates the machine switch and prints what tracing stores: snapshots of the work tree, untracked files that are not ignored included, kept in the checkout's `.canon/canon/trace/`, which no commit or push reaches, and that packaging which does not read `.gitignore`, such as a Docker build context, must exclude `.canon/`. It writes outside the workspace, so a sandboxed agent asks the user to run it.
-- Everything else lives in the checkout's trace directory, `.canon/canon/trace/`, which the Cursor and Codex sandboxes let the agent write; Codex's keeps the project's `.git` read-only. The directory is not scratch: until `prune`, it holds the only copy of its data. Each checkout, linked worktrees included, has its own: its events, archives and snapshots share a lifetime, removing a worktree removes them, and a new worktree's first snapshot copies the whole tree.
+- Everything else lives in the checkout's trace directory, `.canon/canon/trace/` in the nearest directory above the working directory that holds `.git`, else `AGENTS.md`, else the working directory; locating it runs no Git command. The Cursor and Codex sandboxes let the agent write it; Codex's keeps the project's `.git` read-only. The directory is not scratch: until `prune`, it holds the only copy of its data. Each checkout, linked worktrees included, has its own: its events, archives and snapshots share a lifetime, removing a worktree removes them, and a new worktree's first snapshot copies the whole tree.
 - No commit of the project can hold the trace directory. On first use, `start` writes `.canon/canon/.gitignore` containing `*`, so the project ignores the directory even when its own `.gitignore` lacks `.canon/`. Without either rule, Git sees a nested repository: `git add -A` records at most a pointer to its HEAD commit, never a file inside it, and `git clean -fdx` skips it.
 
 ### Commands
@@ -114,12 +116,13 @@ canon.py trace off [--here]
 canon.py trace prune --days N
 ```
 
-- `start` prints `trace <id>`, or `trace off` without touching Git or writing anything when tracing is off. It resolves each `DOC` to `<doc>@r<revision>` from the doc's frontmatter, keeping a doc it cannot find as given; checks that `--parent` names an open unit that is neither a slice nor an end check, and an `implement` unit for a slice; resolves `--base` to the merge base of that commit and HEAD, which is the commit itself when HEAD descends from it; takes a [snapshot](#snapshots); computes the [manifest](#skill-digests); and appends one line.
+- `start` prints `trace <id>`, or `trace off` without touching Git or writing anything when tracing is off. It resolves each `DOC` to `<doc>@r<revision>` from the doc's frontmatter, keeping a doc it cannot find as given; checks that `--parent` names an open unit that is neither a slice nor an end check, and an `implement` unit for a slice; resolves `--base` to the merge base of that commit and HEAD, which is the commit itself when HEAD descends from it, and treats a `--base` without a merge base, or on an unborn branch, as absent; takes a [snapshot](#snapshots); computes the [manifest](#skill-digests); and appends one line.
 - `end` closes the open unit `UNIT` and prints `trace <id> ended`; `OUTCOME` must be one the unit's kind allows, and `--to` comes with `escalated` only. `--dir`, which must lie under `.canon/`, copies the regular files directly in it that changed since the unit started into `.canon/canon/trace/<id>/` when they total at most 2 MiB, and otherwise copies nothing; no such file records `none`. `--input` reads the [dispositions](#review-dispositions).
-- `status` prints whether tracing is on and why; the open units started in the last 24 hours, newest first, with their ids, kinds, docs and start times, marking those of this conversation when the host names it; and the number of snapshots with the snapshot repository's disk size.
+- `status` prints whether tracing is on and why; the open units started in the last 24 hours, newest first, with their ids, kinds, docs and start times, marking those of this conversation when the host names it; the number of snapshots, and of skipped ones by reason; and the snapshot repository's disk size.
 - `on` and `off` create and delete the machine switch; with `--here` they delete and create this checkout's `off` file.
 - `prune --days N` deletes the snapshots and archives of units started more than N days ago, keeps their lines, and runs `git gc --prune=1.hour.ago` in the snapshot repository: the space returns at once, while objects written in the last hour stay for a snapshot in progress.
-- Every subcommand exits 0 unless its arguments are invalid. Invalid input (an id that is not an open unit, an outcome the kind does not allow, invalid dispositions) or an events file that cannot be written prints `trace error: <reason>` and writes nothing; the agent may correct its input and repeat the call once, then carries on either way. A failed snapshot, or a checkout outside Git, does not fail `start`: it writes the line without a snapshot.
+- Every subcommand exits 0 unless its arguments are invalid. Invalid input (an id that is not an open unit, an outcome the kind does not allow, invalid dispositions) or an events file that cannot be written prints `trace error: <reason>` and appends no line; the agent may correct its input and repeat the call once, then carries on either way. What a failed call stored first, such as a snapshot or an archive, is an orphan that readers ignore and `prune` removes by the time in its id. A failed snapshot, or a checkout outside Git, does not fail `start`: it writes the line without a snapshot.
+- A call waits at most 5 s for a lock. A timeout on `events.lock` is a `trace error`; on `snapshot.lock` it skips the snapshot.
 
 ### Event lines
 
@@ -134,7 +137,8 @@ Each line of `events.jsonl` is one compact UTF-8 JSON object of at most 16 KiB, 
 - `id`: the UTC start time and 6 random hex digits; it also names the snapshot ref and the archive.
 - `at`: local time with its UTC offset, to the second.
 - `parent`: the `--parent` unit; null for a top-level unit.
-- `head`, `base` and `snapshot` are full commit ids: `base` as `start` resolved it, `snapshot` in the snapshot repository. `head` is null on an unborn branch or outside Git; `snapshot` is null when none was recorded, with `skipped` giving the reason: `changes-over-10MiB`, `no-git` or the Git error.
+- `head`, `base` and `snapshot` are full commit ids: `base` as `start` resolved it, `snapshot` in the snapshot repository. `head` is null on an unborn branch or outside Git; `snapshot` is null when none was recorded, with `skipped` giving the reason.
+- A reason, in `skipped` or `archive`, is `changes-over-10MiB`, `no-git` or `over-2MiB`, or names the step that failed and how: `<step>: exit <n>` for a Git command, `<step>: <errno name>` for a file operation, `<step>: timeout` for a lock. `<step>` is the Git command (`git add`), `index copy`, `snapshot lock` or `copy`. A reason never holds a path or a message; Git's message, when there is one, goes to `.canon/canon/trace/<id>/snapshot-error.txt`, never to the line or the agent.
 - `tier` defaults to the parent's, and a slice takes its parent's `skill` and `model`. `model` is stored in lowercase. `host` comes from the environment: `cursor` when `CURSOR_AGENT=1`, `codex` when `CODEX_THREAD_ID` is set, `claude-code` when `CLAUDECODE=1`, else `other`. `conversation` is `CURSOR_CONVERSATION_ID` or `CODEX_THREAD_ID`, else null.
 - `manifest` is written on every start and on the end of a top-level unit. A `manifest` line precedes the first use of each digest in the file.
 - An end line carries `outcome`, `to` for `escalated`, `head`, `manifest` for a top-level unit, `dispositions` for a gate or code review, and `archive`: `ok`, `none` or the reason nothing was copied.
@@ -150,7 +154,7 @@ Every start records a snapshot of the work tree in the snapshot repository, a re
 3. With `GIT_INDEX_FILE` set to that copy, `GIT_OBJECT_DIRECTORY` to the snapshot repository's objects and `GIT_ALTERNATE_OBJECT_DIRECTORIES` to the project's, run `git add -A` and `git write-tree`.
 4. With the same variables, `git commit-tree` the tree of the resolved base, or of HEAD without `--base`, as a parentless commit, then the snapshot tree as a commit whose parent is that one; on an unborn branch without `--base`, the snapshot commit has no parent. `git diff <snapshot>^ <snapshot>` then shows the change under review.
 5. List the objects the snapshot reaches with `git rev-list --objects <commit>`, keep those that `git cat-file --batch-check`, run in the snapshot repository without the variables, reports missing, and pipe them through `git pack-objects --stdout` into `git index-pack --stdin` there.
-6. Run `git update-ref refs/trace/<id> <commit>` in the snapshot repository, delete the index copy, and run `git -c gc.autoDetach=false gc --auto --quiet` there, which repacks once 50 packs or 6,700 loose objects accumulate.
+6. Run `git update-ref refs/trace/<id> <commit>` in the snapshot repository, which records the snapshot. Then, best-effort and never setting `skipped`, delete the index copy and run `git -c gc.autoDetach=false gc --auto --quiet` there, which repacks once 50 packs or 6,700 loose objects accumulate.
 
 New objects land only in the snapshot repository, and step 5 copies in each object the snapshot borrows from the project, once: the snapshot repository depends on nothing outside it, so rebasing, deleting branches or `git gc --prune=now` in the project cannot break a snapshot, and switching branches back and forth copies each file version once. The whole tree is copied again only into an empty snapshot repository. The project's work tree, index, HEAD, refs and object store do not change. Starting from `git read-tree HEAD` instead of a copied index rehashes every file, 10 times slower in a 20,000-file checkout.
 
@@ -187,7 +191,7 @@ The manifest maps each directory named `canon` or `canon-*` that holds a `SKILL.
 
 The analysis maps each digest to the skills-repository commits whose tree gives the same digest, from `git ls-tree -r` blob ids. A digest that matches no commit is `local`: an edited or uncommitted copy.
 
-A start whose manifest the snapshot repository lacks also stores the files each digest covers there, as a parentless commit at `refs/skills/<manifest digest>` whose tree holds each skill directory under its name. A replay can thus run any recorded version, `local` ones included, and each new version adds only the files it changed.
+A start whose manifest the snapshot repository lacks also stores the files each digest covers there, as a parentless commit at `refs/skills/<manifest digest>` whose tree holds each skill directory under its name. Storing is best-effort: when it fails, the next start with that manifest stores it. A replay can thus run any recorded version, `local` ones included, and each new version adds only the files it changed.
 
 ### Analysis
 
@@ -242,7 +246,7 @@ Each version runs at least three times per unit. The replay harness is its own d
 ### Privacy
 
 - Event lines hold ids, kinds, outcomes, commit ids, digests, times, doc ids, host and model names and the skill path; never prompts, outputs, source code or free text.
-- Archives copy local review files and stay in `.canon/`.
+- Archives copy local review files, keep a failed snapshot's Git message, and stay in `.canon/`.
 - Snapshots stay in a local repository that no push of the project reaches ([Snapshots](#snapshots)).
 - The analysis prints counts, ids and record locations, never transcript text.
 - Nothing is uploaded, and there is no export command.
@@ -259,11 +263,11 @@ Scenarios for step 1, tested through the commands:
 - With no machine switch, or with an `off` file, `start` prints `trace off`, runs no Git command and writes nothing.
 - A clean checkout's snapshot has HEAD's tree.
 - A dirty checkout's snapshot holds unstaged, staged and untracked changes and no ignored file, and leaves the project's work tree, index, HEAD, refs and object store unchanged, the index byte for byte even after a tracked file's timestamp changed without its content.
-- An unborn branch without an index gets a snapshot without a parent. Untracked and unstaged files over 10 MiB in total, a checkout outside Git and a failing Git command skip the snapshot, and the start line records the reason.
+- An unborn branch without an index gets a snapshot without a parent. Untracked and unstaged files over 10 MiB in total, a checkout outside Git and a failing Git command skip the snapshot, and the start line records the reason; a failing Git command's message lands in `snapshot-error.txt`, and `start` prints only its id.
 - A code review whose fixed point moved on after the branch forked gets the merge base as `base`, and `git diff <snapshot>^ <snapshot>` equals the review's diff.
 - A snapshot copies only the objects the snapshot repository lacks; switching to another branch and back copies each file version once. `git push --mirror`, `git clone --mirror` and `git bundle create --all` of the project carry no snapshot. After a reset, `git reflog expire --expire=now --all` and `git gc --prune=now` in the project, `git fsck --strict` passes in the snapshot repository and every snapshot can be read. With `.canon/` missing from the project's `.gitignore` and `.canon/canon/.gitignore` deleted, `git add -A` stages no file inside the trace directory and `git clean -fdx` leaves it.
 - A child records its `--parent`; a parent that is not open, a slice or end check as parent, and a slice whose parent is not an `implement` unit are rejected and write nothing; a gate or end check without `--parent` is top-level.
-- `end` closes the unit it names; an id that is not an open unit, an outcome its kind does not allow, or `--to` without `escalated` writes nothing. Valid dispositions land in the end line; invalid ones write nothing. `--dir` archives only the files changed since the unit started, nothing when they exceed 2 MiB, and the line says why.
+- `end` closes the unit it names; an id that is not an open unit, an outcome its kind does not allow, or `--to` without `escalated` writes nothing. Valid dispositions land in the end line; invalid ones write nothing. `--dir` archives only the files changed since the unit started, nothing when they exceed 2 MiB, and the line says why; an unreadable file gives `copy: EACCES` and no path.
 - Editing a skill file changes its digest, and `LICENSE`, `NOTICE` and caches do not; the source layout finds skills across categories; each manifest line is written once, and each new manifest's skill files are stored once at `refs/skills/<manifest digest>`.
 - `prune` removes the snapshots and archives older than N days, keeps the lines, and shrinks the snapshot repository.
 
@@ -284,7 +288,7 @@ Measured in the pilot.
 - Calls: two per unit except a slice, which takes one; one per skill invocation when tracing is off.
 - Text: at most 40 tokens per call site in a skill; `trace.md` at most 400 tokens, read only when tracing is on.
 - Latency: `start` and `end` p95 under 300 ms on a local disk, including a snapshot of a 20,000-file checkout and the digests of 20 skill directories of 1 MiB in total; a checkout's first snapshot, which copies the whole tree, is exempt.
-- Size: 16 KiB per line, 2 MiB per archive, 10 MiB of untracked and unstaged files per snapshot.
+- Size: 16 KiB per line, 2 MiB per archive, 10 MiB of untracked and unstaged files per snapshot, 64 KiB per `snapshot-error.txt`, which keeps the end of Git's message.
 
 ## Decisions
 
