@@ -71,8 +71,8 @@ Raise at most three, ranked by what their events cost times how likely they are 
 
 Put the items at the end of the workflow's report, before any closing command or prompt line it ends with. One line each: the event with its evidence, the change with its place and tier, and whether to apply it now. Then one line for each friction added to `skills.jsonl`. Set each raised cause to `raised`. The user answers every item in one reply:
 
-- **Apply**, when it fits in this session. Commit docs edits that change no spec's meaning (pointers, summaries, headings, `paths`, guides, `AGENTS.md` lines) after `canon.py check --fix`; build an L0 change through its flow, code review and docs step included. Commit each change on its own and set `applied <commit>`. An L1 or L2 change starts with `/canon-design`: add it as an Idea to the backlog concept, give the user the command, and set `later C00X`.
-- **Later**: add it as an Idea to the module's backlog concept (`canon.py find backlog`, else `canon.py new C <module>-backlog`) and set `later C00X`.
+- **Apply**, when it fits in this session. Commit docs edits that change no spec's meaning (pointers, summaries, headings, `paths`, guides, `AGENTS.md` lines) after `canon.py check --fix`; build an L0 change through its flow, code review and docs step included. Commit each change on its own and set `applied <commit>`. For an L1 or L2 change, follow **Later** below, then give the user the `/canon-design` command.
+- **Later**: add it as an Idea to the module's backlog concept (`canon.py find backlog`, else `canon.py new C <module>-backlog`). Run `canon.py check --fix` until it reports no errors, then commit the concept and its index changes separately (Conventional Commits, `docs` type, `Refs: C00X`). Set `later C00X` only after the commit succeeds; otherwise keep `raised` and report the failure.
 - **No**: set `declined`.
 
 Without an answer the cause stays `raised`.
