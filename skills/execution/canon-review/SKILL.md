@@ -28,7 +28,7 @@ Spawn one subagent per angle, in parallel, in the foreground. Each brief carries
 - The scope: commit, module paths, and the governing designs (`which`, `show`), the architecture design and the relevant `AGENTS.md` files to read.
 - The angle's reference pasted in full: [architecture.md](architecture.md), [performance.md](performance.md), [security.md](security.md), [functional.md](functional.md), [usability.md](usability.md).
 - The rules: modify no file. Skip anything a design's Decision line already rejected unless the friction is severe enough to reopen it, and then name the Decision. Replace secrets with `<REDACTED>`.
-- The output: every blocker and major finding and at most 10 minor ones, most severe first. Each has a title, location (files, design sections), problem, evidence, suggestion, and severity `blocker`, `major` or `minor`. Stay under 600 words.
+- The output: every blocker and major finding and at most 10 minor ones, most severe first. Each has a title, location (files, design sections), problem, evidence, suggestion, and severity `blocker`, `major` or `minor`. Keep each finding as short as it can be while a reader can understand and verify it without redoing the review.
 
 ## 4. Report
 
