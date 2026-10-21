@@ -2,13 +2,13 @@
 status: active
 created: 2026-10-15
 updated: 2026-10-21
-revision: 3
+revision: 4
 modules: [canon]
 summary: Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions.
 refs: []
 owns: [skill-telemetry]
 paths: [skills/governance/canon/trace.md]
-reviewed: 3
+reviewed: 4
 reviewers: [claude-opus-5.5]
 implemented: 3
 ---
@@ -26,11 +26,11 @@ implemented: 3
 
 ### Questions
 
-Every recorded field serves at least one question.
+Every recorded field serves at least one question. A finding is valid when its [disposition](#review-dispositions) is `accepted` or `deferred`: either way it was judged real.
 
-1. **Cross-family reviewer**: how many accepted blocker and major findings did only the cross-family reviewer raise, and at what cost in tokens and time?
+1. **Cross-family reviewer**: how many valid blocker and major findings did only the cross-family reviewer raise, and at what cost in tokens and time?
 2. **Confirmation round**: what share of confirmed fixes are judged not resolved, and how many new blockers does the round find?
-3. **Two axes at L0**: is the two-axis code review worth it at L0, judged by the accepted findings each axis contributes per tier?
+3. **Two axes at L0**: is the two-axis code review worth it at L0, judged by the valid findings each axis contributes per tier?
 4. **Slice workers**: how often do slices stop (stuck, blocked, paused), why, and do slices with a `Risk:` line stop more often?
 5. **Tiering**: how often does a unit's tier turn out wrong: an L0 change that alters a spec, L1 work that needs a plan, an L1 design revision that rewrites the design's goals or approach?
 6. **Cost**: wall time per unit kind, subagents per unit, and tokens where the host records them.
@@ -42,7 +42,7 @@ Every recorded field serves at least one question.
 
 Most answers already exist and are read offline:
 
-- Docs and Git: slice `Status:` and `Risk:` lines, Log entries and the `Started at` commit; `revision`, `reviewed`, `reviewers` and `implemented`; R-doc findings and dispositions; I-doc resolutions; commit times and `Refs:` trailers. Every done slice ends in its own commit.
+- Docs and Git: slice `Status:` and `Risk:` lines, Log entries and the `Started at` commit; `revision`, `reviewed`, `reviewers` and `implemented`; R-doc findings and dispositions; known issues; I-doc resolutions; commit times and `Refs:` trailers. Every done slice ends in its own commit.
 - `.canon/canon-blind-review/<topic>/`: each reviewer's prompt, output and agent id, and its confirmation verdicts, in [files named by its role](#review-files). A later review of the same topic overwrites them, so trace archives the files each review wrote when it ends.
 - Cursor: `<cursor home>/projects/<project>/agent-transcripts/<conversation>/` holds the conversation, the arguments of every tool call and one file per subagent; each user message carries a `<timestamp>` to the minute. It records no tool output, tokens or per-call times. The agent's shell exposes `CURSOR_CONVERSATION_ID` and `CURSOR_AGENT=1`.
 - Codex: `$CODEX_HOME/sessions/**/rollout-*.jsonl` timestamps every line and records tool calls with their output, `turn_context` with `model` and `effort`, `token_count` events with cumulative input, cached, output and reasoning tokens, and `session_meta` with `cwd`, `parent_thread_id` and, for a subagent, `agent_path`.
@@ -82,7 +82,7 @@ Each call runs the project's `canon.py`. `<skill>` is the directory of the `SKIL
 - `canon-plan`, after Start step 2: `trace start plan <P id> <D id> --tier <tier> --skill <skill> --model <model>`. Before the closing command: `trace end <id> <outcome>`.
 - `canon-implement`, after Start step 4: `trace start implement [<P or D id>] --tier <tier> --base <start commit> --skill <skill> --model <model>`. Before launching each worker: `trace start slice <P id> --slice S<n> --parent <id>`. After Finish step 3, or when stopping on a wrong tier: `trace end <id> <outcome> [--to L1|L2|plan]`.
 - `canon-code-review`, after Pin the fixed point: `trace start code-review [<P id>] --base <fixed point> --tier <tier> --skill <skill> --model <model> [--parent <parent>]`. After Dispose, its end check included: `trace end <id> <outcome> --dir .canon/canon-blind-review/<topic> --input -`, with the dispositions on stdin.
-- The review gate in the `canon` workflow, at step 2: `trace start gate <doc id> --tier <tier> --skill <skill> --model <model> [--parent <parent>] [--base <Changes since commit>]`. After step 5: `trace end <gate id> <outcome> --dir .canon/canon-blind-review/<doc id> --input -`, where `<gate id>` is what the gate's `start` printed.
+- The review gate in the `canon` workflow, at step 2: `trace start gate <doc id> --tier <tier> --skill <skill> --model <model> [--parent <parent>] [--base <Changes since commit>]`. At the end of step 5, after an L2 gate has the user's answers on its escalated findings: `trace end <gate id> <outcome> --dir .canon/canon-blind-review/<doc id> --input -`, where `<gate id>` is what the gate's `start` printed.
 - `canon-investigate`, when opening the investigation: `trace start investigate <I id> --skill <skill> --model <model>`. After Phase 6: `trace end <id> <outcome>`.
 - `canon-review`, after Create the doc: `trace start canon-review <R id> --skill <skill> --model <model>`. After Close: `trace end <id> <outcome>`.
 - `canon-retro`: the end check opens with `trace start end-check --skill <skill> --model <model> [--parent <parent>]` and closes with `trace end <id> quiet|raised`; a requested retro opens with `trace start retro --skill <skill> --model <model>` and closes with `trace end <id> <outcome>`.
@@ -163,7 +163,7 @@ No push, clone or bundle of the project reaches the snapshot repository, `git pu
 
 ### Review dispositions
 
-After merging the findings and any confirmation round, the orchestrating session passes one JSON object to the `trace end` of the gate or code review:
+After merging the findings, any confirmation round and the user's answers that the workflow collects before `end`, the orchestrating session passes one JSON object to the `trace end` of the gate or code review:
 
 ```json
 {"reviewers": [{"role": "same-model", "model": "claude-opus-5.5", "id": "a3f0c2e1"},
@@ -177,7 +177,7 @@ After merging the findings and any confirmation round, the orchestrating session
 - `role`: `same-model` or `cross-family` in a gate; `spec`, `standards` or `cross-family` in a code review.
 - `model`: the reviewer's model id, as a gate writes it to the doc's `reviewers`; a run the user made has `manual:` before it. `id`: the agent id kept for the confirmation round, or the session id a command run reports, such as `codex exec`'s; null for a manual run. `model` and a non-null `id` are each one line of at most 200 characters.
 - One entry per merged finding. `by` lists every reviewer finding merged into it as `<role>:<F-id>`; `severity` is the highest among them; in a code review, `axis` is `spec` or `standards`.
-- `disposition`: `accepted` (fixed in this work, including by a design revision the user decided on), `declined`, `escalated` (still awaiting the user at `end`) or `deferred` (a code-review finding moved to an R doc).
+- `disposition`: `accepted` (fixed in this work, including by a design revision the user decided on), `declined`, `escalated` (still awaiting the user at `end`) or `deferred` (left for later by the user's decision, and tracked as the `canon` workflow's review gate and code review say), in a gate as in a code review.
 - `confirmed`: `resolved` or `not-resolved` for a finding sent to the confirmation round, absent otherwise. `new_blockers`: the blockers that round reported as new, 0 without a round.
 
 ### Review files
@@ -215,7 +215,7 @@ Each question is computed from:
 
 1. Findings whose `by` names only the cross-family reviewer, by severity and disposition, over reviews that had one; that reviewer's tokens and the duration of its rollout.
 2. `not-resolved` over confirmed findings; `new_blockers` per confirmation round.
-3. Accepted findings per axis over code reviews, by tier.
+3. Valid findings per axis over code reviews, by tier.
 4. Slice outcomes from the plan at the slice's commit, or the Log and stash of a paused slice, and the worker reports in the host record, over slices started, with and without a `Risk:` line.
 5. Implement units that changed tier or needed a plan, by target, over implement units by starting tier: `escalated` ones by `--to`, and those started at L0 with a gate at L1 under them, at any depth, as `L1`; a unit counts under every target it reached. Design units whose gate ran at a higher tier than they started at, over design units started at L1.
 6. Wall time per kind, from start to end, a slice's ending as [Units](#units) states; subagents launched within a unit's span; tokens where recorded. Cursor wall time includes waiting for the user.
@@ -235,7 +235,7 @@ Rules:
 
 Question 9 compares skill versions on recorded units. A replay clones a unit's snapshot from the snapshot repository into a scratch directory, installs a skill version, the one under test or the recorded one from `refs/skills/<manifest>`, runs the unit headless with its recorded `docs`, `slice` and `tier`, the same models and, where the host records them, the same efforts, the snapshot's parent standing in for `base`, and scores the result:
 
-- A gate or code review against the original dispositions: accepted findings should be found again, and declined ones count as false positives.
+- A gate or code review against the original dispositions: valid findings should be found again, and declined ones count as false positives.
 - A slice by its test criteria, whether the worker stopped, and the code-review findings that followed.
 
 No recorded prompt is needed: reviewers and workers start fresh from prompts the skill builds out of the docs, code and parameters, so each version builds its own, and the reviewer prompts and outputs archived with the unit tell what the original findings were. What the orchestrating session took from the conversation is not replayed. The analysis marks a unit steered when a user message falls inside its span, and the original worker brief stays in the host record, for the harness to compare with the brief a replay builds.
