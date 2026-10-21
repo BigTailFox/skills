@@ -2,7 +2,7 @@
 
 This repository is a personal collection of agent skills, installed and distributed with `npx skills` (vercel-labs/skills). Each skill is a directory containing a `SKILL.md`, under `skills/execution/` or `skills/governance/`.
 
-Do not create a `SKILL.md` outside `skills/`, templates and examples included: the CLI would treat it as an installable skill. Do not add custom install scripts either; installing, updating and removing are left to `npx skills`.
+Do not commit a `SKILL.md` outside `skills/`, templates and examples included: the CLI would treat it as an installable skill. Do not add custom install scripts either; installing, updating and removing are left to `npx skills`.
 
 ## Categories
 
@@ -34,6 +34,7 @@ Do not create a `SKILL.md` outside `skills/`, templates and examples included: t
 
 ## Workflow
 
+- When you need a linked git worktree, create it at `.worktrees/<branch>` inside the repository, never beside it: the agent sandbox allows writes only inside the workspace, so every edit to a worktree outside it waits for the user's approval. `.gitignore` excludes the directory, and `npx skills add .` searches it only with `--full-depth`.
 - New skill: run `npx skills init <name>` in `skills/<category>/`, then complete the frontmatter (including `disable-model-invocation`) and `agents/openai.yaml` as the rules above describe.
 - When adding or removing a skill, or changing its purpose or trigger mode, update the Skills tables in `README.md`. `validate.py` checks their names, categories and trigger modes against the frontmatter; check the summaries yourself.
 - After changing any skill, run `python3 scripts/validate.py` (it also runs `tests/`) and `npx skills add . --list`, and commit only once both pass.

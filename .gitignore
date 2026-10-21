@@ -16,6 +16,9 @@ __pycache__/
 .agents/
 skills-lock.json
 
+# Linked git worktrees
+.worktrees/
+
 # Local secrets and scratch
 .canon/
 .env
