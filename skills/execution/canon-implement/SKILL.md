@@ -51,7 +51,7 @@ You cannot reach the user. Stop and report instead when:
 - a decision is needed that the docs and code do not settle;
 - a failing test stays unexplained and your last two attempts produced no new evidence narrowing its cause.
 
-Report in under 300 words: status (done | stuck | blocked), files changed, tests added with their seams, the test commands you ran and their results, deviations from the plan, open questions.
+Your final message is your report: status (done | stuck | blocked), files changed, tests added with their seams, the test commands you ran and their results, deviations from the plan, open questions.
 ```
 
 ### Workers
