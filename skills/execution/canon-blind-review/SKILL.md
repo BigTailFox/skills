@@ -25,13 +25,14 @@ Assess:
 - {criterion, e.g. consistency with the designs it touches}
 - {criterion, e.g. simplicity: nothing beyond its goals}
 
-Report at most 10 findings, most severe first, each as:
+Report every blocker and major finding and at most 10 minor ones, most severe first, each as:
 
 ### F1 [blocker | major | minor] {location}
 Problem: ...
 Evidence: ...
 Suggestion: ...
 
+Keep each finding as short as it can be while a reader can understand and verify it without redoing your review.
 Then list Questions: anything you could not understand from the repository alone.
 End with one line: Verdict: approve | revise
 ```
@@ -39,15 +40,15 @@ End with one line: Verdict: approve | revise
 ## Reviewers
 
 - **Same-model reviewer**: a new subagent from the host's own tool, launched without a model or effort so it runs on the session's (the `canon` skill's workflow, Subagents). In Claude Code use a `general-purpose` or custom subagent; the built-in Explore and Plan agents cannot be resumed.
-- **Cross-family reviewer**: the first reviewer in `.canon/canon-blind-review/reviewer.md` whose model is of another family than yours, run as the file says (the same workflow section). For a command, write the filled prompt to a file, substitute `<prompt>` and `<out>` with paths, run it in the background from the repo root, and read `<out>` when it finishes. For a host subagent, launch it like the same-model reviewer with the named model.
+- **Cross-family reviewer**: the first reviewer in `.canon/canon-blind-review/reviewer.md` whose model is of another family than yours, run as the file says (the same workflow section). For a command, write the filled prompt to its prompt file, substitute `<prompt>` and `<out>` with the paths of its prompt and findings files (below), run it in the background from the repo root, and read `<out>` when it finishes. For a host subagent, launch it like the same-model reviewer with the named model.
 
 The review gate and code review say when the cross-family reviewer runs; other reviews run the same-model reviewer, plus the cross-family reviewer when the user asks for another family.
 
-Launch all first-round reviewers in parallel. Each is a new agent, never a fork of the current session. Keep each reviewer's prompt, output and agent id in `.canon/canon-blind-review/<topic>/` (topic: the doc id or change under review); the confirmation round needs them. On every route the prompt is what forbids modifying files.
+Launch all first-round reviewers in parallel. Each is a new agent, never a fork of the current session. Keep each reviewer's files in `.canon/canon-blind-review/<topic>/` (topic: the doc id or change under review), named by its role, `same-model` or `cross-family`: its prompt in `<role>-prompt.md`, its findings in `<role>.md` and its agent or session id in `<role>-id.txt`. The confirmation round needs them. On every route the prompt is what forbids modifying files.
 
 ## Manual fallback
 
-When the reviewer file is missing or names no reviewer of another family than yours, or when its command fails, tell the user why in one line (`/canon-init` sets up a missing reviewer), give them the filled prompt in one code block and say that any tool able to read the repository can run it. Wait for the pasted result. Record the reviewer as `manual:<model>`.
+When the reviewer file is missing or names no reviewer of another family than yours, or when its command fails, tell the user why in one line (`/canon-init` sets up a missing reviewer), give them the filled prompt in one code block and say that any tool able to read the repository can run it. Wait for the pasted result. Record the reviewer as `manual:<model>`, and keep its prompt and result as the `cross-family` reviewer's files, without an id.
 
 ## Merge
 
@@ -66,4 +67,5 @@ End with one line: Verdict: approve | revise
 - **Same-model reviewer**: resume it by its kept id, so it judges the fixes against its own findings: the Task tool's `resume` in Cursor, SendMessage to the agent id in Claude Code.
 - **Cross-family reviewer**, and a reviewer that cannot be resumed: a new run of the same reviewer, given the confirmation prompt followed by its first-round findings.
 - Findings from a manual-fallback reviewer are confirmed by the resumed same-model reviewer, so the user relays nothing a second time.
+- Keep each reviewer's confirmation prompt and answer in `<role>-confirm-prompt.md` and `<role>-confirm.md`; its first-round files stay as they were.
 - There is no further round; blockers still open go to the user.

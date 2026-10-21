@@ -7,10 +7,16 @@ Single file, Python 3.8+ standard library only. Run `canon.py -h` for commands.
 import argparse
 import contextlib
 import datetime
+import errno
+import hashlib
+import json
 import os
 import re
+import shutil
+import stat
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.parse
 from pathlib import Path
@@ -21,7 +27,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "6"
+CANON_VERSION = "12"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -1076,13 +1082,12 @@ def used_numbers(repo, letter):
 
 
 @contextlib.contextmanager
-def id_lock(repo):
-    """Serialise id allocation between canon commands in this checkout. The lock belongs to the process holding
-    it, so the OS releases it however that process ends; nothing ever breaks it."""
-    path = repo.root / LOCAL_DIR / "id.lock"
+def file_lock(path, timeout, error):
+    """Hold an exclusive lock on `path`, raising `error` once `timeout` seconds pass without it. The lock belongs to
+    the process holding it, so the OS releases it however that process ends; nothing ever breaks it."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(str(path), os.O_RDWR | os.O_CREAT)
-    deadline, locked = time.time() + 60, False
+    deadline, locked = time.time() + timeout, False
     try:
         while not locked:
             try:
@@ -1093,14 +1098,20 @@ def id_lock(repo):
                 locked = True
             except (BlockingIOError, PermissionError):
                 if time.time() > deadline:
-                    sys.exit("canon: another canon command has held {} for a minute; let it finish"
-                             .format(posix_rel(path, repo.root)))
+                    raise error
                 time.sleep(0.05)
         yield
     finally:
         if locked and not fcntl:
             msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
         os.close(fd)
+
+
+def id_lock(repo):
+    """Serialise id allocation between canon commands in this checkout."""
+    path = repo.root / LOCAL_DIR / "id.lock"
+    return file_lock(path, 60, SystemExit("canon: another canon command has held {} for a minute; let it finish"
+                                          .format(posix_rel(path, repo.root))))
 
 
 # ---------------------------------------------------------------- commands
@@ -1737,6 +1748,897 @@ def cmd_audit(repo, args):
     return 0
 
 
+# ---------------------------------------------------------------- trace
+
+TRACE_DIR = LOCAL_DIR + "canon/trace"
+TRACE_KINDS = ("design", "plan", "implement", "investigate", "canon-review", "retro", "code-review", "gate", "slice",
+               "end-check")
+TOP_LEVEL_KINDS = TRACE_KINDS[:6]
+OUTCOMES = ("delivered", "blocked", "handoff", "cancelled")
+KIND_OUTCOMES = {"implement": OUTCOMES + ("partial", "escalated"), "end-check": ("quiet", "raised")}
+REVIEW_ROLES = {"gate": ("same-model", "cross-family"), "code-review": ("spec", "standards", "cross-family")}
+REVIEW_DISPOSITIONS = {"gate": ("accepted", "declined", "escalated"),
+                       "code-review": ("accepted", "declined", "escalated", "deferred")}
+FINDING_ID_RE = re.compile(r"F[1-9][0-9]*")
+UNIT_RE = re.compile(r"^\d{8}T\d{6}Z-[0-9a-f]{6}$")
+UNIT_TIME_FORMAT = "%Y%m%dT%H%M%SZ"
+SLICE_RE = re.compile(r"^S\d+$")
+TRACE_LOCK_WAIT = 5
+MAX_EVENT = 16 * 1024
+MAX_CHANGES = 10 * 1024 * 1024
+MAX_SNAPSHOT_ERROR = 64 * 1024
+MAX_ARCHIVE = 2 * 1024 * 1024
+MAX_REVIEWER_FIELD = 200
+REPO_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE")
+SNAPSHOT_IDENTITY = {"GIT_AUTHOR_NAME": "canon-trace", "GIT_AUTHOR_EMAIL": "trace@canon.invalid",
+                     "GIT_COMMITTER_NAME": "canon-trace", "GIT_COMMITTER_EMAIL": "trace@canon.invalid"}
+TRACE_NOTICE = ("Tracing keeps, in each checkout's {}/, an event line at each canon unit boundary and a snapshot of the "
+                "work tree at each unit start, untracked files that are not ignored included. No commit or push reaches "
+                "that directory, but packaging that does not read .gitignore, such as a Docker build context, must "
+                "exclude .canon/.").format(TRACE_DIR)
+
+
+class TraceError(Exception):
+    """Invalid input or an events file that cannot be written; `trace` prints it and exits 0."""
+
+
+class SnapshotSkip(Exception):
+    """A snapshot that was not recorded: `reason` goes in the start line's `skipped`, Git's `message` in the unit's
+    snapshot-error.txt."""
+
+    def __init__(self, reason, message=b""):
+        super().__init__(reason)
+        self.reason, self.message = reason, message
+
+
+def trace_root():
+    """The checkout holding the working directory, found without running Git: the nearest directory holding `.git`,
+    else `AGENTS.md`, else the working directory; and whether it holds `.git`."""
+    cwd = Path(os.getcwd())
+    for marker in (".git", "AGENTS.md"):
+        for path in (cwd, *cwd.parents):
+            if (path / marker).exists():
+                return path, marker == ".git"
+    return cwd, False
+
+
+def trace_switch_path():
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "canon" / "trace"
+
+
+def trace_state(root):
+    """Whether tracing is on in the checkout at `root`, and the status line that says why."""
+    switch, off = trace_switch_path(), TRACE_DIR + "/off"
+    if not switch.exists():
+        return False, "trace off: no machine switch {}; `canon.py trace on` creates it".format(switch)
+    if (root / off).exists():
+        return False, "trace off: this checkout opted out with {}; `canon.py trace on --here` deletes it".format(off)
+    return True, "trace on: the machine switch {} exists and this checkout has no {}".format(switch, off)
+
+
+def trace_docs(root, is_git, names):
+    """Each doc id as `<id>@r<revision>`, from the doc in docs/ or docs/archived/ at `root`, else in any docs/
+    directory Git lists; a name that finds no doc stays as given."""
+    paths, missing = {}, []
+    for name in dict.fromkeys(names):
+        category = TYPES[name[0]]["dir"]
+        found = sorted(root.glob("docs/{}/{}-*.md".format(category, name))) \
+            or sorted(root.glob("docs/archived/{}/{}-*.md".format(category, name)))
+        if found:
+            paths[name] = found[0]
+        else:
+            missing.append(name)
+    if missing and is_git:
+        try:
+            out = trace_git(root, trace_env(), "ls-files", "-z", "-co", "--exclude-standard", "--",
+                            *(":(glob)**/docs/**/{}-*.md".format(name) for name in missing))
+        except SnapshotSkip:
+            out = b""
+        for rel in sorted(os.fsdecode(out).split("\0")):
+            doc_id = path_id(rel)
+            if doc_id in missing and doc_id not in paths and rel.split("/")[-2] == TYPES[doc_id[0]]["dir"]:
+                paths[doc_id] = root / rel
+    revisions = {name: doc_revision(path) for name, path in paths.items()}
+    return ["{}@r{}".format(name, revisions[name]) if revisions.get(name) else name for name in names]
+
+
+def doc_revision(path):
+    """The `revision` in a doc file's frontmatter; None when it has none or the file cannot be read."""
+    try:
+        revision = (parse_frontmatter(path.read_text(encoding="utf-8").split("\n"))[0] or {}).get("revision")
+    except (OSError, ValueError):
+        return None
+    return revision if isinstance(revision, int) else None
+
+
+def trace_host():
+    """The agent host and the conversation the environment names."""
+    env = os.environ
+    if env.get("CURSOR_AGENT") == "1":
+        host = "cursor"
+    elif env.get("CODEX_THREAD_ID"):
+        host = "codex"
+    elif env.get("CLAUDECODE") == "1":
+        host = "claude-code"
+    else:
+        host = "other"
+    return host, env.get("CURSOR_CONVERSATION_ID") or env.get("CODEX_THREAD_ID") or None
+
+
+def read_events(trace_dir, *needles):
+    """The lines of events.jsonl holding one of the byte strings `needles`, parsed; lines that do not parse or carry
+    another `v` are skipped."""
+    try:
+        data = (trace_dir / "events.jsonl").read_bytes()
+    except FileNotFoundError:
+        return []
+    events = []
+    for raw in data.split(b"\n"):
+        if any(needle in raw for needle in needles):
+            try:
+                event = json.loads(raw.decode("utf-8"))
+            except ValueError:
+                continue
+            if isinstance(event, dict) and type(event.get("v")) is int and event["v"] == 1:
+                events.append(event)
+    return events
+
+
+def unit_events(trace_dir, unit):
+    """The start and end lines of `unit`, each None when the events file holds none."""
+    start = end = None
+    if UNIT_RE.match(unit):
+        for event in read_events(trace_dir, unit.encode()):
+            if event.get("id") == unit and event.get("type") == "start":
+                start = start or event
+            elif event.get("id") == unit and event.get("type") == "end":
+                end = end or event
+    return start, end
+
+
+def start_parent(trace_dir, args):
+    """The start line of the open unit `--parent` names, once checked that it may hold a unit of this kind."""
+    if args.kind in TOP_LEVEL_KINDS and args.parent:
+        raise TraceError("{} units are top-level and take no --parent".format(args.kind))
+    if not args.parent:
+        if args.kind == "slice":
+            raise TraceError("a slice needs --parent naming its implement unit")
+        return None
+    start, end = unit_events(trace_dir, args.parent)
+    if start is None:
+        raise TraceError("--parent {} names no unit".format(args.parent))
+    kind = start.get("kind")
+    if kind in ("slice", "end-check"):
+        raise TraceError("{} units cannot be parents".format(kind))
+    if end is not None:
+        raise TraceError("--parent {} has ended".format(args.parent))
+    if args.kind == "slice" and kind != "implement":
+        raise TraceError("slice parents are implement units, not {} units".format(kind))
+    return start
+
+
+def ignore_trace_dir(root):
+    """Write .canon/canon/.gitignore when missing, so no commit holds the trace directory even when the project's own
+    .gitignore lacks .canon/."""
+    path = root / LOCAL_DIR / "canon" / ".gitignore"
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with contextlib.suppress(FileExistsError), path.open("xb") as ignore:
+            ignore.write(b"*\n")
+
+
+def event_bytes(line):
+    """`line` as one compact UTF-8 JSON line of at most 16 KiB."""
+    data = json.dumps(line, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if len(data) > MAX_EVENT:
+        raise TraceError("the event line would be {} bytes, over the 16 KiB limit".format(len(data)))
+    return data + b"\n"
+
+
+def append_event(trace_dir, line, check, manifest=None, store=None):
+    """Append `line` to events.jsonl in one write, under events.lock and once `check` passes there again, preceded by
+    the `manifest` line of its digest when the file holds none. `store`, run there once `check` passes and before
+    `line` is serialized, stores what the line records and completes it, so that a call rejected there stores
+    nothing."""
+    entry = event_bytes(manifest) if manifest else b""
+    trace_dir.mkdir(parents=True, exist_ok=True)
+    with file_lock(trace_dir / "events.lock", TRACE_LOCK_WAIT, TraceError("timed out waiting for events.lock")):
+        check()
+        if store:
+            store()
+        data = event_bytes(line)
+        if entry and not any(event.get("type") == "manifest" and event.get("digest") == manifest["digest"]
+                             for event in read_events(trace_dir, manifest["digest"].encode())):
+            data = entry + data
+        fd = os.open(str(trace_dir / "events.jsonl"),
+                     os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0), 0o666)
+        try:
+            written = os.write(fd, data)
+        finally:
+            os.close(fd)
+    if written != len(data):
+        raise TraceError("wrote {} of the {} bytes to append to events.jsonl".format(written, len(data)))
+
+
+def trace_env(**extra):
+    """The environment of trace's Git commands: the caller's, without the variables that point Git at another
+    repository, index or object store, and with GIT_OPTIONAL_LOCKS=0 so that no command rewrites the project's index."""
+    env = {key: value for key, value in os.environ.items() if key not in REPO_ENV}
+    env.update(GIT_OPTIONAL_LOCKS="0", **extra)
+    return env
+
+
+def errno_name(error):
+    return errno.errorcode.get(error.errno, "OSError")
+
+
+def remove_tree(path):
+    """Remove the directory `path` and what it holds, as far as possible. Windows refuses to delete a read-only file,
+    and Git makes loose objects read-only, so an entry whose removal fails is made writable and removed again; a
+    symlink is never followed. Python 3.12 deprecates rmtree's onerror in favour of onexc."""
+    def retry(function, failed, _error):
+        with contextlib.suppress(OSError):
+            mode = os.lstat(failed).st_mode
+            if function in (os.unlink, os.rmdir) and not stat.S_ISLNK(mode):
+                os.chmod(failed, stat.S_IMODE(mode) | stat.S_IWRITE)
+                function(failed)
+
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(str(path), onexc=retry)
+    else:
+        shutil.rmtree(str(path), onerror=retry)
+
+
+def trace_git(cwd, env, *args, data=None, stdin=None, stdout=subprocess.PIPE):
+    """Run `git *args` and return its output; raise SnapshotSkip naming the Git command and how it failed."""
+    command = "git " + next(arg for arg in args if not arg.startswith("-"))
+    try:
+        result = subprocess.run(["git", *args], cwd=str(cwd), env=env, input=data, stdin=stdin, stdout=stdout,
+                                stderr=subprocess.PIPE)
+    except OSError as error:
+        raise SnapshotSkip("{}: {}".format(command, errno_name(error)))
+    if result.returncode:
+        raise SnapshotSkip("{}: exit {}".format(command, result.returncode), result.stderr)
+    return result.stdout
+
+
+def snapshot_git(trace_dir, env, *args, **options):
+    """Run `git *args` in the snapshot repository, as trace_git does."""
+    return trace_git(trace_dir, env, "--git-dir=" + str(trace_dir / ".git"), *args, **options)
+
+
+def trace_head(root, is_git):
+    """The commit HEAD names; None on an unborn branch or outside Git."""
+    if not is_git:
+        return None
+    try:
+        return trace_git(root, trace_env(), "rev-parse", "--verify", "-q", "HEAD^{commit}").decode().strip()
+    except SnapshotSkip:
+        return None
+
+
+def resolve_base(root, ref, head):
+    """The merge base of commit `ref` and HEAD; None without `ref`, on an unborn branch, outside Git (`head` is None
+    in both) and without a merge base. A `ref` that names no commit is invalid input."""
+    if ref is None or head is None:
+        return None
+    env, invalid = trace_env(), TraceError("--base {} names no commit".format(ref))
+    if ref.startswith("-"):
+        raise invalid
+    try:
+        commit = trace_git(root, env, "rev-parse", "--verify", "-q", ref + "^{commit}").decode().strip()
+    except SnapshotSkip:
+        raise invalid
+    try:
+        return trace_git(root, env, "merge-base", commit, head).decode().strip()
+    except SnapshotSkip:
+        return None
+
+
+def snapshot_repo(trace_dir, unit, env, sha256):
+    """The snapshot repository's Git directory, created on first use."""
+    git_dir = trace_dir / ".git"
+    if not git_dir.is_dir():
+        build_snapshot_repo(trace_dir, unit, env, sha256)
+    return git_dir
+
+
+def build_snapshot_repo(trace_dir, unit, env, sha256):
+    """Create the snapshot repository in the project's object format, whatever default object format Git is
+    configured with: non-bare, its HEAD on an empty commit. It is built aside and renamed into place, so a .git in the
+    trace directory is always complete."""
+    build = trace_dir / (".init-" + unit)
+    built = "--git-dir=" + str(build / ".git")
+    try:
+        if sha256:
+            trace_git(trace_dir, env, "init", "-q", "--template=", "--object-format=sha256", str(build))
+        else:
+            trace_git(trace_dir, dict(env, GIT_DEFAULT_HASH="sha1"), "init", "-q", "--template=", str(build))
+        tree = trace_git(trace_dir, env, built, "mktree", data=b"").decode().strip()
+        commit = trace_git(trace_dir, env, built, "commit-tree", tree, "-m", "canon trace").decode().strip()
+        trace_git(trace_dir, env, built, "update-ref", "HEAD", commit)
+        try:
+            os.rename(str(build / ".git"), str(trace_dir / ".git"))
+        except OSError as error:
+            raise SnapshotSkip("git init: " + errno_name(error))
+    finally:
+        remove_tree(build)
+
+
+def copy_index(source, target):
+    """Copy the index at `source` to `target` with its modification time, which Git compares entries against to
+    find racily clean ones; copy nothing when there is no index."""
+    if not os.path.exists(source):
+        return
+    try:
+        with open(source, "rb") as src, open(str(target), "wb") as dst:
+            info = os.fstat(src.fileno())
+            shutil.copyfileobj(src, dst)
+        os.utime(str(target), ns=(info.st_atime_ns, info.st_mtime_ns))
+    except OSError as error:
+        raise SnapshotSkip("index copy: " + errno_name(error))
+
+
+def changes_size(root, status):
+    """The total size of the untracked files and of the files with unstaged changes in the output of
+    `git status --porcelain -z`."""
+    total, records = 0, iter(status.split(b"\0"))
+    for record in records:
+        if len(record) < 4:
+            continue
+        if record[0:1] in b"RC" or record[1:2] in b"RC":
+            next(records, None)
+        if record[1:2] != b" ":
+            with contextlib.suppress(OSError):
+                info = os.lstat(os.path.join(str(root), os.fsdecode(record[3:])))
+                total += info.st_size if stat.S_ISREG(info.st_mode) else 0
+    return total
+
+
+def take_snapshot(root, trace_dir, unit, parent):
+    """Record the work tree at refs/trace/<unit> in the snapshot repository, as a commit whose parent holds the tree
+    of commit `parent`, or that has no parent when `parent` is None (D001#snapshots); return the snapshot commit."""
+    env = trace_env(**SNAPSHOT_IDENTITY)
+    status = trace_git(root, env, "status", "--porcelain", "-z", "--untracked-files=all")
+    if changes_size(root, status) > MAX_CHANGES:
+        raise SnapshotSkip("changes-over-10MiB")
+    lines = trace_git(root, env, "rev-parse", "--git-path", "index", "--git-path", "objects",
+                      "--show-object-format").splitlines()
+    index, objects = (os.path.abspath(os.path.join(str(root), os.fsdecode(path))) for path in lines[:2])
+    git_dir = snapshot_repo(trace_dir, unit, env, sha256=lines[2:] == [b"sha256"])
+    copy = git_dir / ("index-" + unit)
+    try:
+        copy_index(index, copy)
+        steps = dict(env, GIT_INDEX_FILE=str(copy), GIT_OBJECT_DIRECTORY=str(git_dir / "objects"),
+                     GIT_ALTERNATE_OBJECT_DIRECTORIES=objects)
+        trace_git(root, steps, "add", "-A")
+        tree = trace_git(root, steps, "write-tree").decode().strip()
+        parents = []
+        if parent:
+            base = trace_git(root, steps, "commit-tree", parent + "^{tree}", "-m", "trace {} base".format(unit))
+            parents = ["-p", base.decode().strip()]
+        commit = trace_git(root, steps, "commit-tree", tree, *parents, "-m", "trace " + unit).decode().strip()
+        copy_borrowed(root, steps, trace_dir, env, commit)
+        snapshot_git(trace_dir, env, "update-ref", "refs/trace/" + unit, commit)
+    finally:
+        with contextlib.suppress(OSError):
+            copy.unlink()
+    with contextlib.suppress(SnapshotSkip):
+        snapshot_git(trace_dir, env, "-c", "gc.autoDetach=false", "gc", "--auto", "--quiet")
+    return commit
+
+
+def copy_borrowed(root, steps, trace_dir, env, commit):
+    """Copy into the snapshot repository the objects `commit` reaches that it lacks, which the snapshot steps
+    borrowed from the project, so the snapshot repository depends on nothing outside it."""
+    listing = trace_git(root, steps, "rev-list", "--objects", commit)
+    found = snapshot_git(trace_dir, env, "cat-file", "--batch-check",
+                         data=b"".join(line.split(b" ", 1)[0] + b"\n" for line in listing.splitlines()))
+    missing = b"".join(line.split(b" ", 1)[0] + b"\n" for line in found.splitlines() if line.endswith(b" missing"))
+    if missing:
+        try:
+            with tempfile.TemporaryFile(dir=str(trace_dir / ".git")) as pack:
+                trace_git(root, steps, "pack-objects", "--stdout", "-q", data=missing, stdout=pack)
+                pack.seek(0)
+                snapshot_git(trace_dir, env, "index-pack", "--stdin", stdin=pack)
+        except OSError as error:
+            raise SnapshotSkip("git pack-objects: " + errno_name(error))
+
+
+@contextlib.contextmanager
+def snapshot_lock(trace_dir):
+    """Hold snapshot.lock, which keeps each start's snapshot and skill storage apart from the others' and from prune;
+    raise SnapshotSkip when it cannot be taken."""
+    with contextlib.ExitStack() as held:
+        try:
+            held.enter_context(file_lock(trace_dir / "snapshot.lock", TRACE_LOCK_WAIT,
+                                         SnapshotSkip("snapshot lock: timeout")))
+        except OSError as error:
+            raise SnapshotSkip("snapshot lock: " + errno_name(error))
+        yield
+
+
+def record_snapshot(root, is_git, trace_dir, unit, parent, manifest, files):
+    """Under snapshot.lock, take the unit's snapshot, then store the skill files of `manifest` when the snapshot
+    repository exists; return the snapshot commit and the reason none was recorded, one of them None. A start that
+    cannot take the lock records and stores nothing."""
+    if not is_git:
+        return None, "no-git"
+    snapshot = skip = None
+    try:
+        with snapshot_lock(trace_dir):
+            try:
+                snapshot = take_snapshot(root, trace_dir, unit, parent)
+            except SnapshotSkip as failed:
+                skip = failed
+            if manifest and (trace_dir / ".git").is_dir():
+                store_skills(trace_dir, manifest, files)
+    except SnapshotSkip as failed:
+        skip = failed
+    if skip and skip.message:
+        with contextlib.suppress(OSError):
+            (trace_dir / unit).mkdir(parents=True, exist_ok=True)
+            (trace_dir / unit / "snapshot-error.txt").write_bytes(skip.message[-MAX_SNAPSHOT_ERROR:])
+    return snapshot, skip.reason if skip else None
+
+
+def human_size(size):
+    for unit in ("KiB", "MiB", "GiB"):
+        size /= 1024
+        if size < 1024 or unit == "GiB":
+            return "{:.1f} {}".format(size, unit)
+
+
+def snapshot_line(trace_dir):
+    """The line saying how many snapshots the snapshot repository holds and its size on disk."""
+    git_dir, count, size = trace_dir / ".git", 0, 0
+    if git_dir.is_dir():
+        with contextlib.suppress(SnapshotSkip):
+            count = len(snapshot_git(trace_dir, trace_env(), "for-each-ref", "--format=%(refname)",
+                                     "refs/trace/").splitlines())
+        for path, _dirs, names in os.walk(str(git_dir)):
+            for name in names:
+                with contextlib.suppress(OSError):
+                    size += os.lstat(os.path.join(path, name)).st_size
+    return "snapshots: {}, {} on disk".format(count, human_size(size))
+
+
+def snapshot_summary(trace_dir):
+    """The status lines on snapshots: the snapshot line, and the starts that recorded none, by reason."""
+    reasons = {}
+    for event in read_events(trace_dir, b'"skipped":"'):
+        if event.get("type") == "start" and isinstance(event.get("skipped"), str):
+            reasons[event["skipped"]] = reasons.get(event["skipped"], 0) + 1
+    skipped = "; ".join("{} {}".format(n, reason) for reason, n in sorted(reasons.items(), key=lambda r: (-r[1], r[0])))
+    return [snapshot_line(trace_dir), "skipped starts: " + (skipped or "none")]
+
+
+def skill_dirs(skill):
+    """The directories named canon or canon-* that hold a SKILL.md beside the directory `skill`, or in every category
+    directory when `skill` sits in the skills repository's skills/<category>/<name>/ layout, by name."""
+    skill = Path(skill)
+    tops = [skill.parent]
+    if skill.parent.parent.name == "skills":
+        with contextlib.suppress(OSError):
+            tops = sorted(path for path in skill.parent.parent.iterdir() if path.is_dir())
+    found = {}
+    for top in tops:
+        with contextlib.suppress(OSError):
+            for path in sorted(top.iterdir()):
+                if (path.name == "canon" or path.name.startswith("canon-")) and (path / "SKILL.md").is_file():
+                    found.setdefault(path.name, path)
+    return found
+
+
+def covered_files(directory, prefix=""):
+    """The files a skill's digest covers, as (path from the skill directory, executable, content): every regular file
+    under `directory` but LICENSE, NOTICE and *.pyc, and none under __pycache__/ or named with a leading dot."""
+    files = []
+    with os.scandir(str(directory)) as entries:
+        for entry in entries:
+            if entry.name.startswith(".") or entry.name in ("LICENSE", "NOTICE", "__pycache__") \
+                    or entry.name.endswith(".pyc"):
+                continue
+            if entry.is_dir(follow_symlinks=False):
+                files += covered_files(entry.path, prefix + entry.name + "/")
+            elif entry.is_file(follow_symlinks=False):
+                with open(entry.path, "rb") as file:
+                    executable = bool(os.fstat(file.fileno()).st_mode & stat.S_IXUSR)
+                    files.append((prefix + entry.name, executable, file.read()))
+    return files
+
+
+def sha256_json(value, **options):
+    """The SHA-256 of `value` as compact UTF-8 JSON."""
+    text = json.dumps(value, ensure_ascii=False, separators=(",", ":"), **options)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def skill_manifest(skill):
+    """The `manifest` line of the skills found from the directory `skill`, and the files its digests cover as (tree
+    path, executable, content), each skill directory under its name. A skill's digest is the SHA-256 of its covered
+    files' sorted [path, Git blob id] pairs, and the manifest's that of its skills (D001#skill-digests)."""
+    skills, files = {}, []
+    for name, directory in sorted(skill_dirs(skill).items()):
+        covered = covered_files(directory)
+        skills[name] = sha256_json(sorted([path, hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()]
+                                          for path, _executable, data in covered))
+        files += [(name + "/" + path, executable, data) for path, executable, data in covered]
+    return {"v": 1, "type": "manifest", "digest": sha256_json(skills, sort_keys=True), "skills": skills}, files
+
+
+def quoted(path):
+    """`path` as a C-style quoted string, the form in which git fast-import takes a path holding any byte."""
+    return b'"' + b"".join(b"\\%03o" % byte if byte < 32 or byte in b'"\\\x7f' else bytes([byte])
+                           for byte in os.fsencode(path)) + b'"'
+
+
+def store_skills(trace_dir, manifest, files):
+    """Store the files of a manifest the snapshot repository lacks there, as a parentless commit at
+    refs/skills/<manifest digest>; best-effort, since the next start with that manifest stores it."""
+    ref, env = "refs/skills/" + manifest["digest"], trace_env()
+    with contextlib.suppress(SnapshotSkip):
+        if snapshot_git(trace_dir, env, "for-each-ref", ref):
+            return
+        committer = "{GIT_COMMITTER_NAME} <{GIT_COMMITTER_EMAIL}> {when} +0000".format(when=int(time.time()),
+                                                                                    **SNAPSHOT_IDENTITY)
+        message = "skills " + manifest["digest"]
+        stream = [b"commit %s\ncommitter %s\ndata %d\n%s\n" % (ref.encode(), committer.encode(), len(message),
+                                                                message.encode())]
+        for path, executable, data in files:
+            mode = b"100755" if executable else b"100644"
+            stream.append(b"M %s inline %s\ndata %d\n%s\n" % (mode, quoted(path), len(data), data))
+        snapshot_git(trace_dir, env, "fast-import", "--quiet", data=b"".join(stream))
+
+
+def short_field(value):
+    """Whether `value` is a non-empty single-line string of at most 200 characters, as model and reviewer ids are."""
+    return isinstance(value, str) and len(value) <= MAX_REVIEWER_FIELD and value.splitlines() == [value]
+
+
+def trace_start(args):
+    root, is_git = trace_root()
+    if not trace_state(root)[0]:
+        print("trace off")
+        return 0
+    if (args.kind == "slice") != bool(args.slice) or (args.slice and not SLICE_RE.fullmatch(args.slice)):
+        raise TraceError("--slice S<n> comes with the slice kind only, which requires it")
+    invalid = [doc for doc in args.docs if not FULL_ID_RE.fullmatch(doc)]
+    if invalid:
+        raise TraceError("DOC arguments are doc ids such as D001, not {}".format(", ".join(map(repr, invalid))))
+    if args.model is not None and not short_field(args.model):
+        raise TraceError("--model must be a single-line string of 1 to {} characters".format(MAX_REVIEWER_FIELD))
+    trace_dir = root / TRACE_DIR
+    parent = start_parent(trace_dir, args)
+    host, conversation = trace_host()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    unit = now.strftime(UNIT_TIME_FORMAT) + "-" + os.urandom(3).hex()
+    line = {"v": 1, "type": "start", "id": unit, "kind": args.kind,
+            "at": now.astimezone().isoformat(timespec="seconds"), "parent": args.parent,
+            "docs": trace_docs(root, is_git, args.docs)}
+    if args.slice:
+        line["slice"] = args.slice
+    head = trace_head(root, is_git)
+    base = resolve_base(root, args.base, head)
+    if args.kind == "slice":
+        model, skill = parent.get("model"), parent.get("skill")
+    else:
+        model = args.model.lower() if args.model else None
+        skill = os.path.abspath(args.skill) if args.skill else None
+    manifest, files = skill_manifest(skill) if skill else (None, [])
+    ignore_trace_dir(root)
+    snapshot, skipped = record_snapshot(root, is_git, trace_dir, unit, base or head, manifest, files)
+    line.update(tier=args.tier or (parent or {}).get("tier"), base=base, head=head, snapshot=snapshot,
+                skipped=skipped, host=host, conversation=conversation, model=model, skill=skill,
+                manifest=manifest["digest"] if manifest else None)
+    append_event(trace_dir, line, lambda: start_parent(trace_dir, args), manifest)
+    print("trace " + line["id"])
+    return 0
+
+
+def end_unit(trace_dir, args):
+    """The start line of the unit `end` closes, once checked that it is open and its kind allows the outcome."""
+    start, end = unit_events(trace_dir, args.unit)
+    if start is None:
+        raise TraceError("{} names no unit".format(args.unit))
+    kind = start.get("kind")
+    if kind == "slice":
+        raise TraceError("a slice ends with its commit or the next start under its implement unit, not with end")
+    if end is not None:
+        raise TraceError("{} has already ended".format(args.unit))
+    outcomes = KIND_OUTCOMES.get(kind, OUTCOMES)
+    if args.outcome not in outcomes:
+        raise TraceError("{} units end {} or {}".format(kind, ", ".join(outcomes[:-1]), outcomes[-1]))
+    if (args.outcome == "escalated") != bool(args.to):
+        raise TraceError("--to L1|L2|plan comes with escalated only, which requires it")
+    return start
+
+
+def read_dispositions(kind, source):
+    """The dispositions `--input` reads, from file `source` or from stdin for `-`, once checked against
+    D001#review-dispositions for a `kind` unit."""
+    if kind not in REVIEW_ROLES:
+        raise TraceError("--input comes with gate and code-review units only")
+    try:
+        data = sys.stdin.buffer.read() if source == "-" else Path(source).read_bytes()
+    except OSError as error:
+        raise TraceError("cannot read --input {}: {}".format(source, errno_name(error)))
+    try:
+        dispositions = json.loads(data)
+    except ValueError as error:
+        raise TraceError("--input is not JSON: {}".format(error))
+    check_dispositions(kind, dispositions)
+    return dispositions
+
+
+def check_dispositions(kind, dispositions):
+    """Raise TraceError unless `dispositions` holds what D001#review-dispositions defines for a `kind` unit and
+    nothing else, so that no free text reaches the line."""
+    def expect(ok, where, what):
+        if not ok:
+            raise TraceError("dispositions{} must be {}".format(where, what))
+
+    def entry(value, where, keys, optional=()):
+        expect(isinstance(value, dict), where, "an object")
+        unknown = [key for key in value if key not in keys + optional]
+        if unknown:
+            raise TraceError("dispositions{} has keys a {} does not take: {}".format(where, kind, ", ".join(unknown)))
+        missing = [key for key in keys if key not in value]
+        if missing:
+            raise TraceError("dispositions{} lacks {}".format(where, ", ".join(missing)))
+
+    roles, review = REVIEW_ROLES[kind], kind == "code-review"
+    entry(dispositions, "", ("reviewers", "findings", "new_blockers"))
+    expect(isinstance(dispositions["reviewers"], list), ".reviewers", "a list")
+    listed = []
+    for n, reviewer in enumerate(dispositions["reviewers"]):
+        where = ".reviewers[{}]".format(n)
+        entry(reviewer, where, ("role", "model", "id"))
+        expect(reviewer["role"] in roles and reviewer["role"] not in listed, where + ".role",
+               "one of {}, each listed once".format(", ".join(roles)))
+        listed.append(reviewer["role"])
+        expect(short_field(reviewer["model"]), where + ".model", "a single-line string of at most 200 characters")
+        expect(reviewer["id"] is None or short_field(reviewer["id"]), where + ".id",
+               "null or a single-line string of at most 200 characters")
+    expect(isinstance(dispositions["findings"], list), ".findings", "a list")
+    for n, finding in enumerate(dispositions["findings"]):
+        where = ".findings[{}]".format(n)
+        entry(finding, where, ("by", "severity", "disposition") + (("axis",) if review else ()), ("confirmed",))
+        by = finding["by"]
+        expect(isinstance(by, list) and by and all(isinstance(ref, str) and ref.partition(":")[0] in listed
+                                                   and FINDING_ID_RE.fullmatch(ref.partition(":")[2]) for ref in by),
+               where + ".by", "a non-empty list of <role>:F<n>, each naming a listed reviewer")
+        expect(finding["severity"] in SEVERITIES, where + ".severity", " or ".join(SEVERITIES))
+        expect(finding["disposition"] in REVIEW_DISPOSITIONS[kind], where + ".disposition",
+               " or ".join(REVIEW_DISPOSITIONS[kind]))
+        if review:
+            expect(finding["axis"] in ("spec", "standards"), where + ".axis", "spec or standards")
+        if "confirmed" in finding:
+            expect(finding["confirmed"] in ("resolved", "not-resolved"), where + ".confirmed",
+                   "resolved or not-resolved")
+    blockers = dispositions["new_blockers"]
+    expect(type(blockers) is int and blockers >= 0, ".new_blockers", "a non-negative integer")
+
+
+def archive_source(root, path):
+    """`--dir`, taken from the checkout `root` when relative, with symlinks resolved, once checked that it lies under
+    the checkout's .canon/."""
+    source = Path(os.path.realpath(os.path.join(str(root), path)))
+    if Path(os.path.realpath(str(root / LOCAL_DIR))) not in source.parents:
+        raise TraceError("--dir {} lies outside {} once symlinks are resolved".format(path, LOCAL_DIR))
+    return source
+
+
+def unit_started(unit):
+    """The start time in the id of `unit`, in seconds since the epoch."""
+    when = datetime.datetime.strptime(unit[:16], UNIT_TIME_FORMAT).replace(tzinfo=datetime.timezone.utc)
+    return int(when.timestamp())
+
+
+def archive_files(source, target, since):
+    """Copy the regular files directly in `source` modified at second `since` or later into `target` when they total
+    at most 2 MiB; return the end line's `archive`."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
+    written = []
+    try:
+        with os.scandir(str(source)) as entries:
+            names = sorted(entry.name for entry in entries if entry.is_file(follow_symlinks=False)
+                           and entry.stat(follow_symlinks=False).st_mtime_ns >= since * 10 ** 9)
+        files, total = {}, 0
+        for name in names:
+            with open(os.open(os.path.join(str(source), name), flags), "rb") as file:
+                if not stat.S_ISREG(os.fstat(file.fileno()).st_mode):
+                    continue
+                files[name] = file.read(MAX_ARCHIVE + 1 - total)
+            total += len(files[name])
+            if total > MAX_ARCHIVE:
+                return "over-2MiB"
+        if not files:
+            return "none"
+        target.mkdir(parents=True, exist_ok=True)
+        for name, data in files.items():
+            written.append(target / name)
+            written[-1].write_bytes(data)
+    except OSError as error:
+        for path in written:
+            with contextlib.suppress(OSError):
+                path.unlink()
+        return "copy: " + errno_name(error)
+    return "ok"
+
+
+def trace_end(args):
+    root, is_git = trace_root()
+    if not trace_state(root)[0]:
+        print("trace off")
+        return 0
+    trace_dir = root / TRACE_DIR
+    start = end_unit(trace_dir, args)
+    kind = start.get("kind")
+    dispositions = read_dispositions(kind, args.input) if args.input is not None else None
+    source = archive_source(root, args.dir) if args.dir is not None else None
+    now = datetime.datetime.now(datetime.timezone.utc)
+    line = {"v": 1, "type": "end", "id": args.unit, "kind": kind,
+            "at": now.astimezone().isoformat(timespec="seconds"), "outcome": args.outcome}
+    if args.to:
+        line["to"] = args.to
+    line["head"] = trace_head(root, is_git)
+    manifest = None
+    if start.get("parent") is None:
+        manifest = skill_manifest(start["skill"])[0] if start.get("skill") else None
+        line["manifest"] = manifest["digest"] if manifest else None
+    if kind in REVIEW_ROLES:
+        line["dispositions"] = dispositions
+    line["archive"] = None
+
+    def archive():
+        if source:
+            line["archive"] = archive_files(source, trace_dir / args.unit, unit_started(args.unit))
+
+    append_event(trace_dir, line, lambda: end_unit(trace_dir, args), manifest, archive)
+    print("trace {} ended".format(args.unit))
+    return 0
+
+
+def trace_status(args):
+    root, _is_git = trace_root()
+    print(trace_state(root)[1])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    since = (now - datetime.timedelta(hours=24)).strftime(UNIT_TIME_FORMAT)
+    events = read_events(root / TRACE_DIR,
+                         *{prefix.encode() for prefix in (since[:9], now.strftime(UNIT_TIME_FORMAT)[:9])})
+    ended = {event.get("id") for event in events if event.get("type") == "end"}
+    units = [event for event in events if event.get("type") == "start" and event.get("kind") != "slice"
+             and UNIT_RE.match(event.get("id", "")) and event["id"] >= since and event["id"] not in ended]
+    units.sort(key=lambda event: event["id"], reverse=True)
+    conversation = trace_host()[1]
+    print("open units started in the last 24 hours, newest first:" if units
+          else "no open units started in the last 24 hours")
+    for event in units:
+        docs = "".join(" " + doc for doc in event.get("docs") or [])
+        mine = " (this conversation)" if conversation and event.get("conversation") == conversation else ""
+        print("  {} {}{} started {}{}".format(event["id"], event.get("kind"), docs, event.get("at"), mine))
+    print("\n".join(snapshot_summary(root / TRACE_DIR)))
+    return 0
+
+
+def trace_switch(args):
+    root, _is_git = trace_root()
+    if args.here:
+        off = root / TRACE_DIR / "off"
+        if args.action == "off":
+            ignore_trace_dir(root)
+            off.parent.mkdir(parents=True, exist_ok=True)
+            off.touch()
+        else:
+            off.unlink(missing_ok=True)
+    else:
+        switch = trace_switch_path()
+        if args.action == "on":
+            switch.parent.mkdir(parents=True, exist_ok=True)
+            switch.touch()
+            print(TRACE_NOTICE)
+        else:
+            switch.unlink(missing_ok=True)
+    print(trace_state(root)[1])
+    return 0
+
+
+def counted(n, one, many):
+    return "{} {}".format(n, one if n == 1 else many)
+
+
+def day_count(text):
+    """`--days N`, a whole number of days, 0 or more."""
+    try:
+        days = int(text)
+    except ValueError:
+        days = -1
+    if days < 0:
+        raise argparse.ArgumentTypeError("N is a whole number of days, 0 or more, not {}".format(text))
+    return days
+
+
+def stale(name, prefix, cutoff):
+    """Whether `name` is `prefix` followed by the id of a unit started before `cutoff`, a time in the form ids begin
+    with; ids sort by their start time."""
+    unit = name[len(prefix):]
+    return name.startswith(prefix) and bool(UNIT_RE.match(unit)) and unit[:16] < cutoff
+
+
+def prune_git(trace_dir, *args, data=None):
+    """Run `git *args` in the snapshot repository and return its output; a failure is a trace error naming the Git
+    command and how it failed."""
+    try:
+        return snapshot_git(trace_dir, trace_env(), *args, data=data)
+    except SnapshotSkip as failed:
+        raise TraceError(failed.reason)
+
+
+def prune_snapshots(trace_dir, cutoff):
+    """Delete the snapshot refs of the units started before `cutoff`; return how many went."""
+    refs = prune_git(trace_dir, "for-each-ref", "--format=%(refname)", "refs/trace/").decode().split()
+    old = [ref for ref in refs if stale(ref, "refs/trace/", cutoff)]
+    if old:
+        prune_git(trace_dir, "update-ref", "--stdin", data="".join("delete {}\n".format(ref) for ref in old).encode())
+    return len(old)
+
+
+def remove_stale(directory, prefix, cutoff):
+    """Remove the entries of `directory` named `prefix` and the id of a unit started before `cutoff`, a directory with
+    what it holds and a symlink without its target; return how many went."""
+    try:
+        with os.scandir(str(directory)) as entries:
+            found = [entry for entry in entries if stale(entry.name, prefix, cutoff)]
+    except FileNotFoundError:
+        return 0
+    for entry in found:
+        if entry.is_dir(follow_symlinks=False):
+            remove_tree(entry.path)
+        else:
+            with contextlib.suppress(OSError):
+                os.unlink(entry.path)
+    return sum(not os.path.lexists(entry.path) for entry in found)
+
+
+def trace_prune(args):
+    """Prune under snapshot.lock whenever the snapshot repository exists, so that no start's snapshot can reuse an
+    object while the deletions and gc run."""
+    root, _is_git = trace_root()
+    trace_dir = root / TRACE_DIR
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cutoff = (now - datetime.timedelta(days=args.days)).strftime(UNIT_TIME_FORMAT)
+    hour_ago = (now - datetime.timedelta(hours=1)).strftime(UNIT_TIME_FORMAT)
+    repo = (trace_dir / ".git").is_dir()
+    held = file_lock(trace_dir / "snapshot.lock", TRACE_LOCK_WAIT, TraceError("timed out waiting for snapshot.lock")) \
+        if repo else contextlib.nullcontext()
+    with held:
+        snapshots = prune_snapshots(trace_dir, cutoff) if repo else 0
+        archives = remove_stale(trace_dir, "", cutoff)
+        copies = remove_stale(trace_dir / ".git", "index-", hour_ago) if repo else 0
+        builds = remove_stale(trace_dir, ".init-", hour_ago)
+        print("removed {} and {} of units started more than {} ago".format(
+            counted(snapshots, "snapshot", "snapshots"), counted(archives, "archive", "archives"),
+            counted(args.days, "day", "days")))
+        print("removed {} and {} left by interrupted starts".format(
+            counted(copies, "index copy", "index copies"), counted(builds, "build directory", "build directories")))
+        if repo:
+            prune_git(trace_dir, "gc", "--prune=1.hour.ago", "--quiet")
+    print(snapshot_line(trace_dir))
+    return 0
+
+
+def cmd_trace(args):
+    try:
+        return args.func(args)
+    except TraceError as error:
+        print("trace error: {}".format(error))
+    except Exception as error:  # a failed call never stops the work
+        print("trace error: {}: {}".format(type(error).__name__, error))
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="canon.py", description="canon documentation system tool")
     parser.add_argument("--version", action="version", version="canon " + CANON_VERSION)
@@ -1819,7 +2721,44 @@ def main(argv=None):
                    help="code commits before a review is due (default 50)")
     p.set_defaults(func=cmd_audit)
 
+    p = sub.add_parser("trace", help="record canon workflow units for skill telemetry; off unless `trace on` ran")
+    actions = p.add_subparsers(dest="action", required=True)
+    t = actions.add_parser("start", help="start a unit and print `trace <id>`")
+    t.add_argument("kind", choices=TRACE_KINDS)
+    t.add_argument("docs", nargs="*", metavar="DOC", help="ids of the docs the unit works on")
+    t.add_argument("--parent", metavar="UNIT", help="id of the open unit this one runs inside")
+    t.add_argument("--tier", choices=("L0", "L1", "L2"))
+    t.add_argument("--slice", metavar="S<n>", help="the plan slice a slice unit builds")
+    t.add_argument("--base", metavar="REF", help="the commit the unit's change starts from; the snapshot's parent "
+                                                 "holds the tree of its merge base with HEAD")
+    t.add_argument("--skill", metavar="DIR", help="directory of the SKILL.md being followed")
+    t.add_argument("--model", metavar="ID", help="the session's model id")
+    t.set_defaults(func=trace_start)
+    t = actions.add_parser("end", help="end an open unit")
+    t.add_argument("unit")
+    t.add_argument("outcome")
+    t.add_argument("--to", choices=("L1", "L2", "plan"), help="the tier or plan an escalated unit needs")
+    t.add_argument("--dir", metavar="DIR", help="directory under .canon/ whose files changed since the unit started "
+                                                "are archived with it")
+    t.add_argument("--input", metavar="FILE|-", help="a gate's or code review's dispositions as JSON, from FILE or "
+                                                     "from stdin for -")
+    t.set_defaults(func=trace_end)
+    t = actions.add_parser("status", help="say whether tracing is on and why, and list the open units")
+    t.set_defaults(func=trace_status)
+    t = actions.add_parser("on", help="turn tracing on for this machine; --here deletes this checkout's off file")
+    t.add_argument("--here", action="store_true")
+    t.set_defaults(func=trace_switch)
+    t = actions.add_parser("off", help="turn tracing off for this machine; --here opts this checkout out")
+    t.add_argument("--here", action="store_true")
+    t.set_defaults(func=trace_switch)
+    t = actions.add_parser("prune", help="delete the snapshots and archives of units started more than N days ago, "
+                                         "tracing on or off")
+    t.add_argument("--days", type=day_count, required=True, metavar="N")
+    t.set_defaults(func=trace_prune)
+
     args = parser.parse_args(argv)
+    if args.command == "trace":
+        return cmd_trace(args)
     return args.func(Repo(), args)
 
 

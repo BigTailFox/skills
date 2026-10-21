@@ -19,7 +19,7 @@ Use the modules and angles the user names. Otherwise propose a scope and wait fo
 
 ## 2. Create the doc
 
-Run `canon.py new R <slug>`. Scope records the commit (`git rev-parse HEAD`), the modules and paths, and the angles. Attachments go in `reviews/R00X/`.
+Run `canon.py new R <slug>`. Scope records the commit (`git rev-parse HEAD`), the modules and paths, and the angles. Attachments go in `reviews/R00X/`. Then run `canon.py trace start canon-review <R id> --skill <skill> --model <model>`.
 
 ## 3. Review each angle
 
@@ -28,7 +28,7 @@ Spawn one subagent per angle, in parallel, in the foreground. Each brief carries
 - The scope: commit, module paths, and the governing designs (`which`, `show`), the architecture design and the relevant `AGENTS.md` files to read.
 - The angle's reference pasted in full: [architecture.md](architecture.md), [performance.md](performance.md), [security.md](security.md), [functional.md](functional.md), [usability.md](usability.md).
 - The rules: modify no file. Skip anything a design's Decision line already rejected unless the friction is severe enough to reopen it, and then name the Decision. Replace secrets with `<REDACTED>`.
-- The output: at most 10 findings, most severe first. Each has a title, location (files, design sections), problem, evidence, suggestion, and severity `blocker`, `major` or `minor`. Stay under 600 words.
+- The output: every blocker and major finding and at most 10 minor ones, most severe first. Each has a title, location (files, design sections), problem, evidence, suggestion, and severity `blocker`, `major` or `minor`. Keep each finding as short as it can be while a reader can understand and verify it without redoing the review.
 
 ## 4. Report
 
@@ -55,3 +55,5 @@ Before deciding on an architecture candidate, the user may explore it: walk it w
 Once no finding is `open`, run `canon.py archive R00X closed` and `canon.py check --fix`, then commit (Conventional Commits, `docs` type, `Refs: R00X`).
 
 Then run the `canon-retro` skill's end check only if this work hit concrete friction in the development infrastructure or the agent workflow that could recur, such as a correction to how you worked, a finding a check could have caught, a command that would not run, a check that failed after you thought you were done, a search that took far too long, or a canon step that got in the way. Use only evidence already in context; do not search for reasons to run it.
+
+Then run `canon.py trace end <id> <outcome>`.

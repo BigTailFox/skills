@@ -18,6 +18,8 @@ Use the user's fixed point (a commit, branch, tag or `HEAD~5`). Otherwise use th
 
 Diff the working tree against the merge base so uncommitted work is included: `git diff $(git merge-base <fixed-point> HEAD)`. Untracked new files are missing from that diff; list them with `git ls-files --others --exclude-standard` and pass them as files to read in full. Note the commits with `git log --oneline <fixed-point>..HEAD`. Confirm the ref resolves and the change is non-empty before spawning anything.
 
+Run `canon.py trace start code-review [<P id>] --base <fixed-point> --tier <tier> --skill <skill> --model <model> [--parent <parent>]`.
+
 ## 2. Collect the spec
 
 - `canon.py affected --base <fixed-point>`: the designs governing the changed files and the plans built on them.
@@ -36,7 +38,7 @@ When no design governs the change, the Spec axis still runs: it checks that the 
 
 ## 4. Spawn the reviewers
 
-Issue the calls together, in the foreground: a Spec reviewer and a Standards reviewer, each launched like the same-model reviewer in the `canon-blind-review` skill, plus, for an L2 change, the cross-family reviewer through that skill with a prompt carrying both briefs and both sets of sources. Each prompt carries the diff command, the untracked files, the commit list, and its sources (paths to read, plus the pasted baseline for Standards). Reviewers report findings with severity `blocker`, `major` or `minor`, under 400 words per axis.
+Issue the calls together, in the foreground: a Spec reviewer and a Standards reviewer, each launched like the same-model reviewer in the `canon-blind-review` skill, plus, for an L2 change, the cross-family reviewer through that skill with a prompt carrying both briefs and both sets of sources. Keep each reviewer's files in `.canon/canon-blind-review/<topic>/` (topic: `<P id>-code-review`, else a slug of the change) as that skill names them, by role: `spec`, `standards` or `cross-family`, e.g. `spec-prompt.md`, `spec.md` and `spec-id.txt`. Each prompt carries the diff command, the untracked files, the commit list, and its sources (paths to read, plus the pasted baseline for Standards). Reviewers report findings with severity `blocker`, `major` or `minor`.
 
 **Spec brief**: "Report: (a) requirements the spec or plan asks for that are missing or partial; (b) behavior in the diff that nothing asked for; (c) requirements that look implemented but wrong; (d) behavior the diff changes that its governing design does not specify or contradicts, meaning the change needed a design revision first; (e) slice test criteria with no test at the named seam. Cite the section for each finding, e.g. D003§token-refresh."
 
@@ -52,3 +54,5 @@ Present the findings under `## Spec` and `## Standards`, verbatim or lightly cle
 - A finding the user defers to later work goes into an R doc: `canon.py new R <slug>`, Scope naming the fixed point, `HEAD` and the axes, one row per deferred finding with disposition `open`.
 - A finding that shows the design itself is wrong is a design problem: follow the `canon` skill's workflow (Design problems).
 - Unless another workflow invoked this review, run the `canon-retro` skill's end check only if this work hit concrete friction in the development infrastructure or the agent workflow that could recur, such as a correction to how you worked, a finding a check could have caught, a command that would not run, a check that failed after you thought you were done, a search that took far too long, or a canon step that got in the way. Use only evidence already in context; do not search for reasons to run it.
+
+Then run `canon.py trace end <id> <outcome> --dir .canon/canon-blind-review/<topic> --input -`, with the dispositions on stdin.

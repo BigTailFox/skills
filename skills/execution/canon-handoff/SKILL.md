@@ -32,6 +32,8 @@ Write `HANDOFF.md` to `.canon/canon-handoff/<id>-<topic>/` at the repository roo
 
 Reference docs, commits and files by id or path; never copy their content. Replace secrets and personal data with `<REDACTED>`.
 
+Then end each unit this conversation left open, which `canon.py trace status` lists, with `canon.py trace end <unit id> handoff`.
+
 ## 3. Report
 
 Run the `canon-retro` skill's end check only if this work hit concrete friction in the development infrastructure or the agent workflow that could recur, such as a correction to how you worked, a finding a check could have caught, a command that would not run, a check that failed after you thought you were done, a search that took far too long, or a canon step that got in the way. Use only evidence already in context; do not search for reasons to run it.
