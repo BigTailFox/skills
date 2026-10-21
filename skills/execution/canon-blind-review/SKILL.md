@@ -25,7 +25,7 @@ Assess:
 - {criterion, e.g. consistency with the designs it touches}
 - {criterion, e.g. simplicity: nothing beyond its goals}
 
-Report at most 10 findings, most severe first, each as:
+Report every blocker and major finding and at most 10 minor ones, most severe first, each as:
 
 ### F1 [blocker | major | minor] {location}
 Problem: ...

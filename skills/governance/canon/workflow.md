@@ -55,7 +55,7 @@ Assess:
 - Plans only: slices are ordered by dependency, independently verifiable, and each has concrete test criteria.
 Formatting, frontmatter and wording style are out of scope.
 
-Report at most 10 findings, most severe first, each as:
+Report every blocker and major finding and at most 10 minor ones, most severe first, each as:
 
 ### F1 [blocker | major | minor] {location, e.g. D003§token-refresh}
 Problem: ...
