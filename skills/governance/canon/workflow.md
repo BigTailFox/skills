@@ -34,7 +34,7 @@ When the implementation cannot follow the plan or the design:
 
 ## Review gate
 
-Every design or plan revision passes this gate before it is accepted, and every revision of an active design passes it before implementation.
+Every design or plan revision passes this gate before it is accepted, and every revision of an active design passes it before implementation. The gate runs at the revision's tier, even within work of a lower tier, such as an L1 revision made while implementing an L0 change.
 
 1. Run `canon.py check` and fix its errors, so reviewers spend no effort on formatting. It warns that the revision is not reviewed until step 5.
 2. Run `canon.py trace start gate <doc id> --tier <tier> --skill <skill> --model <model> [--parent <parent>] [--base <Changes since commit>]`. Launch the first-round reviewers in parallel, with the `canon-blind-review` skill when it is installed. A blind reviewer is a fresh subagent that carries nothing from the current conversation: never fork the session, and pass only the reviewer prompt below.

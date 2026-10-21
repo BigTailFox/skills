@@ -10,7 +10,7 @@ owns: [skill-telemetry]
 paths: [skills/governance/canon/trace.md]
 reviewed: 3
 reviewers: [claude-opus-5.5]
-implemented: 2
+implemented: 3
 ---
 
 # D001: Skill telemetry with canon trace
@@ -76,7 +76,7 @@ Outcomes, given to `end`. Every kind that ends allows `delivered`, `blocked`, `h
 
 ### Call sites
 
-Each call runs the project's `canon.py`. `<skill>` is the directory of the `SKILL.md` being followed, for a gate `canon-blind-review`'s or else `canon`'s; `<model>` is the session's model id as the host's model setting names it; `<tier>` is the tier the work runs at, for a gate the tier of its review, which can be above the enclosing unit's; `<id>` is the id printed by this skill's own `start`, and `<parent>` the id of the open unit of the workflow that invoked the skill, left out with `--parent` when there is none. A skill's first `start` decides: unless it prints `trace <id>`, the skill skips its other trace calls, which also covers a project copy of `canon.py` too old to have `trace`. When it does print an id, the agent follows the `canon` skill's `trace.md`, which states the outcomes and the dispositions format for agents. The placeholders and the first-start rule are stated in a paragraph of the `canon` skill itself, after its command table, since the first call needs them before tracing is known to be on. An agent that lost an id finds it with `trace status`.
+Each call runs the project's `canon.py`. `<skill>` is the directory of the `SKILL.md` being followed, for a gate `canon-blind-review`'s or else `canon`'s; `<model>` is the session's model id as the host's model setting names it; `<tier>` is the tier the work runs at, for a gate the tier of its review, which can be above the enclosing unit's; `<id>` is the id printed by this skill's own `start`, and `<parent>` the id of the open unit of the workflow that invoked the skill, left out with `--parent` when there is none. A skill's first `start` decides: unless it prints `trace <id>`, the skill skips its other trace calls, which also covers a project copy of `canon.py` too old to have `trace`. When it does print an id, the agent follows the `canon` skill's `trace.md`, which states the outcomes and the dispositions format for agents. The placeholders other than `<tier>` and the first-start rule are stated in a paragraph of the `canon` skill itself, after its command table, since the first call needs them before tracing is known to be on; the review gate states the tier it runs at. An agent that lost an id finds it with `trace status`.
 
 - `canon-design`, after Frame step 3: `trace start design <D or C id> --tier <tier> --skill <skill> --model <model>`. Before the closing command: `trace end <id> <outcome>`.
 - `canon-plan`, after Start step 2: `trace start plan <P id> <D id> --tier <tier> --skill <skill> --model <model>`. Before the closing command: `trace end <id> <outcome>`.

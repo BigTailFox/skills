@@ -32,7 +32,7 @@ Write `HANDOFF.md` to `.canon/canon-handoff/<id>-<topic>/` at the repository roo
 
 Reference docs, commits and files by id or path; never copy their content. Replace secrets and personal data with `<REDACTED>`.
 
-Then end each unit this conversation left open, which `canon.py trace status` lists, with `canon.py trace end <unit id> handoff`.
+Then end each unit you left open with `canon.py trace end <unit id> handoff`; an L0 change awaiting a spec change ends `escalated --to L1`.
 
 ## 3. Report
 

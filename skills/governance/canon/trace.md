@@ -2,7 +2,7 @@
 
 Only the orchestrating session calls `trace`, never a worker or reviewer. On `trace error`, correct the input and retry once, then carry on either way. `trace status` recovers a lost id.
 
-End every unit you start except a slice: delivered when it produced its output, blocked on what only the user can settle, handoff when another session continues it, cancelled when the user stopped it. Implement also allows partial, leaving paused slices, and escalated `--to` what it needs: L1 when an L0 change alters a spec, L2 for a new or rewritten design, plan when L1 work needs one. An end check ends only quiet, or raised if it put items to the user.
+End every unit you start but a slice: delivered when it produced its output, blocked on what only the user can settle, handoff when another session continues it, cancelled when the user stopped it. Implement also allows partial, leaving paused slices, and escalated `--to` what it needs: L1 when an L0 change ends awaiting a spec change, L2 for a new or rewritten design, plan when L1 work needs one. An end check ends only quiet, or raised if it put items to the user.
 
 With `--input -`, a gate's or code review's `end` reads its dispositions from stdin:
 
@@ -15,5 +15,5 @@ With `--input -`, a gate's or code review's `end` reads its dispositions from st
 - Roles: same-model and cross-family in a gate; spec, standards and cross-family in a code review, whose findings add `axis`, spec or standards.
 - `model` as in `reviewers`, `id` from `<role>-id.txt`; a user-run review has `manual:<model>` and a null `id`.
 - A finding merges reviewer findings: `by` lists them all, `severity` is the highest.
-- `disposition`: accepted (fixed), declined, escalated (to the user), or deferred (to an R doc, code review only).
+- `disposition`: accepted (fixed), declined, escalated (still awaiting the user), or deferred (to an R doc, code review only).
 - `confirmed`: resolved or not-resolved, only on findings sent to confirmation. `new_blockers`: new blockers it reported, else 0.
