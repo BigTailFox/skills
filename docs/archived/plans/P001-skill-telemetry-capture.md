@@ -1,7 +1,7 @@
 ---
 status: done
 created: 2026-10-15
-updated: 2026-10-16
+updated: 2026-10-21
 revision: 1
 modules: [canon]
 summary: Builds canon.py trace (event log, snapshots, review dispositions and archives, skill digests, prune), then the skill call sites and the README section.
@@ -225,3 +225,4 @@ Test criteria; seam: the skill texts as an agent follows them, run through the `
 - Codex's confirmation, in a new session: F1, F2, F4 and F6 resolved, no new blocker. It repeated the declined F3 and F5 as not resolved, so its verdict stayed revise; there is no further round.
 - Reviewer questions left to the pilot, as `D001#budgets` leaves latency: start latency on Windows, where each start runs about 15 Git processes, and `end` latency now that it computes a manifest; and a handoff on a host without a conversation id, such as Claude Code, which finds its units in `trace status` by time alone. Space held by objects a start freshened in the last hour returns at the first prune after that hour, as S5's second criterion has it.
 - Docs step from 5bd0cff: D001 gained the details this plan settled, among them the `canon` skill's paragraph in its Text budget, plus `trace.md` in its `paths`, `implemented: 2` and status `active`. `canon.py`, its tests, the skill texts and the README stay outside its `paths`, as the Notes say.
+- Correction after the plan was done: the user reported that S2's stall came from the laptop being closed overnight. Limiting the resumed worker to the sandbox with a timeout played no part, so the Notes' sandbox and timeout rule for workers rested on a misread cause.
