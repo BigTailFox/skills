@@ -2,13 +2,13 @@
 status: active
 created: 2026-10-15
 updated: 2026-10-21
-revision: 4
+revision: 5
 modules: [canon]
 summary: Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions.
 refs: []
 owns: [skill-telemetry]
 paths: [skills/governance/canon/trace.md]
-reviewed: 4
+reviewed: 5
 reviewers: [claude-opus-5.5]
 implemented: 4
 ---
@@ -86,7 +86,7 @@ Each call runs the project's `canon.py`. `<skill>` is the directory of the `SKIL
 - `canon-investigate`, when opening the investigation: `trace start investigate <I id> --skill <skill> --model <model>`. After Phase 6: `trace end <id> <outcome>`.
 - `canon-review`, after Create the doc: `trace start canon-review <R id> --skill <skill> --model <model>`. After Close: `trace end <id> <outcome>`.
 - `canon-retro`: the end check opens with `trace start end-check --skill <skill> --model <model> [--parent <parent>]` and closes with `trace end <id> quiet|raised`; a requested retro opens with `trace start retro --skill <skill> --model <model>` and closes with `trace end <id> <outcome>`.
-- `canon-handoff`, after writing the handoff file: `trace end <id> handoff` for each unit this conversation left open; an L0 `implement` unit waiting on a spec change ends `escalated --to L1` instead.
+- `canon-handoff`, after writing the handoff file: `trace end <id> handoff` for each unit this conversation left open; an L0 `implement` unit waiting on a spec change ends `escalated --to L1` instead. A gate or code review ended here passes the `--dir` and `--input -` of its own end, with each finding not yet disposed as `escalated`; `trace.md` states this, and the skill's call site points to it, having no room for more. The session that continues the review traces nothing more of it.
 
 ### Switch and storage
 
@@ -177,7 +177,7 @@ After merging the findings, any confirmation round and the user's answers that t
 - `role`: `same-model` or `cross-family` in a gate; `spec`, `standards` or `cross-family` in a code review.
 - `model`: the reviewer's model id, as a gate writes it to the doc's `reviewers`; a run the user made has `manual:` before it. `id`: the agent id kept for the confirmation round, or the session id a command run reports, such as `codex exec`'s; null for a manual run. `model` and a non-null `id` are each one line of at most 200 characters.
 - One entry per merged finding. `by` lists every reviewer finding merged into it as `<role>:<F-id>`; `severity` is the highest among them; in a code review, `axis` is `spec` or `standards`.
-- `disposition`: `accepted` (fixed in this work, including by a design revision the user decided on), `declined`, `escalated` (still awaiting the user at `end`) or `deferred` (left for later by the user's decision, and tracked as the `canon` workflow's review gate and code review say), in a gate as in a code review.
+- `disposition`: `accepted` (fixed in this work, including by a design revision the user decided on), `declined`, `escalated` (still awaiting the user at `end`, as is any finding not yet disposed when a handoff ends the review) or `deferred` (left for later by the user's decision, and tracked as the `canon` workflow's review gate and code review say), in a gate as in a code review.
 - `confirmed`: `resolved` or `not-resolved` for a finding sent to the confirmation round, absent otherwise. `new_blockers`: the blockers that round reported as new, 0 without a round.
 
 ### Review files
@@ -230,6 +230,7 @@ Rules:
 - Write `unknown` for what a host does not record, never an estimate.
 - List the cases behind every number with their unit ids and record locations.
 - Start with the projects read, the lines skipped, the open and incomplete units, and a reminder that untraced work is unknown, not absent.
+- A gate or code review that ended `handoff` is incomplete: list it with its dispositions so far, and leave it out of questions 1 to 3 and of replay scoring, since another session settles the rest untraced.
 
 ### Replay
 
@@ -288,7 +289,7 @@ If capture falls short, it is fixed before the report is built.
 Measured in the pilot.
 
 - Calls: two per unit except a slice, which takes one; one per skill invocation when tracing is off.
-- Text: at most 40 tokens per call site in a skill; at most 110 for the `canon` skill's paragraph on the placeholders and the first-start rule, read whether tracing is on or off; `trace.md` at most 400 tokens, read only when tracing is on.
+- Text: at most 40 tokens per call site in a skill; at most 110 for the `canon` skill's paragraph on the placeholders and the first-start rule, read whether tracing is on or off; `trace.md` at most 420 tokens, read only when tracing is on.
 - Latency: `start` and `end` p95 under 300 ms on a local disk, including a snapshot of a 20,000-file checkout and the digests of 20 skill directories of 1 MiB in total; a checkout's first snapshot, which copies the whole tree, is exempt.
 - Size: 16 KiB per line, 2 MiB per archive, 10 MiB of untracked and unstaged files per snapshot, 64 KiB per `snapshot-error.txt`, which keeps the end of Git's message.
 
@@ -307,6 +308,7 @@ Measured in the pilot.
 - A slice records only its start: its commit, or the plan's Log, already records its end and outcome.
 - Children name their parent, and `end` names its unit, by the id `start` printed: exact even when sessions share a checkout, for a few tokens per call, and `trace status` recovers an id lost to compaction.
 - Review files are archived when each review ends: `.canon/canon-blind-review/` is scratch space, and the next review of a topic overwrites it.
+- A review handed off part-way is not traced further: the next session has no open unit to end, linking the two parts would take another field and call site, and handoffs inside a review are rare. Its `handoff` end keeps the archive and the dispositions so far, and the analysis sets it aside as incomplete.
 - Version exposure comes from content digests mapped to source commits: release numbers and lock hashes do not show the content loaded, and source checkouts are often uncommitted.
 - Skill versions are stored with the snapshots: a `local` digest matches no commit, and without its files the version a change replaced could not be replayed.
 - Tokens come from host records, offline: no host offers a portable runtime source, and Codex records them locally.
@@ -314,9 +316,3 @@ Measured in the pilot.
 - Replays judge skill changes, and real work finds problems and checks recurrence: personal volumes cannot support per-version rates.
 - Data is kept until the user prunes or deletes it: a baseline at personal volume can take months.
 - Evidence feeds human-reviewed experiments, never automatic skill changes.
-
-## Known issues
-
-| ID | Severity | Issue | Source | Since | Next |
-|----|----------|-------|--------|-------|------|
-| D001-K1 | minor | `canon-handoff` ends an open gate or code review without `--dir` and `--input`, so a review still awaiting the user's answers loses its dispositions and archive | D001 gate | 2026-10-21 | decide |
