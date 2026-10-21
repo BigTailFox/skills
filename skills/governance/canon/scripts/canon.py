@@ -27,7 +27,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "12"
+CANON_VERSION = "13"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -60,6 +60,8 @@ INT_FIELDS = {"revision", "reviewed", "implemented"}
 SEVERITIES = ("blocker", "major", "minor")
 DISPOSITIONS = ("open", "fixed", "moved", "declined")
 SLICE_STATUSES = ("todo", "in-progress", "done", "paused")
+ISSUES_SECTION = "Known issues"
+NEXT_STEPS = ("decide", "fix", "L1", "L2")
 SETUP_LABELS = ("Commit", "Environment", "Command")
 SOURCES_LABEL = "Sources"
 RESOLUTION_LABELS = ("Root cause", "Fix", "Verification")
@@ -637,8 +639,10 @@ def index_block(repo, root, archived, base_dir):
             continue
         lines += ["### " + TYPES[letter]["dir"].capitalize(), ""]
         for d in group:
-            parts = ["- [{}: {}]({})".format(d.id, d.title or "?", posix_rel(d.path, base_dir)),
-                     d.status, str(d.get("summary", "") or "?")]
+            label = issue_label(d)
+            parts = ["- [{}: {}]({})".format(d.id, d.title or "?", posix_rel(d.path, base_dir)), d.status]
+            parts += [label] if label else []
+            parts.append(str(d.get("summary", "") or "?"))
             if d.as_list("owns"):
                 parts.append("owns: " + ", ".join(d.as_list("owns")))
             if d.as_list("modules"):
@@ -738,6 +742,9 @@ def terminal_problems(doc, status=None):
         for fid, _sev, disp in review_findings(doc)[0]:
             if disp.split(" ", 1)[0] == "open":
                 out.append("finding {} is still open".format(fid))
+    if doc.type == "D":
+        out += ["known issue {} is still listed; move it to the design that takes over, or remove it".format(row[0])
+                for row in known_issues(doc)[0]]
     if doc.type == "E":
         labels = doc.labels("Setup")
         if not labels.get(SOURCES_LABEL):
@@ -754,20 +761,69 @@ def terminal_problems(doc, status=None):
     return out
 
 
-def review_findings(doc):
-    findings, errors = [], []
-    for line in doc.section("Findings") or []:
+def id_table(doc, section, name, letter, columns):
+    """The rows of the table under `section` whose first cell is an id `<doc id>-<letter><n>`, followed by
+    `columns`, each as its list of cells; cells beyond those are ignored. Also an error for each row that does not
+    fit."""
+    rows, errors = [], []
+    for line in doc.section(section) or []:
         if not line.strip().startswith("|"):
             continue
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
         first = cells[0]
         if first.lower() == "id" or (first and set(first) <= set("-: ")):
             continue
-        if not re.match(r"^{}-F\d+$".format(re.escape(doc.id)), first) or len(cells) < 4:
-            errors.append("finding row must be | {}-F<n> | severity | finding | disposition |".format(doc.id))
+        if not re.match(r"^{}-{}\d+$".format(re.escape(doc.id), letter), first) or len(cells) <= len(columns):
+            errors.append("{} row must be | {}-{}<n> | {} |".format(name, doc.id, letter, " | ".join(columns)))
             continue
-        findings.append((first, cells[1], cells[3]))
-    return findings, errors
+        rows.append(cells[:len(columns) + 1])
+    return rows, errors
+
+
+def id_row_problems(rows, name):
+    """Duplicate ids and unknown severities among rows that start with an id and a severity."""
+    out, seen = [], set()
+    for row in rows:
+        if row[0] in seen:
+            out.append("duplicate {} id {}".format(name, row[0]))
+        seen.add(row[0])
+        if row[1] not in SEVERITIES:
+            out.append("{} severity must be one of {}".format(row[0], ", ".join(SEVERITIES)))
+    return out
+
+
+def review_findings(doc):
+    rows, errors = id_table(doc, "Findings", "finding", "F", ("severity", "finding", "disposition"))
+    return [(row[0], row[1], row[3]) for row in rows], errors
+
+
+def known_issues(doc):
+    """(id, severity, issue, source, since, next) for each row of a design's Known issues table, and the problems
+    of the rows that do not fit it."""
+    return id_table(doc, ISSUES_SECTION, "known issue", "K", ("severity", "issue", "source", "since", "next"))
+
+
+def issue_label(doc):
+    """How many known issues a design lists, as `2 known issues`; empty when it lists none."""
+    count = len(known_issues(doc)[0]) if doc.type == "D" else 0
+    return counted(count, "known issue", "known issues") if count else ""
+
+
+def issue_rows_only(old, new):
+    """Whether a design's change from text `old` to `new` lies in its Known issues table alone, blank lines,
+    `updated` and `refs` aside: such a change does not check the design against its code."""
+    def split(text):
+        lines = text.split("\n")
+        heads = scan_headings(lines)
+        start = next((h for h in heads if h.level == 2 and h.text == ISSUES_SECTION), None)
+        end = next((h.line for h in heads if start and h.line > start.line and h.level <= 2), len(lines))
+        table = lines[start.line:end] if start else []
+        rest = lines[:start.line] + lines[end:] if start else lines
+        return [line for line in rest if line.strip() and not line.startswith(("updated:", "refs:"))], table
+
+    old_rest, old_table = split(old)
+    new_rest, new_table = split(new)
+    return old_rest == new_rest and old_table != new_table
 
 
 def plan_designs(doc):
@@ -893,6 +949,21 @@ def check_doc(repo, doc, changed, strict=False):
             rx = glob_regex(pattern)
             if not any(rx.match(f) for f in files):
                 repo.problem("WARN", rel, "`paths` entry `{}` matches no file".format(pattern))
+        issues, errors = known_issues(doc)
+        for msg in errors + id_row_problems(issues, "known issue"):
+            err(msg)
+        if not issues and not errors and doc.section(ISSUES_SECTION) is not None:
+            repo.problem("WARN", rel, "`## {}` lists no issue; delete the section".format(ISSUES_SECTION))
+        for kid, _severity, issue, source, since, next_step in issues:
+            if not issue or not source:
+                err("{} needs the issue and its source".format(kid))
+            recorded = parse_date(since) if DATE_RE.match(since) else None
+            if recorded is None:
+                err("{} since must be the date it was recorded, YYYY-MM-DD".format(kid))
+            elif recorded > datetime.date.today():
+                err("{} since {} is later than today".format(kid, since))
+            if next_step not in NEXT_STEPS:
+                err("{} next must be one of {}".format(kid, ", ".join(NEXT_STEPS)))
     if doc.type == "P":
         for name, state in plan_slices(doc):
             if state not in SLICE_STATUSES:
@@ -910,15 +981,9 @@ def check_doc(repo, doc, changed, strict=False):
                              .format(entry, design.id, design.revision))
     if doc.type == "R":
         findings, errors = review_findings(doc)
-        for msg in errors:
+        for msg in errors + id_row_problems(findings, "finding"):
             err(msg)
-        seen = set()
-        for fid, severity, disposition in findings:
-            if fid in seen:
-                err("duplicate finding id " + fid)
-            seen.add(fid)
-            if severity not in SEVERITIES:
-                err("{} severity must be one of {}".format(fid, ", ".join(SEVERITIES)))
+        for fid, _severity, disposition in findings:
             word, _, arg = disposition.partition(" ")
             if word not in DISPOSITIONS:
                 err("{} disposition must start with one of {}".format(fid, ", ".join(DISPOSITIONS)))
@@ -1592,7 +1657,7 @@ def remap_ids(doc, text, pick, own=None):
     if own:
         old, new = own
         text = re.sub(r"^# {}:".format(re.escape(old)), "# {}:".format(new), text, count=1, flags=re.M)
-        text = re.sub(r"\b{}-F(\d+)\b".format(re.escape(old)), new + r"-F\1", text)
+        text = re.sub(r"\b{}-([FK])(\d+)\b".format(re.escape(old)), new + r"-\1\2", text)
     return text
 
 
@@ -1625,15 +1690,20 @@ def cmd_show(repo, args):
     return 0
 
 
-def lead_note(doc):
-    implemented = doc.get("implemented")
-    if doc.type == "D" and isinstance(implemented, int) and implemented < doc.revision:
-        return " [spec r{} leads code r{}]".format(doc.revision, implemented)
-    return ""
+def design_notes(doc):
+    """Notes on a design that whoever works from it needs first: a spec that leads the code, known issues."""
+    if doc.type != "D":
+        return ""
+    notes, implemented, label = "", doc.get("implemented"), issue_label(doc)
+    if isinstance(implemented, int) and implemented < doc.revision:
+        notes += " [spec r{} leads code r{}]".format(doc.revision, implemented)
+    if label:
+        notes += " [{}]".format(label)
+    return notes
 
 
 def doc_line(doc):
-    return "{} {} {} - {}{}".format(doc.id, doc.status, doc.rel, doc.get("summary", ""), lead_note(doc))
+    return "{} {} {} - {}{}".format(doc.id, doc.status, doc.rel, doc.get("summary", ""), design_notes(doc))
 
 
 def cmd_find(repo, args):
@@ -1663,7 +1733,7 @@ def cmd_which(repo, args):
         if not hits:
             print("{}: no design".format(rel))
         for doc in hits:
-            print("{}: {} {} - {}{}".format(rel, doc.id, doc.rel, doc.get("summary", ""), lead_note(doc)))
+            print("{}: {} {} - {}{}".format(rel, doc.id, doc.rel, doc.get("summary", ""), design_notes(doc)))
     return 0
 
 
@@ -1687,9 +1757,15 @@ def cmd_affected(repo, args):
 
 
 def unchecked_commits(repo, doc):
-    """The last commit that changed a design's file, and the later commits touching its `paths` whose
-    `Refs:` trailers do not name it."""
-    base = (git(repo.root, "log", "-1", "--format=%H", "--", doc.rel) or "").strip()
+    """The last commit that changed a design's file beyond its Known issues table, and the later commits touching
+    its `paths` whose `Refs:` trailers do not name it."""
+    base = None
+    for sha in (git(repo.root, "log", "--format=%H", "--", doc.rel) or "").split():
+        old = git(repo.root, "show", "{}^:{}".format(sha, doc.rel))
+        new = git(repo.root, "show", "{}:{}".format(sha, doc.rel))
+        if old is None or new is None or not issue_rows_only(old, new):
+            base = sha
+            break
     if not base:
         return None, []
     specs = []
@@ -1722,6 +1798,17 @@ def cmd_audit(repo, args):
                       "(most first; review `git log <since>..HEAD` on its paths):")
         for count, base, doc in sorted(stale, key=lambda x: -x[0]):
             report.append("  {} commits since {}  {}".format(count, base[:12], doc_line(doc)))
+    issues = []
+    for doc in repo.docs:
+        if doc.type == "D" and not doc.archived:
+            for kid, severity, issue, _source, since, next_step in known_issues(doc)[0]:
+                key = (parse_date(since) or datetime.date.max, doc.sort_key(), int(kid.rsplit("K", 1)[1]))
+                issues.append((key, kid, severity, issue, next_step))
+    if issues:
+        report.append("Known issues, oldest first (`show <design>#known-issues` has their sources):")
+        for key, kid, severity, issue, next_step in sorted(issues):
+            age = "?" if key[0] == datetime.date.max else (now - key[0]).days
+            report.append("  {} {}, {} days, next {}: {}".format(kid, severity, age, next_step, issue))
     idle = []
     for doc in repo.docs:
         updated = parse_date(doc.get("updated"))
@@ -1757,8 +1844,7 @@ TOP_LEVEL_KINDS = TRACE_KINDS[:6]
 OUTCOMES = ("delivered", "blocked", "handoff", "cancelled")
 KIND_OUTCOMES = {"implement": OUTCOMES + ("partial", "escalated"), "end-check": ("quiet", "raised")}
 REVIEW_ROLES = {"gate": ("same-model", "cross-family"), "code-review": ("spec", "standards", "cross-family")}
-REVIEW_DISPOSITIONS = {"gate": ("accepted", "declined", "escalated"),
-                       "code-review": ("accepted", "declined", "escalated", "deferred")}
+REVIEW_DISPOSITIONS = ("accepted", "declined", "escalated", "deferred")
 FINDING_ID_RE = re.compile(r"F[1-9][0-9]*")
 UNIT_RE = re.compile(r"^\d{8}T\d{6}Z-[0-9a-f]{6}$")
 UNIT_TIME_FORMAT = "%Y%m%dT%H%M%SZ"
@@ -2410,8 +2496,7 @@ def check_dispositions(kind, dispositions):
                                                    and FINDING_ID_RE.fullmatch(ref.partition(":")[2]) for ref in by),
                where + ".by", "a non-empty list of <role>:F<n>, each naming a listed reviewer")
         expect(finding["severity"] in SEVERITIES, where + ".severity", " or ".join(SEVERITIES))
-        expect(finding["disposition"] in REVIEW_DISPOSITIONS[kind], where + ".disposition",
-               " or ".join(REVIEW_DISPOSITIONS[kind]))
+        expect(finding["disposition"] in REVIEW_DISPOSITIONS, where + ".disposition", " or ".join(REVIEW_DISPOSITIONS))
         if review:
             expect(finding["axis"] in ("spec", "standards"), where + ".axis", "spec or standards")
         if "confirmed" in finding:
@@ -2714,7 +2799,8 @@ def main(argv=None):
     p.add_argument("--base", help="include changes since the merge base with this ref")
     p.set_defaults(func=cmd_affected)
 
-    p = sub.add_parser("audit", help="report designs with unchecked code commits, idle open docs, and due reviews")
+    p = sub.add_parser("audit", help="report designs with unchecked code commits, known issues, idle open docs, and "
+                                     "due reviews")
     p.add_argument("--days", type=int, default=30, help="idle threshold (default 30)")
     p.add_argument("--review-after", type=int, default=5, help="finished plans before a review is due (default 5)")
     p.add_argument("--review-commits", type=int, default=50,

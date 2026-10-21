@@ -44,15 +44,17 @@ Issue the calls together, in the foreground: a Spec reviewer and a Standards rev
 
 **Standards brief**: "Report, per file or hunk, (a) every violation of a stated standard, citing the doc and rule; (b) baseline smells, named and quoted. Stated-standard breaches can be hard violations; baseline smells are always judgement calls, and a stated standard overrides the baseline. Skip anything tooling enforces."
 
+Both briefs end with: "Report a problem a design lists as a known issue only when it is worse than the entry says, naming the entry."
+
 ## 5. Report
 
-Present the findings under `## Spec` and `## Standards`, verbatim or lightly cleaned, and an L2 cross-family report after them under `## Cross-family (<model>)`. Keep the axes apart instead of merging or reranking across them: a change can pass one and fail the other, and separate reports stop one from masking the other. End with one line per axis: finding count and the worst finding.
+Present the findings under `## Spec` and `## Standards`, verbatim or lightly cleaned, and an L2 cross-family report after them under `## Cross-family (<model>)`. Keep the axes apart instead of merging or reranking across them: a change can pass one and fail the other, and separate reports stop one from masking the other. End with one line per axis: finding count and the worst finding. A design problem goes in the same report, with the fix you propose and its tier, so the user decides on everything at once.
 
 ## 6. Dispose
 
 - Fix findings in the change, then re-run the checks the fix touched. When blocker or major fixes changed the code, the reviewers that raised them confirm the fixes once, as the `canon-blind-review` skill's confirmation describes.
-- A finding the user defers to later work goes into an R doc: `canon.py new R <slug>`, Scope naming the fixed point, `HEAD` and the axes, one row per deferred finding with disposition `open`.
-- A finding that shows the design itself is wrong is a design problem: follow the `canon` skill's workflow (Design problems).
+- A finding the user defers becomes a known issue of the design governing its code (`canon.py which`), with source `code review <HEAD commit>`, as the `canon` skill's doc types define; when no design governs it, an Idea in the module's backlog concept (`canon.py find backlog`, else `canon.py new C <module>-backlog`).
+- A finding that shows the design itself is wrong is a design problem: follow the `canon` skill's workflow (Design problems). The review ends once any revision the user chose has passed its gate.
 - Unless another workflow invoked this review, run the `canon-retro` skill's end check only if this work hit concrete friction in the development infrastructure or the agent workflow that could recur, such as a correction to how you worked, a finding a check could have caught, a command that would not run, a check that failed after you thought you were done, a search that took far too long, or a canon step that got in the way. Use only evidence already in context; do not search for reasons to run it.
 
 Then run `canon.py trace end <id> <outcome> --dir .canon/canon-blind-review/<topic> --input -`, with the dispositions on stdin.

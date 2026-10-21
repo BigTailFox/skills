@@ -30,6 +30,7 @@ _spec.loader.exec_module(canon)
 
 FINDINGS = "## Scope\n\nFixture.\n\n## Findings\n\n| ID | Severity | Finding | Disposition |\n|---|---|---|---|\n{}\n"
 PLAN = "## Current state\n\nNext: S1.\n\n## Slices\n\n### S1: First\n\nStatus: todo\n\n## Notes\n\n{}\n\n## Log\n\nStarted.\n"
+ISSUES = "\n## Known issues\n\n| ID | Severity | Issue | Source | Since | Next |\n|---|---|---|---|---|---|\n{}\n"
 UNIT_TIME_FORMAT = "%Y%m%dT%H%M%SZ"
 
 
@@ -97,6 +98,9 @@ class CanonTest(unittest.TestCase):
             self.ok("index")
         self.git("add", "-A")
         self.git("commit", "-qm", "fixture")
+
+    def issues(self, design, *rows):
+        design.write_text(design.read_text() + ISSUES.format("\n".join(rows)))
 
 
 class ReviewGateTest(CanonTest):
@@ -202,6 +206,13 @@ class RenumberTest(CanonTest):
         self.ok("renumber", "R001", "R002")
         self.ok("check", "--fix")
         self.assertIn("| R002-F1 |", (self.root / "docs/reviews/R002-audit.md").read_text())
+
+    def test_renumbered_design_rewrites_its_known_issue_ids(self):
+        self.issues(self.design(), "| D001-K1 | minor | A gap | P001 gate | 2020-10-01 | fix |")
+        self.commit()
+        self.ok("renumber", "D001", "D002")
+        self.ok("check", "--fix")
+        self.assertIn("| D002-K1 |", (self.root / "docs/designs/D002-area.md").read_text())
 
     def test_renumber_after_a_collision_keeps_unlinked_references(self):
         ours = self.design()
@@ -370,12 +381,111 @@ class AuditTest(CanonTest):
         self.commit()
         self.assertNotIn("D001", self.ok("audit"))
 
+    def test_changing_known_issues_alone_keeps_the_baseline_and_bumping_updated_moves_it(self):
+        design = self.design(created="2020-01-01", updated="2020-01-01")
+        self.commit()
+        self.code_commit("fix: unchecked")
+        self.issues(design, "| D001-K1 | minor | A gap | R001-F1 | 2020-10-01 | fix |")
+        self.commit(check=False)
+        self.assertRegex(self.ok("audit"), r"1 commits since [0-9a-f]+  D001 ")
+        self.set(design, updated=canon.today())
+        self.commit(check=False)
+        self.assertNotIn("commits since", self.ok("audit"))
+
+    def test_a_known_issue_linking_a_design_and_the_removal_of_the_section_keep_the_baseline(self):
+        design = self.design()
+        self.design("other", paths=["lib/**"])
+        self.commit()
+        self.code_commit("fix: unchecked")
+        self.issues(design, "| D001-K1 | minor | Breaks [D002: Other](D002-other.md) | R001-F1 | 2020-10-01 | fix |")
+        self.commit()
+        self.assertIn("refs: [D002]", design.read_text())
+        self.assertRegex(self.ok("audit"), r"1 commits since [0-9a-f]+  D001 ")
+        design.write_text(design.read_text().split("\n## Known issues")[0] + "\n\n")
+        self.commit()
+        self.assertRegex(self.ok("audit"), r"1 commits since [0-9a-f]+  D001 ")
+
     def test_idle_docs_skip_concepts(self):
         self.doc("C", "backlog", created="2020-01-01", updated="2020-01-01")
         self.doc("I", "flaky", created="2020-01-01", updated="2020-01-01")
         out = self.ok("audit")
         self.assertIn("I001", out)
         self.assertNotIn("C001", out)
+
+
+class KnownIssuesTest(CanonTest):
+    K1 = "| D001-K1 | major | Retry contradicts the queue limit | P001 gate | 2020-10-01 | decide |"
+    K2 = "| D001-K2 | minor | Log lines lack the unit id | code review 3f9a1c2 | 2020-10-02 | fix |"
+
+    def test_check_accepts_well_formed_known_issues_and_reports_each_malformed_row(self):
+        design = self.design()
+        self.issues(design, self.K1, self.K2)
+        self.ok("check", "--fix")
+        self.issues(self.design("other"),
+                    "| D002-K1 | blocker | No plan can meet the budget | R001-F2 | 2020-10-03 | L2 |",
+                    "| D001-K3 | minor | Another design's id | R001-F3 | 2020-10-03 | fix |",
+                    "| D002-K2 | critical | Unknown severity | R001-F4 | 2020-10-03 | fix |",
+                    "| D002-K3 | minor | No source |  | 2020-10-03 | fix |",
+                    "| D002-K4 | minor | Not a date | R001-F5 | 2020-13-03 | fix |",
+                    "| D002-K5 | minor | Unknown next step | R001-F6 | 2020-10-03 | later |",
+                    "| D002-K1 | minor | Reused id | R001-F7 | 2020-10-03 | L1 |",
+                    "| D002-K6 | minor | No next step | R001-F8 | 2020-10-03 |",
+                    "| D002-K7 | minor | A trailing cell is ignored | R001-F9 | 2020-10-03 | fix | note |")
+        out = self.fails("check", "--fix")
+        self.assertNotIn("D001-area.md", out)
+        self.assertNotIn("D002-K7", out)
+        self.assertEqual(out.count("known issue row must be | D002-K<n> | severity | issue | source | since | next |"),
+                         2)
+        for problem in ("D002-K2 severity must be one of blocker, major, minor",
+                        "D002-K3 needs the issue and its source",
+                        "D002-K4 since must be the date it was recorded",
+                        "D002-K5 next must be one of decide, fix, L1, L2",
+                        "duplicate known issue id D002-K1"):
+            self.assertIn(problem, out)
+
+    def test_the_index_and_the_design_listings_count_known_issues(self):
+        self.issues(self.design(), self.K1, self.K2)
+        self.issues(self.design("other"), "| D002-K1 | minor | A gap | P001 gate | 2020-10-01 | fix |")
+        self.ok("check", "--fix")
+        index = (self.root / "docs/README.md").read_text()
+        self.assertRegex(index, r"\(designs/D001-area\.md\) · active · 2 known issues · Fixture")
+        self.assertRegex(index, r"\(designs/D002-other\.md\) · active · 1 known issue · Fixture")
+        self.assertIn("D001 docs/designs/D001-area.md - Fixture [2 known issues]", self.ok("which", "src/base.py"))
+        self.assertIn(" - Fixture [1 known issue]", self.ok("find", "D002"))
+        self.assertIn("D001 active docs/designs/D001-area.md - Fixture [2 known issues]",
+                      self.ok("affected", "src/base.py"))
+
+    def test_check_rejects_a_future_date_and_warns_on_a_section_without_issues(self):
+        later = datetime.date.today() + datetime.timedelta(days=1)
+        self.issues(self.design(), "| D001-K1 | minor | Not yet | R001-F1 | {} | fix |".format(later))
+        self.issues(self.design("other"), "")
+        out = self.fails("check")
+        self.assertIn("D001-K1 since {} is later than today".format(later), out)
+        self.assertIn("D002-other.md: `## Known issues` lists no issue; delete the section", out)
+
+    def test_audit_lists_known_issues_oldest_first_with_their_age(self):
+        day = datetime.date.today()
+        self.issues(self.design(), "| D001-K1 | minor | Newer | P001 gate | {} | fix |".format(
+            day - datetime.timedelta(days=3)))
+        self.issues(self.design("other"), "| D002-K1 | major | Older | R001-F2 | {} | decide |".format(
+            day - datetime.timedelta(days=40)))
+        self.assertIn("  D002-K1 major, 40 days, next decide: Older\n  D001-K1 minor, 3 days, next fix: Newer\n",
+                      self.ok("audit"))
+
+    def test_a_design_cannot_be_archived_while_it_lists_known_issues(self):
+        design = self.design()
+        self.issues(design, self.K1)
+        self.commit()
+        self.assertIn("known issue D001-K1 is still listed", self.fails("archive", "D001", "retired"))
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_check_reports_an_archived_design_that_lists_known_issues(self):
+        self.design()
+        self.commit()
+        self.ok("archive", "D001", "retired")
+        archived = next((self.root / "docs").rglob("D001-area.md"))
+        self.issues(archived, self.K1)
+        self.assertIn("known issue D001-K1 is still listed", self.fails("check"))
 
 
 class InitTest(CanonTest):
@@ -1024,7 +1134,8 @@ class DispositionsTest(TraceCase):
             "findings": [{"by": ["same-model:F1", "cross-family:F2"], "severity": "major", "disposition": "accepted",
                           "confirmed": "resolved"},
                          {"by": ["cross-family:F1"], "severity": "blocker", "disposition": "escalated"},
-                         {"by": ["same-model:F2"], "severity": "minor", "disposition": "declined"}],
+                         {"by": ["same-model:F2"], "severity": "minor", "disposition": "declined"},
+                         {"by": ["same-model:F3"], "severity": "major", "disposition": "deferred"}],
             "new_blockers": 0}
     CODE_REVIEW = {"reviewers": [{"role": "spec", "model": "claude-opus-5.5", "id": "b71e09d2"},
                                  {"role": "standards", "model": "claude-opus-5.5", "id": "c03d5a7f"},
@@ -1078,7 +1189,6 @@ class DispositionsTest(TraceCase):
                    (gate, self.changed(self.GATE, lambda d: d["findings"][0].update(severity="critical"))),
                    (gate, self.changed(self.GATE, lambda d: d["findings"][0].update(disposition="fixed"))),
                    (gate, self.changed(self.GATE, lambda d: d["findings"][0].update(confirmed="partly"))),
-                   (gate, self.changed(self.GATE, lambda d: d["findings"][2].update(disposition="deferred"))),
                    (gate, self.changed(self.GATE, lambda d: d["findings"][0].update(axis="spec"))),
                    (review, self.changed(self.CODE_REVIEW, lambda d: d["findings"][0].pop("axis"))),
                    (gate, self.changed(self.GATE, lambda d: d.update(new_blockers=-1))),

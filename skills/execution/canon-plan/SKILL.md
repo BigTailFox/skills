@@ -27,7 +27,7 @@ Draft the whole plan yourself before asking anything:
 
 Then settle what the draft leaves open with the `canon-grill` skill: slice boundaries, order, seams and risk. Write each answer into the plan at once.
 
-When drafting or the gate finds a design problem, as when a slice would have to change what the design states, follow the `canon` skill's workflow (Design problems); the slices it touches wait for the revised design.
+When drafting or the gate finds a design problem, as when a slice would have to change what the design states or depends on a known issue no slice fixes, follow the `canon` skill's workflow (Design problems); the slices it touches wait for the user's decision and any revision it brings.
 
 ## 3. Gate
 

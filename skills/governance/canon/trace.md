@@ -15,5 +15,5 @@ With `--input -`, a gate's or code review's `end` reads its dispositions from st
 - Roles: same-model and cross-family in a gate; spec, standards and cross-family in a code review, whose findings add `axis`, spec or standards.
 - `model` as in `reviewers`, `id` from `<role>-id.txt`; a user-run review has `manual:<model>` and a null `id`.
 - A finding merges reviewer findings: `by` lists them all, `severity` is the highest.
-- `disposition`: accepted (fixed), declined, escalated (still awaiting the user), or deferred (to an R doc, code review only).
+- `disposition`: accepted (fixed), declined, escalated (still awaiting the user), or deferred (by the user, tracked for later).
 - `confirmed`: resolved or not-resolved, only on findings sent to confirmation. `new_blockers`: new blockers it reported, else 0.

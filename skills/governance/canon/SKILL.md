@@ -23,7 +23,7 @@ Execute `canon.py`; do not read it. Use the project's copy at the path named in 
 | `find WORDS [--archived]` | Search ids, titles, summaries, owned topics, modules and headings. |
 | `which FILE...` | List the designs whose `paths` govern the files. |
 | `affected [--base REF]` | Designs and plans governing the uncommitted (or branch) changes. |
-| `audit` | Designs with code commits since the design last changed that no `Refs:` trailer names, idle open docs other than concepts, due reviews. |
+| `audit` | Designs with code commits since the design last changed that no `Refs:` trailer names, known issues oldest first, idle open docs other than concepts, due reviews. |
 | `init`, `adopt` | Project setup, upgrades and migration; the user runs them through the `canon-init` skill. |
 
 In `trace` calls, `<skill>` is the path of the followed `SKILL.md`'s directory (a gate's is `canon-blind-review`'s, else `canon`'s), `<model>` your model id as the host names it, and `<parent>` the invoking workflow's open unit id, if any. Unless a skill's first `start` prints `trace <id>`, skip its other trace calls; else follow [trace.md](trace.md), using that `<id>`.
@@ -31,6 +31,7 @@ In `trace` calls, `<skill>` is the path of the followed `SKILL.md`'s directory (
 ## Reading docs
 
 - When a change may alter behavior or standards a design specifies, run `which <file>` and read the governing sections with `show ID#slug` first. Read a whole doc only when you are writing it.
+- Read the known issues of each design you work from (`show D00X#known-issues`; `which`, `find` and `affected` count them). An issue the work depends on is a [design problem](workflow.md#design-problems) unless the work fixes it, and the change that resolves an issue deletes its row.
 - Look topics up with `find`; `docs/README.md` is the generated index.
 - Skip `docs/archived/` unless researching history (`find --archived`).
 - A design is the source of truth. A plan records progress and history; when they disagree, the design wins. A flaw in the design itself is a [design problem](workflow.md#design-problems).

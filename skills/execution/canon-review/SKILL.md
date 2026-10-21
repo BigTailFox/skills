@@ -27,7 +27,7 @@ Spawn one subagent per angle, in parallel, in the foreground. Each brief carries
 
 - The scope: commit, module paths, and the governing designs (`which`, `show`), the architecture design and the relevant `AGENTS.md` files to read.
 - The angle's reference pasted in full: [architecture.md](architecture.md), [performance.md](performance.md), [security.md](security.md), [functional.md](functional.md), [usability.md](usability.md).
-- The rules: modify no file. Skip anything a design's Decision line already rejected unless the friction is severe enough to reopen it, and then name the Decision. Replace secrets with `<REDACTED>`.
+- The rules: modify no file. Skip anything a design's Decision line already rejected unless the friction is severe enough to reopen it, and then name the Decision. Report a problem a design lists as a known issue only when it is worse than the entry says, naming the entry. Replace secrets with `<REDACTED>`.
 - The output: every blocker and major finding and at most 10 minor ones, most severe first. Each has a title, location (files, design sections), problem, evidence, suggestion, and severity `blocker`, `major` or `minor`. Keep each finding as short as it can be while a reader can understand and verify it without redoing the review.
 
 ## 4. Report
@@ -43,9 +43,9 @@ Sort the findings first. **Fixable now** means an L0 fix, or an L1 change inside
 Take the findings to the user in rounds with the `canon-grill` skill. Present the fixable ones with their plans and ask which to fix now; every other finding, and each fixable one the user does not take, gets one of the other dispositions:
 
 - **Fix now** (an approved plan): build it through its tier's flow, L0 with `canon-tdd` and `canon-code-review`, L1 by revising the design and passing the review gate (same-model reviewer) first. Run the docs step, commit each fix on its own, and set `fixed <commit>`.
-- **Needs a spec change**: set `moved D00X` to the design that will carry it, or `moved P00X` when a plan covers it, and give the user the next phase's command (`/canon-design D00X` or `/canon-plan D00X`).
+- **Needs a spec change**: record it as a known issue of the design that will carry it, source `R00X-F<n>` and next `L1` or `L2`, and set `moved D00X`; or set `moved P00X` when a plan covers it. Give the user the next phase's command (`/canon-design D00X` or `/canon-plan D00X`).
 - **A defect**: create an investigation (`canon.py new I <slug>`) and set `moved I00X`.
-- **Later**: add it as an Idea to the module's backlog concept (`canon.py find backlog`, else `canon.py new C <module>-backlog`) and set `moved C00X`.
+- **Later**: a defect in code a design governs becomes a known issue of that design, source `R00X-F<n>` and next `fix`, with `moved D00X`; anything else becomes an Idea in the module's backlog concept (`canon.py find backlog`, else `canon.py new C <module>-backlog`), with `moved C00X`.
 - **Rejected**: set `declined <reason>`. When the reason is lasting and the idea likely to return, add a one-line Decision to the owning design so later reviews skip it.
 
 Before deciding on an architecture candidate, the user may explore it: walk it with `canon-grill` and design alternative interfaces with the `canon-codebase-design` skill.

@@ -27,6 +27,7 @@ Walk the design tree with the `canon-grill` skill: goals, then interfaces, behav
 - **Stress-test with scenarios.** Invent concrete cases that probe the boundaries between concepts and force precise answers.
 - **Cross-check the code.** When the user states how something works, verify it; surface any contradiction.
 - **Design interfaces** with the `canon-codebase-design` vocabulary. When an interface's shape is contested, use its design-it-twice pattern.
+- **Settle known issues.** When revising a design, take each known issue the revision touches through the interview, and delete the rows the revision resolves.
 - **Write as you go.** Put each settled decision into Goals, Spec, Budgets or Decisions the moment it is settled. Fill `summary`, `modules`, `owns`, `paths` and `refs` as they become clear.
 
 The interview is done when the frontier is empty and every guidance comment is replaced.

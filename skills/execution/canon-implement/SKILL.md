@@ -64,7 +64,7 @@ A worker is a new general-purpose subagent from the host's own tool, never a for
 2. Run the docs step from the `canon` skill's workflow with `--base <Started at>`, so it covers the committed slices. It sets the design's `implemented`, archives the plan as `done` once every slice is done, then commits.
 3. Run the `canon-retro` skill's end check only if this work hit concrete friction in the development infrastructure or the agent workflow that could recur, such as a correction to how you worked, a finding a check could have caught, a command that would not run, a check that failed after you thought you were done, a search that took far too long, or a canon step that got in the way. Use only evidence already in context; do not search for reasons to run it.
 4. Run `canon.py trace end <id> <outcome>`.
-5. Report: slices done, every paused slice with its problem, the R doc holding deferred findings, and the due-review line when the docs step produced one.
+5. Report: slices done, every paused slice with its problem, the known issues recorded for deferred findings, and the due-review line when the docs step produced one.
 
 ## L1 without a plan
 

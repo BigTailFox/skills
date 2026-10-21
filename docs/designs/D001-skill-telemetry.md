@@ -10,7 +10,7 @@ owns: [skill-telemetry]
 paths: [skills/governance/canon/trace.md]
 reviewed: 4
 reviewers: [claude-opus-5.5]
-implemented: 3
+implemented: 4
 ---
 
 # D001: Skill telemetry with canon trace
@@ -86,7 +86,7 @@ Each call runs the project's `canon.py`. `<skill>` is the directory of the `SKIL
 - `canon-investigate`, when opening the investigation: `trace start investigate <I id> --skill <skill> --model <model>`. After Phase 6: `trace end <id> <outcome>`.
 - `canon-review`, after Create the doc: `trace start canon-review <R id> --skill <skill> --model <model>`. After Close: `trace end <id> <outcome>`.
 - `canon-retro`: the end check opens with `trace start end-check --skill <skill> --model <model> [--parent <parent>]` and closes with `trace end <id> quiet|raised`; a requested retro opens with `trace start retro --skill <skill> --model <model>` and closes with `trace end <id> <outcome>`.
-- `canon-handoff`, after writing the handoff file: `trace end <id> handoff` for each unit this conversation left open, which `trace status` lists; an L0 `implement` unit waiting on a spec change ends `escalated --to L1` instead.
+- `canon-handoff`, after writing the handoff file: `trace end <id> handoff` for each unit this conversation left open; an L0 `implement` unit waiting on a spec change ends `escalated --to L1` instead.
 
 ### Switch and storage
 
@@ -314,3 +314,9 @@ Measured in the pilot.
 - Replays judge skill changes, and real work finds problems and checks recurrence: personal volumes cannot support per-version rates.
 - Data is kept until the user prunes or deletes it: a baseline at personal volume can take months.
 - Evidence feeds human-reviewed experiments, never automatic skill changes.
+
+## Known issues
+
+| ID | Severity | Issue | Source | Since | Next |
+|----|----------|-------|--------|-------|------|
+| D001-K1 | minor | `canon-handoff` ends an open gate or code review without `--dir` and `--input`, so a review still awaiting the user's answers loses its dispositions and archive | D001 gate | 2026-10-21 | decide |
