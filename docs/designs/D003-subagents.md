@@ -2,13 +2,13 @@
 status: active
 created: 2026-10-22
 updated: 2026-10-22
-revision: 1
+revision: 2
 modules: [canon]
 summary: How canon runs reviewers and workers as subagents, new, on the session's model, given only their prompt and resumed by id, and the cross-family reviewer file.
 refs: [D001]
 owns: [subagents]
 paths: [skills/governance/canon/workflow.md, skills/execution/canon-blind-review/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/governance/canon-init/SKILL.md, skills/execution/canon-plan/SKILL.md]
-reviewed: 1
+reviewed: 2
 reviewers: [claude-opus-5.5]
 implemented: 1
 ---
@@ -19,7 +19,7 @@ implemented: 1
 
 1. A reviewer or implementation worker starts with nothing from the session that launches it, so a review stays blind and every slice starts in an empty context window.
 2. Subagents run on the model and reasoning effort the user set for the session; only the cross-family reviewer names its own model.
-3. A subagent is resumed where its context matters: a reviewer judges the fixes against its own findings, and a blocked worker continues with the answer instead of starting over.
+3. A subagent that the workflow continues is resumed whenever the host allows it, so it keeps its context: a reviewer judges the fixes against its own findings, a blocked worker continues with the answer, and a run that stopped finishes instead of starting over.
 4. The cross-family reviewer is set up per machine, so the tools and logins it needs never enter the repository.
 
 ## Spec
@@ -32,7 +32,7 @@ This design covers the subagents of the `canon` workflow, meaning the reviewers 
 - Subagents are launched without a model or effort, so they run on the session's, which the user sets. Only a cross-family reviewer that runs as a host subagent gets a model, the one the reviewer file names. Since every worker runs at the session's effort, `canon-plan` names a plan's slices that carry a `Risk:` line beside its closing command and suggests high reasoning effort for the implementation session.
 - In Claude Code a reviewer is a `general-purpose` or custom subagent, since the built-in Explore and Plan agents cannot be resumed. A worker is a general-purpose subagent.
 - A gate launches its first-round reviewers in parallel, and code review issues its reviewers together, in the foreground. Workers run one at a time, in plan order; work without a plan has no worker.
-- The launching session keeps each subagent's id: a reviewer's agent id, or the session id its command reports, in its review files ([D001§review-files: review files](D001-skill-telemetry.md#review-files)), and each worker's id, to resume it.
+- The launching session keeps each subagent's id: a reviewer's agent id, or the session id its command reports, in its review files ([D001§review-files: review files](D001-skill-telemetry.md#review-files)), and a worker's agent id in `.canon/canon-implement/<P id>/S<n>-id.txt`.
 
 ### Input and reports
 
@@ -49,26 +49,28 @@ This design covers the subagents of the `canon` workflow, meaning the reviewers 
 - **Cross-family reviewer**: the first reviewer in the reviewer file whose model is of another family than the session's. It reviews in the first round of every L2 gate and L2 code review, optionally of an L1 gate, and of any other blind review when the user asks for another family.
 - **Reviewer file**: `.canon/canon-blind-review/reviewer.md`, local to the machine. It lists, in no fixed syntax, one or more reviewers, each with its model and effort, how to run it and what the host needs to run it, such as running outside its sandbox. A reviewer runs either as a shell command with `<prompt>` and `<out>` placeholders that starts a new read-only session and leaves the final review in `<out>`, or as a host subagent with a named model. For a command, the session substitutes the cross-family reviewer's prompt and findings files for `<prompt>` and `<out>`, writes the filled prompt to the first, runs the command in the background from the repo root and reads `<out>` when it finishes.
 - **Setup**: `canon-init` writes the reviewer file, as one step of setting up a project, or alone when the machine has no reviewer file or sessions start on a model family it has no reviewer of another family for. It asks which model families the user's sessions run on, each of which needs a reviewer of another family; for each reviewer, which tool runs it, an agent CLI, which works from every host, or a subagent of their host with a named model; and its model, suggesting the family's flagship, and its reasoning effort. It builds each command from the tool's `--help`, runs it once on a one-line prompt and fixes it until it works, noting what the host needed. It writes the user's preferred reviewer first, so every session of another family than that reviewer's uses it. Without another family it writes no file.
-- **Manual fallback**: when the reviewer file is missing or names no reviewer of another family, or the cross-family reviewer's run fails, the session tells the user why in one line, suggesting `/canon-init` for a missing reviewer, gives the filled prompt in one code block that any tool able to read the repository can run, and waits for the pasted result. It keeps that prompt and result as the cross-family reviewer's files, without an id, and records the reviewer as `manual:<model>`.
+- **Manual fallback**: when the reviewer file is missing or names no reviewer of another family, or the cross-family reviewer's run fails and is not recovered as [Stopped runs](#resuming-and-replacing) describes, the session tells the user why in one line, suggesting `/canon-init` for a missing reviewer, gives the filled prompt in one code block that any tool able to read the repository can run, and waits for the pasted result. It keeps that prompt and result as the cross-family reviewer's files, without an id, and records the reviewer as `manual:<model>`.
 
 ### Resuming and replacing
 
-- **Confirmation**: after accepted blocker or major findings are fixed, the reviewers that raised them confirm the fixes in one round, given only the confirmation prompt of the `canon-blind-review` skill and what this list adds to it. A same-model reviewer, either code review axis included, is resumed by its id: the Task tool's `resume` in Cursor, SendMessage to the agent id in Claude Code. The cross-family reviewer, and a reviewer that cannot be resumed, gets a new run of the same reviewer, given the confirmation prompt followed by its first-round findings. A manual-fallback reviewer's findings are confirmed by the resumed same-model reviewer, given the confirmation prompt followed by those findings, named `cross-family:F<n>`; in a code review, each goes to the resumed reviewer of its axis. There is no further round.
-- **Workers**: a worker blocked on a question that the session settles with the `canon-grill` triage is resumed with the answer, and one blocked on a plan problem with one clear fix is resumed after the session edits and logs the plan. A question only the user can answer, a plan problem without such a fix, any design problem and a `stuck` report pause the slice; a stuck worker is not retried. A paused slice keeps its changes in a stash named after it and its problem in the plan's Log, for whoever resumes it.
+- **Stopped runs**: a subagent whose run stops before it reports, because the host reports it interrupted, timed out or failed, gets one more run. It is resumed by its id, given only a request to continue where it stopped and end with the report its prompt asks for; when it cannot be resumed, a new one given the same prompt replaces it and starts the work over. A cross-family reviewer that runs as a command cannot be resumed, so a failed command runs once more. When that run stops or fails too, the session stops trying: a worker's slice pauses, with the stopped runs as its problem; a first-round cross-family review falls back to the manual route; findings the cross-family reviewer cannot confirm go to the resumed same-model reviewer, as under Confirmation; and a same-model review waits for the user.
+- **Confirmation**: after accepted blocker or major findings are fixed, the reviewers that raised them confirm the fixes in one round, given only the confirmation prompt of the `canon-blind-review` skill and what this list adds to it. A reviewer that runs as a host subagent, same-model or cross-family, either code review axis included, is resumed by its id: the Task tool's `resume` in Cursor, SendMessage to the agent id in Claude Code. A cross-family reviewer that runs as a command, and a reviewer that cannot be resumed, gets a new run of the same reviewer, given the confirmation prompt followed by its first-round findings. A manual-fallback reviewer's findings, and those the cross-family reviewer could not confirm, are confirmed by the resumed same-model reviewer, given the confirmation prompt followed by those findings, named `cross-family:F<n>`; in a code review, each goes to the resumed reviewer of its axis. There is no further round.
+- **Workers**: a worker blocked on a question that the session settles with the `canon-grill` triage is resumed with the answer, and one blocked on a plan problem with one clear fix is resumed after the session edits and logs the plan. A worker that cannot be resumed is replaced by a new one, given the worker prompt followed by the answer when it was blocked on a question. Before a new worker replaces one, the session stashes the slice's changes, new files included, under a message naming the slice and logs the stash, so the new worker starts from the slice's start, in the trace unit that [D001§call-sites: call sites](D001-skill-telemetry.md#call-sites) gives it. A question only the user can answer, a plan problem without such a fix, any design problem and a `stuck` report pause the slice; a stuck worker is not retried. A paused slice keeps its changes, new files included, in a stash named after it and its problem in the plan's Log, for whoever resumes it.
 
 ## Known issues
 
 | ID | Severity | Issue | Source | Since | Next |
 |----|----------|-------|--------|-------|------|
-| D003-K1 | major | Nothing says what to do with a same-model reviewer or a worker whose run stops before it reports, because it was interrupted, timed out or failed; a session that launches a new one instead starts the work over | as-built e08f898 | 2026-10-22 | L1 |
 | D003-K2 | major | `canon-blind-review` gives the resumed same-model reviewer only the confirmation prompt for a manual-fallback reviewer's findings, so it gets F-ids it never saw that can clash with its own, and names no axis reviewer for them in a code review | as-built e08f898 | 2026-10-22 | fix |
-| D003-K3 | minor | No way to resume a subagent is named for Codex, and nothing says what replaces a blocked worker that cannot be resumed | as-built e08f898 | 2026-10-22 | L1 |
+| D003-K3 | minor | No way to resume a subagent is named for Codex | as-built e08f898 | 2026-10-22 | L1 |
 | D003-K4 | minor | Nothing says where the session finds the session id a command reviewer reports, which D001's token analysis reads | as-built e08f898 | 2026-10-22 | L1 |
 
 ## Decisions
 
 - Subagents are new, never forks of the session: a fork carries the conversation, which would unblind a reviewer and fill a worker's context window (`canon-blind-review`'s definition of a blind reviewer; e71dae1).
 - Subagents run on the session's model and effort, which the user sets: in Cursor a Task subagent runs on the session's model unless the user asks for another, from a fixed list whose names fix the effort, so workers and same-model reviewers need no setup (README, Host verification). It replaced per-role effort tables and the Reviewers and Workers lines (3c560ed).
-- A confirmation resumes the same-model reviewer, so it judges the fixes against its own findings (3c94281), and reruns the cross-family reviewer with its first-round findings, which needs no per-tool session handling (6ac41ad). A manual-fallback reviewer's findings go to the resumed same-model reviewer, so the user relays nothing a second time (`canon-blind-review`).
+- A confirmation resumes a reviewer that runs as a host subagent, so it judges the fixes against its own findings (3c94281), and reruns a cross-family reviewer that runs as a command with its first-round findings, which needs no per-tool session handling (6ac41ad). Findings whose reviewer cannot confirm them, a manual-fallback reviewer's included, go to the resumed same-model reviewer, so the user relays nothing a second time (`canon-blind-review`).
 - The reviewer file is local, since the tools and logins its reviewers rely on differ between machines (6ac41ad; `workflow.md`, Subagents).
 - A stuck worker's slice pauses for the user instead of being retried: a94fe18 made workers inherit the session's effort, which left no higher effort to retry at.
+- A subagent whose run stopped gets one more run, resumed when it can be: a new one starts the work over, as a replaced reviewer did in D002's gate before the user asked for resuming, while the resumed one finished that review (2026-10-22). A second stop ends the attempts, since a stop that repeats, such as a hanging test or a full context, would otherwise loop.
+- A replacement worker starts from the slice's start, its predecessor's changes stashed: a half-built tree would give the new worker a wrong baseline for the tests it must keep green.
