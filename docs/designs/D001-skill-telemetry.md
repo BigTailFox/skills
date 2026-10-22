@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-10-15
-updated: 2026-10-21
+updated: 2026-10-22
 revision: 5
 modules: [canon]
 summary: Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions.
@@ -10,7 +10,7 @@ owns: [skill-telemetry]
 paths: [skills/governance/canon/trace.md]
 reviewed: 5
 reviewers: [claude-opus-5.5]
-implemented: 4
+implemented: 5
 ---
 
 # D001: Skill telemetry with canon trace
@@ -289,7 +289,7 @@ If capture falls short, it is fixed before the report is built.
 Measured in the pilot.
 
 - Calls: two per unit except a slice, which takes one; one per skill invocation when tracing is off.
-- Text: at most 40 tokens per call site in a skill; at most 110 for the `canon` skill's paragraph on the placeholders and the first-start rule, read whether tracing is on or off; `trace.md` at most 420 tokens, read only when tracing is on.
+- Text, counted in tiktoken's `cl100k_base` tokens: at most 40 per call site in a skill; at most 110 for the `canon` skill's paragraph on the placeholders and the first-start rule, read whether tracing is on or off; `trace.md` at most 420, read only when tracing is on.
 - Latency: `start` and `end` p95 under 300 ms on a local disk, including a snapshot of a 20,000-file checkout and the digests of 20 skill directories of 1 MiB in total; a checkout's first snapshot, which copies the whole tree, is exempt.
 - Size: 16 KiB per line, 2 MiB per archive, 10 MiB of untracked and unstaged files per snapshot, 64 KiB per `snapshot-error.txt`, which keeps the end of Git's message.
 
