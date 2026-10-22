@@ -5,7 +5,7 @@ updated: 2026-10-22
 revision: 1
 modules: [canon]
 summary: D000 project overview in every project, as-built designs that record existing code, backfill before changing unspecified behavior, and design coverage in audit.
-refs: []
+refs: [D001]
 owns: [project-overview, as-built-design, design-coverage]
 paths: [skills/governance/canon/as-built.md, skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/governance/canon/doc-types.md, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-review/SKILL.md]
 reviewed: 1
@@ -72,7 +72,7 @@ Every repository that follows canon has `designs/D000-project-overview.md` in th
 
 An as-built revision records behavior the code already has, at one commit, and specifies no change to it. It is the first revision of a new design, or a revision that adds existing behavior to the design that owns its topic.
 
-While it awaits its gate, its frontmatter holds `as_built: <commit>`, the commit it records. The gate builds its reviewer prompt from it, and a session that resumes the work or replays the gate finds the base there. Outside Git, and before the first commit, it reads `as_built: worktree`: the revision records the files as they are and passes its gate before any of them change. The gate removes the field when it sets `reviewed`; nothing marks the revision after that. `check` errors when `as_built` names no commit, unless it reads `worktree` outside Git or before the first commit, and when it remains on a doc whose `reviewed` equals its `revision`; `check --fix` removes it then.
+While it awaits its gate, its frontmatter holds `as_built: <commit>`, the commit it records. The gate builds its reviewer prompt from it, and a session that resumes the work or replays the gate ([D001§replay: replay](D001-skill-telemetry.md#replay)) finds the base there. Outside Git, and before the first commit, it reads `as_built: worktree`: the revision records the files as they are and passes its gate before any of them change. The gate removes the field when it sets `reviewed`; nothing marks the revision after that. `check` errors when `as_built` names no commit, unless it reads `worktree` outside Git or before the first commit, and when it remains on a doc whose `reviewed` equals its `revision`; `check --fix` removes it then.
 
 It is written:
 

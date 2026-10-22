@@ -2,13 +2,13 @@
 status: active
 created: 2026-10-15
 updated: 2026-10-22
-revision: 5
+revision: 6
 modules: [canon]
 summary: Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions.
-refs: []
+refs: [D002]
 owns: [skill-telemetry]
 paths: [skills/governance/canon/trace.md]
-reviewed: 5
+reviewed: 6
 reviewers: [claude-opus-5.5]
 implemented: 5
 ---
@@ -68,7 +68,7 @@ Outcomes, given to `end`. Every kind that ends allows `delivered`, `blocked`, `h
 
 - `delivered`: the unit produced its output: a doc that passed its gate, a committed implementation with every slice done, a resolved investigation, a closed codebase review, a disposed gate or code review, a finished requested retro.
 - `partial`: it ended with paused slices.
-- `escalated`: it stopped because the work needs another tier or a plan: `--to L1` when an L0 change alters a spec and the unit ends before a design revision has passed its gate, whether the user's decision or the revision is left for later; `--to L2` when the change turns out to be L2 work, such as a new design or a rewrite of one; `--to plan` when L1 work needs a plan. `--to` comes with `escalated` only. An L0 change whose design revision the implementing session makes does not stop: it continues as L1, and that revision's gate, under the `implement` unit, runs at L1. Likewise, a design unit started at L1 whose revision turns out to be L2 work does not stop: its gate runs at L2.
+- `escalated`: it stopped because the work needs another tier or a plan: `--to L1` when an L0 change alters a spec and the unit ends before the design revision that specifies the alteration has passed its gate, whether the user's decision or the revision is left for later; `--to L2` when the change turns out to be L2 work, such as a new design or a rewrite of one; `--to plan` when L1 work needs a plan. `--to` comes with `escalated` only. An L0 change whose alteration the implementing session specifies in a design revision does not stop: it continues as L1, and that revision's gate, under the `implement` unit, runs at L1. Likewise, a design unit started at L1 whose revision turns out to be L2 work does not stop: its gate runs at L2.
 - `blocked`: stopped on a problem or decision only the user can settle.
 - `handoff`: the work continues in another session.
 - `cancelled`: the user stopped it.
@@ -117,7 +117,7 @@ canon.py trace off [--here]
 canon.py trace prune --days N
 ```
 
-- `start` prints `trace <id>`, or `trace off` without touching Git or writing anything when tracing is off. It resolves each `DOC`, which must be shaped like a doc id such as `D001`, to `<doc>@r<revision>` from the doc's frontmatter, keeping a doc it cannot find as given; checks that `--model` is one line of at most 200 characters, like a reviewer's `model`; checks that `--parent` names an open unit that is neither a slice nor an end check, and an `implement` unit for a slice, and that a kind of the first row of [Units](#units) has none; resolves `--base` to the merge base of that commit and HEAD, which is the commit itself when HEAD descends from it, and treats a `--base` without a merge base, or on an unborn branch, as absent; takes a [snapshot](#snapshots); computes the [manifest](#skill-digests); and appends one line.
+- `start` prints `trace <id>`, or `trace off` without touching Git or writing anything when tracing is off. It resolves each `DOC`, which must be shaped like a doc id such as `D001`, to `<doc>@r<revision>` from the doc's frontmatter, keeping a doc it cannot find as given; checks that `--model` is one line of at most 200 characters, like a reviewer's `model`; checks that `--parent` names an open unit that is neither a slice nor an end check, and an `implement` unit for a slice, and that a kind of the first row of [Units](#units) has none; resolves `--base` to the merge base of that commit and HEAD, which is the commit itself when HEAD descends from it, and treats a `--base` without a merge base, or on an unborn branch, as absent; for a `gate` whose doc's frontmatter has an `as_built` that names a commit ([D002§as-built-revisions: as-built revisions](D002-overview-and-as-built.md#as-built-revisions)), keeps that commit itself, never its merge base with HEAD, for the snapshot's second parent; takes a [snapshot](#snapshots); computes the [manifest](#skill-digests); and appends one line.
 - `end` closes the open unit `UNIT` and prints `trace <id> ended`, or, like `start`, `trace off` when tracing is off; `OUTCOME` must be one the unit's kind allows, and `--to` comes with `escalated` only. `--dir`, taken from the directory holding `.canon/` when relative, must lie under `.canon/`. It copies the regular files directly in it that changed since the unit started into `.canon/canon/trace/<id>/` when they total at most 2 MiB, and otherwise copies nothing; no such file records `none`, and a missing directory `copy: ENOENT`, the unit ending either way. It copies only once the final check under `events.lock` passes, so a call that fails that check archives nothing. `--input` reads the [dispositions](#review-dispositions).
 - `status` prints whether tracing is on and why; the open units started in the last 24 hours, newest first, with their ids, kinds, docs and start times, marking those of this conversation when the host names it; the number of snapshots, and of skipped ones by reason; and the snapshot repository's disk size.
 - `on` and `off` create and delete the machine switch; with `--here` they delete and create this checkout's `off` file.
@@ -153,7 +153,7 @@ Every start records a snapshot of the work tree in the snapshot repository, a no
 1. List the untracked files and the files with unstaged changes with `git status --porcelain -z --untracked-files=all`; when they total more than 10 MiB, record no snapshot and set `"skipped": "changes-over-10MiB"`.
 2. Copy the checkout's index (`git rev-parse --git-path index`) to `index-<id>` in the snapshot repository's Git directory, keeping its modification time, which Git compares entries against to find racily clean ones; when there is no index, start without one.
 3. With `GIT_INDEX_FILE` set to that copy, `GIT_OBJECT_DIRECTORY` to the snapshot repository's objects and `GIT_ALTERNATE_OBJECT_DIRECTORIES` to the project's, run `git add -A` and `git write-tree`.
-4. With the same variables, `git commit-tree` the tree of the resolved base, or of HEAD without `--base`, as a parentless commit, then the snapshot tree as a commit whose parent is that one; on an unborn branch without `--base`, the snapshot commit has no parent. `git diff <snapshot>^ <snapshot>` then shows the change under review.
+4. With the same variables, `git commit-tree` the tree of the resolved base, or of HEAD without `--base`, as a parentless commit, then the snapshot tree as a commit whose parent is that one; on an unborn branch without `--base`, the snapshot commit has no parent. `git diff <snapshot>^ <snapshot>` then shows the change under review. For an as-built gate, the tree of its `as_built` commit becomes a second parentless commit and the snapshot's second parent, so `git show <snapshot>^2:<path>` gives the code the revision records.
 5. List the objects the snapshot reaches with `git rev-list --objects <commit>`, keep those that `git cat-file --batch-check`, run in the snapshot repository without the variables, reports missing, pack them with `git pack-objects --stdout` into a temporary file in the snapshot repository's Git directory, and feed that to `git index-pack --stdin` there.
 6. Run `git update-ref refs/trace/<id> <commit>` in the snapshot repository, which records the snapshot. Then, best-effort and never setting `skipped`, delete the index copy and run `git -c gc.autoDetach=false gc --auto --quiet` there, which repacks once 50 packs or 6,700 loose objects accumulate.
 
@@ -234,7 +234,7 @@ Rules:
 
 ### Replay
 
-Question 9 compares skill versions on recorded units. A replay clones a unit's snapshot from the snapshot repository into a scratch directory, installs a skill version, the one under test or the recorded one from `refs/skills/<manifest>`, runs the unit headless with its recorded `docs`, `slice` and `tier`, the same models and, where the host records them, the same efforts, the snapshot's parent standing in for `base`, and scores the result:
+Question 9 compares skill versions on recorded units. A replay clones a unit's snapshot from the snapshot repository into a scratch directory, installs a skill version, the one under test or the recorded one from `refs/skills/<manifest>`, runs the unit headless with its recorded `docs`, `slice` and `tier`, the same models and, where the host records them, the same efforts, the snapshot's first parent standing in for `base` and, for an as-built gate, its second parent for the commit the target's `as_built` names, and scores the result:
 
 - A gate or code review against the original dispositions: valid findings should be found again, and declined ones count as false positives.
 - A slice by its test criteria, whether the worker stopped, and the code-review findings that followed.
@@ -267,6 +267,7 @@ Scenarios for step 1, tested through the commands:
 - A dirty checkout's snapshot holds unstaged, staged and untracked changes and no ignored file, and leaves the project's work tree, index, HEAD, refs and the names and contents of its object files unchanged, the index byte for byte even after a tracked file's timestamp changed without its content.
 - An unborn branch without an index gets a snapshot without a parent. Untracked and unstaged files over 10 MiB in total, a checkout outside Git and a failing Git command skip the snapshot, and the start line records the reason; a failing Git command's message lands in `snapshot-error.txt`, and `start` prints only its id.
 - A code review whose fixed point moved on after the branch forked gets the merge base as `base`, and `git diff <snapshot>^ <snapshot>` equals the review's diff.
+- A gate on a doc whose `as_built` names a commit that HEAD has moved past, or that a rebase left out of HEAD's history, gets that commit's tree as the snapshot's second parent: `git show <snapshot>^2:<path>` gives each file as it was at that commit, and `git diff <snapshot>^ <snapshot>` still shows the change since `--base`.
 - A snapshot copies only the objects the snapshot repository lacks; switching to another branch and back copies each file version once. `git push --mirror`, `git clone --mirror` and `git bundle create --all` of the project carry no snapshot. After a reset, `git reflog expire --expire=now --all` and `git gc --prune=now` in the project, `git fsck --strict` passes in the snapshot repository and every snapshot can be read. With `.canon/` missing from the project's `.gitignore` and `.canon/canon/.gitignore` deleted, `git add -A` stages no file inside the trace directory and `git clean -fdx` leaves it.
 - A child records its `--parent`; a parent that is not open, a slice or end check as parent, and a slice whose parent is not an `implement` unit are rejected and write nothing; a gate or end check without `--parent` is top-level.
 - `end` closes the unit it names; an id that is not an open unit, an outcome its kind does not allow, or `--to` without `escalated` writes nothing. Valid dispositions land in the end line; invalid ones write nothing. `--dir` archives only the files changed since the unit started, nothing when they exceed 2 MiB, and the line says why; an unreadable file gives `copy: EACCES` and no path.
@@ -278,7 +279,7 @@ Pilot exit:
 - At least 18 of 20 top-level units have a start and an end, or a genuine interruption.
 - Every review's dispositions match its conversation.
 - Every unit's parent, tier and outcome match its conversation, tier changes included.
-- Every snapshot, cloned from the snapshot repository, reproduces its unit's input: the doc revision, the diff from `base`, the plan at the slice.
+- Every snapshot, cloned from the snapshot repository, reproduces its unit's input: the doc revision, the diff from `base`, the code an as-built gate records, the plan at the slice.
 - Every Cursor and Codex unit is found in its host record.
 - No host in use has a snapshot skipped because its sandbox could not write the trace directory.
 
@@ -301,6 +302,7 @@ Measured in the pilot.
 - Snapshots live in a repository of their own, never in the project's refs: no push, clone or bundle of the project can carry one, `--mirror` included, and the project's object store and history views stay untouched. It holds every object its snapshots reach, so nothing done to the project's history breaks a snapshot, and pruning frees space at once. The price is one packed copy of the tree per checkout, 3 to 26% of the object store in six local repositories, and a second copy of what changes while tracing is on.
 - All trace data sits in the checkout's `.canon/canon/trace/`: it is the one place the Cursor and Codex sandboxes let an agent write that no commit can hold, since Codex keeps the project's `.git` read-only and Git never adds a file inside a nested repository. Events, archives and snapshots then share a lifetime; units traced in a worktree go with it.
 - `host` comes from the environment and `model` is stored in lowercase: the analysis groups by both, and names as each agent spells them would split the groups.
+- An as-built gate's snapshot takes as its second parent the tree of the commit its target's `as_built` names, which `start` reads from the doc itself: the snapshot repository holds no project history, so the code the revision records reaches a replay only through the snapshot; the first parent still gives the diff from the `Changes since` commit, whose version of the doc can differ from the one at the `as_built` commit; and no call site has to carry the commit.
 - Every start takes a snapshot, a clean one included: a clean HEAD can later vanish from the project, and its snapshot adds only what changed since the previous one.
 - Snapshots hold what Git would commit, with no per-file limit: a project's ignore files already keep out its data, caches and build outputs. The 10 MiB cap only bounds what a large file not yet ignored would cost, since `git add` hashes it on every start and stores each new version.
 - Ignored files a replay needs are the project's to provide: copying them would bloat snapshots and could capture secrets, and the versions a replay compares run against the same files.
