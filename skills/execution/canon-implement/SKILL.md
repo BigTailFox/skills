@@ -24,20 +24,21 @@ Read the `canon` skill first; its workflow governs tiers, deviations, code revie
 This session orchestrates, and a fresh worker builds each slice, so every slice starts in an empty context window. Run one worker at a time, in plan order. Only this session edits the plan, commits and asks the user.
 
 1. Set the slice's `Status: in-progress`.
-2. Run `canon.py trace start slice <P id> --slice S<n> --parent <id>`, then launch a worker with the worker prompt below and wait for its report.
+2. Unless the last `trace start` under the implement unit was this slice's, run `canon.py trace start slice <P id> --slice S<n> --parent <id>`. Then launch a worker with the worker prompt below and wait for its report.
 3. Act on the report:
    - **done**: re-run the slice's tests and check the diff: it stays within the slice and edits no plan or design.
    - **stuck** on a failure it could not explain: pause the slice without retrying; the user decides the next step.
    - **blocked** on a question: settle it with the `canon-grill` skill's triage and resume the worker with the answer. A question only the user can answer is a pending decision: pause the slice.
    - **blocked** on the plan or design: apply the workflow's deviation rules. For a plan problem with one clear fix, edit the plan, log it and resume the worker. Otherwise pause the slice.
+   - **No report**, because the host stopped the run: give it one more run, as the workflow's Subagents says, replacing it as [Workers](#workers) says when it cannot be resumed. When that run stops too, pause the slice with the stopped runs as its problem.
 
-   To pause a slice, set `Status: paused`, stash its changes under a message naming the slice, log the problem and the stash for whoever resumes it, and continue with slices that do not depend on it.
+   To pause a slice, set `Status: paused`, stash the worker's changes, new files included but not the plan, under a message naming the slice, log the problem and the stash for whoever resumes it, and continue with slices that do not depend on it.
 4. When the slice is done by the `canon-tdd` skill's definition, set `Status: done`, point Current state at the next action, and append results, decisions and deviations to the Log.
 5. Run `canon.py check --fix`, then commit the slice: code plus plan, Conventional Commits, `Refs: <design>, <plan>` trailer.
 
 ### Worker prompt
 
-Fill the placeholders and pass nothing else; the plan carries the context.
+Fill the placeholders and pass nothing else, except the answer a replacement worker gets ([Workers](#workers)); the plan carries the context.
 
 ```text
 You are implementing one slice of a plan in this repository, with no prior context.
@@ -56,7 +57,7 @@ Your final message is your report: status (done | stuck | blocked), files change
 
 ### Workers
 
-A worker is a new general-purpose subagent from the host's own tool, never a fork of this session, launched without a model or effort so it runs on the session's (the `canon` skill's workflow, Subagents). Keep its id so you can resume it.
+A worker is a new general-purpose subagent from the host's own tool, never a fork of this session, launched without a model or effort so it runs on the session's (the `canon` skill's workflow, Subagents). Write its id to `.canon/canon-implement/<P id>/S<n>-id.txt` so you can resume it. A worker that cannot be resumed is replaced: stash its changes as a pause does, under a message naming the slice and the replacement, log the stash, and launch a new worker with the worker prompt, followed by the answer when it was blocked on a question.
 
 ## 3. Finish
 

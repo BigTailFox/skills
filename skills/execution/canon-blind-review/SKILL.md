@@ -44,11 +44,11 @@ End with one line: Verdict: approve | revise
 
 The review gate and code review say when the cross-family reviewer runs; other reviews run the same-model reviewer, plus the cross-family reviewer when the user asks for another family.
 
-Launch all first-round reviewers in parallel. Each is a new agent, never a fork of the current session. Keep each reviewer's files in `.canon/canon-blind-review/<topic>/` (topic: the doc id or change under review), named by its role, `same-model` or `cross-family`: its prompt in `<role>-prompt.md`, its findings in `<role>.md` and its agent or session id in `<role>-id.txt`. The confirmation round needs them. On every route the prompt is what forbids modifying files.
+Launch all first-round reviewers in parallel. Each is a new agent, never a fork of the current session. Keep each reviewer's files in `.canon/canon-blind-review/<topic>/` (topic: the doc id or change under review), named by its role, `same-model` or `cross-family`: its prompt in `<role>-prompt.md`, its findings in `<role>.md` and its agent or session id in `<role>-id.txt`. The confirmation round needs them. On every route the prompt is what forbids modifying files. A reviewer whose run stops before it reports gets one more run, as the `canon` skill's workflow (Subagents) says; when a same-model reviewer's run stops twice, the review waits for the user.
 
 ## Manual fallback
 
-When the reviewer file is missing or names no reviewer of another family than yours, or when its command fails, tell the user why in one line (`/canon-init` sets up a missing reviewer), give them the filled prompt in one code block and say that any tool able to read the repository can run it. Wait for the pasted result. Record the reviewer as `manual:<model>`, and keep its prompt and result as the `cross-family` reviewer's files, without an id.
+When the reviewer file is missing or names no reviewer of another family than yours, or when the cross-family reviewer's first-round run stops twice (the `canon` skill's workflow, Subagents), tell the user why in one line (`/canon-init` sets up a missing reviewer), give them the filled prompt in one code block and say that any tool able to read the repository can run it. Wait for the pasted result. Record the reviewer as `manual:<model>`, and keep its prompt and result as the `cross-family` reviewer's files, without an id.
 
 ## Merge
 
@@ -64,8 +64,8 @@ For each listed finding, answer resolved or not resolved, citing the location th
 End with one line: Verdict: approve | revise
 ```
 
-- **Same-model reviewer**: resume it by its kept id, so it judges the fixes against its own findings: the Task tool's `resume` in Cursor, SendMessage to the agent id in Claude Code.
-- **Cross-family reviewer**, and a reviewer that cannot be resumed: a new run of the same reviewer, given the confirmation prompt followed by its first-round findings.
-- Findings from a manual-fallback reviewer are confirmed by the resumed same-model reviewer, so the user relays nothing a second time.
+- Resume each reviewer by its kept id, as the `canon` skill's workflow (Subagents) says, so it judges the fixes against its own findings.
+- A cross-family reviewer that runs as a command, and a reviewer that cannot be resumed, gets a new run of the same reviewer instead, given the confirmation prompt followed by its first-round findings.
+- Findings from a manual-fallback reviewer, and those of a cross-family reviewer whose confirmation run stops twice, go to the resumed same-model reviewer, given the confirmation prompt followed by those findings, named `cross-family:F<n>`; in a code review, each goes to the resumed reviewer of its axis. The user relays nothing a second time.
 - Keep each reviewer's confirmation prompt and answer in `<role>-confirm-prompt.md` and `<role>-confirm.md`; its first-round files stay as they were.
 - There is no further round; blockers still open go to the user.
