@@ -2,13 +2,13 @@
 status: active
 created: 2026-10-15
 updated: 2026-10-22
-revision: 6
+revision: 7
 modules: [canon]
 summary: Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions.
-refs: [D002]
+refs: [D002, D003]
 owns: [skill-telemetry]
 paths: [skills/governance/canon/trace.md]
-reviewed: 6
+reviewed: 7
 reviewers: [claude-opus-5.5]
 implemented: 5
 ---
@@ -59,7 +59,7 @@ A unit is one traced span of work, named by the id its `start` prints. A child u
 | `design`, `plan`, `implement`, `investigate`, `canon-review`, `retro` | the skill of that name | `end` | none |
 | `code-review` | `canon-code-review` | `end` | the enclosing unit, if one is open |
 | `gate` | the review gate | `end` | the enclosing unit, if one is open |
-| `slice` | `canon-implement`, before each worker launch | the first of its commit, the next `start` under its `implement` unit, and that unit's end | `implement` |
+| `slice` | `canon-implement`, before a worker runs on a slice with no open unit | the first of its commit, the next `start` under its `implement` unit, and that unit's end | `implement` |
 | `end-check` | `canon-retro`'s end check | `end` | the unit it closes, if still open |
 
 `retro` is a requested retro. A slice's commit is the one that changes its `Status:`; workers run one at a time, so the next start under the same unit also ends a slice. A top-level unit has no parent: a unit of the first row, or a code review, gate or end check with no open unit to name, such as `canon-init`'s gates, `canon-handoff`'s end check and the review of a fix a retro applies. A slice built in the implementing session itself (an L0 change, an L1 revision without a plan) is part of its `implement` unit.
@@ -80,7 +80,7 @@ Each call runs the project's `canon.py`. `<skill>` is the directory of the `SKIL
 
 - `canon-design`, after Frame step 3: `trace start design <D or C id> --tier <tier> --skill <skill> --model <model>`. Before the closing command: `trace end <id> <outcome>`.
 - `canon-plan`, after Start step 2: `trace start plan <P id> <D id> --tier <tier> --skill <skill> --model <model>`. Before the closing command: `trace end <id> <outcome>`.
-- `canon-implement`, after Start step 4: `trace start implement [<P or D id>] --tier <tier> --base <start commit> --skill <skill> --model <model>`. Before launching each worker: `trace start slice <P id> --slice S<n> --parent <id>`. After Finish step 3, or when stopping on a wrong tier: `trace end <id> <outcome> [--to L1|L2|plan]`.
+- `canon-implement`, after Start step 4: `trace start implement [<P or D id>] --tier <tier> --base <start commit> --skill <skill> --model <model>`. Before a worker runs on a slice that has no open unit, its first worker or one that takes the slice up again after its unit ended: `trace start slice <P id> --slice S<n> --parent <id>`; a worker resumed or replaced while the slice's unit is open stays in it ([D003§resuming-and-replacing: resuming and replacing](D003-subagents.md#resuming-and-replacing)). After Finish step 3, or when stopping on a wrong tier: `trace end <id> <outcome> [--to L1|L2|plan]`.
 - `canon-code-review`, after Pin the fixed point: `trace start code-review [<P id>] --base <fixed point> --tier <tier> --skill <skill> --model <model> [--parent <parent>]`. After Dispose, its end check included: `trace end <id> <outcome> --dir .canon/canon-blind-review/<topic> --input -`, with the dispositions on stdin.
 - The review gate in the `canon` workflow, at step 2: `trace start gate <doc id> --tier <tier> --skill <skill> --model <model> [--parent <parent>] [--base <Changes since commit>]`. At the end of step 5, after an L2 gate has the user's answers on its escalated findings: `trace end <gate id> <outcome> --dir .canon/canon-blind-review/<doc id> --input -`, where `<gate id>` is what the gate's `start` printed.
 - `canon-investigate`, when opening the investigation: `trace start investigate <I id> --skill <skill> --model <model>`. After Phase 6: `trace end <id> <outcome>`.
@@ -216,7 +216,7 @@ Each question is computed from:
 1. Findings whose `by` names only the cross-family reviewer, by severity and disposition, over reviews that had one; that reviewer's tokens and the duration of its rollout.
 2. `not-resolved` over confirmed findings; `new_blockers` per confirmation round.
 3. Valid findings per axis over code reviews, by tier.
-4. Slice outcomes from the plan at the slice's commit, or the Log and stash of a paused slice, and the worker reports in the host record, over slices started, with and without a `Risk:` line.
+4. Slice outcomes from the plan at the slice's commit, or the Log and stash of a paused slice, and the worker reports in the host record, over slices started, each counted once however many units it spans, with and without a `Risk:` line.
 5. Implement units that changed tier or needed a plan, by target, over implement units by starting tier: `escalated` ones by `--to`, and those started at L0 with a gate at L1 under them, at any depth, as `L1`; a unit counts under every target it reached. Design units whose gate ran at a higher tier than they started at, over design units started at L1.
 6. Wall time per kind, from start to end, a slice's ending as [Units](#units) states; subagents launched within a unit's span; tokens where recorded. Cursor wall time includes waiting for the user.
 7. For each `applied <commit>` cause in `notes.md`: its `fix=present` events from traced sessions, matched by `conversation` or, for a session named by time, by the start minute of a traced end check or retro, over the units started after the fix whose snapshot holds it, meaning the fix commit's diff applies to the snapshot in reverse (`git apply --check -R`). Units where neither direction applies, or without a snapshot, are counted as unknown and left out. Also repeated identical commands per unit before and after the fix.
@@ -237,7 +237,7 @@ Rules:
 Question 9 compares skill versions on recorded units. A replay clones a unit's snapshot from the snapshot repository into a scratch directory, installs a skill version, the one under test or the recorded one from `refs/skills/<manifest>`, runs the unit headless with its recorded `docs`, `slice` and `tier`, the same models and, where the host records them, the same efforts, the snapshot's first parent standing in for `base` and, for an as-built gate, its second parent for the commit the target's `as_built` names, and scores the result:
 
 - A gate or code review against the original dispositions: valid findings should be found again, and declined ones count as false positives.
-- A slice by its test criteria, whether the worker stopped, and the code-review findings that followed.
+- A slice by its test criteria, whether a worker reported `blocked` or `stuck`, and the code-review findings that followed; a run the host stopped does not count against it.
 
 No recorded prompt is needed: reviewers and workers start fresh from prompts the skill builds out of the docs, code and parameters, so each version builds its own, and the reviewer prompts and outputs archived with the unit tell what the original findings were. What the orchestrating session took from the conversation is not replayed. The analysis marks a unit steered when a user message falls inside its span, and the original worker brief stays in the host record, for the harness to compare with the brief a replay builds.
 
@@ -281,6 +281,7 @@ Pilot exit:
 - Every unit's parent, tier and outcome match its conversation, tier changes included.
 - Every snapshot, cloned from the snapshot repository, reproduces its unit's input: the doc revision, the diff from `base`, the code an as-built gate records, the plan at the slice.
 - Every Cursor and Codex unit is found in its host record.
+- Every worker run, resumed and replacement runs included, falls within one unit of its slice, and no slice's unit is ended by another `start` of the same slice.
 - No host in use has a snapshot skipped because its sandbox could not write the trace directory.
 
 If capture falls short, it is fixed before the report is built.
