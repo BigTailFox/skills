@@ -25,7 +25,7 @@ Read the `canon` skill first. `canon.py` means the project copy named in `AGENTS
 Walk the design tree with the `canon-grill` skill: goals, then interfaces, behavior and edge cases, budgets, and the decisions under each. While walking it:
 
 - **Challenge terms against the glossary.** When the user uses a term that conflicts with D000's glossary or the design's own terms, call it out: "The glossary defines cancellation as X, but you seem to mean Y. Which is it?"
-- **Sharpen fuzzy language.** Propose one precise term for a vague or overloaded one. Add a resolved cross-module term to D000's glossary and a module term to the design that owns it, at once. A glossary entry defines a term; implementation detail belongs in the Spec.
+- **Sharpen fuzzy language.** Propose one precise term for a vague or overloaded one. Add a resolved module term to the design that owns it at once. A resolved cross-module term goes into D000's glossary, which is spec: bump D000's `revision` once, and in [Gate](#3-gate) pass that revision through its own review gate at L1. A glossary entry defines a term; implementation detail belongs in the Spec.
 - **Stress-test with scenarios.** Invent concrete cases that probe the boundaries between concepts and force precise answers.
 - **Cross-check the code.** When the user states how something works, verify it; surface any contradiction.
 - **Design interfaces** with the `canon-codebase-design` vocabulary. When an interface's shape is contested, use its design-it-twice pattern.

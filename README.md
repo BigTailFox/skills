@@ -79,7 +79,7 @@ Auto skills load when the context calls for them. Manual skills run only as comm
 |---|---|---|
 | `canon` | The documentation system: doc types, frontmatter, references, lifecycle and archiving, the change tiers, the review gate, how subagents launch, and `canon.py`, which creates, checks, queries and archives docs, and records workflow runs when tracing is on. | Auto |
 | `canon-init` | Sets up canon in a repository or monorepo module: writes D000, the project overview, from the code, migrates existing docs (design notes, ADRs, RFCs, plans, postmortems, benchmarks), folding whole-project ones into D000 and leaving READMEs as they are, and passes D000 and the designs that describe existing code through the review gate. Also sets up the cross-family reviewer and upgrades the project's `canon.py`, turning an older project's design that owns `architecture` into D000. Rerun it after a fresh clone to set up the reviewer alone. | Manual |
-| `canon-sync` | Keeps docs in step with the code: runs the docs step after a change, repairs docs after a merge or rebase, and audits doc health (designs with unchecked code commits, known issues, idle docs, reviews that are due). | Manual |
+| `canon-sync` | Keeps docs in step with the code: runs the docs step after a change, repairs docs after a merge or rebase, and audits doc health (designs with unchecked code commits, known issues, idle docs, reviews that are due, designs D000 does not reach, source areas no design covers). | Manual |
 
 ### execution
 

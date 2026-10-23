@@ -28,7 +28,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "20"
+CANON_VERSION = "21"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -70,6 +70,7 @@ RESOLUTION_LABELS = ("Root cause", "Fix", "Verification")
 MAX_DOC_LINES = 500
 MAX_AGENTS_LINES = 150
 MAX_SUMMARY = 160
+MAX_AREAS = 10
 
 FILE_RE = re.compile(r"^([CDPREI])(\d{3,})([A-Z]?)-([a-z0-9]+(?:-[a-z0-9]+)*)\.md$")
 FULL_ID_RE = re.compile(r"^([CDPREI])(\d{3,})([A-Z]?)$")
@@ -111,7 +112,9 @@ Engineering docs managed with canon. Designs (D) are the source of truth; plans 
 GITATTRIBUTES = ("**/docs/README.md merge=union", "**/docs/archived/README.md merge=union")
 LOCAL_DIR = ".canon/"
 DOCS_PATHSPEC = ":(glob)**/docs/**/*.md"
-DOC_NAMES = ("README", "AGENTS", "CLAUDE", "CHANGELOG", "CONTRIBUTING", "LICENSE", "NOTICE")
+DOC_NAMES = ("README", "AGENTS", "CLAUDE", "CHANGELOG", "CONTRIBUTING", "LICENSE", "NOTICE", "SECURITY",
+             "CODE_OF_CONDUCT", "COPYING")
+DOC_SUFFIXES = (".md", ".markdown", ".rst", ".txt", ".adoc", ".org")
 
 TEMPLATES = {
     "C": """
@@ -451,6 +454,7 @@ class Doc:
         h1 = next((h for h in self.headings if h.level == 1), None)
         prefix = self.id + ": "
         self.title = h1.text[len(prefix):].strip() if h1 and h1.text.startswith(prefix) else ""
+        self._paths = None
 
     def get(self, key, default=None):
         return (self.fm or {}).get(key, default)
@@ -468,12 +472,64 @@ class Doc:
         value = self.get(key, [])
         return value if isinstance(value, list) else []
 
-    def section(self, name):
+    def section_span(self, name):
+        """The index in `headings` of the `## name` heading and the line its section ends before; None without it."""
         for idx, h in enumerate(self.headings):
             if h.level == 2 and h.text == name:
-                end = next((x.line for x in self.headings[idx + 1:] if x.level <= 2), len(self.lines))
-                return self.lines[h.line + 1:end]
+                return idx, next((x.line for x in self.headings[idx + 1:] if x.level <= 2), len(self.lines))
         return None
+
+    def section(self, name):
+        span = self.section_span(name)
+        return self.lines[self.headings[span[0]].line + 1:span[1]] if span else None
+
+    def spec_subsections(self):
+        """The `### ` headings in `## Spec`, as indexes into `headings`."""
+        span = self.section_span("Spec")
+        if span is None:
+            return []
+        return [i for i in range(span[0] + 1, len(self.headings))
+                if self.headings[i].line < span[1] and self.headings[i].level == 3]
+
+    def module_entries(self):
+        """The entries of the Path cells of D000's Modules table, the first table under `### Modules` in `## Spec`,
+        its Path column found by its header: each cell split at commas, and each entry stripped of whitespace and
+        backticks."""
+        heads = self.headings
+        found = next((i for i in self.spec_subsections() if heads[i].text == "Modules"), None)
+        if found is None:
+            return []
+        end = next((h.line for h in heads[found + 1:] if h.level <= 3), len(self.lines))
+        rows = []
+        for _i, line in code_mask(self.lines[:end], heads[found].line + 1):
+            if line.strip().startswith("|"):
+                rows.append([cell.strip() for cell in line.strip().strip("|").split("|")])
+            elif rows:
+                break
+        column = next((i for i, cell in enumerate(rows[0] if rows else []) if cell.lower() == "path"), None)
+        entries = []
+        for row in rows[1:] if column is not None else []:
+            if all(set(cell) <= set("-: ") for cell in row):
+                continue
+            for entry in (row[column] if column < len(row) else "").split(","):
+                entry = entry.strip(" \t`")
+                if entry:
+                    entries.append(entry)
+        return entries
+
+    def governs(self, rel, doc_file=False):
+        """Whether this design's `paths` match a repo-relative file; when `doc_file` says the file is a doc, only an
+        entry equal to its path does."""
+        prefix = self.root.rel + "/" if self.root.rel else ""
+        if not rel.startswith(prefix):
+            return False
+        if self._paths is None:
+            entries = self.as_list("paths")
+            pattern = "|".join("(?:{})".format(glob_regex(p).pattern) for p in entries)
+            self._paths = {entry_path(p) for p in entries}, re.compile(pattern) if entries else None
+        listed, matcher = self._paths
+        rel = rel[len(prefix):]
+        return rel in listed if doc_file else bool(matcher and matcher.match(rel))
 
     def labels(self, section_name):
         """Map `- Label: value` lines to their values; indented lines below a label extend its value."""
@@ -676,29 +732,21 @@ class Repo:
         return sorted({f for out in outs for f in (out or "").split("\0") if f})
 
     def is_doc(self, rel):
-        """Whether a repo-relative file is a project doc, such as a README, or lies under a docs root."""
-        if rel.rsplit("/", 1)[-1].split(".", 1)[0].upper() in DOC_NAMES:
+        """Whether a repo-relative file is a doc by its name, such as a README, or lies under a docs root."""
+        name = rel.rsplit("/", 1)[-1]
+        stem = name.split(".", 1)[0].upper()
+        if (stem in DOC_NAMES or stem.startswith("LICENSE-")) \
+                and ("." not in name or name.lower().endswith(DOC_SUFFIXES)):
             return True
         return any(rel.startswith(root.docs_rel + "/") for root in self.roots)
 
     def designs_for(self, abs_path):
-        """The designs whose `paths` match a file; a doc only through an entry equal to its path."""
-        doc_file = self.is_doc(posix_rel(abs_path, self.root))
-        hits = []
-        for doc in self.docs:
-            if doc.type != "D" or doc.archived:
-                continue
-            rel = posix_rel(abs_path, doc.root.project)
-            if rel.startswith(".."):
-                continue
-            entries = doc.as_list("paths")
-            if doc_file:
-                matched = rel in map(entry_path, entries)
-            else:
-                matched = any(glob_regex(p).match(rel) for p in entries)
-            if matched:
-                hits.append(doc)
-        return hits
+        """The non-archived designs whose `paths` govern a file."""
+        rel = posix_rel(abs_path, self.root)
+        if rel == ".." or rel.startswith("../"):
+            return []
+        doc_file = self.is_doc(rel)
+        return [doc for doc in self.docs if doc.type == "D" and not doc.archived and doc.governs(rel, doc_file)]
 
 
 # ---------------------------------------------------------------- index
@@ -1078,11 +1126,12 @@ def check_doc(repo, doc, changed, strict=False):
 
 
 def names_commit(repo, value):
-    """Whether `value` is a commit's hex object name, full or of at least 7 digits; a ref such as HEAD or a branch
-    names none, since it moves once the change commits."""
+    """Whether `value` is the hex object name of exactly one commit, full or of at least 7 digits; a ref such as HEAD
+    or a branch names none, even one named like a hash, since it moves once the change commits."""
     if not HEX_NAME_RE.match(value):
         return False
-    return git(repo.root, "rev-parse", "--verify", "-q", value + "^{commit}") is not None
+    objects = (git(repo.root, "rev-parse", "--disambiguate=" + value) or "").split()
+    return sum((git(repo.root, "cat-file", "-t", name) or "").strip() == "commit" for name in objects) == 1
 
 
 def owned_architecture(repo, commit, rel):
@@ -1100,7 +1149,7 @@ def check_overview(repo):
     the four subsections; its `paths` list only files; its Modules Paths are directories of the project."""
     overview = root_overview(repo)
     if overview is None:
-        archived = next((d for d in repo.docs if d.id == OVERVIEW_ID and not d.root.rel), None)
+        archived = root_overview(repo, archived=True)
         if archived:
             repo.problem("ERROR", archived.rel, "D000 is archived, but every project keeps its project overview; move "
                          "it back to docs/designs/ with a live status")
@@ -1113,7 +1162,7 @@ def check_overview(repo):
                          "`canon.py renumber {}`".format(doc.rel))
     if overview is None:
         return
-    present = {overview.headings[i].text for i in spec_subsections(overview)}
+    present = {overview.headings[i].text for i in overview.spec_subsections()}
     missing = ["`### {}`".format(name) for name, _body in OVERVIEW_SPEC if name not in present]
     if missing and overview.section("Spec") is not None:
         repo.problem("ERROR", overview.rel, "`## Spec` lacks {}; D000's Spec holds the subsections Capabilities, "
@@ -1124,10 +1173,8 @@ def check_overview(repo):
             repo.problem("ERROR", overview.rel, "`paths` entry `{}` names a glob or directory; D000's `paths` list "
                          "only files, since a glob or directory makes every file under it look governed"
                          .format(pattern))
-    project = str(overview.root.project)
-    for entry in module_entries(overview):
-        target = os.path.normpath(os.path.join(project, entry))
-        if not ((target == project or target.startswith(project + os.sep)) and os.path.isdir(target)):
+    for entry in overview.module_entries():
+        if module_dir(overview, entry) is None:
             repo.problem("WARN", overview.rel, "Modules Path `{}` is not a directory of the project".format(entry))
 
 
@@ -1167,11 +1214,11 @@ def run_check(repo, base=None):
 
     check_overview(repo)
 
-    overview = root_overview(repo) is not None
+    overview_kept = root_overview(repo) is not None
     for rel, commit in repo.deleted_docs(base):
         match = FILE_RE.match(rel.rsplit("/", 1)[-1])
         doc_id = match.group(1) + match.group(2) + match.group(3) if match else None
-        if doc_id and doc_id not in repo.by_id and not (overview and owned_architecture(repo, commit, rel)):
+        if doc_id and doc_id not in repo.by_id and not (overview_kept and owned_architecture(repo, commit, rel)):
             repo.problem("ERROR", rel, "{} was deleted; restore it and archive it instead".format(doc_id))
 
     if base:
@@ -1549,10 +1596,11 @@ def cmd_init(repo, args):
             _id_map, moves, notes = move_doc(fresh, source, OVERVIEW_ID, slug=OVERVIEW_SLUG, title=OVERVIEW_TITLE)
             actions += ["moved {} -> {}".format(posix_rel(src, repo.root), posix_rel(dst, repo.root))
                         for src, dst in moves.items()] + notes
-            overview = moves[source.path]
+            path = moves[source.path]
+            overview = Doc(source.root, path, posix_rel(path, repo.root), FILE_RE.match(path.name), False)
             added = add_overview_sections(overview)
             if added:
-                actions.append("added {} to {}".format(", ".join(added), posix_rel(overview, repo.root)))
+                actions.append("added {} to {}".format(", ".join(added), overview.rel))
         else:
             fields = default_fields("D")
             fields["owns"] = ["architecture"]
@@ -1576,19 +1624,17 @@ def cmd_init(repo, args):
 
 def has_overview(repo):
     """Whether the repo root's docs/ holds a D000, archived or not; `init` then neither creates nor moves one."""
-    return any(d.id == OVERVIEW_ID and not d.root.rel for d in repo.docs)
+    return root_overview(repo, archived=True) is not None
 
 
-def add_overview_sections(path):
+def add_overview_sections(doc):
     """Append at the end of the design's `## Spec` each of D000's subsections it lacks, with its template guidance;
     return the headings added."""
-    lines = path.read_text(encoding="utf-8").split("\n")
-    heads = scan_headings(lines, parse_frontmatter(lines)[1] + 1)
-    spec = next((i for i, h in enumerate(heads) if h.level == 2 and h.text == "Spec"), None)
-    if spec is None:
+    span = doc.section_span("Spec")
+    if span is None:
         return []
-    end = next((h.line for h in heads[spec + 1:] if h.level <= 2), len(lines))
-    present = {h.text for h in heads[spec + 1:] if h.level == 3 and h.line < end}
+    present = {doc.headings[i].text for i in doc.spec_subsections()}
+    lines, end = list(doc.lines), span[1]
     while not lines[end - 1].strip():
         end -= 1
     added, block = [], []
@@ -1597,7 +1643,7 @@ def add_overview_sections(path):
             added.append("### " + name)
             block += ["", "### " + name, ""] + body.split("\n")
     lines[end:end] = block
-    path.write_text("\n".join(lines), encoding="utf-8")
+    doc.path.write_text("\n".join(lines), encoding="utf-8")
     return added
 
 
@@ -1692,7 +1738,7 @@ def renumber_doc(repo, args):
             sys.exit("canon: {} is not a canon doc".format(args.target))
     on_base = repo.tree_files(args.base) if args.base else None
     new_id = renumbered_id(repo, doc, args.new, on_base)
-    id_map, _moves, notes = move_doc(repo, doc, new_id, args.base, on_base)
+    id_map, _moves, notes = move_doc(repo, doc, new_id, args.base, on_base, offer_base=True)
     write_indexes(Repo())
     for old, new in id_map.items():
         print("{} -> {}".format(old, new))
@@ -1700,11 +1746,12 @@ def renumber_doc(repo, args):
     return 0
 
 
-def move_doc(repo, doc, new_id, base=None, on_base=None, slug=None, title=None):
+def move_doc(repo, doc, new_id, base=None, on_base=None, slug=None, title=None, offer_base=False):
     """Give `doc` the id `new_id`, and its sub-designs that id with their letters: move their files and attachment
     directories, and rewrite the links, `refs`, `based_on` and `moved` entries naming them. `slug` and `title` replace
-    the doc's own. `base` is the branch merged or rebased onto, and `on_base` the files of its tree. Returns the id
-    map, the moves and notes for the user."""
+    the doc's own. `base` is the branch merged or rebased onto, and `on_base` the files of its tree; `offer_base`
+    suggests `--base` when it is missing, for a command that has one. Returns the id map, the moves and notes for the
+    user."""
     links = {}
 
     def linked(src, path):
@@ -1739,7 +1786,7 @@ def move_doc(repo, doc, new_id, base=None, on_base=None, slug=None, title=None):
             unclear.append(child.rel)
     if unclear:
         sys.exit("canon: cannot tell which {} owns {}; link each sub-design from its parent design{}, then rerun"
-                 .format(doc.id, ", ".join(unclear), "" if base else " or pass --base <ref>"))
+                 .format(doc.id, ", ".join(unclear), " or pass --base <ref>" if offer_base and not base else ""))
     if len({d.id for d in group}) < len(group):
         sys.exit("canon: sub-designs of {} share an id; renumber the one this branch added first".format(doc.id))
 
@@ -1967,7 +2014,8 @@ def cmd_affected(repo, args):
 
 def unchecked_commits(repo, doc):
     """The last commit that changed a design's file beyond its Known issues table, and the later commits touching
-    files its `paths` govern whose `Refs:` trailers do not name it."""
+    files its `paths` govern whose `Refs:` trailers do not name it. A merge touches the files its resolution changed
+    against every parent, or for a clean merge, which changed none, the files it changed against any parent."""
     base = None
     for sha in (git(repo.root, "log", "--format=%H", "--", doc.rel) or "").split():
         old = git(repo.root, "show", "{}^:{}".format(sha, doc.rel))
@@ -1980,19 +2028,17 @@ def unchecked_commits(repo, doc):
     specs = []
     for pattern in doc.as_list("paths"):
         specs += git_pathspec(doc.root.rel, pattern)
-    listed = {entry_path(p) for p in doc.as_list("paths")}
-
-    def governed(rel):
-        return not repo.is_doc(rel) or posix_rel(repo.root / rel, doc.root.project) in listed
-
-    out = git(repo.root, "log", "-z", "-c", "--name-only", "--no-renames", "--format=%x01%H%x00%B%x02",
+    out = git(repo.root, "log", "-z", "-c", "--name-only", "--no-renames", "--format=%x01%H %P%x00%B%x02",
               base + "..HEAD", "--", *specs) or ""
     commits = []
-    for entry in out.split("\x01")[1:]:
-        sha, _, rest = entry.partition("\0")
-        message, _, names = rest.partition("\x02")
-        files = [f for f in names.lstrip("\0").lstrip("\n").split("\0") if f]
-        if files and not any(map(governed, files)):
+    for header, files in log_entries(out):
+        shas, _, message = header.partition("\0")
+        sha, _, parents = shas.partition(" ")
+        if not files and len(parents.split()) > 1:
+            merged = git(repo.root, "diff-tree", "-z", "-r", "-m", "--no-commit-id", "--name-only", "--no-renames",
+                         sha, "--", *specs) or ""
+            files = [f for f in merged.split("\0") if f]
+        if files and not any(doc.governs(f, repo.is_doc(f)) for f in files):
             continue
         named = set()
         for line in message.splitlines():
@@ -2003,98 +2049,66 @@ def unchecked_commits(repo, doc):
     return base, commits
 
 
-def root_overview(repo):
-    """The non-archived D000 in the repo root's docs/; None without one."""
-    return next((d for d in repo.docs if d.id == OVERVIEW_ID and not d.archived and not d.root.rel), None)
+def log_entries(out):
+    """(header, files) for each commit `git log -z --name-only` lists with a format of `%x01<header>%x02`."""
+    for entry in out.split("\x01")[1:]:
+        header, _, names = entry.partition("\x02")
+        yield header, [f for f in names.lstrip("\0").lstrip("\n").split("\0") if f]
 
 
-def module_paths(overview):
-    """The directories that the Path cells of D000's Modules table list, relative to the project directory, with ""
-    for `./`. Each entry is read as a directory with or without its trailing `/`; one that is no directory of the
-    project holds no tracked file."""
-    return ["" if path == "." else path for path in map(posixpath.normpath, module_entries(overview))]
+def root_overview(repo, archived=False):
+    """The D000 in the repo root's docs/, outside archived/ unless `archived`; None without one."""
+    return next((d for d in repo.docs if d.id == OVERVIEW_ID and not d.root.rel and (archived or not d.archived)),
+                None)
 
 
-def spec_subsections(doc):
-    """The `### ` headings in a doc's `## Spec`, as indexes into its headings."""
-    heads = doc.headings
-    spec = next((i for i, h in enumerate(heads) if h.level == 2 and h.text == "Spec"), None)
-    if spec is None:
-        return []
-    end = next((i for i in range(spec + 1, len(heads)) if heads[i].level <= 2), len(heads))
-    return [i for i in range(spec + 1, end) if heads[i].level == 3]
+def module_dir(overview, entry):
+    """The directory an entry of a Path cell of D000's Modules table names, read with or without its trailing `/`,
+    relative to the project directory with "" for `./`; None when it is no existing directory of the project, which
+    then holds no file."""
+    project = str(overview.root.project)
+    target = os.path.normpath(os.path.join(project, entry))
+    if not ((target == project or target.startswith(project + os.sep)) and os.path.isdir(target)):
+        return None
+    rel = posix_rel(target, project)
+    return "" if rel == "." else rel
 
 
-def module_entries(overview):
-    """The entries of the Path cells of D000's Modules table, the first table under `### Modules` in `## Spec`, its
-    Path column found by its header: each cell split at commas, and each entry stripped of whitespace and backticks.
-    """
-    heads = overview.headings
-    found = next((i for i in spec_subsections(overview) if heads[i].text == "Modules"), None)
-    if found is None:
-        return []
-    end = next((h.line for h in heads[found + 1:] if h.level <= 3), len(overview.lines))
-    rows = []
-    for _i, line in code_mask(overview.lines[:end], heads[found].line + 1):
-        if line.strip().startswith("|"):
-            rows.append([cell.strip() for cell in line.strip().strip("|").split("|")])
-        elif rows:
-            break
-    column = next((i for i, cell in enumerate(rows[0] if rows else []) if cell.lower() == "path"), None)
-    entries = []
-    for row in rows[1:] if column is not None else []:
-        if all(set(cell) <= set("-: ") for cell in row):
-            continue
-        for entry in (row[column] if column < len(row) else "").split(","):
-            entry = entry.strip(" \t`")
-            if entry:
-                entries.append(entry)
-    return entries
-
-
-def parent_dir(rel):
-    return rel.rsplit("/", 1)[0] if "/" in rel else ""
-
-
-def coverage_report(repo, overview, listed=10):
+def coverage_report(repo, overview):
     """`audit`'s source areas: the tracked files under D000's module Paths, docs aside, that no design's `paths`
     match, grouped by directory within their module and ranked by the commits of the last 90 days."""
-    modules = sorted(set(module_paths(overview)), key=len, reverse=True)
-    patterns = {}
-    for doc in repo.docs:
-        if doc.type == "D" and not doc.archived:
-            patterns.setdefault(doc.root.rel, []).extend(glob_regex(p).pattern for p in doc.as_list("paths"))
-    matchers = [(rel + "/" if rel else "", re.compile("|".join("(?:{})".format(p) for p in entries)))
-                for rel, entries in patterns.items() if entries]
-    uncovered, covered_dirs, direct = {}, set(), {}
+    modules = sorted({module_dir(overview, entry) for entry in overview.module_entries()} - {None}, key=len,
+                     reverse=True)
+    designs = [doc for doc in repo.docs if doc.type == "D" and not doc.archived and doc.as_list("paths")]
+    uncovered, covered_dirs, files_directly_in = {}, set(), {}
     tracked = (git(repo.root, "ls-files", "-z") if modules else None) or ""
     for rel in tracked.split("\0"):
         module = next((m for m in modules if not m or rel.startswith(m + "/")), None) if rel else None
         if module is None or repo.is_doc(rel):
             continue
-        folder = parent_dir(rel)
-        direct[folder] = direct.get(folder, 0) + 1
-        if any(rel.startswith(prefix) and rx.match(rel[len(prefix):]) for prefix, rx in matchers):
+        folder = posixpath.dirname(rel)
+        files_directly_in[folder] = files_directly_in.get(folder, 0) + 1
+        if any(doc.governs(rel) for doc in designs):
             while (module, folder) not in covered_dirs:
                 covered_dirs.add((module, folder))
                 if folder == module:
                     break
-                folder = parent_dir(folder)
+                folder = posixpath.dirname(folder)
         else:
             uncovered[rel] = module
     areas, area_of = {}, {}
     for rel, module in uncovered.items():
-        area = parent_dir(rel)
-        while area != module and (module, parent_dir(area)) not in covered_dirs:
-            area = parent_dir(area)
+        area = posixpath.dirname(rel)
+        while area != module and (module, posixpath.dirname(area)) not in covered_dirs:
+            area = posixpath.dirname(area)
         area_of[rel] = area
         areas.setdefault(area, (module, []))[1].append(rel)
     commits = dict.fromkeys(areas, 0)
     if areas and repo.has_head:
-        out = git(repo.root, "log", "-z", "--since=90.days.ago", "--format=%x01", "--name-only", "--no-renames",
+        out = git(repo.root, "log", "-z", "--since=90.days.ago", "--format=%x01%x02", "--name-only", "--no-renames",
                   "HEAD") or ""
-        for entry in out.split("\x01")[1:]:
-            for area in {area_of[f] for f in entry.lstrip("\0").lstrip("\n").split("\0") if f in area_of}:
+        for _header, files in log_entries(out):
+            for area in {area_of[f] for f in files if f in area_of}:
                 commits[area] += 1
 
     def label(area):
@@ -2103,15 +2117,15 @@ def coverage_report(repo, overview, listed=10):
     ranked = sorted(areas, key=lambda a: (-commits[a], -len(areas[a][1]), label(a)))
     if not ranked:
         return []
-    width = len(str(max(commits[a] for a in ranked[:listed])))
+    width = len(str(max(commits[a] for a in ranked[:MAX_AREAS])))
     report = ["Source areas no design covers (commits in the last 90 days, most first):"]
-    for area in ranked[:listed]:
+    for area in ranked[:MAX_AREAS]:
         module, files = areas[area]
         size = "{} files".format(len(files)) if (module, area) not in covered_dirs \
-            else "{} of {} files".format(len(files), direct[area])
+            else "{} of {} files".format(len(files), files_directly_in[area])
         report.append("  {:>{}} commits  {}  {}".format(commits[area], width, label(area), size))
-    if len(ranked) > listed:
-        report.append("  and {} more areas".format(len(ranked) - listed))
+    if len(ranked) > MAX_AREAS:
+        report.append("  and {} more areas".format(len(ranked) - MAX_AREAS))
     return report
 
 

@@ -22,4 +22,4 @@ While the revision awaits its gate, its frontmatter holds `as_built: <commit>`: 
 
 ## Gate and commit
 
-The revision passes the review gate at L1, as the [tiers](SKILL.md#workflow) say, with the reviewer prompt's as-built lines ([workflow.md](workflow.md#reviewer-prompt)). It needs no plan. Commit it on its own, as a `docs` commit whose `Refs:` trailer names the design, before the change's own revision, whose gate gives that commit as `Changes since`. Outside Git, start the change's own revision once this gate has passed.
+The revision passes the review gate at L1, as the [tiers](SKILL.md#workflow) say, with the reviewer prompt's as-built lines ([workflow.md](workflow.md#reviewer-prompt)). It needs no plan. Commit it on its own, as a `docs` commit whose `Refs:` trailer names the design, before the change's own revision, whose gate gives that commit as `Changes since`. A revision that creates a top-level design adds its rows to D000 in that commit ([doc-types.md](doc-types.md#project-overview-d000)). Outside Git, start the change's own revision once this gate has passed.

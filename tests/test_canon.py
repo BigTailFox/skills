@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -36,6 +37,9 @@ UNIT_TIME_FORMAT = "%Y%m%dT%H%M%SZ"
 
 
 class CanonTest(unittest.TestCase):
+    OVERVIEW = "docs/designs/D000-project-overview.md"
+    MODULES = "| Module | Path | Purpose | Entry points | Design |\n|---|---|---|---|---|\n"
+
     def setUp(self):
         self.root = self.tmpdir()
         self.git("init", "-q", "-b", "main")
@@ -102,6 +106,16 @@ class CanonTest(unittest.TestCase):
 
     def issues(self, design, *rows):
         design.write_text(design.read_text() + ISSUES.format("\n".join(rows)))
+
+    def modules(self, *cells, design="none"):
+        """Give D000's Modules table one row per Path cell, each with `design` in its Design cell."""
+        path = self.root / self.OVERVIEW
+        rows = "".join("| m{} | {} | Fixture | none | {} |\n".format(i, cell, design) for i, cell in enumerate(cells, 1))
+        path.write_text(path.read_text().replace(self.MODULES, self.MODULES + rows))
+
+    def problems(self, out):
+        """The ERROR and WARN lines of `check`'s output."""
+        return [line for line in out.splitlines() if line.startswith(("ERROR", "WARN"))]
 
     def create(self, *names):
         for name in names:
@@ -277,7 +291,7 @@ class RenumberTest(CanonTest):
         self.design("our-part", parent="D001")
         self.commit()
         self.git("merge", "-q", "--no-edit", "other")
-        self.assertIn("cannot tell which D001 owns", self.fails("renumber", target))
+        self.assertRegex(self.fails("renumber", target), r"cannot tell which D001 owns .* or pass --base <ref>")
         self.ok("renumber", target, "--base", "other")
         self.assertTrue(theirs_child.is_file())
         self.assertTrue((self.root / "docs/designs/D002A-our-part.md").is_file())
@@ -605,8 +619,6 @@ class InitTest(CanonTest):
 
 
 class ProjectOverviewTest(CanonTest):
-    OVERVIEW = "docs/designs/D000-project-overview.md"
-
     def repository_without_docs(self):
         self.root = self.tmpdir()
         self.git("init", "-q", "-b", "main")
@@ -625,8 +637,7 @@ class ProjectOverviewTest(CanonTest):
         for heading in headings[1:]:
             self.assertIn("<!-- canon:", sections[heading], heading)
         self.assertIn("| Capability | Modules | Design |\n|---|---|---|\n", sections["### Capabilities"])
-        self.assertIn("| Module | Path | Purpose | Entry points | Design |\n|---|---|---|---|---|\n",
-                      sections["### Modules"])
+        self.assertIn(self.MODULES, sections["### Modules"])
         self.assertIn("`### Standards`", sections["### Glossary"])
         self.assertIn("`| Standard | Design |`", sections["### Glossary"])
         self.assertEqual([line for line in self.ok("check").splitlines() if self.OVERVIEW in line],
@@ -646,7 +657,7 @@ class ProjectOverviewTest(CanonTest):
 
     def test_the_agents_block_links_d000_and_the_index(self):
         agents = (self.root / "AGENTS.md").read_text()
-        self.assertIn("](docs/designs/D000-project-overview.md)", agents)
+        self.assertIn("]({})".format(self.OVERVIEW), agents)
         self.assertIn("](docs/README.md)", agents)
         self.assertNotRegex(self.ok("check"), r"(?m)^(ERROR|WARN) AGENTS\.md")
 
@@ -665,10 +676,9 @@ class ProjectOverviewTest(CanonTest):
 
 class OverviewMoveTest(CanonTest):
     """A project set up by an older canon.py, whose design owning `architecture` the upgrade moves to D000."""
-    OVERVIEW = "docs/designs/D000-project-overview.md"
     ARCHITECTURE = ("## Goals\n\nFixture goals.\n\n## Spec\n\nThe module map.\n\n![Module map](D003/map.svg)\n\n"
-                    "### Modules\n\n| Module | Path | Purpose | Entry points | Design |\n|---|---|---|---|---|\n"
-                    "| base | src/ | Fixture | src/base.py | none |\n\n## Decisions\n\nFixture decisions.\n")
+                    "### Modules\n\n" + CanonTest.MODULES + "| base | src/ | Fixture | src/base.py | none |\n\n"
+                    "## Decisions\n\nFixture decisions.\n")
 
     def setUp(self):
         super().setUp()
@@ -729,9 +739,8 @@ class OverviewMoveTest(CanonTest):
         for name in ("Capabilities", "Dependencies", "Glossary"):
             self.assertIn("<!-- canon:", spec.split("### " + name + "\n", 1)[1].split("\n### ", 1)[0], name)
         self.assertNotIn("<!-- canon:", spec.split("### Modules\n", 1)[1].split("\n### ", 1)[0])
-        problems = [line for line in self.fails("check").splitlines() if line.startswith(("ERROR", "WARN"))]
-        self.assertEqual(problems, ["ERROR {}: template guidance `<!-- canon: ... -->` left in the doc"
-                                    .format(self.OVERVIEW)])
+        self.assertEqual(self.problems(self.fails("check")),
+                         ["ERROR {}: template guidance `<!-- canon: ... -->` left in the doc".format(self.OVERVIEW)])
         path.write_text(re.sub(r"<!-- canon:.*?-->", "Filled.", overview, flags=re.S))
         self.ok("check", "--fix")
 
@@ -739,9 +748,8 @@ class OverviewMoveTest(CanonTest):
         self.project(status="draft", reviewed=None, implemented=None)
         self.ok("init")
         self.assertIn("status: draft", (self.root / self.OVERVIEW).read_text())
-        problems = [line for line in self.ok("check").splitlines() if line.startswith(("ERROR", "WARN"))]
-        self.assertEqual(problems, ["WARN {}: template guidance `<!-- canon: ... -->` left in the doc"
-                                    .format(self.OVERVIEW)])
+        self.assertEqual(self.problems(self.ok("check")),
+                         ["WARN {}: template guidance `<!-- canon: ... -->` left in the doc".format(self.OVERVIEW)])
 
     def test_a_filled_d000_is_no_deleted_doc_while_other_deleted_designs_still_are(self):
         self.project()
@@ -810,6 +818,32 @@ class OverviewMoveTest(CanonTest):
         self.commit(check=False)
         self.assertIn("all but one", self.refuses(module, "D003"))
 
+    def test_init_refusing_to_move_unclear_or_id_sharing_sub_designs_suggests_no_base(self):
+        architecture = self.design("architecture", paths=["src/base.py"])
+        part = self.design("part", parent="D001")
+        rival = architecture.with_name("D001-other.md")
+        rival.write_text(architecture.read_text().replace("owns: [architecture]", "owns: [other]"))
+        out = self.fails("init")
+        self.assertIn("cannot tell which D001 owns docs/designs/D001A-part.md; link each sub-design from its parent "
+                      "design, then rerun", out)
+        self.assertNotIn("--base", out)
+        rival.unlink()
+        part.with_name("D001A-copy.md").write_text(part.read_text().replace("owns: [part]", "owns: [copy]"))
+        out = self.fails("init")
+        self.assertIn("sub-designs of D001 share an id", out)
+        self.assertNotIn("--base", out)
+
+
+class WhichTest(CanonTest):
+    def test_a_module_design_governs_only_the_files_of_its_module(self):
+        self.ok("init", "--root", "mod")
+        design = self.root / self.ok("new", "D", "part", "--root", "mod").strip()
+        self.set(design, summary="Fixture", owns=["part"], paths=["**"])
+        self.create("mod/x.py", "mod/README.md")
+        lines = self.ok("which", "mod/x.py", "src/base.py", "mod/README.md").splitlines()
+        self.assertRegex(lines[0], r"^mod/x\.py: D001 mod/docs/designs/D001-part\.md - Fixture")
+        self.assertEqual(lines[1:], ["src/base.py: no design", "mod/README.md: doc"])
+
 
 class ProjectDocsTest(CanonTest):
     """READMEs, AGENTS.md and the other project docs, and the files under a docs root, are docs, never code."""
@@ -822,6 +856,18 @@ class ProjectDocsTest(CanonTest):
         lines = self.ok("which", *self.DOCS, "src/a/x.py").splitlines()
         self.assertEqual(lines[:-1], [name + ": doc" for name in self.DOCS])
         self.assertRegex(lines[-1], r"^src/a/x\.py: D001 docs/designs/D001-area\.md - Fixture")
+
+    def test_a_doc_by_its_name_has_a_doc_extension_or_none(self):
+        self.design(paths=["src/**"])
+        docs = ["README.zh.md", "LICENSE-MIT", "src/a/readme.rst", "SECURITY.md", "CODE_OF_CONDUCT.md", "COPYING",
+                "src/Readme.MARKDOWN", "src/license-apache.txt", "CHANGELOG.adoc", "contributing.org"]
+        code = ["src/agents.py", "src/license.py"]
+        self.create(*docs, *code, "notice.ts", "README.html")
+        lines = self.ok("which", *docs, *code, "notice.ts", "README.html").splitlines()
+        self.assertEqual(lines[:len(docs)], [name + ": doc" for name in docs])
+        for name, line in zip(code, lines[len(docs):]):
+            self.assertTrue(line.startswith(name + ": D001 docs/designs/D001-area.md - Fixture"), line)
+        self.assertEqual(lines[len(docs) + len(code):], ["notice.ts: no design", "README.html: no design"])
 
     def test_a_design_governs_a_doc_only_through_an_entry_equal_to_its_path(self):
         design = self.design(paths=["src/auth/**"])
@@ -886,18 +932,38 @@ class ProjectDocsTest(CanonTest):
         self.git("merge", "-q", "--no-edit", "code")
         self.assertRegex(self.ok("audit"), r"  2 commits since [0-9a-f]+  D001 ")
 
+    def clean_merge(self, ours, theirs, message="edit"):
+        """Edit `theirs` on a side branch and `ours` on main, each in a commit with `message`, and merge the side
+        branch, which no conflict stops."""
+        self.git("checkout", "-qb", "side")
+        self.edit_commit(theirs)
+        self.git("commit", "-q", "--amend", "-m", message)
+        self.git("checkout", "-q", "main")
+        self.edit_commit(ours)
+        self.git("commit", "-q", "--amend", "-m", message)
+        self.git("merge", "-q", "--no-edit", "side")
+        self.assertEqual(self.git("diff-tree", "-c", "--name-only", "--no-commit-id", "HEAD"), "")
+
+    def test_a_clean_merge_of_branches_that_changed_only_docs_the_paths_do_not_list_is_no_unchecked_commit(self):
+        self.design(paths=["src/**"])
+        self.create("src/a/README.md", "src/b/README.md")
+        self.commit()
+        self.clean_merge("src/a/README.md", "src/b/README.md")
+        self.assertNotIn("commits since", self.ok("audit"))
+
+    def test_a_clean_merge_of_branches_that_changed_code_is_an_unchecked_commit_unless_a_trailer_names_the_design(self):
+        self.design(paths=["src/**"])
+        self.create("src/a/x.py", "src/b/y.py")
+        self.commit()
+        self.clean_merge("src/a/x.py", "src/b/y.py", message="fix: checked\n\nRefs: D001")
+        self.assertRegex(self.ok("audit"), r"  1 commits since [0-9a-f]+  D001 ")
+        self.git("commit", "-q", "--amend", "-m", "Merge branch 'side'\n\nRefs: D001")
+        self.assertNotIn("commits since", self.ok("audit"))
+
 
 class CoverageTest(CanonTest):
     """`audit`'s source areas: the tracked files under the Paths of D000's Modules rows that no design covers."""
-    OVERVIEW = "docs/designs/D000-project-overview.md"
-    MODULES = "| Module | Path | Purpose | Entry points | Design |\n|---|---|---|---|---|\n"
     AREAS = "Source areas no design covers (commits in the last 90 days, most first):"
-
-    def modules(self, *cells):
-        """Give D000's Modules table one row per Path cell."""
-        path = self.root / self.OVERVIEW
-        rows = "".join("| m{} | {} | Fixture | none | none |\n".format(i, cell) for i, cell in enumerate(cells, 1))
-        path.write_text(path.read_text().replace(self.MODULES, self.MODULES + rows))
 
     def areas(self):
         return self.section(self.ok("audit"), self.AREAS) or []
@@ -933,6 +999,14 @@ class CoverageTest(CanonTest):
         self.create("src/a/x.py", "src/b/y.py", "src/c/z.py")
         self.commit()
         self.assertEqual(self.areas(), ["  1 commits  src/a/  1 files", "  1 commits  src/b/  1 files"])
+
+    def test_a_module_path_deleted_from_the_work_tree_holds_no_file_while_the_index_lists_its_files(self):
+        self.modules("src/a/", "src/b/")
+        self.create("src/a/x.py", "src/b/y.py")
+        self.commit()
+        shutil.rmtree(str(self.root / "src/b"))
+        self.assertIn("src/b/y.py", self.git("ls-files"))
+        self.assertEqual(self.areas(), ["  1 commits  src/a/  1 files"])
 
     def test_a_module_at_the_project_directory_counts_the_files_no_longer_path_holds(self):
         self.modules("./", "`src`")
@@ -978,13 +1052,10 @@ class CoverageTest(CanonTest):
 
 class ReachTest(CanonTest):
     """`audit`'s designs that D000 does not reach through its links and the `refs` of the designs it reaches."""
-    OVERVIEW = CoverageTest.OVERVIEW
     UNREACHED = "Designs D000 does not reach (link each from D000's rows or from a design D000 reaches):"
 
     def test_audit_lists_the_designs_neither_d000_nor_a_design_it_reaches_names(self):
-        overview = self.root / self.OVERVIEW
-        overview.write_text(overview.read_text().replace(
-            CoverageTest.MODULES, CoverageTest.MODULES + "| a | src/ | Fixture | none | [D001: A](D001-a.md) |\n"))
+        self.modules("src/", design="[D001: A](D001-a.md)")
         self.design("a", refs=["D001A", "D002", "P001"])
         self.design("b", refs=["D004"])
         self.design("c")
@@ -995,15 +1066,13 @@ class ReachTest(CanonTest):
         self.doc("P", "first", refs=["D005"])
         self.ok("archive", "D003", "retired")
         self.ok("check", "--fix")
-        self.assertIn("refs: [D001]", overview.read_text())
+        self.assertIn("refs: [D001]", (self.root / self.OVERVIEW).read_text())
         self.assertEqual(self.section(self.ok("audit"), self.UNREACHED),
                          ["  D002A active docs/designs/D002A-b-part.md - Fixture",
                           "  D005 active docs/designs/D005-e.md - Fixture"])
 
     def project(self):
-        overview = self.root / self.OVERVIEW
-        overview.write_text(overview.read_text().replace(
-            CoverageTest.MODULES, CoverageTest.MODULES + "| all | ./ | Fixture | none | none |\n"))
+        self.modules("./")
         self.design(paths=["src/base.py"])
         self.create("lib/x.py")
 
@@ -1053,6 +1122,18 @@ class AsBuiltTest(CanonTest):
             self.assertRegex(self.fails("check"), r"ERROR docs/designs/D001-area\.md: `as_built` `{}` names no commit"
                              .format(value))
 
+    def test_a_branch_or_tag_named_like_a_hash_names_no_commit(self):
+        design = self.doc("D", "area")
+        self.commit()
+        self.git("branch", "deadbee")
+        self.git("tag", "cafef00d")
+        self.assertEqual(self.git("rev-parse", "--disambiguate=deadbee"), "")
+        self.assertEqual(self.git("rev-parse", "--disambiguate=cafef00d"), "")
+        for value in ("deadbee", "cafef00d"):
+            self.set(design, as_built=value)
+            self.assertIn("ERROR docs/designs/D001-area.md: `as_built` `{}` names no commit".format(value),
+                          self.fails("check"))
+
     def test_worktree_passes_before_the_first_commit_and_outside_git_where_a_hash_fails(self):
         self.doc("D", "area", as_built="worktree")
         self.assertNotIn("as_built", self.ok("check", "--fix"))
@@ -1086,10 +1167,6 @@ class AsBuiltTest(CanonTest):
 class OverviewCheckTest(CanonTest):
     """`check`'s rules for D000: one live D000 in the repo root's docs/ and none elsewhere, its four Spec
     subsections, only files in its `paths`, and a warning for a Modules Path that is no directory."""
-    OVERVIEW = CoverageTest.OVERVIEW
-
-    def problems(self, out):
-        return [line for line in out.splitlines() if line.startswith(("ERROR", "WARN"))]
 
     def test_a_repository_fresh_from_init_passes_with_only_the_warnings_of_an_unfinished_design(self):
         self.assertEqual(self.problems(self.ok("check")),
@@ -1141,11 +1218,7 @@ class OverviewCheckTest(CanonTest):
         self.ok("check")
 
     def test_a_modules_path_that_is_no_directory_of_the_project_only_warns(self):
-        path = self.root / self.OVERVIEW
-        path.write_text(path.read_text().replace(CoverageTest.MODULES, CoverageTest.MODULES
-                                                 + "| all | ./ | Fixture | none | none |\n"
-                                                 + "| src | `src/`, src | Fixture | none | none |\n"
-                                                 + "| lib | lib/, src/base.py, .. | Fixture | none | none |\n"))
+        self.modules("./", "`src/`, src", "lib/, src/base.py, ..")
         self.assertEqual([line for line in self.problems(self.ok("check")) if "Modules Path" in line],
                          ["WARN {}: Modules Path `{}` is not a directory of the project".format(self.OVERVIEW, entry)
                           for entry in ("lib/", "src/base.py", "..")])
