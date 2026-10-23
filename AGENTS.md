@@ -44,3 +44,14 @@ Do not commit a `SKILL.md` outside `skills/`, templates and examples included: t
 - Commit messages follow Conventional Commits, with the skill name as the scope, e.g. `feat(canon-code-review): add security checklist`; repository-wide changes use no scope or `repo`.
 - Releases follow Semantic Versioning and are tagged `vX.Y.Z`. To release, write the version's entry in `CHANGELOG.md` from the commits since the last tag, in terms of what changes for users; commit it as `chore(repo): release X.Y.Z` and tag that commit. `CANON_VERSION` is separate and changes only with `canon.py`.
 - Write everything in English: skills, `README.md` and `AGENTS.md`.
+
+<!-- canon:agents:start -->
+## Docs
+
+This repo follows the canon documentation system (`canon` skill). Engineering docs live in `docs/` and in module `docs/` directories. Start at [D000: Project overview](docs/designs/D000-project-overview.md); [docs/README.md](docs/README.md) indexes every doc.
+
+- Tool: `python3 skills/governance/canon/scripts/canon.py` from the repo root (`-h` lists commands). Run `check --fix` before committing and after every merge or rebase.
+- When a change may alter behavior or standards a design specifies, run `which <file>` and read the governing sections with `show D00X#slug` first.
+- State each change's tier (L0, L1, L2) before starting. Designs and plans pass the review gate defined by the `canon` skill.
+- Skip `docs/archived/` unless researching history.
+<!-- canon:agents:end -->
