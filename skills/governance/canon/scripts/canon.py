@@ -27,7 +27,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "16"
+CANON_VERSION = "17"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -109,6 +109,7 @@ Engineering docs managed with canon. Designs (D) are the source of truth; plans 
 GITATTRIBUTES = ("**/docs/README.md merge=union", "**/docs/archived/README.md merge=union")
 LOCAL_DIR = ".canon/"
 DOCS_PATHSPEC = ":(glob)**/docs/**/*.md"
+DOC_NAMES = ("README", "AGENTS", "CLAUDE", "CHANGELOG", "CONTRIBUTING", "LICENSE", "NOTICE")
 
 TEMPLATES = {
     "C": """
@@ -362,10 +363,16 @@ def iter_links(lines, start=0):
             yield i, match
 
 
-def glob_regex(pattern):
+def entry_path(pattern):
+    """A `paths` entry relative to its project, without surrounding whitespace or leading `./`."""
     p = pattern.strip()
     while p.startswith("./"):
         p = p[2:]
+    return p
+
+
+def glob_regex(pattern):
+    p = entry_path(pattern)
     if p.endswith("/"):
         p += "**"
     out, i = "", 0
@@ -384,9 +391,7 @@ def glob_regex(pattern):
 
 
 def git_pathspec(project_rel, pattern):
-    p = pattern.strip()
-    while p.startswith("./"):
-        p = p[2:]
+    p = entry_path(pattern)
     if p.endswith("/"):
         p += "**"
 
@@ -663,7 +668,15 @@ class Repo:
                 sys.exit("canon: cannot diff against {}".format(base))
         return sorted({f for out in outs for f in (out or "").split("\0") if f})
 
+    def is_doc(self, rel):
+        """Whether a repo-relative file is a project doc, such as a README, or lies under a docs root."""
+        if rel.rsplit("/", 1)[-1].split(".", 1)[0].upper() in DOC_NAMES:
+            return True
+        return any(rel.startswith(root.docs_rel + "/") for root in self.roots)
+
     def designs_for(self, abs_path):
+        """The designs whose `paths` match a file; a doc only through an entry equal to its path."""
+        doc_file = self.is_doc(posix_rel(abs_path, self.root))
         hits = []
         for doc in self.docs:
             if doc.type != "D" or doc.archived:
@@ -671,7 +684,12 @@ class Repo:
             rel = posix_rel(abs_path, doc.root.project)
             if rel.startswith(".."):
                 continue
-            if any(glob_regex(p).match(rel) for p in doc.as_list("paths")):
+            entries = doc.as_list("paths")
+            if doc_file:
+                matched = rel in map(entry_path, entries)
+            else:
+                matched = any(glob_regex(p).match(rel) for p in entries)
+            if matched:
                 hits.append(doc)
         return hits
 
@@ -1860,7 +1878,7 @@ def cmd_which(repo, args):
         hits = repo.designs_for(path)
         rel = posix_rel(path, repo.root)
         if not hits:
-            print("{}: no design".format(rel))
+            print("{}: {}".format(rel, "doc" if repo.is_doc(rel) else "no design"))
         for doc in hits:
             print("{}: {} {} - {}{}".format(rel, doc.id, doc.rel, doc.get("summary", ""), design_notes(doc)))
     return 0
@@ -1887,7 +1905,7 @@ def cmd_affected(repo, args):
 
 def unchecked_commits(repo, doc):
     """The last commit that changed a design's file beyond its Known issues table, and the later commits touching
-    its `paths` whose `Refs:` trailers do not name it."""
+    files its `paths` govern whose `Refs:` trailers do not name it."""
     base = None
     for sha in (git(repo.root, "log", "--format=%H", "--", doc.rel) or "").split():
         old = git(repo.root, "show", "{}^:{}".format(sha, doc.rel))
@@ -1900,10 +1918,20 @@ def unchecked_commits(repo, doc):
     specs = []
     for pattern in doc.as_list("paths"):
         specs += git_pathspec(doc.root.rel, pattern)
-    out = git(repo.root, "log", "--format=%H%x00%B%x01", base + "..HEAD", "--", *specs) or ""
+    listed = {entry_path(p) for p in doc.as_list("paths")}
+
+    def governed(rel):
+        return not repo.is_doc(rel) or posix_rel(repo.root / rel, doc.root.project) in listed
+
+    out = git(repo.root, "log", "-z", "-c", "--name-only", "--no-renames", "--format=%x01%H%x00%B%x02",
+              base + "..HEAD", "--", *specs) or ""
     commits = []
-    for entry in out.split("\x01"):
-        sha, _, message = entry.strip("\n").partition("\0")
+    for entry in out.split("\x01")[1:]:
+        sha, _, rest = entry.partition("\0")
+        message, _, names = rest.partition("\x02")
+        files = [f for f in names.lstrip("\0").lstrip("\n").split("\0") if f]
+        if files and not any(map(governed, files)):
+            continue
         named = set()
         for line in message.splitlines():
             if line.lower().startswith("refs:"):

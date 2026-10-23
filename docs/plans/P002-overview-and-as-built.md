@@ -17,7 +17,7 @@ Implements [D002: Project overview and as-built designs](../designs/D002-overvie
 
 ## Current state
 
-S1 to S3 done. Next: S4.
+S1 to S4 done. Next: S5.
 
 ## Slices
 
@@ -91,7 +91,7 @@ The fixture stands for a project set up by an older `canon.py`: it deletes the D
 
 ### S4: Docs are never code without a design
 
-Status: todo
+Status: done
 Risk: complex logic
 
 Builds on `D002#project-docs`.
@@ -261,3 +261,5 @@ Test criteria; seam: `check` output and exit status:
 - S3 done: 7 tests in `OverviewMoveTest`, 119 in the suite, all passing. The fixture also takes the D000 link out of the `AGENTS.md` block, as an older `canon.py` wrote it, so `init`'s refusal is seen to change no file. Breaking each new condition in turn made its test fail.
 - S3 decisions, for the docs step to write into D002: `init` also refuses when several non-archived designs own `architecture`, naming them and asking that all but one drop it, since `owns` must be unique and picking one would be a guess. The deleted-doc exception, like the move, counts only a design outside `archived/`. `renumber`'s moving and link rewriting is now `move_doc`, which `init` calls with D000's slug and title; `renumber`'s output is unchanged.
 - For S8: `init`'s move rewrites references in other docs without bumping their `updated`, as `renumber` does, so canon-init's Upgrade runs `check --fix` after `init`.
+- S4 done: 6 tests in `ProjectDocsTest`, 125 in the suite, all passing. Breaking the empty-file-list guard, the case folding or the docs-root rule each turned a test red.
+- S4 decisions, for the docs step to write into D002: `audit` reads each commit's files with `git log -z -c --name-only --no-renames`, so a merge counts by the files its resolution changed against every parent, and one whose resolution changed only docs its design's entries do not list is no unchecked commit; a merge with no such files counts as before. Through `--no-renames`, a commit that renames governed code to a README-named file still counts. A `paths` entry is compared with a doc's path after the trimming of whitespace and leading `./` that glob entries already get.

@@ -783,6 +783,89 @@ class OverviewMoveTest(CanonTest):
         self.assertIn("all but one", self.refuses(module, "D003"))
 
 
+class ProjectDocsTest(CanonTest):
+    """READMEs, AGENTS.md and the other project docs, and the files under a docs root, are docs, never code."""
+    DOCS = ["README.md", "src/a/readme.rst", "AGENTS.md", "CLAUDE.md", "LICENSE", "NOTICE", "CHANGELOG.md",
+            "CONTRIBUTING.md", "docs/README.md", "docs/assets/x.png"]
+
+    def create(self, *names):
+        for name in names:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if not path.exists():
+                path.write_text("x\n")
+
+    def test_which_prints_doc_for_every_doc_under_a_design_holding_everything(self):
+        self.design(paths=["**"])
+        self.create(*self.DOCS, "src/a/x.py")
+        lines = self.ok("which", *self.DOCS, "src/a/x.py").splitlines()
+        self.assertEqual(lines[:-1], [name + ": doc" for name in self.DOCS])
+        self.assertRegex(lines[-1], r"^src/a/x\.py: D001 docs/designs/D001-area\.md - Fixture")
+
+    def test_a_design_governs_a_doc_only_through_an_entry_equal_to_its_path(self):
+        design = self.design(paths=["src/auth/**"])
+        self.create("src/auth/README.md", "src/auth/x.py")
+        self.assertEqual(self.ok("which", "src/auth/README.md"), "src/auth/README.md: doc\n")
+        self.assertEqual(self.ok("affected", "src/auth/README.md"), "no design governs the changed files\n")
+        self.set(design, paths=["src/auth/**", "src/auth/README.md"])
+        self.assertRegex(self.ok("which", "src/auth/README.md"), r"^src/auth/README\.md: D001 docs/designs/D001-")
+        self.assertRegex(self.ok("affected", "src/auth/README.md"),
+                         r"^D001 active docs/designs/D001-area\.md - Fixture\n  src/auth/README\.md\n")
+
+    def edit_commit(self, *names):
+        for name in names:
+            path = self.root / name
+            path.write_text(path.read_text() + "x\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "edit " + ", ".join(names))
+
+    def test_a_commit_changing_only_docs_the_paths_do_not_list_is_no_unchecked_commit(self):
+        self.design(paths=["src/auth/**"])
+        self.create("src/auth/README.md", "src/auth/x.py")
+        self.commit()
+        self.edit_commit("src/auth/README.md")
+        self.assertNotIn("commits since", self.ok("audit"))
+        self.edit_commit("src/auth/README.md", "src/auth/x.py")
+        self.assertRegex(self.ok("audit"), r"  1 commits since [0-9a-f]+  D001 ")
+
+    def test_a_commit_changing_a_doc_the_paths_list_is_an_unchecked_commit(self):
+        self.design(paths=["src/auth/**", "src/auth/README.md"])
+        self.create("src/auth/README.md", "src/auth/x.py")
+        self.commit()
+        self.edit_commit("src/auth/README.md")
+        self.assertRegex(self.ok("audit"), r"  1 commits since [0-9a-f]+  D001 ")
+
+    def test_renaming_a_governed_file_to_a_doc_is_an_unchecked_commit(self):
+        self.design(paths=["src/auth/**"])
+        self.create("src/auth/notes.txt")
+        self.commit()
+        self.git("mv", "src/auth/notes.txt", "src/auth/README.md")
+        self.git("commit", "-qm", "docs: notes become the README")
+        self.assertRegex(self.ok("audit"), r"  1 commits since [0-9a-f]+  D001 ")
+
+    def test_a_merge_is_an_unchecked_commit_unless_its_resolution_changes_only_docs_the_paths_do_not_list(self):
+        self.design(paths=["src/auth/**"])
+        self.create("src/auth/README.md", "src/auth/x.py")
+        self.commit()
+        readme = self.root / "src/auth/README.md"
+        self.git("checkout", "-qb", "side")
+        readme.write_text("side\n")
+        self.git("commit", "-qam", "docs: side")
+        self.git("checkout", "-q", "main")
+        readme.write_text("main\n")
+        self.git("commit", "-qam", "docs: main")
+        self.assertNotEqual(self.run_here("git", "merge", "-q", "side").returncode, 0)
+        readme.write_text("merged\n")
+        self.git("commit", "-qam", "Merge branch 'side'")
+        self.assertNotIn("commits since", self.ok("audit"))
+        self.git("checkout", "-qb", "code")
+        self.edit_commit("src/auth/x.py")
+        self.git("checkout", "-q", "main")
+        self.edit_commit("src/auth/README.md")
+        self.git("merge", "-q", "--no-edit", "code")
+        self.assertRegex(self.ok("audit"), r"  2 commits since [0-9a-f]+  D001 ")
+
+
 class TraceCase(CanonTest):
     HOST_VARS = ("CURSOR_AGENT", "CURSOR_CONVERSATION_ID", "CODEX_THREAD_ID", "CLAUDECODE")
 
