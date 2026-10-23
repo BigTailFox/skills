@@ -27,7 +27,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "15"
+CANON_VERSION = "16"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -632,18 +632,21 @@ class Repo:
         return {d.id for d in self.docs} | self.history_ids()
 
     def deleted_docs(self, base=None):
-        """Doc files deleted (not renamed) in uncommitted changes, and on this branch since `base`."""
+        """(path, commit) for each doc file deleted, not renamed: in uncommitted changes, where the commit compared
+        with is HEAD, and on this branch since `base`, where it is the merge base with `base`."""
         if not self.has_head:
             return []
-        ranges = [["HEAD"]] + ([[base + "...HEAD"]] if base else [])
-        deleted = set()
-        for rng in ranges:
-            out = git(self.root, "diff", "-z", "-M", "--name-status", "--diff-filter=D", *rng, "--", DOCS_PATHSPEC)
+        deleted = []
+        for rng in ["HEAD"] + ([base + "...HEAD"] if base else []):
+            out = git(self.root, "diff", "-z", "-M", "--name-status", "--diff-filter=D", rng, "--", DOCS_PATHSPEC)
             if out is None:
-                sys.exit("canon: cannot diff against " + rng[0])
+                sys.exit("canon: cannot diff against " + rng)
             fields = out.split("\0")
-            deleted |= {path for status, path in zip(fields[::2], fields[1::2]) if status.startswith("D")}
-        return sorted(deleted)
+            paths = sorted(path for status, path in zip(fields[::2], fields[1::2]) if status.startswith("D"))
+            if paths:
+                commit = "HEAD" if rng == "HEAD" else git(self.root, "merge-base", "HEAD", base).strip()
+                deleted += [(path, commit) for path in paths]
+        return deleted
 
     def project_files(self, root):
         prefix = root.rel + "/" if root.rel else ""
@@ -1040,6 +1043,16 @@ def check_doc(repo, doc, changed, strict=False):
         err("content changed but `updated` was not bumped", fix=(doc, "updated", today()))
 
 
+def owned_architecture(repo, commit, rel):
+    """Whether the doc at `rel` in `commit` was a non-archived design owning `architecture`, which `init` moves to
+    D000: once D000 is filled out, Git no longer pairs the two as a rename."""
+    if (path_id(rel) or "")[:1] != "D" or "/docs/archived/" in "/" + rel:
+        return False
+    owns = (parse_frontmatter((git(repo.root, "show", "{}:{}".format(commit, rel)) or "").split("\n"))[0] or {}) \
+        .get("owns")
+    return isinstance(owns, list) and "architecture" in owns
+
+
 def run_check(repo, base=None):
     changed = set(repo.changed_files()) if repo.has_head else set()
     for doc in repo.docs:
@@ -1074,10 +1087,11 @@ def run_check(repo, base=None):
         elif current:
             check_links(repo, path, current.split("\n"), 0)
 
-    for rel in repo.deleted_docs(base):
+    overview = any(d.id == OVERVIEW_ID and not d.archived and not d.root.rel for d in repo.docs)
+    for rel, commit in repo.deleted_docs(base):
         match = FILE_RE.match(rel.rsplit("/", 1)[-1])
         doc_id = match.group(1) + match.group(2) + match.group(3) if match else None
-        if doc_id and doc_id not in repo.by_id:
+        if doc_id and doc_id not in repo.by_id and not (overview and owned_architecture(repo, commit, rel)):
             repo.problem("ERROR", rel, "{} was deleted; restore it and archive it instead".format(doc_id))
 
     if base:
@@ -1387,6 +1401,10 @@ def script_version(path):
 
 def cmd_init(repo, args):
     require_clean_merge(repo)
+    project = Path(os.path.realpath(args.root)) if args.root else repo.root
+    top = project == repo.root
+    if top and not has_overview(repo):
+        architecture_design(repo)  # refuses before any file changes
     actions = []
 
     def note(verb, path):
@@ -1421,8 +1439,6 @@ def cmd_init(repo, args):
         ignore.write_text("\n".join(lines + [LOCAL_DIR]) + "\n", encoding="utf-8")
         note("updated" if lines else "created", ignore)
 
-    project = Path(os.path.realpath(args.root)) if args.root else repo.root
-    top = project == repo.root
     agents = project / "AGENTS.md"
     block = AGENTS_BLOCK.format(script=script_rel)
     if not agents.is_file():
@@ -1447,12 +1463,21 @@ def cmd_init(repo, args):
         note("created", readme)
 
     fresh = Repo()
-    if top and not any(d.id == OVERVIEW_ID and not d.root.rel for d in fresh.docs) \
-            and not any("architecture" in d.as_list("owns") for d in fresh.docs if not d.archived):
-        fields = default_fields("D")
-        fields["owns"] = ["architecture"]
-        note("created", write_doc(find_root(fresh, str(project)), "D", OVERVIEW_ID, OVERVIEW_SLUG, OVERVIEW_TITLE,
-                                  fields, template=OVERVIEW_TEMPLATE))
+    if top and not has_overview(fresh):
+        source = architecture_design(fresh)
+        if source:
+            _id_map, moves, notes = move_doc(fresh, source, OVERVIEW_ID, slug=OVERVIEW_SLUG, title=OVERVIEW_TITLE)
+            actions += ["moved {} -> {}".format(posix_rel(src, repo.root), posix_rel(dst, repo.root))
+                        for src, dst in moves.items()] + notes
+            overview = moves[source.path]
+            added = add_overview_sections(overview)
+            if added:
+                actions.append("added {} to {}".format(", ".join(added), posix_rel(overview, repo.root)))
+        else:
+            fields = default_fields("D")
+            fields["owns"] = ["architecture"]
+            note("created", write_doc(find_root(fresh, str(project)), "D", OVERVIEW_ID, OVERVIEW_SLUG,
+                                      OVERVIEW_TITLE, fields, template=OVERVIEW_TEMPLATE))
 
     if args.hook and repo.is_git:
         hook = repo.root / git(repo.root, "rev-parse", "--git-path", "hooks/pre-commit").strip()
@@ -1467,6 +1492,50 @@ def cmd_init(repo, args):
     actions += ["wrote " + rel for rel in write_indexes(Repo())]
     print("\n".join(actions) if actions else "canon init: nothing to do")
     return 0
+
+
+def has_overview(repo):
+    """Whether the repo root's docs/ holds a D000, archived or not; `init` then neither creates nor moves one."""
+    return any(d.id == OVERVIEW_ID and not d.root.rel for d in repo.docs)
+
+
+def add_overview_sections(path):
+    """Append at the end of the design's `## Spec` each of D000's subsections it lacks, with its template guidance;
+    return the headings added."""
+    lines = path.read_text(encoding="utf-8").split("\n")
+    heads = scan_headings(lines, parse_frontmatter(lines)[1] + 1)
+    spec = next((i for i, h in enumerate(heads) if h.level == 2 and h.text == "Spec"), None)
+    if spec is None:
+        return []
+    end = next((h.line for h in heads[spec + 1:] if h.level <= 2), len(lines))
+    present = {h.text for h in heads[spec + 1:] if h.level == 3 and h.line < end}
+    while not lines[end - 1].strip():
+        end -= 1
+    added, block = [], []
+    for name, body in OVERVIEW_SPEC:
+        if name not in present:
+            added.append("### " + name)
+            block += ["", "### " + name, ""] + body.split("\n")
+    lines[end:end] = block
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return added
+
+
+def architecture_design(repo):
+    """The non-archived design owning `architecture`, which `init` moves to D000; None when no design owns it.
+    Exits when more than one does, or when it is a sub-design or a module's, which cannot become the repo root's D000.
+    """
+    owners = [d for d in repo.docs if d.type == "D" and not d.archived and "architecture" in d.as_list("owns")]
+    named = " and ".join("{} ({})".format(d.id, d.rel) for d in owners)
+    if len(owners) > 1:
+        sys.exit("canon: {} all own `architecture`; take it out of the `owns` of all but one and rerun `init`"
+                 .format(named))
+    if owners and (owners[0].suffix or owners[0].root.rel):
+        where = "a sub-design" if owners[0].suffix else "under the module docs root " + owners[0].root.docs_rel
+        sys.exit("canon: {} owns `architecture` but is {}, so it cannot become the repo root's D000; take "
+                 "`architecture` out of its `owns` and rerun `init`, which then creates a fresh D000 for its content "
+                 "to fold into".format(named, where))
+    return owners[0] if owners else None
 
 
 def slugify(text):
@@ -1543,6 +1612,19 @@ def renumber_doc(repo, args):
             sys.exit("canon: {} is not a canon doc".format(args.target))
     on_base = repo.tree_files(args.base) if args.base else None
     new_id = renumbered_id(repo, doc, args.new, on_base)
+    id_map, _moves, notes = move_doc(repo, doc, new_id, args.base, on_base)
+    write_indexes(Repo())
+    for old, new in id_map.items():
+        print("{} -> {}".format(old, new))
+    print("\n".join(notes + ["run `canon.py check --fix` to finish"]))
+    return 0
+
+
+def move_doc(repo, doc, new_id, base=None, on_base=None, slug=None, title=None):
+    """Give `doc` the id `new_id`, and its sub-designs that id with their letters: move their files and attachment
+    directories, and rewrite the links, `refs`, `based_on` and `moved` entries naming them. `slug` and `title` replace
+    the doc's own. `base` is the branch merged or rebased onto, and `on_base` the files of its tree. Returns the id
+    map, the moves and notes for the user."""
     links = {}
 
     def linked(src, path):
@@ -1577,7 +1659,7 @@ def renumber_doc(repo, args):
             unclear.append(child.rel)
     if unclear:
         sys.exit("canon: cannot tell which {} owns {}; link each sub-design from its parent design{}, then rerun"
-                 .format(doc.id, ", ".join(unclear), "" if args.base else " or pass --base <ref>"))
+                 .format(doc.id, ", ".join(unclear), "" if base else " or pass --base <ref>"))
     if len({d.id for d in group}) < len(group):
         sys.exit("canon: sub-designs of {} share an id; renumber the one this branch added first".format(doc.id))
 
@@ -1585,7 +1667,7 @@ def renumber_doc(repo, args):
     for d in group:
         new = new_id if d is doc else new_id + d.suffix
         renamed[d.path] = (d.id, new)
-        moves[d.path] = d.path.with_name("{}-{}.md".format(new, d.slug))
+        moves[d.path] = d.path.with_name("{}-{}.md".format(new, slug if d is doc and slug else d.slug))
         attachment = d.path.parent / d.id
         if not attachment.is_dir():
             continue
@@ -1608,7 +1690,7 @@ def renumber_doc(repo, args):
     for d in repo.docs:
         before = set()
         if on_base is not None and d.rel in on_base:
-            before = id_entries(d.type, git(repo.root, "show", "{}:{}".format(args.base, d.rel)) or "")
+            before = id_entries(d.type, git(repo.root, "show", "{}:{}".format(base, d.rel)) or "")
 
         def pick(field, key, old, d=d, before=before):
             if old not in id_map or not others[old]:
@@ -1621,17 +1703,15 @@ def renumber_doc(repo, args):
 
         text = d.path.read_text(encoding="utf-8")
         new_text = remap_ids(d, text, pick, renamed.get(d.path))
+        if d is doc and title:
+            new_text = re.sub(r"(?m)^# {}:.*$".format(re.escape(new_id)), lambda m: "# {}: {}".format(new_id, title),
+                              new_text, count=1)
         if new_text != text:
             d.path.write_text(new_text, encoding="utf-8")
     move_paths(repo, moves)
-    write_indexes(Repo())
-    for old, new in id_map.items():
-        print("{} -> {}".format(old, new))
-    for old, rels in sorted(kept.items()):
-        print("kept {} in {}: another doc still has that id; change the entries there that mean {}"
-              .format(old, ", ".join(sorted(rels)), id_map[old]))
-    print("\n".join(notes + ["run `canon.py check --fix` to finish"]))
-    return 0
+    notes = ["kept {} in {}: another doc still has that id; change the entries there that mean {}"
+             .format(old, ", ".join(sorted(rels)), id_map[old]) for old, rels in sorted(kept.items())] + notes
+    return id_map, moves, notes
 
 
 def renumbered_id(repo, doc, wanted, on_base):

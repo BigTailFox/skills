@@ -17,7 +17,7 @@ Implements [D002: Project overview and as-built designs](../designs/D002-overvie
 
 ## Current state
 
-S1 and S2 done. Next: S3.
+S1 to S3 done. Next: S4.
 
 ## Slices
 
@@ -68,7 +68,7 @@ Test criteria; seam: `init`, `archive` and `check` on the command line, and the 
 
 ### S3: Upgrade move to D000
 
-Status: todo
+Status: done
 Risk: complex logic, data migration
 
 Builds on `D002#project-overview-d000`, the `init` items and the deleted-doc exception, and `D002#setup`, Upgrade. Depends on S1 and S2.
@@ -258,3 +258,6 @@ Test criteria; seam: `check` output and exit status:
 - S2 done: 5 tests in `ProjectOverviewTest`, 112 in the suite, all passing. The fifth pins that an archived design owning `architecture` does not stop `init` from creating D000. A D000 in the repo root's `docs/`, archived or not, does, so `init` never writes a second one.
 - S2 decisions: the guidance comments are single lines without links, since `check` checks links inside comments and reads a line starting with `#` as a heading. `### Standards` is introduced by a second comment at the end of `### Glossary`, where it would go; the rules for rows and for `paths` go in `## Spec`'s comment, since the frontmatter holds none.
 - Until S3, `init` in a project whose design owns `architecture` writes an `AGENTS.md` block that links a D000 it does not create, a broken link for `check`; until S8, `canon-init`'s setup still passes the removed `--no-architecture`.
+- S3 done: 7 tests in `OverviewMoveTest`, 119 in the suite, all passing. The fixture also takes the D000 link out of the `AGENTS.md` block, as an older `canon.py` wrote it, so `init`'s refusal is seen to change no file. Breaking each new condition in turn made its test fail.
+- S3 decisions, for the docs step to write into D002: `init` also refuses when several non-archived designs own `architecture`, naming them and asking that all but one drop it, since `owns` must be unique and picking one would be a guess. The deleted-doc exception, like the move, counts only a design outside `archived/`. `renumber`'s moving and link rewriting is now `move_doc`, which `init` calls with D000's slug and title; `renumber`'s output is unchanged.
+- For S8: `init`'s move rewrites references in other docs without bumping their `updated`, as `renumber` does, so canon-init's Upgrade runs `check --fix` after `init`.

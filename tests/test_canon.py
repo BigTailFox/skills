@@ -643,6 +643,146 @@ class ProjectOverviewTest(CanonTest):
         self.assertEqual(self.git("status", "--porcelain"), "")
 
 
+class OverviewMoveTest(CanonTest):
+    """A project set up by an older canon.py, whose design owning `architecture` the upgrade moves to D000."""
+    OVERVIEW = "docs/designs/D000-project-overview.md"
+    ARCHITECTURE = ("## Goals\n\nFixture goals.\n\n## Spec\n\nThe module map.\n\n![Module map](D003/map.svg)\n\n"
+                    "### Modules\n\n| Module | Path | Purpose | Entry points | Design |\n|---|---|---|---|---|\n"
+                    "| base | src/ | Fixture | src/base.py | none |\n\n## Decisions\n\nFixture decisions.\n")
+
+    def setUp(self):
+        super().setUp()
+        (self.root / self.OVERVIEW).unlink()
+        agents = self.root / "AGENTS.md"
+        agents.write_text(re.sub(r"\[D000: [^]]*\]\([^)]*\)", "docs/README.md", agents.read_text()))
+
+    def project(self, **fields):
+        self.design("a")
+        self.design("b")
+        values = dict(revision=2, reviewed=2, implemented=2, body=self.ARCHITECTURE)
+        values.update(fields)
+        self.issues(self.design("architecture", **values), "| D003-K1 | minor | A gap | R001-F1 | 2020-10-01 | fix |")
+        self.design("part", parent="D003")
+        (self.root / "docs/designs/D003").mkdir()
+        (self.root / "docs/designs/D003/map.svg").write_text("<svg/>\n")
+        self.doc("P", "first", refs=["D001"], based_on=["D001@r1"])
+        body = "Implements [D003: Fixture](../designs/D003-architecture.md).\n\n" + PLAN.format("None.")
+        plan = self.doc("P", "upgrade", body=body, refs=["D003"], based_on=["D003@r2"])
+        review = self.doc("R", "audit", body=FINDINGS.format("| R001-F1 | major | A spec fix | moved D003 |"))
+        self.commit()
+        return plan, review
+
+    def test_init_moves_the_design_owning_architecture_to_d000(self):
+        plan, review = self.project()
+        out = self.ok("init")
+        self.assertIn("moved docs/designs/D003-architecture.md -> " + self.OVERVIEW, out)
+        overview = (self.root / self.OVERVIEW).read_text()
+        self.assertRegex(overview, r"(?m)^# D000: Project overview$")
+        self.assertIn("status: active", overview)
+        self.assertIn("| D000-K1 |", overview)
+        self.assertNotIn("D003", overview)
+        self.assertTrue((self.root / "docs/designs/D000A-part.md").is_file())
+        self.assertTrue((self.root / "docs/designs/D000/map.svg").is_file())
+        self.assertEqual(list(self.root.glob("docs/designs/D003*")), [])
+        self.assertIn("based_on: [D000@r2]", plan.read_text())
+        self.assertIn("[D000: Fixture](../designs/D000-project-overview.md)", plan.read_text())
+        self.assertIn("| moved D000 |", review.read_text())
+
+    def test_init_appends_the_subsections_d000_lacks_at_the_end_of_its_spec(self):
+        self.project()
+        self.ok("init")
+        path = self.root / self.OVERVIEW
+        overview = path.read_text()
+        self.assertEqual(re.findall(r"(?m)^#+ .*$", overview),
+                         ["# D000: Project overview", "## Goals", "## Spec", "### Modules", "### Capabilities",
+                          "### Dependencies", "### Glossary", "## Decisions", "## Known issues"])
+        spec = overview.split("\n## Spec\n", 1)[1].split("\n## Decisions\n", 1)[0]
+        self.assertLess(spec.index("| base | src/ |"), spec.index("### Capabilities"))
+        for name in ("Capabilities", "Dependencies", "Glossary"):
+            self.assertIn("<!-- canon:", spec.split("### " + name + "\n", 1)[1].split("\n### ", 1)[0], name)
+        self.assertNotIn("<!-- canon:", spec.split("### Modules\n", 1)[1].split("\n### ", 1)[0])
+        problems = [line for line in self.fails("check").splitlines() if line.startswith(("ERROR", "WARN"))]
+        self.assertEqual(problems, ["ERROR {}: template guidance `<!-- canon: ... -->` left in the doc"
+                                    .format(self.OVERVIEW)])
+        path.write_text(re.sub(r"<!-- canon:.*?-->", "Filled.", overview, flags=re.S))
+        self.ok("check", "--fix")
+
+    def test_a_draft_design_owning_architecture_moves_as_a_draft_whose_guidance_only_warns(self):
+        self.project(status="draft", reviewed=None, implemented=None)
+        self.ok("init")
+        self.assertIn("status: draft", (self.root / self.OVERVIEW).read_text())
+        problems = [line for line in self.ok("check").splitlines() if line.startswith(("ERROR", "WARN"))]
+        self.assertEqual(problems, ["WARN {}: template guidance `<!-- canon: ... -->` left in the doc"
+                                    .format(self.OVERVIEW)])
+
+    def test_a_filled_d000_is_no_deleted_doc_while_other_deleted_designs_still_are(self):
+        self.project()
+        before = self.git("rev-parse", "HEAD")
+        old_size = len(self.git("show", "HEAD:docs/designs/D003-architecture.md"))
+        self.ok("init")
+        path = self.root / self.OVERVIEW
+        filler = "".join("- Fact {} that the overview records about the fixture.\n".format(i) for i in range(60))
+        path.write_text(re.sub(r"<!-- canon:.*?-->", "Filled.", path.read_text(), flags=re.S)
+                        .replace("\n## Decisions\n", "\n" + filler + "\n## Decisions\n"))
+        self.assertGreater(len(path.read_text()), 2 * old_size)
+        self.assertIn("D\tdocs/designs/D003-architecture.md", self.git("diff", "-M", "--name-status", "HEAD"))
+        self.assertNotIn("deleted", self.ok("check"))
+        self.commit()
+        self.assertNotIn("deleted", self.ok("check", "--base", before))
+        self.assertEqual(self.ok("new", "D", "x").strip(), "docs/designs/D004-x.md")
+        self.git("rm", "-q", "docs/designs/D002-b.md")
+        self.assertIn("D002 was deleted", self.fails("check"))
+        self.commit(check=False)
+        out = self.fails("check", "--base", before)
+        self.assertIn("D002 was deleted", out)
+        self.assertNotIn("D003 was deleted", out)
+
+    def test_without_d000_the_design_owning_architecture_cannot_be_deleted(self):
+        self.project()
+        self.git("rm", "-q", "docs/designs/D003-architecture.md")
+        self.assertIn("D003 was deleted", self.fails("check"))
+
+    def test_init_moves_only_the_live_design_owning_architecture_and_only_once(self):
+        self.project()
+        self.design("old-architecture", owns=["architecture"])
+        self.ok("archive", "D004", "retired")
+        self.commit()
+        archived = self.root / "docs/archived/designs/D004-old-architecture.md"
+        kept = archived.read_text()
+        self.assertIn("moved docs/designs/D003-architecture.md -> " + self.OVERVIEW, self.ok("init"))
+        self.assertEqual(archived.read_text(), kept)
+        docs = {p: p.read_text() for p in (self.root / "docs").rglob("*") if p.is_file()}
+        self.assertEqual(self.ok("init"), "canon init: nothing to do\n")
+        self.assertEqual({p: p.read_text() for p in (self.root / "docs").rglob("*") if p.is_file()}, docs)
+        self.commit(check=False)
+        self.git("rm", "-q", str(archived.relative_to(self.root)))
+        self.assertIn("D004 was deleted", self.fails("check"))
+
+    def refuses(self, *names):
+        out = self.fails("init")
+        for name in names:
+            self.assertIn(name, out)
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        return out
+
+    def test_init_refuses_a_sub_design_or_module_design_owning_architecture_before_changing_any_file(self):
+        self.design()
+        sub = self.design("architecture", parent="D001")
+        self.commit()
+        out = self.refuses("D001A", "docs/designs/D001A-architecture.md")
+        self.assertIn("take `architecture` out of its `owns` and rerun `init`", out)
+        self.set(sub, owns=["part"])
+        self.ok("init", "--root", "mod")
+        module = self.ok("new", "D", "architecture", "--root", "mod").strip()
+        self.set(self.root / module, owns=["architecture"], summary="Fixture")
+        self.commit(check=False)
+        out = self.refuses(module)
+        self.assertIn("take `architecture` out of its `owns` and rerun `init`", out)
+        self.design("other-architecture", owns=["architecture"])
+        self.commit(check=False)
+        self.assertIn("all but one", self.refuses(module, "D003"))
+
+
 class TraceCase(CanonTest):
     HOST_VARS = ("CURSOR_AGENT", "CURSOR_CONVERSATION_ID", "CODEX_THREAD_ID", "CLAUDECODE")
 
