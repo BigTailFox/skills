@@ -25,10 +25,38 @@ Sections: Goals, Spec, Decisions; Budgets when there are quantitative targets; K
   | D003-K1 | major | Refresh retries break D005§queue-limits | P007 gate | 2026-10-21 | decide |
   ```
 
-  Ids run `D003-K1`, `D003-K2`, ..., unique within the table. Severity is `blocker`, `major` or `minor`. Source is where it was found: a gate (`P007 gate`), a plan or one of its slices (`P007`, `P007 S3`), other work at the HEAD it ran on (`code review 3f9a1c2`, `docs step 3f9a1c2`, `L0 3f9a1c2`), or a review finding (`R004-F2`). Since is the date it was recorded. Next is what it waits for: `decide` (the user's decision), `fix` (a code change), `L1` (a revision of this design) or `L2` (`/canon-design`). Rows are not spec: changing them bumps no `revision`, passes no gate and does not count as checking the design against its code. The change that resolves an issue deletes its row, or else the audit that finds it resolved. An issue the user declines is deleted too, with a Decision when the reason is lasting. Delete the section with its last row. A design cannot be archived while it lists any.
-- **Status**: `draft` until the review gate passes (and, in L2, the user approves), then `accepted`. Once an implementation has landed, set `active` and `implemented` to the revision the code matches. Revising an active design keeps it `active`; its spec leads the code until the next implementation lands and raises `implemented`. Archive as `superseded` (successor in `refs`) or `retired` (feature removed).
+  Ids run `D003-K1`, `D003-K2`, ..., unique within the table. Severity is `blocker`, `major` or `minor`. Source is where it was found: a gate (`P007 gate`), a plan or one of its slices (`P007`, `P007 S3`), other work at the HEAD it ran on (`code review 3f9a1c2`, `docs step 3f9a1c2`, `L0 3f9a1c2`), an [as-built revision](as-built.md) of the commit it records (`as-built 3f9a1c2`), or a review finding (`R004-F2`). Since is the date it was recorded. Next is what it waits for: `decide` (the user's decision), `fix` (a code change), `L1` (a revision of this design) or `L2` (`/canon-design`). Rows are not spec: changing them bumps no `revision`, passes no gate and does not count as checking the design against its code. The change that resolves an issue deletes its row, or else the audit that finds it resolved. An issue the user declines is deleted too, with a Decision when the reason is lasting. Delete the section with its last row. A design cannot be archived while it lists any.
+- **Status**: `draft` until the review gate passes (and, in L2, the user approves), then `accepted`. Once an implementation has landed, set `active` and `implemented` to the revision the code matches. Revising an active design keeps it `active`; its spec leads the code until the next implementation lands and raises `implemented`. Archive as `superseded` (successor in `refs`) or `retired` (feature removed). An [as-built revision](as-built.md) takes its status from its gate ([workflow.md](workflow.md#review-gate), step 6).
 - **Split**: when a design outgrows one doc (`check` warns at 500 lines), run `new D <slug> --parent D00X` to create `D00XA`, `D00XB`, ... Move the sub-topic's spec, `owns` and `paths` into the sub-design; the parent keeps the overview and links to its children. Only one suffix level exists: a sub-design that outgrows itself becomes a new top-level design.
-- The repo root has an architecture design: module map, allowed dependency directions, and a glossary of cross-module terms. Module-specific terms belong to the design that owns them.
+
+### Project overview (D000)
+
+Every repository that follows canon has `designs/D000-project-overview.md`, titled `# D000: Project overview`, in the repo root's `docs/`, and no other docs root has a D000; `init` at the repo root creates it. It is a design like any other, with these rules:
+
+- **Goals**: what the project is for, who uses it and what is out of scope.
+- **Spec** holds the first four subsections below, in this order, and after them `### Standards`, left out while no design owns a standard that applies across modules:
+  - `### Capabilities`: one row per capability the project offers its users or callers, at the grain of a feature list.
+  - `### Modules`: one row per module. Path lists the module's directories relative to the project directory, comma-separated, each ending with `/`; `./` is the project directory. In a monorepo, each module's row links that module's designs.
+  - `### Dependencies`: the allowed dependency directions between modules.
+  - `### Glossary`: terms used across modules; a term one module uses belongs to the design that owns it.
+  - `### Standards`: one row per standard that applies across modules, such as error handling, with the design that owns it: `| Standard | Design |`.
+
+  ```markdown
+  | Capability | Modules | Design |
+  |---|---|---|
+  | Token refresh | auth, gateway | [D003: auth](D003-auth.md) |
+  | CSV export | export | none |
+
+  | Module | Path | Purpose | Entry points | Design |
+  |---|---|---|---|---|
+  | auth | src/auth/ | Tokens and sessions | src/auth/index.ts | [D003: auth](D003-auth.md), [D005: sessions](D005-sessions.md) |
+  ```
+
+- A Design cell links every top-level design that owns the capability or standard, or that governs the module's code, or reads `none`. Rows name modules, capabilities and standards, never single docs: designs reach their sub-topics through their own links, and `docs/README.md` indexes every doc. Detail below the module level belongs to the module's designs.
+- The tables map the project, its planned modules included while D000 is its first L2 design. The change that adds or removes a module, capability or standard, or creates, moves or archives a top-level design, updates their rows in the same commit ([docs step](workflow.md#docs-step)). Rows change no meaning, so they take no revision bump and no gate. Goals, Dependencies and Glossary are spec: adding a module, changing the dependency directions or changing a cross-module interface is L2.
+- `audit` reports the code no design covers only under the module Paths, each file in the module with the longest Path that holds it, so tooling, CI and configuration outside every Path go uncounted. A module whose Path is `./` counts them too, so a project with tooling at its root gives its modules narrower Paths.
+- `owns` includes `architecture`. `paths` lists only files that embody the architecture, such as dependency-boundary configuration and module wiring, never a directory or glob, which would make every file look governed; it is usually empty.
+- In a project with code, D000 is written as an [as-built](as-built.md) design. In a project without code, it is the project's first L2 design, written with the `canon-design` skill.
 
 ## Plans (P)
 

@@ -44,27 +44,29 @@ Every design or plan revision passes this gate before it is accepted, and every 
    - **Cross-family reviewer**: a model of another family than the session's, run as the reviewer file says (Subagents below), in the first round only. Required for L2, optional for L1. When the file names no such reviewer, or its run stops twice (Subagents below), give the user the filled reviewer prompt to run in another tool, and wait for the result.
 3. Merge the findings. Accept and fix, decline with a one-line reason for the user, or escalate to the user; a finding the user then leaves for later becomes a [known issue](doc-types.md#designs-d) of a target design, or a line in a target plan's Notes. A finding about a design other than the target, such as a plan finding about its design, follows [Design problems](#design-problems). A finding raised by both reviewers is accepted unless it is clearly wrong. Declined findings stay out of the doc; record a Decision, in the design that owns the topic, only when its rationale has lasting value.
 4. When accepted blocker or major findings were fixed, the reviewers that raised them confirm the fixes in one more round, as the `canon-blind-review` skill's confirmation describes. Blockers still open after it go to the user; there is no third round.
-5. Set `reviewed: <revision>` and `reviewers: [<model ids>]`, using `manual:<model>` for user-run reviews. In L2, report the accepted, declined and escalated findings and the reviewer models, including any fallback, and get the user's answer on each escalated finding. Then run `canon.py trace end <gate id> <outcome> --dir .canon/canon-blind-review/<doc id> --input -`, the dispositions on stdin.
-6. Status. L1: a draft becomes `accepted`. L2: the user approves, here or by starting the next phase on the doc; a draft becomes `accepted` at that point and until then stays a `draft` whose `reviewed` equals `revision`. A revised active design stays `active`, and a revised plan in progress stays `in-progress`, in both tiers.
+5. Set `reviewed: <revision>` and `reviewers: [<model ids>]`, using `manual:<model>` for user-run reviews, and delete the `as_built` line of an [as-built revision](as-built.md). In L2, report the accepted, declined and escalated findings and the reviewer models, including any fallback, and get the user's answer on each escalated finding. Then run `canon.py trace end <gate id> <outcome> --dir .canon/canon-blind-review/<doc id> --input -`, the dispositions on stdin.
+6. Status. L1: a draft becomes `accepted`. L2: the user approves, here or by starting the next phase on the doc; a draft becomes `accepted` at that point and until then stays a `draft` whose `reviewed` equals `revision`. A revised active design stays `active`, and a revised plan in progress stays `in-progress`, in both tiers. After an as-built revision's gate, in place of `accepted`, a new design becomes `active` with `implemented` equal to its revision; a revised design keeps its status, and its `implemented` rises to the new revision only when it equaled the previous one.
 
 ### Reviewer prompt
 
-Fill the placeholders and pass nothing else. The `Changes since` line is only for revisions of an existing doc.
+Fill the placeholders and pass nothing else. The `Changes since` line is only for revisions of an existing doc. The `As-built` line is only for [as-built revisions](as-built.md), filled from `as_built`: the first of each choice for a new design and for a commit, the second for a revision and for `worktree`. In Correctness and Completeness, as-built revisions take the second choice and other revisions the first.
 
 ```text
 You are reviewing a {design | plan} in this repository with no prior context. Judge it only from the repository.
 
 Target: {path}
 Changes since: {commit} (review what changed; read the rest for context)
+As-built: {the target | what this revision adds} records {the code at {commit}, read with `git show {commit}:<path>` since the work tree may hold a later change | the files as they are} and specifies no change to it.
 
 Read the target, the docs it links to, and the code it governs. Do not read `.canon/`. Do not modify any file.
 
 Assess:
-- Correctness and feasibility against the current code.
-- Completeness: a fresh agent could implement it from this document and its links alone.
+- Correctness and feasibility against {the current code | the code it records}.
+- Completeness: a fresh agent could {implement it | change the code it governs} from this document and its links alone.
 - Consistency: no conflict with other designs; each standard is stated once, in the design that owns it, and linked elsewhere.
 - Simplicity: no complexity beyond the goals. A feature's own input validation, permissions and data protection are part of it; security hardening beyond that only where the design or project requires it.
 - Plans only: slices are ordered by dependency, independently verifiable, and each has concrete test criteria.
+- As-built revisions only: what the revision adds holds for the code it records, apart from behavior that a known issue with source `as-built` and next `fix` names as a defect; it omits no behavior callers rely on within the topic it records; it fixes no private structure; each Decision gives a source or says its reason is unknown.
 Formatting, frontmatter and wording style are out of scope.
 Report a problem a design lists as a known issue only when it is worse than the entry says, naming the entry.
 
@@ -102,13 +104,14 @@ Before committing, after implementation and code review. Scope: the uncommitted 
    - The change implements an accepted spec or plan: write into the spec the details the code settled within its accepted intent, including those the plan's Notes list; they need no revision bump. Once a revision's implementation has fully landed, set `implemented` to that revision and the design `active`.
    - The code contradicts the spec: report it to the user instead of rewriting the spec, and record it as a known issue when the user leaves it for later.
    - The user decided to change the spec's meaning: bump `revision` and pass the review gate.
-2. For changed files where `which` prints `no design`, add them to the `paths` of the design that owns the area. If no design owns it, tell the user; a new design is L2.
-3. For each listed plan, update slice statuses, Current state and Log. Archive the plan as `done` when every slice is `done`; report paused slices to the user.
-4. Set the dispositions of review findings the change fixed, and delete the known issues it resolved. Archive what is finished: reviews with no open finding (`closed`), fixed investigations (`resolved`), experiments whose conclusion is absorbed into a design (`concluded`).
-5. Search READMEs, guides and `AGENTS.md` for names the change renamed or removed (commands, flags, config keys, paths) and fix them.
-6. Run `canon.py check --fix` until it reports no errors.
-7. When this change archived a plan, run `canon.py audit`. If it reports a due review, end your report with one line suggesting the user run a codebase review (the `canon-review` skill). Never start a review yourself.
-8. Commit with Conventional Commits. Every commit that touches a design's `paths`, L0 included, names the designs it was checked against and the plans it updated in a trailer, e.g. `Refs: D003, P012`; `audit` counts code commits whose trailer omits their design as unchecked.
+2. For changed files where `which` prints `no design`, add them to the `paths` of the design that owns the area. When no design owns it and the change altered nothing callers rely on, name each such file with its directory in your report; it needs no new design. When the change altered behavior callers rely on there, it needed an [as-built revision](as-built.md) first, or a new design for a new topic, as the [tiers](SKILL.md#workflow) say: tell the user.
+3. Bring D000's rows in line with the change; [doc-types.md](doc-types.md#project-overview-d000) says which changes update them.
+4. For each listed plan, update slice statuses, Current state and Log. Archive the plan as `done` when every slice is `done`; report paused slices to the user.
+5. Set the dispositions of review findings the change fixed, and delete the known issues it resolved. Archive what is finished: reviews with no open finding (`closed`), fixed investigations (`resolved`), experiments whose conclusion is absorbed into a design (`concluded`).
+6. Search READMEs, guides and `AGENTS.md` for names the change renamed or removed (commands, flags, config keys, paths) and for what they state of behavior the change altered, and fix them.
+7. Run `canon.py check --fix` until it reports no errors.
+8. When this change archived a plan, run `canon.py audit`. If it reports a due review, end your report with one line suggesting the user run a codebase review (the `canon-review` skill). Never start a review yourself.
+9. Commit with Conventional Commits. Every commit that touches a design's `paths`, L0 included, names the designs it was checked against and the plans it updated in a trailer, e.g. `Refs: D003, P012`; `audit` counts code commits whose trailer omits their design as unchecked.
 
 ## Maintenance
 

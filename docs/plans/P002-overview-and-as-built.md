@@ -17,7 +17,7 @@ Implements [D002: Project overview and as-built designs](../designs/D002-overvie
 
 ## Current state
 
-S1 to S6 done. Next: S7.
+S1 to S7 done. Next: S8.
 
 ## Slices
 
@@ -155,7 +155,7 @@ Test criteria; seam: `check` and `check --fix`, and the design file:
 
 ### S7: The canon skill
 
-Status: todo
+Status: done
 
 Builds on `D002#project-overview-d000`, `D002#as-built-revisions`, `D002#backfill`, `D002#project-docs` and `D002#delivery`, step 2.
 
@@ -268,3 +268,5 @@ Test criteria; seam: `check` output and exit status:
 - S5 details, for the docs step to write into D002: only the first table under `### Modules` counts, outside code fences, its Path column found by a header matched in any case; an empty entry holds no file. Coverage counts the index, as `git ls-files` lists it, and a merge touches no area, since `git log` without `-m` lists no files for it. The lines keep D002's plural forms, as `1 commits`. Reach follows only `refs` that name designs, archived ones included. Coverage and then reach come after `audit`'s other sections.
 - S6 done: 5 tests in `AsBuiltTest`, 139 in the suite, all passing; each of 10 mutants of the new rules failed a test.
 - S6 details, for the docs step to write into D002: `as_built` holds 7 to 64 lowercase hex digits, so a SHA-256 name fits. A change to the `as_built` line alone, like one to `implemented`, needs no `updated` bump, so `check --fix` deleting it leaves no other error. On a reviewed revision only the fixable error for the remaining field is reported, whatever its value.
+- S7 done: `validate.py`, `npx skills add . --list` and `check` pass, `check` now with no warning since `as-built.md` exists. The `trace` call sentences and the `canon` skill's placeholder paragraph are unchanged.
+- S7 check against `D002#delivery` step 2: every item is in the file it names. Two gaps, fixed by this session: the worker had the gate delete `as_built` in the status step, where D002 has it go when `reviewed` is set, so it moved to step 5, outside that step's `trace end` sentence; and the docs step repeated the list of changes that update D000's rows, which now only `doc-types.md` states, the docs step linking it. The docs step's rule for files no design covers also tells the user when the change altered behavior callers rely on there, since that change needed an as-built revision first.

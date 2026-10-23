@@ -13,23 +13,24 @@ Execute `canon.py`; do not read it. Use the project's copy at the path named in 
 
 | Command | Purpose |
 |---|---|
-| `check [--fix] [--base REF]` | Validate all docs. `--fix` applies mechanical fixes (`refs`, `updated`, indexes, and `implemented` of an active design never revised). `--base origin/main` also checks the branch against that ref: deleted docs, id collisions, revisions pending review and unfinished docs fail. |
+| `check [--fix] [--base REF]` | Validate all docs. `--fix` applies mechanical fixes (`refs`, `updated`, indexes, `implemented` of an active design never revised, and deleting an `as_built` left on a reviewed revision). `--base origin/main` also checks the branch against that ref: deleted docs, id collisions, revisions pending review and unfinished docs fail. |
 | `new TYPE SLUG [--title T] [--from D00X] [--parent D00X] [--root DIR]` | Create a doc from its template with the next free id. `--from` links a plan to its design; `--parent` creates a sub-design. |
-| `archive ID STATUS` | Set a terminal status, move the doc to `archived/`, rewrite every link to it. |
+| `archive ID STATUS` | Set a terminal status, move the doc to `archived/`, rewrite every link to it. Refuses D000. |
 | `rename ID SLUG` | Change a doc's file slug and rewrite every link to it. |
 | `renumber ID\|PATH --base REF` | Give a doc a new id, or a sub-design a new letter, and rewrite the links and references to it. Only for collisions reported by `check`; REF is the branch merged or rebased onto. |
 | `index` | Regenerate the indexes in `docs/README.md` and `docs/archived/README.md`. |
 | `show ID` / `show ID#slug` | Print a doc's frontmatter and outline, or one section. |
 | `find WORDS [--archived]` | Search ids, titles, summaries, owned topics, modules and headings. |
-| `which FILE...` | List the designs whose `paths` govern the files. |
+| `which FILE...` | List the designs whose `paths` govern the files, or `doc` for a [project doc](#layout) that no `paths` entry names exactly. |
 | `affected [--base REF]` | Designs and plans governing the uncommitted (or branch) changes. |
-| `audit` | Designs with code commits since the design last changed that no `Refs:` trailer names, known issues oldest first, idle open docs other than concepts, due reviews. |
+| `audit` | Designs with code commits since the design last changed that no `Refs:` trailer names, known issues oldest first, idle open docs other than concepts, due reviews, source areas under D000's module Paths that no design covers, ranked by commits in the last 90 days, and designs D000 does not reach by following `refs` from design to design. |
 | `init`, `adopt` | Project setup, upgrades and migration; the user runs them through the `canon-init` skill. |
 
 In `trace` calls, `<skill>` is the path of the followed `SKILL.md`'s directory (a gate's is `canon-blind-review`'s, else `canon`'s), `<model>` your model id as the host names it, and `<parent>` the invoking workflow's open unit id, if any. Unless a skill's first `start` prints `trace <id>`, skip its other trace calls; else follow [trace.md](trace.md), using that `<id>`.
 
 ## Reading docs
 
+- Start at D000, the project overview in the repo root's `docs/` ([its rules](doc-types.md#project-overview-d000)): its rows name the designs that own each capability and cross-module standard or govern each module's code, or `none`, and its Glossary defines the terms used across modules.
 - When a change may alter behavior or standards a design specifies, run `which <file>` and read the governing sections with `show ID#slug` first. Read a whole doc only when you are writing it.
 - Read the known issues of each design you work from (`show D00X#known-issues`; `which`, `find` and `affected` count them). An issue the work depends on is a [design problem](workflow.md#design-problems) unless the work fixes it, and the change that resolves an issue deletes its row.
 - Look topics up with `find`; `docs/README.md` is the generated index.
@@ -41,9 +42,11 @@ In `trace` calls, `<skill>` is the path of the followed `SKILL.md`'s directory (
 ```text
 <project>/                  any directory with AGENTS.md (the repo root is one)
 ├── AGENTS.md
+├── README.md               the project's intro for users, if it has one
 └── docs/
     ├── README.md           hand-written intro + generated index
     ├── concepts/  designs/  plans/  reviews/  experiments/  investigations/
+    ├── designs/D000-project-overview.md   repo root only: the place to start
     ├── reviews/R003/       attachments of R003; every numbered doc may have one
     ├── guides/             unnumbered docs for users and operators
     ├── assets/             images and files shared by several docs or guides
@@ -53,6 +56,8 @@ In `trace` calls, `<skill>` is the path of the followed `SKILL.md`'s directory (
 Temporary files of canon skills (prompts, scratch prototypes, handoffs, teaching workspaces) go in `.canon/<skill>/<topic>/` at the repo root, never in the OS temp directory or the tracked tree; `<topic>` is a short kebab-case slug. `init` adds `.canon/` to `.gitignore`; if `git check-ignore -q .canon` fails, add it yourself. Nothing in `.canon/` is a doc: anything worth keeping becomes an attachment or doc content. `.canon/canon/trace/` is not scratch: until `canon.py trace prune` it holds the only copy of its data.
 
 Attachments of a numbered doc (data, scripts, reports, prototypes, images used only by it) live in `<category>/<ID>/` beside the doc, e.g. `designs/D003/flow.svg`; `archive` and `renumber` move them with it. Create the directory when the first attachment appears. Link large binaries instead of committing them.
+
+The project's `README.md`, its hand-written intro for users, belongs to the doc system like `AGENTS.md` and `docs/`: it stays, and where it restates D000 or a design, they hold. `canon.py` takes every file under a docs root, and every file named `README`, `AGENTS`, `CLAUDE`, `CHANGELOG`, `CONTRIBUTING`, `LICENSE` or `NOTICE` in any directory, with any extension and in any case, for a project doc, never for code: a design governs one only through a `paths` entry equal to its path, never through a glob or directory.
 
 A more specific `AGENTS.md` and its `docs/` govern their subtree and override broader rules. Repo-wide and cross-module docs live in the root `docs/`; module docs live in the module's `docs/`. Ids are global across the repo: `D003` exists once, whichever `docs/` holds it.
 
@@ -99,6 +104,7 @@ based_on: [D003@r4]                  # P only
 - `paths`: code globs relative to the project directory; they drive `which`, `affected` and `audit`.
 - `reviewed`, `reviewers`: the revision that passed the review gate and who reviewed it (`manual:<model>` for a review the user ran).
 - `implemented`: the revision the code fully implements; required once a design is `active`. Below `revision`, the spec leads the code and the difference is an open plan's work, not a defect.
+- `as_built`: the commit an [as-built revision](as-built.md) records, only while the revision awaits its gate.
 - `based_on`: design revisions a plan was written against; `check` warns when a design moves past them.
 
 ## Rules
@@ -118,6 +124,12 @@ Every change has a tier; state it when starting and pick the higher one when uns
 - **L0**: changes no spec in any design: bug fixes that restore specified behavior, refactors, dependency bumps, test and tooling changes. Implement, keep docs factually true, commit.
 - **L1**: changes or extends specs inside the owned topics of one existing design, within one module; or multi-step work under an existing design that needs a plan. Revise the design in place with the `canon-design` skill, pass the review gate (same-model reviewer), then implement. A [design problem](workflow.md#design-problems) is revised by the session that finds it.
 - **L2**: a new topic with no owning design, a new module, a change to a cross-module interface or the architecture, a revision that rewrites an existing design's goals or core approach, or the user asks for it. Design and plan each pass the review gate (same-model and cross-family reviewers) and need the user's approval, which starting the next phase gives.
+
+Behavior no design states is unspecified. Look for a statement with `which` for its files, `find` for its topic and D000's rows; a file `which` maps to no design, or a row reading `none`, does not settle it alone.
+
+- **Backfill**: before a change alters or extends existing behavior no design states, an [as-built revision](as-built.md) records that behavior. It is L1, also when it creates a design or precedes an L2 change. The change then alters stated behavior and is tiered and handled like any such change: in a `canon-design` session it is the session's next revision, gated at its tier; anywhere else it is a [design problem](workflow.md#design-problems), so the user decides on the revision, which passes its gate at its tier, and an L2 revision goes through `/canon-design`.
+- Where no design states the behavior, an L0 change alters nothing callers rely on: a refactor, a dependency bump, test or tooling work, or a fix for a defect no caller could rely on, such as a crash.
+- New behavior with nothing existing to record is tiered by the rules above: a new topic is L2.
 
 A commit that touches a design's `paths`, in any tier, names the designs it was checked against in a `Refs:` trailer (`affected` lists them); `audit` treats commits without one as unchecked.
 
