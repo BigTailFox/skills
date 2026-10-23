@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: active
 created: 2026-10-22
 updated: 2026-10-23
 revision: 3
@@ -10,6 +10,7 @@ owns: [project-overview, as-built-design, design-coverage]
 paths: [skills/governance/canon/as-built.md, skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/governance/canon/doc-types.md, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-review/architecture.md]
 reviewed: 3
 reviewers: [claude-opus-5.5]
+implemented: 3
 ---
 
 # D002: Project overview and as-built designs
@@ -62,18 +63,23 @@ Every repository that follows canon has `designs/D000-project-overview.md` in th
 `canon.py`:
 
 - `check` errors when the repo root's `docs/` holds no non-archived D000, when another docs root holds a D000, when D000's Spec lacks one of the four subsections, and when an entry of D000's `paths` contains `*`, `?` or `[`, ends with `/`, or is a directory. It warns when a Path in the Modules table is not a directory of the project, as it warns for `paths` that match no file.
+  - D000 is required whether or not the repo root has an `AGENTS.md`. An archived root D000 gets its own error, which says to move it back to `docs/designs/` with a live status; the error for a D000 under another docs root, archived or not, names `renumber <path>`.
+  - The subsections are checked for presence, not order, and not while `## Spec` itself is missing.
+  - A Modules Path is a directory of the project when it exists on disk inside the project directory, so a file, a missing path and a path leading out through `..` warn.
 - `archive D000` is refused.
-- In a Git checkout, `new`, `adopt` and `renumber` never assign an id, or a sub-design letter, that a doc file of that type has had in the history of HEAD.
-- `init` at the repo root creates D000 from its template when there is none; it has no flag to skip it.
+- In a Git checkout, `new`, `adopt` and `renumber` never assign an id, or a sub-design letter, that a doc file of that type has had in the history of HEAD. The ids come from the doc paths `git log -z --format= --name-only --no-renames --full-history -m HEAD` lists: without `--full-history`, history simplification skips a merged side branch whose docs the merge discarded, and without `-m`, `git log` lists no paths for a merge, whose resolution alone may have added a doc. With a HEAD commit, a history query that fails ends the command with `canon: cannot read the history of HEAD`, since going on could reuse an id.
+- `init` at the repo root creates D000 from its template when there is none; it has no flag to skip it. Only a non-archived design that owns `architecture` stands for an existing one: an archived owner does not stop `init`, and a D000 already in the repo root's `docs/`, archived or not, does. The template gives each table its header row and each part a guidance comment: `## Spec`'s states the rules for rows and `paths`, and a second one at the end of `### Glossary` says when to add `### Standards`.
 - `init` in a project with no D000 but a design that owns `architecture` moves that design to `D000-project-overview.md`, titled `D000: Project overview`, as `renumber` moves a doc: its frontmatter, body, sub-designs, attachments and known issues come along, and every link, `refs`, `based_on` and `moved` entry follows. It then appends the subsections D000 lacks at the end of `## Spec`, each with a guidance comment. The id rule above keeps the old number taken.
-- `check`'s error for a deleted doc skips a deleted design that owned `architecture` at the commit it compares with, while D000 exists: once filled out, D000 differs too much from the old doc for Git to pair the two as a rename.
-- `audit` lists the non-archived designs D000 does not reach. D000 reaches itself and every design named in the `refs` of a design it reaches.
+  - Only a non-archived owner moves, and it keeps its status. Like `renumber`, the move rewrites references in other docs without bumping their `updated`, so the agent runs `check --fix` after it.
+  - `init` changes no file and exits when several non-archived designs own `architecture`, naming them and asking that all but one drop it, and when the one that does is a sub-design or a module's design, asking that it drop `architecture` so that `init` creates a fresh D000 for its content to fold into.
+- `check`'s error for a deleted doc skips a deleted design outside `archived/` that owned `architecture` at the commit it compares with, while D000 exists: once filled out, D000 differs too much from the old doc for Git to pair the two as a rename.
+- `audit` lists the non-archived designs D000 does not reach. D000 reaches itself and every design named in the `refs` of a design it reaches, archived ones included; `refs` naming other docs lead nowhere. The list comes last, after [coverage](#coverage-in-audit), under `Designs D000 does not reach (link each from D000's rows or from a design D000 reaches):`.
 
 ### As-built revisions
 
 An as-built revision records behavior the code already has, at one commit, and specifies no change to it. It is the first revision of a new design, or a revision that adds existing behavior to the design that owns its topic.
 
-While it awaits its gate, its frontmatter holds `as_built: <commit>`, the commit it records. The gate builds its reviewer prompt from it, and a session that resumes the work or replays the gate ([D001§replay: replay](D001-skill-telemetry.md#replay)) finds the base there. Outside Git, and before the first commit, it reads `as_built: worktree`: the revision records the files as they are and passes its gate before any of them change. The gate removes the field when it sets `reviewed`; nothing marks the revision after that. `check` errors when `as_built` names no commit, unless it reads `worktree` outside Git or before the first commit, and when it remains on a doc whose `reviewed` equals its `revision`; `check --fix` removes it then.
+While it awaits its gate, its frontmatter holds `as_built: <commit>`, the commit it records. The gate builds its reviewer prompt from it, and a session that resumes the work or replays the gate ([D001§replay: replay](D001-skill-telemetry.md#replay)) finds the base there. Outside Git, and before the first commit, it reads `as_built: worktree`: the revision records the files as they are and passes its gate before any of them change. The gate removes the field when it sets `reviewed`; nothing marks the revision after that. `check` errors when `as_built` names no commit, unless it reads `worktree` outside Git or before the first commit, and when it remains on a doc whose `reviewed` equals its `revision`; `check --fix` removes it then. A value names a commit when it is the object name of exactly one commit, 7 to 64 lowercase hex digits so that a SHA-256 name fits; a ref, even a branch named like a hash, names none. A change to the `as_built` line alone, like one to `implemented`, needs no `updated` bump, and on a reviewed revision only the fixable error is reported, whatever the value.
 
 It is written:
 
@@ -138,7 +144,8 @@ A project's `README.md`, its hand-written intro for users, belongs to the doc sy
 
 A file in any directory whose name up to its first `.` is, in any case, `README`, `AGENTS`, `CLAUDE`, `CHANGELOG`, `CONTRIBUTING`, `LICENSE`, `NOTICE`, `SECURITY`, `CODE_OF_CONDUCT` or `COPYING`, or starts with `LICENSE-`, and whose name has no `.` or ends, in any case, in `.md`, `.markdown`, `.rst`, `.txt`, `.adoc` or `.org`, is a doc by its name: `README.md`, `readme.rst`, `LICENSE`, `LICENSE-MIT` and `README.zh.md` are, `agents.py` and `notice.ts` are not. A doc by its name, and any file under a docs root, is a doc:
 
-- `which` prints `<path>: doc` for it, unless an entry of a design's `paths` is its exact path, so neither the docs step, code review nor `canon-review` takes it for code no design covers. A glob or directory entry never matches a doc, in `which`, in `affected` and in the unchecked commits `audit` counts.
+- `which` prints `<path>: doc` for it, unless an entry of a design's `paths` is its exact path, so neither the docs step, code review nor `canon-review` takes it for code no design covers. A glob or directory entry never matches a doc, in `which`, in `affected` and in the unchecked commits `audit` counts. An entry equals a doc's path after the trimming of whitespace and leading `./` that glob entries get.
+- `audit` reads each commit's files with `git log -z -c --name-only --no-renames`: a merge touches the files its resolution changed against every parent, or, for a clean merge, whose combined diff lists none, the files it changed against any parent. A commit, or merge, whose files are all docs its design's entries do not list is no unchecked commit; through `--no-renames`, one that renames governed code to a doc still is.
 - Coverage counts no doc.
 - The docs step fixes, in READMEs, guides and `AGENTS.md`, the names the change renamed or removed and what they state of behavior the change altered.
 
@@ -154,9 +161,10 @@ Source areas no design covers (commits in the last 90 days, most first):
 ```
 
 - Files are the tracked files under the Paths of D000's Modules rows, other than [docs](#project-docs); tooling, CI and configuration outside every module are not counted. A file belongs to the module with the longest Path that holds it, and is covered when the `paths` of a non-archived design, in any project, match it. Area paths are relative to the repo root, and one list covers the repository.
+- The Modules table is the first table under `### Modules`, outside code fences, its Path column found by its header in any case. An empty entry, and one that is no existing directory of the project, holds no file. The files are those `git ls-files` lists, so coverage prints nothing outside Git or without a root D000.
 - Each uncovered file starts in the area of its directory. While every counted file of its module under the parent directory is uncovered, the area moves up to the parent, never above its module's Path. The files of other modules under that parent neither stop the area nor join it.
 - An area whose counted files of its module are all uncovered, its subdirectories' included, shows `<n> files`, counting them all. Any other area shows `<uncovered> of <counted> files`, counting its module's files directly in it.
-- Areas rank by the commits of the last 90 days that touch their uncovered files, then by uncovered files, then by path. The first 10 are listed and the rest counted.
+- Areas rank by the commits of the last 90 days that touch their uncovered files, then by uncovered files, then by path; a merge touches none, since `git log` without `-m` lists no files for it. The first 10 are listed and the rest counted. The repo root's area reads `./`, the commit counts are right-aligned, and the lines keep the plural forms above, as `1 commits`. The list follows `audit`'s other sections.
 - Coverage never makes `check` fail, and `audit` exits 0.
 - `canon-sync` reports the listed areas, and `canon-review` takes its design-coverage scope from them, the architecture angle's hard check included.
 

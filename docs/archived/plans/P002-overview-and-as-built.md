@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 created: 2026-10-23
 updated: 2026-10-23
 revision: 1
@@ -13,11 +13,11 @@ reviewers: [claude-opus-5.5, gpt-6-astra-high]
 
 # P002: Overview and as built
 
-Implements [D002: Project overview and as-built designs](../designs/D002-overview-and-as-built.md).
+Implements [D002: Project overview and as-built designs](../../designs/D002-overview-and-as-built.md).
 
 ## Current state
 
-Every slice done. Next: the code review from the `Started at` commit, then the docs step.
+Every slice done, reviewed from the `Started at` commit, and D002 r3 implemented. Done.
 
 ## Slices
 
@@ -288,3 +288,4 @@ Test criteria; seam: `check` output and exit status:
 - Code review fixes: a worker brought `canon.py` to D002 r3 and fixed the accepted findings, test-first, with `CANON_VERSION` 21; 7 new tests, 152 in the suite, all passing, and 11 mutants of which the one survivor is equivalent. Docs by their name follow r3's names and extensions; a clean merge counts by the files it changed against any parent; `as_built` accepts only the object name of exactly one commit, never a ref; a Modules Path that is no existing directory holds no file in coverage, as in `check`'s warning; `init`'s refusals from the move suggest no `--base`. The refactors left `audit`, `which` and `check` output unchanged on a generated checkout of 20,000 files and 60 designs, where `audit` went from 0.44 s to 0.60 s, since coverage now matches each design's `paths` on their own. This session fixed the skill texts: Spec F3 to F7 and Standards F1.
 - Open points from the fixes, for the final report: under r3, `skills/execution/canon-review/security.md`, skill instructions, is a doc by its name, so `which` prints `doc` for it and coverage skips it until a design lists its exact path; when the move refuses during `init`, `init` has already written its other files, as before S10, which a rerun after the fix writes again unchanged.
 - Code review confirmation: the Spec reviewer found F1 resolved and approved. The cross-family reviewer found F1, F2 and F3 resolved and raised one new major finding: Upgrade's commit of `init`'s output as it is fails a pre-commit hook running `check`, since the guidance `init` appends to a moved active design is an error. The user chose to keep that commit, so Git keeps the rename, and `canon-init` now commits it with `--no-verify` when such a hook is installed. The user kept r3's names as they are, `skills/execution/canon-review/security.md` included.
+- Docs step from 7c53381: D002 gained the details this plan and its Log settled, and is `active` at `implemented: 3`. Changed files no design covers, each altering nothing callers rely on: `.gitattributes` and `.gitignore` at the repo root, and the `SKILL.md` of `canon-codebase-design`, `canon-tdd` and `canon-teach` and `canon-codebase-design/DESIGN-IT-TWICE.md` under `skills/execution/`, which now name D000 for the architecture design. D000's rows needed no change.
