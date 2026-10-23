@@ -17,7 +17,7 @@ Implements [D002: Project overview and as-built designs](../designs/D002-overvie
 
 ## Current state
 
-S1 to S9 done. Next: S10.
+Every slice done. Next: the code review from the `Started at` commit, then the docs step.
 
 ## Slices
 
@@ -218,7 +218,7 @@ Test criteria; seam: `canon.py check`, `audit` and `which` on this repository, a
 
 ### S10: D000 in check
 
-Status: todo
+Status: done
 
 Builds on `D002#project-overview-d000`, the `check` items. Depends on S9: from this slice on, `check` fails a repository without D000, this one included.
 
@@ -280,3 +280,6 @@ Test criteria; seam: `check` output and exit status:
 - S9 gate: the first round asked for revision with 1 major and 6 minor findings. F1, major, accepted: Dependencies said a skill runs `canon.py` from the path `AGENTS.md` names, while `canon-sync`'s Audit step 1 and `canon-init`'s Upgrade and Add a module take `scripts/canon.py`; the user judged it a defect, so D000 states the rule and D000-K1, minor, next `fix`, names the three places. F2, accepted: the install row became the layout the `skills` CLI installs from, which Goal 3 does not exclude. F3 and F4, accepted in part: the Glossary links `AGENTS.md`'s Skill rules and keeps only definitions, the `validate.py` bullet lists its checks, and the two Decisions that restated skill-format rules went; declined, stating the skill format in D000 or giving it a `skill-format` topic, which would state `AGENTS.md`'s rules twice. F5, F6 and F7, accepted: the tiers row names its three skills and a row names `canon-blind-review`; `CANON_VERSION` is a decimal integer; a Decision records the single-file `canon.py` copied into each project, reason unknown. The confirmation round found all seven resolved and approved.
 - S9 coverage areas, as `audit` lists them: `skills/execution/canon-teach/` (6 files, 4 commits), `skills/governance/canon/` (1 of 6 files, `writing.md`; 4), `skills/execution/canon-review/` (5 of 7 files; 3), `skills/execution/canon-codebase-design/` (3 files; 3), `skills/execution/canon-prototype/` (3 files; 3), `skills/execution/canon-tdd/` (3 files; 3), `skills/execution/canon-grill/` (1 file; 3), `skills/execution/canon-agent-writing/` (3 files; 2), `skills/execution/canon-research/` (1 file; 2), `skills/execution/canon-code-review/` (1 of 2 files, `smells.md`; 1), and 9 more areas.
 - Open point from the S9 gate, for the final report: `init` without `--script` ignores the path the `AGENTS.md` block names; D000-K1's fix covers `canon-init`'s Upgrade, and whether `init` itself should keep the path is for the user.
+- S10 done: 6 tests in `OverviewCheckTest`, 145 in the suite, all passing; each of 13 mutants of the new rules turned a test red. `validate.py`, `npx skills add . --list` and `check` on this repository pass.
+- S10 deviations, in tests only: `OverviewMoveTest` stands for a project an older `canon.py` set up, without D000, so its commits now accept the missing D000 as `check`'s only error; its architecture design gets `paths: [src/base.py]` instead of the helper's `src/**`, which the new rule rejects once `init` moves it to D000, as `canon-init`'s Upgrade expects the agent to narrow it.
+- S10 details, for the docs step to write into D002: `check` requires D000 whether or not the repo root has an `AGENTS.md`; an archived root D000 gets its own error, which says to move it back to `docs/designs/` with a live status; any D000 under a module's docs root is an error, archived or not, naming `renumber <path>`; the subsections are checked for presence, not order, and not when `## Spec` itself is missing; a Modules Path is a directory of the project when it exists on disk inside the project directory, so a file, a missing path and `..` warn. The Modules table's separator row is no longer read as a Path entry, which also corrects S5's reader without changing coverage.

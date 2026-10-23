@@ -28,7 +28,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "19"
+CANON_VERSION = "20"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -1095,6 +1095,42 @@ def owned_architecture(repo, commit, rel):
     return isinstance(owns, list) and "architecture" in owns
 
 
+def check_overview(repo):
+    """The rules for D000: the repo root's docs/ holds it, live, and no other docs root holds one; its Spec holds
+    the four subsections; its `paths` list only files; its Modules Paths are directories of the project."""
+    overview = root_overview(repo)
+    if overview is None:
+        archived = next((d for d in repo.docs if d.id == OVERVIEW_ID and not d.root.rel), None)
+        if archived:
+            repo.problem("ERROR", archived.rel, "D000 is archived, but every project keeps its project overview; move "
+                         "it back to docs/designs/ with a live status")
+        else:
+            repo.problem("ERROR", "docs", "no D000, the project overview every project keeps; run `canon.py init` "
+                         "at the repo root")
+    for doc in repo.docs:
+        if doc.id == OVERVIEW_ID and doc.root.rel:
+            repo.problem("ERROR", doc.rel, "D000 belongs only in the repo root's docs/; give this doc another id with "
+                         "`canon.py renumber {}`".format(doc.rel))
+    if overview is None:
+        return
+    present = {overview.headings[i].text for i in spec_subsections(overview)}
+    missing = ["`### {}`".format(name) for name, _body in OVERVIEW_SPEC if name not in present]
+    if missing and overview.section("Spec") is not None:
+        repo.problem("ERROR", overview.rel, "`## Spec` lacks {}; D000's Spec holds the subsections Capabilities, "
+                     "Modules, Dependencies and Glossary".format(", ".join(missing)))
+    for pattern in overview.as_list("paths"):
+        entry = entry_path(pattern)
+        if any(c in entry for c in "*?[") or entry.endswith("/") or (overview.root.project / entry).is_dir():
+            repo.problem("ERROR", overview.rel, "`paths` entry `{}` names a glob or directory; D000's `paths` list "
+                         "only files, since a glob or directory makes every file under it look governed"
+                         .format(pattern))
+    project = str(overview.root.project)
+    for entry in module_entries(overview):
+        target = os.path.normpath(os.path.join(project, entry))
+        if not ((target == project or target.startswith(project + os.sep)) and os.path.isdir(target)):
+            repo.problem("WARN", overview.rel, "Modules Path `{}` is not a directory of the project".format(entry))
+
+
 def run_check(repo, base=None):
     changed = set(repo.changed_files()) if repo.has_head else set()
     for doc in repo.docs:
@@ -1128,6 +1164,8 @@ def run_check(repo, base=None):
             repo.problem("ERROR", posix_rel(path, repo.root), "index out of date", fix=("index",))
         elif current:
             check_links(repo, path, current.split("\n"), 0)
+
+    check_overview(repo)
 
     overview = root_overview(repo) is not None
     for rel, commit in repo.deleted_docs(base):
@@ -1972,17 +2010,27 @@ def root_overview(repo):
 
 def module_paths(overview):
     """The directories that the Path cells of D000's Modules table list, relative to the project directory, with ""
-    for `./`. A cell is split at commas, and each entry, stripped of whitespace and backticks, is read as a
-    directory with or without its trailing `/`; one that is no directory of the project holds no tracked file."""
-    heads = overview.headings
+    for `./`. Each entry is read as a directory with or without its trailing `/`; one that is no directory of the
+    project holds no tracked file."""
+    return ["" if path == "." else path for path in map(posixpath.normpath, module_entries(overview))]
+
+
+def spec_subsections(doc):
+    """The `### ` headings in a doc's `## Spec`, as indexes into its headings."""
+    heads = doc.headings
     spec = next((i for i, h in enumerate(heads) if h.level == 2 and h.text == "Spec"), None)
-    found = None
-    for i in range(spec + 1, len(heads)) if spec is not None else ():
-        if heads[i].level <= 2:
-            break
-        if heads[i].level == 3 and heads[i].text == "Modules":
-            found = i
-            break
+    if spec is None:
+        return []
+    end = next((i for i in range(spec + 1, len(heads)) if heads[i].level <= 2), len(heads))
+    return [i for i in range(spec + 1, end) if heads[i].level == 3]
+
+
+def module_entries(overview):
+    """The entries of the Path cells of D000's Modules table, the first table under `### Modules` in `## Spec`, its
+    Path column found by its header: each cell split at commas, and each entry stripped of whitespace and backticks.
+    """
+    heads = overview.headings
+    found = next((i for i in spec_subsections(overview) if heads[i].text == "Modules"), None)
     if found is None:
         return []
     end = next((h.line for h in heads[found + 1:] if h.level <= 3), len(overview.lines))
@@ -1993,14 +2041,15 @@ def module_paths(overview):
         elif rows:
             break
     column = next((i for i, cell in enumerate(rows[0] if rows else []) if cell.lower() == "path"), None)
-    paths = []
+    entries = []
     for row in rows[1:] if column is not None else []:
+        if all(set(cell) <= set("-: ") for cell in row):
+            continue
         for entry in (row[column] if column < len(row) else "").split(","):
             entry = entry.strip(" \t`")
             if entry:
-                path = posixpath.normpath(entry)
-                paths.append("" if path == "." else path)
-    return paths
+                entries.append(entry)
+    return entries
 
 
 def parent_dir(rel):

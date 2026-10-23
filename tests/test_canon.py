@@ -31,6 +31,7 @@ _spec.loader.exec_module(canon)
 FINDINGS = "## Scope\n\nFixture.\n\n## Findings\n\n| ID | Severity | Finding | Disposition |\n|---|---|---|---|\n{}\n"
 PLAN = "## Current state\n\nNext: S1.\n\n## Slices\n\n### S1: First\n\nStatus: todo\n\n## Notes\n\n{}\n\n## Log\n\nStarted.\n"
 ISSUES = "\n## Known issues\n\n| ID | Severity | Issue | Source | Since | Next |\n|---|---|---|---|---|---|\n{}\n"
+NO_OVERVIEW = "ERROR docs: no D000, the project overview every project keeps; run `canon.py init` at the repo root"
 UNIT_TIME_FORMAT = "%Y%m%dT%H%M%SZ"
 
 
@@ -675,10 +676,18 @@ class OverviewMoveTest(CanonTest):
         agents = self.root / "AGENTS.md"
         agents.write_text(re.sub(r"\[D000: [^]]*\]\([^)]*\)", "docs/README.md", agents.read_text()))
 
+    def commit(self, check=True):
+        """Commit; until `init` has moved a design to D000, `check` may fail for the missing D000 alone."""
+        if check and not (self.root / self.OVERVIEW).exists():
+            errors = [line for line in self.fails("check", "--fix").splitlines() if line.startswith("ERROR")]
+            self.assertEqual(errors, [NO_OVERVIEW])
+            check = False
+        super().commit(check)
+
     def project(self, **fields):
         self.design("a")
         self.design("b")
-        values = dict(revision=2, reviewed=2, implemented=2, body=self.ARCHITECTURE)
+        values = dict(revision=2, reviewed=2, implemented=2, paths=["src/base.py"], body=self.ARCHITECTURE)
         values.update(fields)
         self.issues(self.design("architecture", **values), "| D003-K1 | minor | A gap | R001-F1 | 2020-10-01 | fix |")
         self.design("part", parent="D003")
@@ -1072,6 +1081,74 @@ class AsBuiltTest(CanonTest):
         self.doc("P", "work", as_built=self.git("rev-parse", "HEAD"))
         self.assertRegex(self.fails("check", "--fix"),
                          r"ERROR docs/plans/P001-work\.md: unknown frontmatter field `as_built`")
+
+
+class OverviewCheckTest(CanonTest):
+    """`check`'s rules for D000: one live D000 in the repo root's docs/ and none elsewhere, its four Spec
+    subsections, only files in its `paths`, and a warning for a Modules Path that is no directory."""
+    OVERVIEW = CoverageTest.OVERVIEW
+
+    def problems(self, out):
+        return [line for line in out.splitlines() if line.startswith(("ERROR", "WARN"))]
+
+    def test_a_repository_fresh_from_init_passes_with_only_the_warnings_of_an_unfinished_design(self):
+        self.assertEqual(self.problems(self.ok("check")),
+                         ["WARN {}: `summary` is empty".format(self.OVERVIEW),
+                          "WARN {}: template guidance `<!-- canon: ... -->` left in the doc".format(self.OVERVIEW)])
+
+    def test_check_fails_without_a_live_d000_in_the_repo_root_docs(self):
+        path = self.root / self.OVERVIEW
+        text = path.read_text()
+        path.unlink()
+        self.assertIn(NO_OVERVIEW, self.problems(self.fails("check", "--fix")))
+        archived = self.root / "docs/archived/designs/D000-project-overview.md"
+        archived.parent.mkdir(parents=True)
+        archived.write_text(canon.set_field(text, "status", "retired"))
+        out = self.problems(self.fails("check", "--fix"))
+        self.assertNotIn(NO_OVERVIEW, out)
+        self.assertTrue(any(line.startswith("ERROR docs/archived/designs/D000-project-overview.md: D000 is archived")
+                            for line in out), out)
+
+    def test_check_fails_with_a_second_d000_under_a_module_docs_root(self):
+        self.ok("init", "--root", "mod")
+        module = self.root / "mod" / self.OVERVIEW
+        module.parent.mkdir(parents=True)
+        module.write_text((self.root / self.OVERVIEW).read_text())
+        self.assertIn("ERROR mod/{}: D000 belongs only in the repo root's docs/; give this doc another id with "
+                      "`canon.py renumber mod/{}`".format(self.OVERVIEW, self.OVERVIEW),
+                      self.problems(self.fails("check", "--fix")))
+
+    def test_check_fails_when_d000_spec_lacks_one_of_its_four_subsections(self):
+        path = self.root / self.OVERVIEW
+        text = path.read_text()
+        lacks = ("ERROR {}: `## Spec` lacks `### {{}}`; D000's Spec holds the subsections Capabilities, Modules, "
+                 "Dependencies and Glossary").format(self.OVERVIEW)
+        for name in ("Capabilities", "Modules", "Dependencies", "Glossary"):
+            path.write_text(text.replace("\n### {}\n".format(name), "\n{}\n".format(name)))
+            self.assertIn(lacks.format(name), self.problems(self.fails("check")))
+        path.write_text(text.replace("\n### Glossary\n", "\n").replace("\n## Decisions\n", "\n## Decisions\n\n"
+                                                                       "### Glossary\n"))
+        self.assertIn(lacks.format("Glossary"), self.problems(self.fails("check")))
+
+    def test_check_fails_a_glob_or_directory_in_d000_paths_and_passes_a_file(self):
+        path = self.root / self.OVERVIEW
+        names = ("ERROR {}: `paths` entry `{{}}` names a glob or directory; D000's `paths` list only files, since a "
+                 "glob or directory makes every file under it look governed").format(self.OVERVIEW)
+        for entry in ("src/**", "src/", "src", "./", "src/*.py", "src/base.p?", "src/[b]ase.py", "lib/"):
+            self.set(path, paths=[entry])
+            self.assertIn(names.format(entry), self.problems(self.fails("check")))
+        self.set(path, paths=["src/base.py"])
+        self.ok("check")
+
+    def test_a_modules_path_that_is_no_directory_of_the_project_only_warns(self):
+        path = self.root / self.OVERVIEW
+        path.write_text(path.read_text().replace(CoverageTest.MODULES, CoverageTest.MODULES
+                                                 + "| all | ./ | Fixture | none | none |\n"
+                                                 + "| src | `src/`, src | Fixture | none | none |\n"
+                                                 + "| lib | lib/, src/base.py, .. | Fixture | none | none |\n"))
+        self.assertEqual([line for line in self.problems(self.ok("check")) if "Modules Path" in line],
+                         ["WARN {}: Modules Path `{}` is not a directory of the project".format(self.OVERVIEW, entry)
+                          for entry in ("lib/", "src/base.py", "..")])
 
 
 class TraceCase(CanonTest):
