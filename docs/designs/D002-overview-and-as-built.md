@@ -1,15 +1,15 @@
 ---
 status: draft
 created: 2026-10-22
-updated: 2026-10-22
-revision: 1
+updated: 2026-10-23
+revision: 2
 modules: [canon]
 summary: D000 project overview in every project, as-built designs that record existing code, backfill before changing unspecified behavior, and design coverage in audit.
 refs: [D001]
 owns: [project-overview, as-built-design, design-coverage]
-paths: [skills/governance/canon/as-built.md, skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/governance/canon/doc-types.md, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-review/SKILL.md]
-reviewed: 1
-reviewers: [claude-opus-5.5, gpt-6-astra-high]
+paths: [skills/governance/canon/as-built.md, skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/governance/canon/doc-types.md, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-review/architecture.md]
+reviewed: 2
+reviewers: [claude-opus-5.5]
 ---
 
 # D002: Project overview and as-built designs
@@ -21,6 +21,7 @@ reviewers: [claude-opus-5.5, gpt-6-astra-high]
 3. A change's tier measures the change, not the docs the project lacks: changing behavior no design states costs one L1 as-built revision more than changing stated behavior, never an L2 detour.
 4. What an as-built revision adds holds for the code at the commit it records, apart from defects its known issues name, and it states intent only where evidence or the user gives it.
 5. `audit` ranks the parts of the project's modules no design covers by recent commits, and coverage never fails `check`.
+6. No tool or step takes a doc, such as the project's README, for code that lacks a design, and the docs step keeps what docs state in line with the change.
 
 ## Spec
 
@@ -127,9 +128,19 @@ The skills apply them:
 ### Setup
 
 - Setup ends once D000 and the adopted designs that describe existing code have passed their gates. `canon-init` writes no other as-built design; the first change that alters unspecified behavior records what it needs.
-- A doc that describes the whole project, such as an architecture overview, is folded into D000 and removed, as an ADR is folded into its design.
+- A doc that describes the whole project, such as an architecture overview, is folded into D000 and removed, as an ADR is folded into its design; a [project doc](#project-docs), such as the README, is not.
 - `canon-init` fills D000 from the code: Goals, every capability and module with its Path and designs or `none`, the standards designs own across modules, the dependency directions and the glossary. D000 passes the L1 gate as an as-built design, like the adopted designs that describe existing code, and is shown to the user.
 - Upgrade: after `init` has moved the architecture design to D000, the agent bumps D000's revision and, as an as-built revision, rewrites Goals as D000's, folds the old sections into the four subsections, fills what is still missing and narrows `paths` to files, then passes the L1 gate. Code the old `paths` covered shows in coverage until designs cover it. When `init` created a fresh D000 instead, the agent fills it as in setup.
+
+### Project docs
+
+A project's `README.md`, its hand-written intro for users, belongs to the doc system like its `AGENTS.md` and its docs root; the `canon` skill's Layout names it. A project need not have one, and `check` does not read it. It stays: `canon-init` neither folds it into D000 nor adopts it, and where it restates D000 or a design, they hold.
+
+A file in any directory whose name, before its extension and in any case, is `README`, `AGENTS`, `CLAUDE`, `CHANGELOG`, `CONTRIBUTING`, `LICENSE` or `NOTICE`, and any file under a docs root, is a doc:
+
+- `which` prints `<path>: doc` for it, unless an entry of a design's `paths` is its exact path, so neither the docs step, code review nor `canon-review` takes it for code no design covers. A glob or directory entry never matches a doc, in `which`, in `affected` and in the unchecked commits `audit` counts.
+- Coverage counts no doc.
+- The docs step fixes, in READMEs, guides and `AGENTS.md`, the names the change renamed or removed and what they state of behavior the change altered.
 
 ### Coverage in audit
 
@@ -142,28 +153,29 @@ Source areas no design covers (commits in the last 90 days, most first):
   and 3 more areas
 ```
 
-- Files are the tracked files under the Paths of D000's Modules rows, outside every docs root; tooling, CI and configuration outside every module are not counted. A file belongs to the module with the longest Path that holds it, and is covered when the `paths` of a non-archived design, in any project, match it. Area paths are relative to the repo root, and one list covers the repository.
+- Files are the tracked files under the Paths of D000's Modules rows, other than [docs](#project-docs); tooling, CI and configuration outside every module are not counted. A file belongs to the module with the longest Path that holds it, and is covered when the `paths` of a non-archived design, in any project, match it. Area paths are relative to the repo root, and one list covers the repository.
 - Each uncovered file starts in the area of its directory. While every counted file under the parent directory is uncovered, the area moves up to the parent, never above its module's Path.
 - An area whose counted files are all uncovered, its subdirectories' included, shows `<n> files`, counting them all. Any other area shows `<uncovered> of <counted> files`, counting the files directly in it.
 - Areas rank by the commits of the last 90 days that touch their uncovered files, then by uncovered files, then by path. The first 10 are listed and the rest counted.
 - Coverage never makes `check` fail, and `audit` exits 0.
-- `canon-sync` reports the listed areas, and `canon-review` takes its design-coverage scope from them.
+- `canon-sync` reports the listed areas, and `canon-review` takes its design-coverage scope from them, the architecture angle's hard check included.
 
 ### Delivery
 
-1. `canon.py`, with tests in `tests/test_canon.py` and a `CANON_VERSION` bump in every commit that changes it: D000's template and checks, the refusal to archive it, ids that history keeps taken, `init`'s D000 and its upgrade move, the deleted-doc exception, `as_built` and its checks, the `AGENTS.md` block, and `audit`'s coverage and reach.
-2. The `canon` skill: `as-built.md`; the backfill rules in the tiers; `as_built` among the frontmatter fields; D000 in Layout, in Reading docs and in `doc-types.md`, in place of the architecture design; the `audit` row of the Tool table; in `workflow.md`, the reviewer prompt's as-built lines, the as-built status in the gate's status step and the docs step's rules for uncovered files and D000's rows; the `as-built <commit>` source among the known issues' sources.
-3. `canon-init`, `canon-design`, `canon-implement`, `canon-code-review`, `canon-sync` and `canon-review` as this design states. `canon-init`'s architecture step becomes D000's and drops its rule that `paths` cover the main source directories. Every mention of the architecture design in the skills names D000.
+1. `canon.py`, with tests in `tests/test_canon.py` and a `CANON_VERSION` bump in every commit that changes it: D000's template and checks, the refusal to archive it, ids that history keeps taken, `init`'s D000 and its upgrade move, the deleted-doc exception, `as_built` and its checks, the `AGENTS.md` block, `which` for docs, and `audit`'s coverage and reach.
+2. The `canon` skill: `as-built.md`; the backfill rules in the tiers; `as_built` among the frontmatter fields; D000 in Layout, in Reading docs and in `doc-types.md`, in place of the architecture design, and the project's `README.md` in Layout; the `audit` row of the Tool table; in `workflow.md`, the reviewer prompt's as-built lines, the as-built status in the gate's status step and the docs step's rules for uncovered files, D000's rows and what docs state; the `as-built <commit>` source among the known issues' sources.
+3. `canon-init`, `canon-design`, `canon-implement`, `canon-code-review`, `canon-sync` and `canon-review` as this design states, `canon-review`'s `architecture.md` included. `canon-init`'s architecture step becomes D000's and drops its rule that `paths` cover the main source directories. Every mention of the architecture design in the skills names D000.
 4. `README.md`: the roadmap entry on as-built designs becomes part of How canon works, and the Skills table summaries of `canon-init` and `canon-design` follow their changes.
-5. This repository's own D000, no later than the commit that adds `check`'s D000 rule: `init --script skills/governance/canon/scripts/canon.py` run here adds the canon block to `AGENTS.md` and the `.gitattributes` rules and creates D000, which is filled as in setup. D001's `paths` are extended to the files it specifies.
+5. This repository's own D000, no later than the commit that adds `check`'s D000 rule: `init --script skills/governance/canon/scripts/canon.py` run here adds the canon block to `AGENTS.md` and the `.gitattributes` rules and creates D000, which is filled as in setup. D001's `paths` are extended to the files it specifies, docs excepted.
 
 Scenarios, tested through the commands:
 
 - `init` in a repository without docs creates D000 with the four subsections, and `check` reports only the warnings of an unfinished design; `init --root <module>` creates none.
-- `init` in a project whose D003 owns `architecture`, lists D003-K1 and is in plan P002's `based_on` moves it to D000 with D000-K1 and `based_on: [D000@r<n>]`, rewrites the links to it and appends the missing subsections at the end of `## Spec`. After D000 is filled out to over twice the old doc's size, neither `check` nor `check --base` reports a deleted doc. A later `new D` does not get D003, even when D003 was the highest D number, and `new D --parent` does not reuse the letter of a sub-design that was moved away.
+- `init` in a project whose D003 owns `architecture`, lists D003-K1 and is in plan P002's `based_on` moves it to D000 with D000-K1 and `based_on: [D000@r<n>]`, rewrites the links to it and appends the missing subsections at the end of `## Spec`. After D000 is filled out to over twice the old doc's size, neither `check` nor `check --base` reports a deleted doc. A later `new D` does not get D003, even when D003 was the highest D number, and `new D --parent` does not reuse the letter of a sub-design that `renumber` gave another letter.
 - `check` errors without D000, with a D000 under a module's docs root, with a subsection missing, with `src/**`, `src/` or an existing directory in D000's `paths`, with an `as_built` that names no commit, or reads `worktree` once HEAD has a commit, and with an `as_built` left on a reviewed revision, which `check --fix` removes. It only warns for a Modules Path that is not a directory.
 - `archive D000` is refused.
-- `audit` counts only files under D000's module Paths. It lists a fully uncovered `src/a/` with its subdirectories folded in but never above its module's Path, `src/b/` as `2 of 5 files`, and the files of a module whose Path is `./`; it ranks areas by commits of the last 90 days, lists 10 and counts the rest. It lists a design D000 does not reach, and not one reached through another design's `refs`.
+- `which` prints `doc` for `README.md`, `src/a/readme.rst`, `AGENTS.md`, `CLAUDE.md`, `LICENSE` and a file under a docs root, and for `src/auth/README.md` while a design's `paths` hold `src/auth/**`; it prints the design for a README whose exact path a design's `paths` list. A commit that changes only `src/auth/README.md` is no unchecked commit of that design.
+- `audit` counts only files under D000's module Paths, and no doc among them. It lists a fully uncovered `src/a/` with its subdirectories folded in but never above its module's Path, `src/b/` as `2 of 5 files`, and the files of a module whose Path is `./`; it ranks areas by commits of the last 90 days, lists 10 and counts the rest. It lists a design D000 does not reach, and not one reached through another design's `refs`.
 
 ## Decisions
 
@@ -180,5 +192,6 @@ Scenarios, tested through the commands:
 - Backfill precedes behavior changes only: designs written for every touched file would follow incidental edits rather than behavior.
 - Setup stops at D000 and the docs the project already has: the first change that needs a baseline records it, so setup writes nothing for work that may never come.
 - Coverage is a hint in `audit`, never a `check` error: adoption is gradual and must not block commits.
-- Coverage counts only files under D000's module Paths: tooling, CI and configuration need no design, and the Modules table already says where the code lives.
+- Coverage counts only files under D000's module Paths: tooling, CI and configuration need no design, and the Modules table already says where the code lives. A module whose Path is `./` counts them too, so a project with tooling at its root gives its modules narrower Paths.
+- READMEs, `AGENTS.md` and the other project docs are docs, never code no design covers: they describe the project rather than implement it, and listing them in the `paths` of the designs they restate, or letting a glob there match them, would count every edit to them, such as a new row of a skills table, as an unchecked commit of each.
 - `as_built` lives only until the gate: the gate, a resumed session and a replay need the base, and once past its gate the revision is maintained like any other.
