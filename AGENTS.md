@@ -35,6 +35,7 @@ Do not commit a `SKILL.md` outside `skills/`, templates and examples included: t
 ## Workflow
 
 - When you need a linked git worktree, create it at `.worktrees/<branch>` inside the repository, never beside it: the agent sandbox allows writes only inside the workspace, so every edit to a worktree outside it waits for the user's approval. `.gitignore` excludes the directory, and `npx skills add .` searches it only with `--full-depth`.
+- Put temporary files and directories, such as scratch repositories and benchmark scripts, inside the repository, never in `/tmp` or another OS temp directory, which also waits for the user's approval: a canon skill's go in `.canon/` as the `canon` skill says, any other in `.tmp/`. `.gitignore` excludes both, and `npx skills add .` searches `.tmp/` only with `--full-depth`.
 - New skill: run `npx skills init <name>` in `skills/<category>/`, then complete the frontmatter (including `disable-model-invocation`) and `agents/openai.yaml` as the rules above describe.
 - When adding or removing a skill, or changing its purpose or trigger mode, update the Skills tables in `README.md`. `validate.py` checks their names, categories and trigger modes against the frontmatter; check the summaries yourself.
 - After changing any skill, run `python3 scripts/validate.py` (it also runs `tests/`) and `npx skills add . --list`, and commit only once both pass.

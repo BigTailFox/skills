@@ -25,3 +25,4 @@ skills-lock.json
 .env.*
 *.local.md
 tmp/
+.tmp/
