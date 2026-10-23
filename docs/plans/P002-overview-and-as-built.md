@@ -17,7 +17,7 @@ Implements [D002: Project overview and as-built designs](../designs/D002-overvie
 
 ## Current state
 
-S1 to S5 done. Next: S6.
+S1 to S6 done. Next: S7.
 
 ## Slices
 
@@ -137,7 +137,7 @@ Test criteria; seam: `audit` and `check` output and exit status, with commits ma
 
 ### S6: as_built in check
 
-Status: todo
+Status: done
 
 Builds on `D002#as-built-revisions`, the `as_built` paragraph.
 
@@ -266,3 +266,5 @@ Test criteria; seam: `check` output and exit status:
 - S5 done: 9 tests in `CoverageTest` and `ReachTest`, 134 in the suite, all passing; each of 19 mutants of the new rules turned a test red. Criterion 7, medians of 15 runs in a generated checkout of 20,021 tracked files in 400 source directories with 1,001 commits in the last 90 days: `audit` took 0.326 s, against 0.272 s without coverage, so coverage adds 0.055 s, under the 5 s threshold.
 - S5 decision: an area moves up while every counted file of its own module under the parent is uncovered, and counts only its module's files. Read literally, `D002#coverage-in-audit` would let another module's files stop or join a `./` module's area, splitting it into one area per directory and counting the longer module's files twice; criterion 3 and D002's goal 5 take areas as parts of modules.
 - S5 details, for the docs step to write into D002: only the first table under `### Modules` counts, outside code fences, its Path column found by a header matched in any case; an empty entry holds no file. Coverage counts the index, as `git ls-files` lists it, and a merge touches no area, since `git log` without `-m` lists no files for it. The lines keep D002's plural forms, as `1 commits`. Reach follows only `refs` that name designs, archived ones included. Coverage and then reach come after `audit`'s other sections.
+- S6 done: 5 tests in `AsBuiltTest`, 139 in the suite, all passing; each of 10 mutants of the new rules failed a test.
+- S6 details, for the docs step to write into D002: `as_built` holds 7 to 64 lowercase hex digits, so a SHA-256 name fits. A change to the `as_built` line alone, like one to `implemented`, needs no `updated` bump, so `check --fix` deleting it leaves no other error. On a reviewed revision only the fixable error for the remaining field is reported, whatever its value.

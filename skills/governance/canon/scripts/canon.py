@@ -28,7 +28,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "18"
+CANON_VERSION = "19"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -55,7 +55,7 @@ EXTRA_DIRS = ("guides", "assets")
 
 COMMON_FIELDS = ("status", "created", "updated", "revision", "modules", "summary", "refs")
 TYPE_FIELDS = {"D": ("owns", "paths"), "P": ("based_on",)}
-OPTIONAL_FIELDS = {"D": ("reviewed", "reviewers", "implemented"), "P": ("reviewed", "reviewers")}
+OPTIONAL_FIELDS = {"D": ("reviewed", "reviewers", "implemented", "as_built"), "P": ("reviewed", "reviewers")}
 LIST_FIELDS = {"modules", "refs", "owns", "paths", "based_on", "reviewers"}
 INT_FIELDS = {"revision", "reviewed", "implemented"}
 SEVERITIES = ("blocker", "major", "minor")
@@ -76,6 +76,7 @@ FULL_ID_RE = re.compile(r"^([CDPREI])(\d{3,})([A-Z]?)$")
 REF_ARG_RE = re.compile(r"^([CDPREI]\d{3,}[A-Z]?)(?:[#§](.+))?$")
 REF_TEXT_RE = re.compile(r"^([CDPREI]\d{3,}[A-Z]?)(?:§([^:]+))?: \S")
 BASED_ON_RE = re.compile(r"^(D\d{3,}[A-Z]?)@r(\d+)$")
+HEX_NAME_RE = re.compile(r"^[0-9a-f]{7,64}$")
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 LINK_RE = re.compile(r"(!?)\[([^\]]*)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
@@ -305,15 +306,20 @@ def parse_frontmatter(lines):
 
 
 def set_field(text, key, value):
+    """Set a frontmatter field, or delete its line when `value` is None."""
     lines = text.split("\n")
     end = next(i for i in range(1, len(lines)) if lines[i].strip() == "---")
     rendered = "{}: {}".format(key, render_value(value))
     for i in range(1, end):
         if re.match(r"^{}:".format(re.escape(key)), lines[i]):
-            lines[i] = rendered
+            if value is None:
+                del lines[i]
+            else:
+                lines[i] = rendered
             break
     else:
-        lines.insert(end, rendered)
+        if value is not None:
+            lines.insert(end, rendered)
     return "\n".join(lines)
 
 
@@ -898,8 +904,9 @@ def plan_designs(doc):
 
 
 def content_lines(lines):
-    """Lines that count as a content change for `updated`; `implemented` tracks the code, not the doc."""
-    return [line for line in lines if not line.startswith("implemented:")]
+    """Lines that count as a content change for `updated`; `implemented` tracks the code and `as_built` the
+    pending gate, not the doc."""
+    return [line for line in lines if not line.startswith(("implemented:", "as_built:"))]
 
 
 def check_doc(repo, doc, changed, strict=False):
@@ -1005,6 +1012,14 @@ def check_doc(repo, doc, changed, strict=False):
             planned = any(p.type == "P" and not p.archived and doc.id in plan_designs(p) for p in repo.docs)
             fix = (doc, "implemented", 1) if old_fm.get("revision", doc.revision) == 1 and not planned else None
             err("active design needs `implemented`: the revision its code fully implements", fix=fix)
+        as_built = fm.get("as_built")
+        if as_built is not None:
+            if reviewed is not None and reviewed == fm.get("revision"):
+                err("`as_built` remains on revision {}, which is reviewed; the gate deletes it when it sets "
+                    "`reviewed`".format(reviewed), fix=(doc, "as_built", None))
+            elif not names_commit(repo, as_built) and not (as_built == "worktree" and not repo.has_head):
+                err("`as_built` `{}` names no commit; give the hex name, at least 7 digits, of the commit the "
+                    "revision records, or `worktree` outside Git or before the first commit".format(as_built))
         if doc.suffix and "D" + doc.digits not in repo.by_id:
             err("sub-design needs parent D{}".format(doc.digits))
         for topic in doc.as_list("owns"):
@@ -1060,6 +1075,14 @@ def check_doc(repo, doc, changed, strict=False):
     if old_lines is not None and content_lines(old_lines) != content_lines(doc.lines) \
             and old_fm.get("updated") == fm.get("updated") != today():
         err("content changed but `updated` was not bumped", fix=(doc, "updated", today()))
+
+
+def names_commit(repo, value):
+    """Whether `value` is a commit's hex object name, full or of at least 7 digits; a ref such as HEAD or a branch
+    names none, since it moves once the change commits."""
+    if not HEX_NAME_RE.match(value):
+        return False
+    return git(repo.root, "rev-parse", "--verify", "-q", value + "^{commit}") is not None
 
 
 def owned_architecture(repo, commit, rel):
@@ -1136,7 +1159,7 @@ def apply_fixes(repo):
         doc, key, value = fix
         doc.text = set_field(doc.text, key, value)
         doc.path.write_text(doc.text, encoding="utf-8")
-        done.append("{}: set {}".format(rel, key))
+        done.append("{}: {} {}".format(rel, "set" if value is not None else "deleted", key))
     return done, index
 
 
@@ -3008,7 +3031,8 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("check", help="validate all docs; exit 1 on errors")
-    p.add_argument("--fix", action="store_true", help="apply mechanical fixes (refs, updated, implemented, indexes)")
+    p.add_argument("--fix", action="store_true",
+                   help="apply mechanical fixes (refs, updated, implemented, as_built, indexes)")
     p.add_argument("--base", help="also check this branch against a ref, e.g. origin/main: deleted docs, id "
                                   "collisions, revisions pending review and unfinished docs fail")
     p.set_defaults(func=cmd_check)

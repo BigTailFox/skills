@@ -1024,6 +1024,56 @@ class ReachTest(CanonTest):
             self.assertNotIn(CoverageTest.AREAS, out)
 
 
+class AsBuiltTest(CanonTest):
+    """`as_built`, the commit an as-built revision records while it awaits its gate."""
+
+    def test_a_draft_pending_review_passes_naming_head_by_its_full_or_seven_digit_hash(self):
+        design = self.doc("D", "area")
+        self.commit()
+        head = self.git("rev-parse", "HEAD")
+        for value in (head, head[:7]):
+            self.set(design, as_built=value)
+            self.assertNotIn("as_built", self.ok("check"))
+
+    def test_check_fails_an_as_built_that_names_no_commit_or_moves_once_the_change_commits(self):
+        design = self.doc("D", "area")
+        self.commit()
+        head, tree = self.git("rev-parse", "HEAD", "HEAD^{tree}").split()
+        for value in ("0123456", head[:6], tree, "HEAD", "main", "worktree"):
+            self.set(design, as_built=value)
+            self.assertRegex(self.fails("check"), r"ERROR docs/designs/D001-area\.md: `as_built` `{}` names no commit"
+                             .format(value))
+
+    def test_worktree_passes_before_the_first_commit_and_outside_git_where_a_hash_fails(self):
+        self.doc("D", "area", as_built="worktree")
+        self.assertNotIn("as_built", self.ok("check", "--fix"))
+        self.root = self.tmpdir()
+        self.ok("init")
+        design = self.doc("D", "area", as_built="worktree")
+        self.assertNotIn("as_built", self.ok("check", "--fix"))
+        self.set(design, as_built="0123456789abcdef0123456789abcdef01234567")
+        self.assertIn("`as_built` `0123456789abcdef0123456789abcdef01234567` names no commit", self.fails("check"))
+
+    def test_fix_deletes_the_as_built_line_alone_once_its_revision_is_reviewed(self):
+        self.commit()
+        head = self.git("rev-parse", "HEAD")
+        design = self.design(created="2026-01-01", updated="2026-01-01", as_built=head)
+        self.commit(check=False)
+        text = design.read_text()
+        out = self.fails("check")
+        self.assertRegex(out, r"ERROR docs/designs/D001-area\.md: `as_built` remains on revision 1, which is reviewed")
+        self.assertIn("; 1 fixable with --fix", out)
+        self.ok("check", "--fix")
+        self.assertEqual(design.read_text(), text.replace("as_built: {}\n".format(head), "", 1))
+        self.assertNotIn("as_built", self.ok("check"))
+
+    def test_as_built_on_a_plan_is_an_unknown_frontmatter_field(self):
+        self.commit()
+        self.doc("P", "work", as_built=self.git("rev-parse", "HEAD"))
+        self.assertRegex(self.fails("check", "--fix"),
+                         r"ERROR docs/plans/P001-work\.md: unknown frontmatter field `as_built`")
+
+
 class TraceCase(CanonTest):
     HOST_VARS = ("CURSOR_AGENT", "CURSOR_CONVERSATION_ID", "CODEX_THREAD_ID", "CLAUDECODE")
 
