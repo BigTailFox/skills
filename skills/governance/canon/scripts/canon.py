@@ -11,6 +11,7 @@ import errno
 import hashlib
 import json
 import os
+import posixpath
 import re
 import shutil
 import stat
@@ -27,7 +28,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "17"
+CANON_VERSION = "18"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -1105,7 +1106,7 @@ def run_check(repo, base=None):
         elif current:
             check_links(repo, path, current.split("\n"), 0)
 
-    overview = any(d.id == OVERVIEW_ID and not d.archived and not d.root.rel for d in repo.docs)
+    overview = root_overview(repo) is not None
     for rel, commit in repo.deleted_docs(base):
         match = FILE_RE.match(rel.rsplit("/", 1)[-1])
         doc_id = match.group(1) + match.group(2) + match.group(3) if match else None
@@ -1941,6 +1942,119 @@ def unchecked_commits(repo, doc):
     return base, commits
 
 
+def root_overview(repo):
+    """The non-archived D000 in the repo root's docs/; None without one."""
+    return next((d for d in repo.docs if d.id == OVERVIEW_ID and not d.archived and not d.root.rel), None)
+
+
+def module_paths(overview):
+    """The directories that the Path cells of D000's Modules table list, relative to the project directory, with ""
+    for `./`. A cell is split at commas, and each entry, stripped of whitespace and backticks, is read as a
+    directory with or without its trailing `/`; one that is no directory of the project holds no tracked file."""
+    heads = overview.headings
+    spec = next((i for i, h in enumerate(heads) if h.level == 2 and h.text == "Spec"), None)
+    found = None
+    for i in range(spec + 1, len(heads)) if spec is not None else ():
+        if heads[i].level <= 2:
+            break
+        if heads[i].level == 3 and heads[i].text == "Modules":
+            found = i
+            break
+    if found is None:
+        return []
+    end = next((h.line for h in heads[found + 1:] if h.level <= 3), len(overview.lines))
+    rows = []
+    for _i, line in code_mask(overview.lines[:end], heads[found].line + 1):
+        if line.strip().startswith("|"):
+            rows.append([cell.strip() for cell in line.strip().strip("|").split("|")])
+        elif rows:
+            break
+    column = next((i for i, cell in enumerate(rows[0] if rows else []) if cell.lower() == "path"), None)
+    paths = []
+    for row in rows[1:] if column is not None else []:
+        for entry in (row[column] if column < len(row) else "").split(","):
+            entry = entry.strip(" \t`")
+            if entry:
+                path = posixpath.normpath(entry)
+                paths.append("" if path == "." else path)
+    return paths
+
+
+def parent_dir(rel):
+    return rel.rsplit("/", 1)[0] if "/" in rel else ""
+
+
+def coverage_report(repo, overview, listed=10):
+    """`audit`'s source areas: the tracked files under D000's module Paths, docs aside, that no design's `paths`
+    match, grouped by directory within their module and ranked by the commits of the last 90 days."""
+    modules = sorted(set(module_paths(overview)), key=len, reverse=True)
+    patterns = {}
+    for doc in repo.docs:
+        if doc.type == "D" and not doc.archived:
+            patterns.setdefault(doc.root.rel, []).extend(glob_regex(p).pattern for p in doc.as_list("paths"))
+    matchers = [(rel + "/" if rel else "", re.compile("|".join("(?:{})".format(p) for p in entries)))
+                for rel, entries in patterns.items() if entries]
+    uncovered, covered_dirs, direct = {}, set(), {}
+    tracked = (git(repo.root, "ls-files", "-z") if modules else None) or ""
+    for rel in tracked.split("\0"):
+        module = next((m for m in modules if not m or rel.startswith(m + "/")), None) if rel else None
+        if module is None or repo.is_doc(rel):
+            continue
+        folder = parent_dir(rel)
+        direct[folder] = direct.get(folder, 0) + 1
+        if any(rel.startswith(prefix) and rx.match(rel[len(prefix):]) for prefix, rx in matchers):
+            while (module, folder) not in covered_dirs:
+                covered_dirs.add((module, folder))
+                if folder == module:
+                    break
+                folder = parent_dir(folder)
+        else:
+            uncovered[rel] = module
+    areas, area_of = {}, {}
+    for rel, module in uncovered.items():
+        area = parent_dir(rel)
+        while area != module and (module, parent_dir(area)) not in covered_dirs:
+            area = parent_dir(area)
+        area_of[rel] = area
+        areas.setdefault(area, (module, []))[1].append(rel)
+    commits = dict.fromkeys(areas, 0)
+    if areas and repo.has_head:
+        out = git(repo.root, "log", "-z", "--since=90.days.ago", "--format=%x01", "--name-only", "--no-renames",
+                  "HEAD") or ""
+        for entry in out.split("\x01")[1:]:
+            for area in {area_of[f] for f in entry.lstrip("\0").lstrip("\n").split("\0") if f in area_of}:
+                commits[area] += 1
+
+    def label(area):
+        return area + "/" if area else "./"
+
+    ranked = sorted(areas, key=lambda a: (-commits[a], -len(areas[a][1]), label(a)))
+    if not ranked:
+        return []
+    width = len(str(max(commits[a] for a in ranked[:listed])))
+    report = ["Source areas no design covers (commits in the last 90 days, most first):"]
+    for area in ranked[:listed]:
+        module, files = areas[area]
+        size = "{} files".format(len(files)) if (module, area) not in covered_dirs \
+            else "{} of {} files".format(len(files), direct[area])
+        report.append("  {:>{}} commits  {}  {}".format(commits[area], width, label(area), size))
+    if len(ranked) > listed:
+        report.append("  and {} more areas".format(len(ranked) - listed))
+    return report
+
+
+def unreached_designs(repo, overview):
+    """The non-archived designs D000 does not reach: it reaches itself and every design named in the `refs` of a
+    design it reaches."""
+    reached, todo = set(), [overview]
+    while todo:
+        doc = todo.pop()
+        if doc.id not in reached:
+            reached.add(doc.id)
+            todo += [repo.by_id[r] for r in doc.as_list("refs") if r in repo.by_id and repo.by_id[r].type == "D"]
+    return [d for d in repo.docs if d.type == "D" and not d.archived and d.id not in reached]
+
+
 def cmd_audit(repo, args):
     now = datetime.date.today()
     report = []
@@ -1988,6 +2102,13 @@ def cmd_audit(repo, args):
         if len(done) >= args.review_after or commits >= args.review_commits:
             report.append("{}: {} plans finished and {} code commits since the last review; consider a review (R)"
                           .format(root.label, len(done), commits))
+    overview = root_overview(repo)
+    if overview and repo.is_git:
+        report += coverage_report(repo, overview)
+    unreached = unreached_designs(repo, overview) if overview else []
+    if unreached:
+        report.append("Designs D000 does not reach (link each from D000's rows or from a design D000 reaches):")
+        report += ["  " + doc_line(d) for d in unreached]
     print("\n".join(report) if report else "canon audit: nothing to report")
     return 0
 
@@ -2954,8 +3075,8 @@ def main(argv=None):
     p.add_argument("--base", help="include changes since the merge base with this ref")
     p.set_defaults(func=cmd_affected)
 
-    p = sub.add_parser("audit", help="report designs with unchecked code commits, known issues, idle open docs, and "
-                                     "due reviews")
+    p = sub.add_parser("audit", help="report designs with unchecked code commits, known issues, idle open docs, due "
+                                     "reviews, source areas no design covers, and designs D000 does not reach")
     p.add_argument("--days", type=int, default=30, help="idle threshold (default 30)")
     p.add_argument("--review-after", type=int, default=5, help="finished plans before a review is due (default 5)")
     p.add_argument("--review-commits", type=int, default=50,

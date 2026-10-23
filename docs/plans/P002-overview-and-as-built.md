@@ -17,7 +17,7 @@ Implements [D002: Project overview and as-built designs](../designs/D002-overvie
 
 ## Current state
 
-S1 to S4 done. Next: S5.
+S1 to S5 done. Next: S6.
 
 ## Slices
 
@@ -111,7 +111,7 @@ Test criteria; seam: `which`, `affected` and `audit`, with commits made in the f
 
 ### S5: Coverage and reach in audit
 
-Status: todo
+Status: done
 Risk: complex logic, performance
 
 Builds on `D002#coverage-in-audit` and `D002#project-overview-d000`, the Modules table and `audit`'s reach. Depends on S2 and S4.
@@ -263,3 +263,6 @@ Test criteria; seam: `check` output and exit status:
 - For S8: `init`'s move rewrites references in other docs without bumping their `updated`, as `renumber` does, so canon-init's Upgrade runs `check --fix` after `init`.
 - S4 done: 6 tests in `ProjectDocsTest`, 125 in the suite, all passing. Breaking the empty-file-list guard, the case folding or the docs-root rule each turned a test red.
 - S4 decisions, for the docs step to write into D002: `audit` reads each commit's files with `git log -z -c --name-only --no-renames`, so a merge counts by the files its resolution changed against every parent, and one whose resolution changed only docs its design's entries do not list is no unchecked commit; a merge with no such files counts as before. Through `--no-renames`, a commit that renames governed code to a README-named file still counts. A `paths` entry is compared with a doc's path after the trimming of whitespace and leading `./` that glob entries already get.
+- S5 done: 9 tests in `CoverageTest` and `ReachTest`, 134 in the suite, all passing; each of 19 mutants of the new rules turned a test red. Criterion 7, medians of 15 runs in a generated checkout of 20,021 tracked files in 400 source directories with 1,001 commits in the last 90 days: `audit` took 0.326 s, against 0.272 s without coverage, so coverage adds 0.055 s, under the 5 s threshold.
+- S5 decision: an area moves up while every counted file of its own module under the parent is uncovered, and counts only its module's files. Read literally, `D002#coverage-in-audit` would let another module's files stop or join a `./` module's area, splitting it into one area per directory and counting the longer module's files twice; criterion 3 and D002's goal 5 take areas as parts of modules.
+- S5 details, for the docs step to write into D002: only the first table under `### Modules` counts, outside code fences, its Path column found by a header matched in any case; an empty entry holds no file. Coverage counts the index, as `git ls-files` lists it, and a merge touches no area, since `git log` without `-m` lists no files for it. The lines keep D002's plural forms, as `1 commits`. Reach follows only `refs` that name designs, archived ones included. Coverage and then reach come after `audit`'s other sections.

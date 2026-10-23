@@ -102,6 +102,25 @@ class CanonTest(unittest.TestCase):
     def issues(self, design, *rows):
         design.write_text(design.read_text() + ISSUES.format("\n".join(rows)))
 
+    def create(self, *names):
+        for name in names:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if not path.exists():
+                path.write_text("x\n")
+
+    def section(self, out, heading):
+        """The indented lines that follow `heading` in a report such as `audit`'s; None without the heading."""
+        lines = out.splitlines()
+        if heading not in lines:
+            return None
+        found = []
+        for line in lines[lines.index(heading) + 1:]:
+            if not line.startswith("  "):
+                break
+            found.append(line)
+        return found
+
 
 class ReviewGateTest(CanonTest):
     def test_pending_revision_warns_locally_and_fails_with_base(self):
@@ -461,7 +480,7 @@ class AuditTest(CanonTest):
         self.code_commit("fix: unchecked")
         design.write_text(design.read_text() + "\nChecked against the code.\n")
         self.commit()
-        self.assertNotIn("D001", self.ok("audit"))
+        self.assertNotIn("commits since", self.ok("audit"))
 
     def test_changing_known_issues_alone_keeps_the_baseline_and_bumping_updated_moves_it(self):
         design = self.design(created="2020-01-01", updated="2020-01-01")
@@ -788,13 +807,6 @@ class ProjectDocsTest(CanonTest):
     DOCS = ["README.md", "src/a/readme.rst", "AGENTS.md", "CLAUDE.md", "LICENSE", "NOTICE", "CHANGELOG.md",
             "CONTRIBUTING.md", "docs/README.md", "docs/assets/x.png"]
 
-    def create(self, *names):
-        for name in names:
-            path = self.root / name
-            path.parent.mkdir(parents=True, exist_ok=True)
-            if not path.exists():
-                path.write_text("x\n")
-
     def test_which_prints_doc_for_every_doc_under_a_design_holding_everything(self):
         self.design(paths=["**"])
         self.create(*self.DOCS, "src/a/x.py")
@@ -864,6 +876,152 @@ class ProjectDocsTest(CanonTest):
         self.edit_commit("src/auth/README.md")
         self.git("merge", "-q", "--no-edit", "code")
         self.assertRegex(self.ok("audit"), r"  2 commits since [0-9a-f]+  D001 ")
+
+
+class CoverageTest(CanonTest):
+    """`audit`'s source areas: the tracked files under the Paths of D000's Modules rows that no design covers."""
+    OVERVIEW = "docs/designs/D000-project-overview.md"
+    MODULES = "| Module | Path | Purpose | Entry points | Design |\n|---|---|---|---|---|\n"
+    AREAS = "Source areas no design covers (commits in the last 90 days, most first):"
+
+    def modules(self, *cells):
+        """Give D000's Modules table one row per Path cell."""
+        path = self.root / self.OVERVIEW
+        rows = "".join("| m{} | {} | Fixture | none | none |\n".format(i, cell) for i, cell in enumerate(cells, 1))
+        path.write_text(path.read_text().replace(self.MODULES, self.MODULES + rows))
+
+    def areas(self):
+        return self.section(self.ok("audit"), self.AREAS) or []
+
+    def test_a_fully_uncovered_module_is_one_area_never_above_its_path(self):
+        self.modules("src/a/")
+        self.create("src/a/x.py", "src/a/sub/y.py", "src/a/sub/deep/z.py")
+        self.commit()
+        self.assertEqual(self.areas(), ["  1 commits  src/a/  3 files"])
+
+    def test_a_partly_covered_directory_counts_its_own_files_and_its_uncovered_subdirectory_is_an_area(self):
+        self.modules("src/a/", "src/b/")
+        self.design(paths=["src/b/c*.py"])
+        self.create("src/a/x.py", "src/b/c1.py", "src/b/c2.py", "src/b/c3.py", "src/b/u1.py", "src/b/u2.py",
+                    "src/b/gen/g1.py", "src/b/gen/g2.py")
+        self.commit()
+        self.assertEqual(self.areas(), ["  1 commits  src/b/  2 of 5 files", "  1 commits  src/b/gen/  2 files",
+                                        "  1 commits  src/a/  1 files"])
+
+    def test_only_tracked_files_under_the_module_paths_count_and_no_doc(self):
+        self.modules("src/a/")
+        self.ok("init", "--root", "src/a")
+        self.create("src/a/x.py", "src/a/lib/y.py", "src/a/README.md", "src/a/docs/assets/map.svg", "tools/gen.py")
+        self.commit()
+        self.create("src/a/untracked.py")
+        self.assertEqual(self.areas(), ["  1 commits  src/a/  2 files"])
+
+    def test_path_cells_are_found_by_their_header_and_split_at_commas_into_directories(self):
+        path = self.root / self.OVERVIEW
+        path.write_text(path.read_text().replace(
+            self.MODULES, "| Path | Module |\n|---|---|\n| ` src/a `, src/b/, , src/base.py, lib/, ../src/c | m |\n"
+                          "| none |\n"))
+        self.create("src/a/x.py", "src/b/y.py", "src/c/z.py")
+        self.commit()
+        self.assertEqual(self.areas(), ["  1 commits  src/a/  1 files", "  1 commits  src/b/  1 files"])
+
+    def test_a_module_at_the_project_directory_counts_the_files_no_longer_path_holds(self):
+        self.modules("./", "`src`")
+        self.create("build.sh", ".github/ci.yml", "src/x.py")
+        self.commit()
+        # ./ holds build.sh, .github/ci.yml, and .gitattributes, .gitignore and scripts/canon.py from `init`.
+        self.assertEqual(self.areas(), ["  1 commits  ./  5 files", "  1 commits  src/  2 files"])
+        self.ok("check")
+        self.design(paths=["src/**"])
+        self.commit()
+        self.assertEqual(self.areas(), ["  1 commits  ./  5 files"])
+
+    def commit_at(self, days, *names):
+        """Commit the work tree, with each of `names` edited, dated `days` back."""
+        for name in names:
+            path = self.root / name
+            path.write_text(path.read_text() + "x\n")
+        self.git("add", "-A")
+        stamp = "@{} +0000".format(int(time.time() - days * 86400))
+        result = subprocess.run(["git", "commit", "-qm", "edit"], cwd=self.root, capture_output=True, text=True,
+                                env=dict(os.environ, GIT_AUTHOR_DATE=stamp, GIT_COMMITTER_DATE=stamp))
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_areas_rank_by_commits_of_the_last_90_days_then_uncovered_files_then_path(self):
+        self.modules("src/")
+        self.design(paths=["src/base.py"])
+        self.create(*["src/{}/x.py".format(area) for area in "abcdefghijkl"], "src/b/y.py", "src/d/y.py", "src/d/z.py")
+        self.ok("check", "--fix")
+        self.commit_at(91)
+        self.commit_at(91, "src/l/x.py")
+        self.commit_at(89, "src/a/x.py")
+        self.commit_at(0, "src/b/x.py")
+        for _ in range(10):
+            self.commit_at(0, "src/c/x.py")
+        self.assertEqual(self.areas(), ["  10 commits  src/c/  1 files",
+                                        "   1 commits  src/b/  2 files",
+                                        "   1 commits  src/a/  1 files",
+                                        "   0 commits  src/d/  3 files"]
+                         + ["   0 commits  src/{}/  1 files".format(area) for area in "efghij"]
+                         + ["  and 2 more areas"])
+        self.ok("check")
+
+
+class ReachTest(CanonTest):
+    """`audit`'s designs that D000 does not reach through its links and the `refs` of the designs it reaches."""
+    OVERVIEW = CoverageTest.OVERVIEW
+    UNREACHED = "Designs D000 does not reach (link each from D000's rows or from a design D000 reaches):"
+
+    def test_audit_lists_the_designs_neither_d000_nor_a_design_it_reaches_names(self):
+        overview = self.root / self.OVERVIEW
+        overview.write_text(overview.read_text().replace(
+            CoverageTest.MODULES, CoverageTest.MODULES + "| a | src/ | Fixture | none | [D001: A](D001-a.md) |\n"))
+        self.design("a", refs=["D001A", "D002", "P001"])
+        self.design("b", refs=["D004"])
+        self.design("c")
+        self.design("d")
+        self.design("e")
+        self.design("a-part", parent="D001")
+        self.design("b-part", parent="D002")
+        self.doc("P", "first", refs=["D005"])
+        self.ok("archive", "D003", "retired")
+        self.ok("check", "--fix")
+        self.assertIn("refs: [D001]", overview.read_text())
+        self.assertEqual(self.section(self.ok("audit"), self.UNREACHED),
+                         ["  D002A active docs/designs/D002A-b-part.md - Fixture",
+                          "  D005 active docs/designs/D005-e.md - Fixture"])
+
+    def project(self):
+        overview = self.root / self.OVERVIEW
+        overview.write_text(overview.read_text().replace(
+            CoverageTest.MODULES, CoverageTest.MODULES + "| all | ./ | Fixture | none | none |\n"))
+        self.design(paths=["src/base.py"])
+        self.create("lib/x.py")
+
+    def test_outside_git_audit_prints_reach_but_no_coverage(self):
+        self.root = self.tmpdir()
+        self.ok("init")
+        self.project()
+        out = self.ok("audit")
+        self.assertIn(self.UNREACHED, out)
+        self.assertNotIn(CoverageTest.AREAS, out)
+
+    def test_without_a_live_d000_at_the_repo_root_audit_prints_neither_coverage_nor_reach(self):
+        self.project()
+        self.commit()
+        out = self.ok("audit")
+        self.assertIn(self.UNREACHED, out)
+        self.assertIn(CoverageTest.AREAS, out)
+        self.ok("init", "--root", "mod")
+        overview = self.root / self.OVERVIEW
+        for moved in ("docs/archived/designs/D000-project-overview.md", "mod/docs/designs/D000-project-overview.md"):
+            target = self.root / moved
+            target.parent.mkdir(parents=True)
+            overview = overview.rename(target)
+            self.assertIn("D000 draft " + moved, self.ok("find", "D000", "--archived"))
+            out = self.ok("audit")
+            self.assertNotIn(self.UNREACHED, out)
+            self.assertNotIn(CoverageTest.AREAS, out)
 
 
 class TraceCase(CanonTest):
