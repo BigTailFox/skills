@@ -9,7 +9,7 @@ TDD is the red → green → refactor loop. This skill makes that loop produce t
 
 ## What a good test is
 
-Tests verify behavior through public interfaces, not implementation details. Code can change entirely; tests shouldn't. A good test reads like a specification: "user can checkout with valid cart" tells you exactly what capability exists, and it survives refactors because it doesn't care about internal structure. Name tests with the terms of the governing design and the architecture design's glossary.
+Tests verify behavior through public interfaces, not implementation details. Code can change entirely; tests shouldn't. A good test reads like a specification: "user can checkout with valid cart" tells you exactly what capability exists, and it survives refactors because it doesn't care about internal structure. Name tests with the terms of the governing design and D000's glossary.
 
 Examples: [tests.md](tests.md). Mocking only at system boundaries: [mocking.md](mocking.md).
 

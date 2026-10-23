@@ -17,8 +17,8 @@ Apply the **deletion test** to anything suspected shallow: would deleting it con
 
 ## Hard checks
 
-- **Dependency directions**: imports that cross the module map's allowed directions in the architecture design, and cycles between modules. Each one is at least `major`.
-- **Design coverage**: source directories no design's `paths` covers, and designs over 500 lines that should split.
+- **Dependency directions**: imports that cross the allowed directions in D000's Dependencies, and cycles between modules. Each one is at least `major`.
+- **Design coverage**: the source areas no design covers that the scope lists from `audit`, and designs over 500 lines that should split.
 
 ## Each candidate
 

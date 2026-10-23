@@ -38,6 +38,7 @@ Design, plan and implementation are separate phases, started with `/canon-design
 - **Implementation.** Each plan slice goes to a fresh worker subagent that builds it test-first. The main session verifies the slice, updates the plan and commits; a slice whose worker gets stuck is paused for you to decide.
 - **Code review.** Every finished change, L0 included, gets a Spec reviewer (against its designs and plan) and a Standards reviewer (against the project's stated standards) as parallel subagents, so the session that wrote the code never reviews it. L2 adds the cross-family reviewer.
 - **Docs step.** Before the final commit, designs absorb the details the code settled, finished plans and reviews are archived, and the commit names the designs it was checked against in a `Refs:` trailer, which lets `canon.py audit` flag code commits nobody checked against their design.
+- **Existing code.** Every project has D000, the project overview where agents start: its tables map each capability and module, with its source directories, to the designs that own it, or say that none does. In a project with code, `/canon-init` writes D000 from the code, and setup ends once D000 and the designs the project already had pass their review gates. Behavior no design states is recorded only when a change is about to alter it: an as-built revision states what the code does at the commit the change starts from, passes the review gate at L1 without a plan, and the change then revises that design like any other. `canon.py audit` ranks the source areas under D000's modules that no design covers by their commits in the last 90 days; coverage never fails `check`.
 - **Known issues.** A flaw found in a design or in the code it governs, by a review gate, a code review or a codebase review, comes to you with the review's results and a proposed fix. One you leave for later is listed in that design with its severity, source, date and next step until a change resolves it; the docs index counts them and `canon.py audit` lists them oldest first.
 - **Retro.** A workflow that hit friction in the tooling or the agent workflow, such as a correction, a command that would not run or a long search, ends with a look back: `canon-retro` proposes at most three fixes that concrete events justify (a check, a fix to the development environment, a design standard, a pointer), and you answer them in one reply. Smooth workflows skip it, and the project's architecture, performance and functionality stay with reviews.
 
@@ -77,14 +78,14 @@ Auto skills load when the context calls for them. Manual skills run only as comm
 | Skill | Summary | Trigger |
 |---|---|---|
 | `canon` | The documentation system: doc types, frontmatter, references, lifecycle and archiving, the change tiers, the review gate, how subagents launch, and `canon.py`, which creates, checks, queries and archives docs, and records workflow runs when tracing is on. | Auto |
-| `canon-init` | Sets up canon in a repository or monorepo module, migrates existing docs (design notes, ADRs, RFCs, plans, postmortems, benchmarks), sets up the cross-family reviewer, and upgrades the project's `canon.py`. Rerun it after a fresh clone to set up the reviewer alone. | Manual |
+| `canon-init` | Sets up canon in a repository or monorepo module: writes D000, the project overview, from the code, migrates existing docs (design notes, ADRs, RFCs, plans, postmortems, benchmarks), folding whole-project ones into D000 and leaving READMEs as they are, and passes D000 and the designs that describe existing code through the review gate. Also sets up the cross-family reviewer and upgrades the project's `canon.py`, turning an older project's design that owns `architecture` into D000. Rerun it after a fresh clone to set up the reviewer alone. | Manual |
 | `canon-sync` | Keeps docs in step with the code: runs the docs step after a change, repairs docs after a merge or rebase, and audits doc health (designs with unchecked code commits, known issues, idle docs, reviews that are due). | Manual |
 
 ### execution
 
 | Skill | Summary | Trigger |
 |---|---|---|
-| `canon-design` | Writes or revises a design (or a concept, while the idea is still rough) by interviewing you one decision at a time, in the glossary's terms; then passes the review gate and gives you the next command. | Manual |
+| `canon-design` | Writes or revises a design (or a concept, while the idea is still rough) by interviewing you one decision at a time, in the glossary's terms; then passes the review gate, links a new design from D000 and gives you the next command. Before a change to behavior no design states, it first records that behavior from the code as an as-built revision, and it writes one alone when you ask for a design of existing code. | Manual |
 | `canon-plan` | Turns an accepted design into dependency-ordered vertical slices, each with seams and test criteria, and marks risky ones (complex logic, concurrency, performance, security, data migration) with `Risk:`; settles open points with you, passes the review gate and gives you the implementation command. | Manual |
 | `canon-implement` | Implements an accepted plan, an L1 design revision or an L0 change. A fresh worker builds each slice test-first; the main session verifies and commits each slice and pauses stuck ones for you, then runs the code review and the docs step. | Manual |
 | `canon-code-review` | Reviews one finished change (uncommitted work, untracked files or a diff from a base) on two axes, each by a fresh subagent: Spec against its designs and plan, Standards against the project's stated standards and a smell baseline. L2 adds the cross-family reviewer; findings you defer become known issues of the design governing the code. | Auto |
@@ -159,9 +160,8 @@ In Cursor, subagents come from the Task tool, which runs them on the session's m
 
 ## Roadmap
 
-Canon is built for new projects first. Planned:
+Planned:
 
-- **As-built designs for existing code.** In a project with few docs, most code has no governing design, so `which`, `affected`, `audit` and the Spec review have little to check against. `canon.py` will report the source directories no design covers, ranked by recent commits. Designs that record existing behavior will be drafted from the code module by module, pass the review gate at L1 and become `active` without a plan, and the docs step will suggest one for uncovered code instead of escalating to L2.
 - **Judging the retro.** `canon-retro` stays automatic only while it pays off. A requested retro reports how often it raised items, how many were declined, and how many applied fixes have seen no recurrence; if it interrupts more than it helps, it becomes manual. A few valuable fixes can justify it.
 
 ## Releases and license

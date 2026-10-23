@@ -10,20 +10,22 @@ Read the `canon` skill first. `canon.py` means the project copy named in `AGENTS
 
 ## 1. Frame
 
-1. Gather the facts yourself: `canon.py find <words>`, `which` for the code involved, the architecture design (module map, dependency directions, glossary), and the designs that own neighbouring topics.
+1. Gather the facts yourself: `canon.py find <words>`, `which` for the code involved, D000 (its rows, dependency directions and glossary), and the designs that own neighbouring topics.
 2. Pick the target and state the tier:
    - The topic is in an existing design's `owns`, within one module: revise that design in place (L1; L2 when the revision rewrites its goals or core approach).
    - A new topic, module, cross-module interface or architecture change: a new design (L2), or a sub-design with `--parent` when the parent has outgrown one doc.
    - The idea still has questions the user cannot settle yet: a concept (`canon.py new C <slug>`). Its Open questions become the frontier of a later design session.
-3. Confirm the target with the user, then create the doc (`canon.py new D <slug>`), or bump `revision` once when revising.
+   - The change alters or extends existing behavior that no design states, as the `canon` skill's tiers define it: the target is the design whose `owns` holds that behavior's topic, else a new design, and step 5 gives it an as-built revision before the change's revision. The same holds when the user asks for a design of existing code with no change in view.
+3. Confirm the target with the user, then create the doc (`canon.py new D <slug>`), or bump `revision` once when revising. The commit that adds a top-level design links it from D000's rows, as the `canon` skill's doc types define them.
 4. Run `canon.py trace start design <D or C id> --tier <tier> --skill <skill> --model <model>`.
+5. **Backfill.** When step 2 calls for an as-built revision, write this revision as one (the `canon` skill's `as-built.md`), whose steps take the place of the interview, pass it through [Gate](#3-gate) steps 1 to 3 at L1, and commit it as step 5 there says. Then bump `revision` again for the change and interview it; its gate runs at the change's tier, with the as-built commit as `Changes since`. With no change in view, end after that commit with Gate's steps 6 and 7, and give no next command.
 
 ## 2. Interview
 
 Walk the design tree with the `canon-grill` skill: goals, then interfaces, behavior and edge cases, budgets, and the decisions under each. While walking it:
 
-- **Challenge terms against the glossary.** When the user uses a term that conflicts with the architecture design's glossary or the design's own terms, call it out: "The glossary defines cancellation as X, but you seem to mean Y. Which is it?"
-- **Sharpen fuzzy language.** Propose one precise term for a vague or overloaded one. Add a resolved cross-module term to the architecture design's glossary and a module term to the design that owns it, at once. A glossary entry defines a term; implementation detail belongs in the Spec.
+- **Challenge terms against the glossary.** When the user uses a term that conflicts with D000's glossary or the design's own terms, call it out: "The glossary defines cancellation as X, but you seem to mean Y. Which is it?"
+- **Sharpen fuzzy language.** Propose one precise term for a vague or overloaded one. Add a resolved cross-module term to D000's glossary and a module term to the design that owns it, at once. A glossary entry defines a term; implementation detail belongs in the Spec.
 - **Stress-test with scenarios.** Invent concrete cases that probe the boundaries between concepts and force precise answers.
 - **Cross-check the code.** When the user states how something works, verify it; surface any contradiction.
 - **Design interfaces** with the `canon-codebase-design` vocabulary. When an interface's shape is contested, use its design-it-twice pattern.

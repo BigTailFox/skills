@@ -17,7 +17,7 @@ Implements [D002: Project overview and as-built designs](../designs/D002-overvie
 
 ## Current state
 
-S1 to S7 done. Next: S8.
+S1 to S8 done. Next: S9, built by this session without a worker.
 
 ## Slices
 
@@ -174,7 +174,7 @@ Test criteria; seam: the skill texts:
 
 ### S8: The other skills and the README
 
-Status: todo
+Status: done
 
 Builds on `D002#backfill`, `D002#setup`, `D002#coverage-in-audit`, `D002#project-docs` and `D002#delivery`, steps 3 and 4. Depends on S7.
 
@@ -270,3 +270,8 @@ Test criteria; seam: `check` output and exit status:
 - S6 details, for the docs step to write into D002: `as_built` holds 7 to 64 lowercase hex digits, so a SHA-256 name fits. A change to the `as_built` line alone, like one to `implemented`, needs no `updated` bump, so `check --fix` deleting it leaves no other error. On a reviewed revision only the fixable error for the remaining field is reported, whatever its value.
 - S7 done: `validate.py`, `npx skills add . --list` and `check` pass, `check` now with no warning since `as-built.md` exists. The `trace` call sentences and the `canon` skill's placeholder paragraph are unchanged.
 - S7 check against `D002#delivery` step 2: every item is in the file it names. Two gaps, fixed by this session: the worker had the gate delete `as_built` in the status step, where D002 has it go when `reviewed` is set, so it moved to step 5, outside that step's `trace end` sentence; and the docs step repeated the list of changes that update D000's rows, which now only `doc-types.md` states, the docs step linking it. The docs step's rule for files no design covers also tells the user when the change altered behavior callers rely on there, since that change needed an as-built revision first.
+- S8 done: `validate.py`, `npx skills add . --list` and `check` pass, and `rg -i 'architecture design' skills README.md` finds nothing. The `trace` call sentences are unchanged.
+- S8 check against `D002#delivery` steps 3 and 4: every item is in the file it names. The worker's decisions: `canon-implement` also takes Backfill when Start already shows that the change alters unspecified behavior; a slice pauses, stashing its worker's changes, before its as-built revision, so that revision commits alone; setup in a project without code leaves D000 to `/canon-design D000`; Upgrade's refusal case covers several owners too; `canon-sync` links an unreached sub-design from its parent.
+- S8 backfill dry run: the fresh subagent took the column as extending unspecified behavior and wrote D001 r2 as an as-built revision of the start commit, with `as_built` set: a `### Export` section with its usage, the `id,name,qty` header, rows sorted by id, CSV quoting, `\n` line ends and the read error shared with `list`; D001-K1, minor, next `fix`, for the header printed before the file is read, so a failed read leaves it on stdout; and D001-K2, minor, next `L1`, for the traceback that malformed JSON gives `list` and `export`. It wrote the same-model prompt to `.canon/canon-blind-review/D001/same-model-prompt.md` with the as-built line for a revision and the as-built Correctness, Completeness and Assess items, and stopped before the reviewer. Departure from `D002#as-built-revisions`: it judged K1 a defect itself, by `canon-grill`'s triage, instead of putting it to the user; `as-built.md` step 5 now says doubtful behavior is the user's to judge however plain it seems. It was also unsure which tier to state at Start; `canon-implement` now says such a change is at least L1.
+- S8 upgrade dry run: the fresh subagent ran `init` with the skill's `canon.py` over a v13 project, which moved D001 to D000 and appended Capabilities, Modules and Dependencies. It committed that output unchanged, so Git keeps the rename, which canon-init leaves to the agent, then bumped D000 to revision 2 with `as_built` naming that commit, whose code equals the start's: Goals rewritten as purpose, users and scope; the module map folded into Modules with entry points, the dependency directions into Dependencies, the glossary kept; three Capabilities rows reading `none`; `paths: []`. It stopped before the gate, and `audit` listed `src/store/` and `src/app/` as uncovered. The fixture tracked `.pyc` files, which `audit` counted, a flaw of the fixture.
+- Open points outside S8, for the final report: `canon-design` adds a resolved cross-module term to D000's glossary at once, while `D002#project-overview-d000` makes the Glossary spec, which takes a revision and gate; `canon-review`'s `functional.md`, outside D002's `paths`, still calls behavior no design specifies a spec gap or code to remove, without naming as-built revisions.

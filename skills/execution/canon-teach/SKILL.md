@@ -24,8 +24,8 @@ Treat the current directory as a teaching workspace. When the current directory 
 
 When the topic is the current project, its canon docs and code are the primary sources:
 
-- Fill `RESOURCES.md` from the docs: the architecture design (module map, glossary) first, then the designs that own the topics the mission needs (`canon.py find <words>`, `show D00X#<section>`), then the code they govern.
-- `TERMS.md` adopts the project's terms exactly as the architecture design's glossary and the owning designs define them, linking to them instead of redefining.
+- Fill `RESOURCES.md` from the docs: D000, the project overview (its rows and glossary), first, then the designs that own the topics the mission needs (`canon.py find <words>`, `show D00X#<section>`), then the code they govern.
+- `TERMS.md` adopts the project's terms exactly as D000's glossary and the owning designs define them, linking to them instead of redefining.
 - Lessons cite design sections, e.g. `D003§token-refresh`, and exercises run against the real code and tests.
 - Teaching never edits project docs. When a lesson exposes a doc that contradicts the code, tell the user.
 

@@ -23,5 +23,6 @@ Run `canon.py check --fix --base <target>`. For an id collision, renumber the do
 3. For each design with unchecked commits, inspect `git log <since>..HEAD -- <paths>` (audit prints the commit it counts from) and reconcile it as the docs step reconciles a listed design. Commit the design, bumping only `updated` when nothing else changed, so audit counts from there.
 4. For each known issue, check that it still holds against the design and the code. Delete the rows a change has already resolved, then run `canon.py check --fix` and commit.
 5. For each idle doc, finish it, archive it (`dropped`, `retired`, `abandoned`), or ask the user.
-6. When a review is due, propose its scope (modules and angles) and the `canon-review` skill to run it.
-7. Report what changed and what needs the user's decision, including the known issues whose next step is `decide`, oldest first.
+6. For each design audit reports D000 does not reach, link a top-level design from D000's rows, as the `canon` skill's doc types define them, and a sub-design from its parent. Rows take no revision bump; run `canon.py check --fix` and commit.
+7. When a review is due, propose its scope (modules and angles) and the `canon-review` skill to run it.
+8. Report what changed and what needs the user's decision, including the known issues whose next step is `decide`, oldest first, and the source areas audit lists that no design covers.

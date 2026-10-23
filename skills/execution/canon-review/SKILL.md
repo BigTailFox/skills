@@ -14,7 +14,7 @@ Use the modules and angles the user names. Otherwise propose a scope and wait fo
 
 - `canon.py audit`: stale designs and due reviews per docs root.
 - Hot spots: the files changed most since the last review, from `git log --since=<last R created> --name-only` within the module's paths.
-- Design coverage: designs `check` reports as over 500 lines, and source files where `which` prints `no design`.
+- Design coverage: the source areas `audit` lists that no design covers, and designs `check` reports as over 500 lines.
 - Angles: **architecture** after many changes; **performance** when designs have Budgets or slowness was reported; **functional** when audit reports designs with unchecked code commits; **usability** for user-visible surfaces (CLI, API, UI, config); **security** only when the project or feature is security-related or the user asks.
 
 ## 2. Create the doc
@@ -25,7 +25,7 @@ Run `canon.py new R <slug>`. Scope records the commit (`git rev-parse HEAD`), th
 
 Spawn one subagent per angle, in parallel, in the foreground. Each brief carries:
 
-- The scope: commit, module paths, and the governing designs (`which`, `show`), the architecture design and the relevant `AGENTS.md` files to read.
+- The scope: commit, module paths, the source areas `audit` lists in them that no design covers, and the governing designs (`which`, `show`), D000 and the relevant `AGENTS.md` files to read.
 - The angle's reference pasted in full: [architecture.md](architecture.md), [performance.md](performance.md), [security.md](security.md), [functional.md](functional.md), [usability.md](usability.md).
 - The rules: modify no file. Skip anything a design's Decision line already rejected unless the friction is severe enough to reopen it, and then name the Decision. Report a problem a design lists as a known issue only when it is worse than the entry says, naming the entry. Replace secrets with `<REDACTED>`.
 - The output: every blocker and major finding and at most 10 minor ones, most severe first. Each has a title, location (files, design sections), problem, evidence, suggestion, and severity `blocker`, `major` or `minor`. Keep each finding as short as it can be while a reader can understand and verify it without redoing the review.

@@ -14,6 +14,7 @@ Read the `canon` skill first; its workflow governs tiers, deviations, code revie
 2. Check the work against the tier's flow in the `canon` skill's workflow:
    - A plan must be `accepted` or `in-progress`, with `reviewed` equal to `revision`. An L2 plan still `draft` after its gate awaits the user's approval, and invoking this skill on it gives that approval: say so in one line and set it `accepted`.
    - An L1 design revision that passed the gate and needs no plan: finish Start, then follow L1 without a plan below.
+   - A change without a plan or revision that alters or extends behavior no design states, as the `canon` skill's tiers define it, is at least L1: finish Start, then take [Backfill](#backfill) before building it.
    - When an earlier phase is missing, stop and give the user its command, e.g. `/canon-design D00X` or `/canon-plan D00X`.
 3. Read the plan's Current state, then the governing design sections (`show D00X#<section>`). If `check` warns that a design moved past the plan's `based_on`, compare the design's changes with the remaining slices first; a conflict is a plan or design problem under the workflow's deviation rules.
 4. When the plan is `accepted`: set it `in-progress` and append `Started at <commit>` to its Log. That commit is the code-review fixed point. A resumed plan already has it.
@@ -29,7 +30,7 @@ This session orchestrates, and a fresh worker builds each slice, so every slice 
    - **done**: re-run the slice's tests and check the diff: it stays within the slice and edits no plan or design.
    - **stuck** on a failure it could not explain: pause the slice without retrying; the user decides the next step.
    - **blocked** on a question: settle it with the `canon-grill` skill's triage and resume the worker with the answer. A question only the user can answer is a pending decision: pause the slice.
-   - **blocked** on the plan or design: apply the workflow's deviation rules. For a plan problem with one clear fix, edit the plan, log it and resume the worker. Otherwise pause the slice.
+   - **blocked** on the plan or design: apply the workflow's deviation rules. For a plan problem with one clear fix, edit the plan, log it and resume the worker. Otherwise pause the slice. A slice that alters or extends behavior no design states takes [Backfill](#backfill).
    - **No report**, because the host stopped the run: give it one more run, as the workflow's Subagents says, replacing it as [Workers](#workers) says when it cannot be resumed. When that run stops too, pause the slice with the stopped runs as its problem.
 
    To pause a slice, set `Status: paused`, stash the worker's changes, new files included but not the plan, under a message naming the slice, log the problem and the stash for whoever resumes it, and continue with slices that do not depend on it.
@@ -73,4 +74,12 @@ The design revision that passed the gate is the work. Build its spec change with
 
 ## L0 change
 
-No plan: build the change with `canon-tdd` as one slice, without plan updates. Then review it from the commit you started at (or the uncommitted diff), run the docs step, commit, and take the retro and trace steps in [Finish](#3-finish). When the change turns out to alter a spec, follow the `canon` skill's workflow (Design problems); once the design revision passes its gate, finish the change as [L1 without a plan](#l1-without-a-plan), from the step it had reached. If you stop before then, run `canon.py trace end <id> escalated --to L1`, or `--to L2` when the fix is L2 work. When the change needs a new design, run `canon.py trace end <id> escalated --to L2`, then stop and give the user `/canon-design`.
+No plan: build the change with `canon-tdd` as one slice, without plan updates. Then review it from the commit you started at (or the uncommitted diff), run the docs step, commit, and take the retro and trace steps in [Finish](#3-finish). When the change turns out to alter or extend behavior no design states, take [Backfill](#backfill) first. When the change turns out to alter a spec, follow the `canon` skill's workflow (Design problems); once the design revision passes its gate, finish the change as [L1 without a plan](#l1-without-a-plan), from the step it had reached. If you stop before then, run `canon.py trace end <id> escalated --to L1`, or `--to L2` when the fix is L2 work. When the change needs a new design, run `canon.py trace end <id> escalated --to L2`, then stop and give the user `/canon-design`.
+
+## Backfill
+
+A change or slice that alters or extends existing behavior no design states, whether Start, a worker's report or the work itself shows it, first gets that behavior recorded by this session:
+
+1. Pause a slice as for a design problem, which stashes its worker's changes.
+2. Write an as-built revision, as the `canon` skill's `as-built.md` says, from the commit the work started at: the plan's `Started at` for a slice. Pass it through the review gate at L1 and commit it on its own.
+3. The work now alters a spec. A change continues as [L0 change](#l0-change) says for one that alters a spec; a slice stays paused, as for a design problem, until the user has decided on the revision and it has passed its gate.

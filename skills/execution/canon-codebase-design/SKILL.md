@@ -46,7 +46,7 @@ When designing an interface, ask: can I reduce the number of entry points, simpl
 
 - A design's Spec gives each module's interface in the full sense above: signatures as code, plus invariants, ordering, error modes, configuration and performance characteristics. Budgets hold the numeric performance targets.
 - Seams named in the Spec are the default places for tests, and plan slices name the seam each test criterion exercises.
-- Name modules with the project's terms: the architecture design's glossary for cross-module terms, the governing design for module terms.
+- Name modules with the project's terms: D000's glossary for cross-module terms, the governing design for module terms.
 
 ## Going deeper
 
