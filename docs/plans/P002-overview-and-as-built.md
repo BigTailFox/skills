@@ -17,7 +17,7 @@ Implements [D002: Project overview and as-built designs](../designs/D002-overvie
 
 ## Current state
 
-S1 done. Next: S2.
+S1 and S2 done. Next: S3.
 
 ## Slices
 
@@ -46,7 +46,7 @@ Test criteria; seam: the `new`, `adopt` and `renumber` command lines, their outp
 
 ### S2: D000 from init
 
-Status: todo
+Status: done
 
 Builds on `D002#project-overview-d000`.
 
@@ -255,3 +255,6 @@ Test criteria; seam: `check` output and exit status:
 - The user approved the plan by starting its implementation. Started at 7c53381.
 - S1 done: 8 tests in `HistoryIdTest`, 107 in the suite, all passing. Each of `-z`, `--full-history` and `-m` went into the query only after a test failed without it. Criterion 6, medians of 15 runs in a generated checkout of 10,000 commits, 1,000 of them merges, over 2,002 files, 200 of them docs: `new D x` took 0.517 s, against 0.113 s without the history lookup, so the lookup adds 0.40 s, under the 1 s threshold. The query alone takes 0.400 s; without `--full-history` and `-m` it takes 0.255 s.
 - S1 decision: with a HEAD commit, a history query that fails ends the command with `canon: cannot read the history of HEAD`, since going on could reuse an id.
+- S2 done: 5 tests in `ProjectOverviewTest`, 112 in the suite, all passing. The fifth pins that an archived design owning `architecture` does not stop `init` from creating D000. A D000 in the repo root's `docs/`, archived or not, does, so `init` never writes a second one.
+- S2 decisions: the guidance comments are single lines without links, since `check` checks links inside comments and reads a line starting with `#` as a heading. `### Standards` is introduced by a second comment at the end of `### Glossary`, where it would go; the rules for rows and for `paths` go in `## Spec`'s comment, since the frontmatter holds none.
+- Until S3, `init` in a project whose design owns `architecture` writes an `AGENTS.md` block that links a D000 it does not create, a broken link for `check`; until S8, `canon-init`'s setup still passes the removed `--no-architecture`.

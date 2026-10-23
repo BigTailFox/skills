@@ -40,7 +40,7 @@ class CanonTest(unittest.TestCase):
         self.git("init", "-q", "-b", "main")
         self.git("config", "user.name", "canon test")
         self.git("config", "user.email", "canon@example.invalid")
-        self.ok("init", "--no-architecture")
+        self.ok("init")
         (self.root / "src").mkdir()
         (self.root / "src/base.py").write_text("value = 1\n")
 
@@ -343,7 +343,7 @@ class HistoryIdTest(CanonTest):
 
     def test_outside_git_ids_follow_the_files_alone(self):
         self.root = self.tmpdir()
-        self.ok("init", "--no-architecture")
+        self.ok("init")
         self.assertEqual([self.new("x"), self.new("x")], ["docs/designs/D001-x.md", "docs/designs/D002-x.md"])
 
     def test_on_an_unborn_branch_ids_follow_the_files_alone(self):
@@ -358,7 +358,7 @@ class HistoryIdTest(CanonTest):
 
     def test_the_id_of_a_deleted_design_stays_taken_under_a_module_path_git_quotes(self):
         self.three_designs()[2].unlink()
-        self.ok("init", "--root", "模块", "--no-architecture")
+        self.ok("init", "--root", "模块")
         design = self.new("c", "--root", "模块")
         self.assertEqual(design, "模块/docs/designs/D003-c.md")
         self.commit(check=False)
@@ -574,14 +574,73 @@ class InitTest(CanonTest):
     def test_init_replaces_an_older_script_copy(self):
         copy = self.root / "scripts/canon.py"
         copy.write_text(re.sub(r'^CANON_VERSION = "\d+"', 'CANON_VERSION = "2"', SCRIPT.read_text(), flags=re.M))
-        self.assertIn("updated scripts/canon.py", self.ok("init", "--no-architecture"))
+        self.assertIn("updated scripts/canon.py", self.ok("init"))
         self.assertEqual(copy.read_text(), SCRIPT.read_text())
 
     def test_init_warns_about_a_same_version_copy_that_differs(self):
         copy = self.root / "scripts/canon.py"
         copy.write_text(SCRIPT.read_text() + "# local edit\n")
-        self.assertIn("differs from this canon.py", self.ok("init", "--no-architecture"))
+        self.assertIn("differs from this canon.py", self.ok("init"))
         self.assertTrue(copy.read_text().endswith("# local edit\n"))
+
+
+class ProjectOverviewTest(CanonTest):
+    OVERVIEW = "docs/designs/D000-project-overview.md"
+
+    def repository_without_docs(self):
+        self.root = self.tmpdir()
+        self.git("init", "-q", "-b", "main")
+
+    def test_init_creates_a_draft_d000_that_check_only_warns_about(self):
+        self.repository_without_docs()
+        self.assertIn("created " + self.OVERVIEW, self.ok("init"))
+        text = (self.root / self.OVERVIEW).read_text()
+        self.assertEqual([line.rstrip() for line in text.split("---\n")[1].splitlines()],
+                         ["status: draft", "created: " + canon.today(), "updated: " + canon.today(), "revision: 1",
+                          "modules: []", "summary:", "refs: []", "owns: [architecture]", "paths: []"])
+        headings = re.findall(r"(?m)^#+ .*$", text)
+        self.assertEqual(headings, ["# D000: Project overview", "## Goals", "## Spec", "### Capabilities",
+                                    "### Modules", "### Dependencies", "### Glossary", "## Decisions"])
+        sections = dict(zip(headings, re.split(r"(?m)^#+ .*$", text)[1:]))
+        for heading in headings[1:]:
+            self.assertIn("<!-- canon:", sections[heading], heading)
+        self.assertIn("| Capability | Modules | Design |\n|---|---|---|\n", sections["### Capabilities"])
+        self.assertIn("| Module | Path | Purpose | Entry points | Design |\n|---|---|---|---|---|\n",
+                      sections["### Modules"])
+        self.assertIn("`### Standards`", sections["### Glossary"])
+        self.assertIn("`| Standard | Design |`", sections["### Glossary"])
+        self.assertEqual([line for line in self.ok("check").splitlines() if self.OVERVIEW in line],
+                         ["WARN {}: `summary` is empty".format(self.OVERVIEW),
+                          "WARN {}: template guidance `<!-- canon: ... -->` left in the doc".format(self.OVERVIEW)])
+        self.assertEqual(self.ok("init"), "canon init: nothing to do\n")
+
+    def test_init_of_a_module_creates_no_d000_and_no_flag_skips_it(self):
+        self.repository_without_docs()
+        result = self.canon("init", "--no-architecture")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("unrecognized arguments: --no-architecture", result.stderr)
+        self.ok("init", "--root", "mod")
+        self.assertTrue((self.root / "mod/AGENTS.md").is_file())
+        self.assertTrue((self.root / "mod/docs/README.md").is_file())
+        self.assertEqual(list(self.root.glob("**/D000-*")), [])
+
+    def test_the_agents_block_links_d000_and_the_index(self):
+        agents = (self.root / "AGENTS.md").read_text()
+        self.assertIn("](docs/designs/D000-project-overview.md)", agents)
+        self.assertIn("](docs/README.md)", agents)
+        self.assertNotRegex(self.ok("check"), r"(?m)^(ERROR|WARN) AGENTS\.md")
+
+    def test_init_creates_d000_when_only_an_archived_design_owns_architecture(self):
+        (self.root / self.OVERVIEW).unlink()
+        self.design("architecture")
+        self.ok("archive", "D001", "retired")
+        self.assertIn("created " + self.OVERVIEW, self.ok("init"))
+        self.ok("check")
+
+    def test_d000_cannot_be_archived(self):
+        self.commit()
+        self.assertIn("D000", self.fails("archive", "D000", "retired"))
+        self.assertEqual(self.git("status", "--porcelain"), "")
 
 
 class TraceCase(CanonTest):
@@ -692,7 +751,7 @@ class TraceTest(TraceCase):
         self.design(revision=3, reviewed=3)
         self.design("old")
         self.ok("archive", "D002", "retired")
-        self.ok("init", "--root", "mod", "--no-architecture")
+        self.ok("init", "--root", "mod")
         self.ok("new", "D", "part", "--root", "mod")
         unit = self.start("design", "D001", "D002", "D003", "D999")
         [line] = self.lines()
@@ -722,7 +781,7 @@ class TraceTest(TraceCase):
 
     def test_a_module_doc_resolves_whatever_repository_the_environment_points_git_at(self):
         self.trace("on")
-        self.ok("init", "--root", "mod", "--no-architecture")
+        self.ok("init", "--root", "mod")
         self.ok("new", "D", "part", "--root", "mod")
         line = self.start_line("design", "D001", GIT_DIR=str(self.root / "no-such-repository"))
         self.assertEqual(line["docs"], ["D001@r1"])

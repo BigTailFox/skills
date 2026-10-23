@@ -27,7 +27,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "14"
+CANON_VERSION = "15"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -92,7 +92,7 @@ AGENTS_END = "<!-- canon:agents:end -->"
 AGENTS_BLOCK = AGENTS_START + """
 ## Docs
 
-This repo follows the canon documentation system (`canon` skill). Engineering docs live in `docs/` and in module `docs/` directories; start at [docs/README.md](docs/README.md).
+This repo follows the canon documentation system (`canon` skill). Engineering docs live in `docs/` and in module `docs/` directories. Start at [D000: Project overview](docs/designs/D000-project-overview.md); [docs/README.md](docs/README.md) indexes every doc.
 
 - Tool: `python3 {script}` from the repo root (`-h` lists commands). Run `check --fix` before committing and after every merge or rebase.
 - When a change may alter behavior or standards a design specifies, run `which <file>` and read the governing sections with `show D00X#slug` first.
@@ -213,6 +213,35 @@ TEMPLATES = {
 - Verification:
 """,
 }
+OVERVIEW_ID, OVERVIEW_SLUG, OVERVIEW_TITLE = "D000", "project-overview", "Project overview"
+OVERVIEW_SPEC = (
+    ("Capabilities", """<!-- canon: One row per capability the project offers its users or callers, at the grain of a feature list. -->
+
+| Capability | Modules | Design |
+|---|---|---|"""),
+    ("Modules", """<!-- canon: One row per module. Path lists the module's directories relative to the project directory, comma-separated, each ending with `/`; `./` is the project directory. In a monorepo, each module's row links that module's designs. Adding a module is L2. -->
+
+| Module | Path | Purpose | Entry points | Design |
+|---|---|---|---|---|"""),
+    ("Dependencies", "<!-- canon: The allowed dependency directions between modules. Changing them, or an interface "
+                     "between modules, is L2. -->"),
+    ("Glossary", """<!-- canon: Terms used across modules; a term one module uses belongs to the design that owns it. -->
+
+<!-- canon: Once a design owns a standard that applies across modules, such as error handling, add `### Standards` after Glossary with one row per standard and the design that owns it: `| Standard | Design |`. Leave it out while no design owns one. -->"""),
+)
+OVERVIEW_TEMPLATE = """
+## Goals
+
+<!-- canon: What the project is for, who uses it and what is out of scope. -->
+
+## Spec
+
+<!-- canon: The four subsections below, in this order. Rows name modules, capabilities and standards, never single docs: designs reach their sub-topics through their own links, `docs/README.md` indexes every doc, and detail below the module level belongs to the module's designs. A Design cell links every top-level design that owns the capability or standard, or that governs the module's code, or reads `none`. The tables map the project, its planned modules included while D000 is its first L2 design. A change that adds or removes a module, capability or standard, or creates, moves or archives a top-level design, updates their rows in the same commit; rows change no meaning, so they take no revision bump and no gate. Goals, Dependencies and Glossary are spec. `paths` lists only files that embody the architecture, such as dependency-boundary configuration and module wiring, and is usually empty. -->
+""" + "".join("\n### {}\n\n{}\n".format(name, body) for name, body in OVERVIEW_SPEC) + """
+## Decisions
+
+<!-- canon: One line per key decision with its reason. Name a rejected alternative only if it is likely to be proposed again. -->
+"""
 
 
 # ---------------------------------------------------------------- helpers
@@ -1259,9 +1288,9 @@ def render_frontmatter(fields):
     return "---\n" + "\n".join("{}: {}".format(k, render_value(v)) for k, v in fields.items()) + "\n---\n"
 
 
-def write_doc(root, letter, doc_id, slug, title, fields, implements=""):
+def write_doc(root, letter, doc_id, slug, title, fields, implements="", template=None):
     path = root.docs / TYPES[letter]["dir"] / "{}-{}.md".format(doc_id, slug)
-    body = TEMPLATES[letter].replace("{implements}", implements).replace("{id}", doc_id)
+    body = (template or TEMPLATES[letter]).replace("{implements}", implements).replace("{id}", doc_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         with path.open("x", encoding="utf-8") as f:
@@ -1313,6 +1342,9 @@ def cmd_archive(repo, args):
     require_clean_merge(repo)
     doc = repo.get(args.id)
     info = TYPES[doc.type]
+    if doc.id == OVERVIEW_ID:
+        sys.exit("canon: {} is the project overview every project keeps; revise it instead of archiving it"
+                 .format(doc.id))
     if doc.archived:
         sys.exit("canon: {} is already archived".format(doc.id))
     if args.status not in info["terminal"]:
@@ -1415,11 +1447,12 @@ def cmd_init(repo, args):
         note("created", readme)
 
     fresh = Repo()
-    if top and not args.no_architecture and not any("architecture" in d.as_list("owns") for d in fresh.docs):
+    if top and not any(d.id == OVERVIEW_ID and not d.root.rel for d in fresh.docs) \
+            and not any("architecture" in d.as_list("owns") for d in fresh.docs if not d.archived):
         fields = default_fields("D")
         fields["owns"] = ["architecture"]
-        note("created", write_doc(find_root(fresh, str(project)), "D", next_id(fresh, "D"), "architecture",
-                                  "Architecture", fields))
+        note("created", write_doc(find_root(fresh, str(project)), "D", OVERVIEW_ID, OVERVIEW_SLUG, OVERVIEW_TITLE,
+                                  fields, template=OVERVIEW_TEMPLATE))
 
     if args.hook and repo.is_git:
         hook = repo.root / git(repo.root, "rev-parse", "--git-path", "hooks/pre-commit").strip()
@@ -2769,8 +2802,6 @@ def main(argv=None):
     p.add_argument("--root", help="module directory to set up (default: repo root)")
     p.add_argument("--script", help="where to copy canon.py, relative to the repo root (default: scripts/canon.py)")
     p.add_argument("--hook", action="store_true", help="install a git pre-commit hook running `check`")
-    p.add_argument("--no-architecture", action="store_true",
-                   help="skip the architecture design skeleton (an adopted doc will own `architecture`)")
     p.set_defaults(func=cmd_init)
 
     p = sub.add_parser("adopt", help="turn an existing markdown file into a canon doc, keeping history and links")
