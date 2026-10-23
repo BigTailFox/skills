@@ -27,7 +27,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "13"
+CANON_VERSION = "14"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -586,6 +586,22 @@ class Repo:
                 ids.setdefault(doc_id, rel)
         return ids
 
+    def history_ids(self):
+        """Ids of the doc files in the history of HEAD, those since deleted or renamed away included.
+        `--full-history` walks the side branches whose docs a merge discarded, and `-m` lists the docs that only a
+        merge's resolution added."""
+        if not self.has_head:
+            return set()
+        out = git(self.root, "log", "-z", "--format=", "--name-only", "--no-renames", "--full-history", "-m",
+                  "HEAD", "--", DOCS_PATHSPEC)
+        if out is None:
+            sys.exit("canon: cannot read the history of HEAD")
+        return {i for i in map(path_id, out.split("\0")) if i}
+
+    def taken_ids(self):
+        """Ids no new doc may get: those of the docs in the work tree and those of `history_ids`."""
+        return {d.id for d in self.docs} | self.history_ids()
+
     def deleted_docs(self, base=None):
         """Doc files deleted (not renamed) in uncommitted changes, and on this branch since `base`."""
         if not self.has_head:
@@ -1143,7 +1159,7 @@ def require_clean_merge(repo):
 
 
 def used_numbers(repo, letter):
-    return {d.number for d in repo.docs if d.type == letter}
+    return {int(FULL_ID_RE.match(i).group(2)) for i in repo.taken_ids() if i[0] == letter}
 
 
 @contextlib.contextmanager
@@ -1269,7 +1285,7 @@ def new_doc(repo, args):
         parent = repo.get(args.parent)
         if letter != "D" or parent.type != "D" or parent.suffix:
             sys.exit("canon: --parent takes a top-level design and only applies to designs")
-        taken = {i for i in repo.by_id if i[:-1] == parent.id}
+        taken = repo.taken_ids()
         letters = [c for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if parent.id + c not in taken]
         if not letters:
             sys.exit("canon: {} has no free sub-design letter; create a new top-level design".format(parent.id))
@@ -1587,8 +1603,8 @@ def renumber_doc(repo, args):
 
 def renumbered_id(repo, doc, wanted, on_base):
     """`wanted`, once checked and normalized, or the next free id; a sub-design keeps its parent and takes a free
-    letter. Ids in the base's files (`on_base`) stay taken."""
-    taken = {d.id for d in repo.docs} | {i for i in map(path_id, on_base or ()) if i}
+    letter. Ids in the base's files (`on_base`) and in the history of HEAD stay taken."""
+    taken = repo.taken_ids() | {i for i in map(path_id, on_base or ()) if i}
     if doc.suffix:
         parent = doc.type + doc.digits
         letters = [parent + c for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"]

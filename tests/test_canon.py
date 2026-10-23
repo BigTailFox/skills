@@ -313,6 +313,88 @@ class IdAllocationTest(CanonTest):
         self.assertEqual(waiter.returncode, 0, out + err)
 
 
+class HistoryIdTest(CanonTest):
+    def three_designs(self):
+        return [self.design(slug) for slug in ("a", "b", "c")]
+
+    def new(self, *args):
+        return self.ok("new", "D", *args).strip()
+
+    def test_an_id_a_renumber_left_stays_taken(self):
+        self.three_designs()
+        self.commit()
+        self.ok("renumber", "D003", "D004")
+        self.commit()
+        self.assertEqual(self.new("x"), "docs/designs/D005-x.md")
+        (self.root / "notes.md").write_text("# Notes\n\nKept notes.\n")
+        self.assertIn("notes.md -> docs/designs/D006-notes.md", self.ok("adopt", "notes.md", "design"))
+        self.assertIn("D001 -> D007", self.ok("renumber", "D001"))
+        status = self.git("status", "--porcelain")
+        self.assertIn("already used", self.fails("renumber", "D002", "D003"))
+        self.assertEqual(self.git("status", "--porcelain"), status)
+
+    def test_a_sub_design_letter_a_renumber_left_stays_taken(self):
+        self.design()
+        self.design("part", parent="D001")
+        self.commit()
+        self.ok("renumber", "D001A", "D001B")
+        self.commit()
+        self.assertEqual(self.new("y", "--parent", "D001"), "docs/designs/D001C-y.md")
+
+    def test_outside_git_ids_follow_the_files_alone(self):
+        self.root = self.tmpdir()
+        self.ok("init", "--no-architecture")
+        self.assertEqual([self.new("x"), self.new("x")], ["docs/designs/D001-x.md", "docs/designs/D002-x.md"])
+
+    def test_on_an_unborn_branch_ids_follow_the_files_alone(self):
+        self.assertEqual([self.new("x"), self.new("x")], ["docs/designs/D001-x.md", "docs/designs/D002-x.md"])
+
+    def test_the_id_of_a_deleted_design_stays_taken(self):
+        design = self.three_designs()[2]
+        self.commit()
+        self.git("rm", "-q", str(design.relative_to(self.root)))
+        self.commit(check=False)
+        self.assertEqual(self.new("x"), "docs/designs/D004-x.md")
+
+    def test_the_id_of_a_deleted_design_stays_taken_under_a_module_path_git_quotes(self):
+        self.three_designs()[2].unlink()
+        self.ok("init", "--root", "模块", "--no-architecture")
+        design = self.new("c", "--root", "模块")
+        self.assertEqual(design, "模块/docs/designs/D003-c.md")
+        self.commit(check=False)
+        self.git("rm", "-q", design)
+        self.commit(check=False)
+        self.assertEqual(self.new("x"), "docs/designs/D004-x.md")
+
+    def test_a_design_a_discarding_merge_left_out_stays_taken(self):
+        self.three_designs()
+        self.commit()
+        self.git("checkout", "-q", "-b", "side")
+        self.new("d")
+        self.commit(check=False)
+        self.git("checkout", "-q", "main")
+        self.git("merge", "-q", "-s", "ours", "--no-edit", "side")
+        self.assertEqual(self.new("x"), "docs/designs/D005-x.md")
+
+    def test_a_design_only_a_merge_resolution_added_stays_taken_once_a_merge_discards_it(self):
+        self.three_designs()
+        self.commit()
+        self.git("checkout", "-q", "-b", "side")
+        (self.root / "src/side.py").write_text("side = 1\n")
+        self.commit(check=False)
+        self.git("checkout", "-q", "main")
+        (self.root / "src/main.py").write_text("main = 1\n")
+        self.commit(check=False)
+        self.git("checkout", "-q", "side")
+        self.git("merge", "-q", "--no-ff", "--no-commit", "main")
+        self.new("d")
+        self.git("add", "-A")
+        self.git("commit", "-q", "--no-edit")
+        self.git("checkout", "-q", "main")
+        self.git("merge", "-q", "-s", "ours", "--no-edit", "side")
+        self.assertEqual(self.new("x"), "docs/designs/D005-x.md")
+
+
 class UnfinishedDocTest(CanonTest):
     def test_a_fresh_draft_only_warns_until_checked_against_a_base(self):
         self.commit()

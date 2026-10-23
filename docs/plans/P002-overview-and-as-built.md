@@ -1,5 +1,5 @@
 ---
-status: draft
+status: in-progress
 created: 2026-10-23
 updated: 2026-10-23
 revision: 1
@@ -17,13 +17,13 @@ Implements [D002: Project overview and as-built designs](../designs/D002-overvie
 
 ## Current state
 
-Next: S1.
+S1 done. Next: S2.
 
 ## Slices
 
 ### S1: Ids that history keeps taken
 
-Status: todo
+Status: done
 Risk: performance
 
 Builds on `D002#project-overview-d000`, the `canon.py` item on ids.
@@ -252,3 +252,6 @@ Test criteria; seam: `check` output and exit status:
 - Drafted from D002@r2, after the user approved D002 by starting this plan.
 - The user agreed the seams, both of S8's dry runs, and S9's scope with a same-model gate, as drafted.
 - Review gate: S9 moved to the orchestrating session, since workers edit no design; S1's history query gained `-z`, `--full-history` and `-m`, checked in a scratch repository under every `log.diffMerges` format; `as_built` takes only a hex commit name or `worktree`; S3 moves only a non-archived owner, keeps its status and refuses a sub-design or module owner, naming the fix; S5 reads Path entries as directories; S1 and S5 pause on measured thresholds.
+- The user approved the plan by starting its implementation. Started at 7c53381.
+- S1 done: 8 tests in `HistoryIdTest`, 107 in the suite, all passing. Each of `-z`, `--full-history` and `-m` went into the query only after a test failed without it. Criterion 6, medians of 15 runs in a generated checkout of 10,000 commits, 1,000 of them merges, over 2,002 files, 200 of them docs: `new D x` took 0.517 s, against 0.113 s without the history lookup, so the lookup adds 0.40 s, under the 1 s threshold. The query alone takes 0.400 s; without `--full-history` and `-m` it takes 0.255 s.
+- S1 decision: with a HEAD commit, a history query that fails ends the command with `canon: cannot read the history of HEAD`, since going on could reuse an id.

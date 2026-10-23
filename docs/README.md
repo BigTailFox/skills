@@ -10,6 +10,6 @@
 
 ### Plans
 
-- [P002: Overview and as built](plans/P002-overview-and-as-built.md) · draft · D000 from init and its upgrade move, history-kept ids, docs in which, audit coverage and reach, as_built, D000 checks, the skill texts and this repo's D000. · modules: canon
+- [P002: Overview and as built](plans/P002-overview-and-as-built.md) · in-progress · D000 from init and its upgrade move, history-kept ids, docs in which, audit coverage and reach, as_built, D000 checks, the skill texts and this repo's D000. · modules: canon
 
 <!-- canon:index:end -->
