@@ -2,13 +2,13 @@
 status: accepted
 created: 2026-10-22
 updated: 2026-10-23
-revision: 2
+revision: 3
 modules: [canon]
 summary: D000 project overview in every project, as-built designs that record existing code, backfill before changing unspecified behavior, and design coverage in audit.
 refs: [D001]
 owns: [project-overview, as-built-design, design-coverage]
 paths: [skills/governance/canon/as-built.md, skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/governance/canon/doc-types.md, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-review/architecture.md]
-reviewed: 2
+reviewed: 3
 reviewers: [claude-opus-5.5]
 ---
 
@@ -128,7 +128,7 @@ The skills apply them:
 ### Setup
 
 - Setup ends once D000 and the adopted designs that describe existing code have passed their gates. `canon-init` writes no other as-built design; the first change that alters unspecified behavior records what it needs.
-- A doc that describes the whole project, such as an architecture overview, is folded into D000 and removed, as an ADR is folded into its design; a [project doc](#project-docs), such as the README, is not.
+- A doc that describes the whole project, such as an architecture overview, is folded into D000 and removed, as an ADR is folded into its design. A [doc by its name](#project-docs) outside every docs root, such as the README, is neither folded nor adopted, and neither is a docs root's own `README.md`, which becomes its index. Setup surveys every other file under a docs root, whatever its name, and migrates it like any existing doc.
 - `canon-init` fills D000 from the code: Goals, every capability and module with its Path and designs or `none`, the standards designs own across modules, the dependency directions and the glossary. D000 passes the L1 gate as an as-built design, like the adopted designs that describe existing code, and is shown to the user.
 - Upgrade: after `init` has moved the architecture design to D000, the agent bumps D000's revision and, as an as-built revision, rewrites Goals as D000's, folds the old sections into the four subsections, fills what is still missing and narrows `paths` to files, then passes the L1 gate. Code the old `paths` covered shows in coverage until designs cover it. When `init` created a fresh D000 instead, the agent fills it as in setup.
 
@@ -136,7 +136,7 @@ The skills apply them:
 
 A project's `README.md`, its hand-written intro for users, belongs to the doc system like its `AGENTS.md` and its docs root; the `canon` skill's Layout names it. A project need not have one, and `check` does not read it. It stays: `canon-init` neither folds it into D000 nor adopts it, and where it restates D000 or a design, they hold.
 
-A file in any directory whose name, before its extension and in any case, is `README`, `AGENTS`, `CLAUDE`, `CHANGELOG`, `CONTRIBUTING`, `LICENSE` or `NOTICE`, and any file under a docs root, is a doc:
+A file in any directory whose name up to its first `.` is, in any case, `README`, `AGENTS`, `CLAUDE`, `CHANGELOG`, `CONTRIBUTING`, `LICENSE`, `NOTICE`, `SECURITY`, `CODE_OF_CONDUCT` or `COPYING`, or starts with `LICENSE-`, and whose name has no `.` or ends, in any case, in `.md`, `.markdown`, `.rst`, `.txt`, `.adoc` or `.org`, is a doc by its name: `README.md`, `readme.rst`, `LICENSE`, `LICENSE-MIT` and `README.zh.md` are, `agents.py` and `notice.ts` are not. A doc by its name, and any file under a docs root, is a doc:
 
 - `which` prints `<path>: doc` for it, unless an entry of a design's `paths` is its exact path, so neither the docs step, code review nor `canon-review` takes it for code no design covers. A glob or directory entry never matches a doc, in `which`, in `affected` and in the unchecked commits `audit` counts.
 - Coverage counts no doc.
@@ -154,8 +154,8 @@ Source areas no design covers (commits in the last 90 days, most first):
 ```
 
 - Files are the tracked files under the Paths of D000's Modules rows, other than [docs](#project-docs); tooling, CI and configuration outside every module are not counted. A file belongs to the module with the longest Path that holds it, and is covered when the `paths` of a non-archived design, in any project, match it. Area paths are relative to the repo root, and one list covers the repository.
-- Each uncovered file starts in the area of its directory. While every counted file under the parent directory is uncovered, the area moves up to the parent, never above its module's Path.
-- An area whose counted files are all uncovered, its subdirectories' included, shows `<n> files`, counting them all. Any other area shows `<uncovered> of <counted> files`, counting the files directly in it.
+- Each uncovered file starts in the area of its directory. While every counted file of its module under the parent directory is uncovered, the area moves up to the parent, never above its module's Path. The files of other modules under that parent neither stop the area nor join it.
+- An area whose counted files of its module are all uncovered, its subdirectories' included, shows `<n> files`, counting them all. Any other area shows `<uncovered> of <counted> files`, counting its module's files directly in it.
 - Areas rank by the commits of the last 90 days that touch their uncovered files, then by uncovered files, then by path. The first 10 are listed and the rest counted.
 - Coverage never makes `check` fail, and `audit` exits 0.
 - `canon-sync` reports the listed areas, and `canon-review` takes its design-coverage scope from them, the architecture angle's hard check included.
@@ -174,8 +174,8 @@ Scenarios, tested through the commands:
 - `init` in a project whose D003 owns `architecture`, lists D003-K1 and is in plan P002's `based_on` moves it to D000 with D000-K1 and `based_on: [D000@r<n>]`, rewrites the links to it and appends the missing subsections at the end of `## Spec`. After D000 is filled out to over twice the old doc's size, neither `check` nor `check --base` reports a deleted doc. A later `new D` does not get D003, even when D003 was the highest D number, and `new D --parent` does not reuse the letter of a sub-design that `renumber` gave another letter.
 - `check` errors without D000, with a D000 under a module's docs root, with a subsection missing, with `src/**`, `src/` or an existing directory in D000's `paths`, with an `as_built` that names no commit, or reads `worktree` once HEAD has a commit, and with an `as_built` left on a reviewed revision, which `check --fix` removes. It only warns for a Modules Path that is not a directory.
 - `archive D000` is refused.
-- `which` prints `doc` for `README.md`, `src/a/readme.rst`, `AGENTS.md`, `CLAUDE.md`, `LICENSE` and a file under a docs root, and for `src/auth/README.md` while a design's `paths` hold `src/auth/**`; it prints the design for a README whose exact path a design's `paths` list. A commit that changes only `src/auth/README.md` is no unchecked commit of that design.
-- `audit` counts only files under D000's module Paths, and no doc among them. It lists a fully uncovered `src/a/` with its subdirectories folded in but never above its module's Path, `src/b/` as `2 of 5 files`, and the files of a module whose Path is `./`; it ranks areas by commits of the last 90 days, lists 10 and counts the rest. It lists a design D000 does not reach, and not one reached through another design's `refs`.
+- `which` prints `doc` for `README.md`, `src/a/readme.rst`, `AGENTS.md`, `CLAUDE.md`, `LICENSE` and a file under a docs root, and for `src/auth/README.md` while a design's `paths` hold `src/auth/**`; it prints the design for a README whose exact path a design's `paths` list, and for `src/agents.py` and `src/license.py` while a design's `paths` hold `src/**`. A commit that changes only `src/auth/README.md` is no unchecked commit of that design.
+- `audit` counts only files under D000's module Paths, and no doc among them. It lists a fully uncovered `src/a/` with its subdirectories folded in but never above its module's Path, `src/b/` as `2 of 5 files`, and the files of a module whose Path is `./` as one area `./  <n> files` while a design covers the files of a module whose Path is `src/`; it ranks areas by commits of the last 90 days, lists 10 and counts the rest. It lists a design D000 does not reach, and not one reached through another design's `refs`.
 
 ## Decisions
 
