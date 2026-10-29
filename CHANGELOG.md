@@ -2,6 +2,17 @@
 
 Notable changes in each release. Versions follow [Semantic Versioning](https://semver.org); while the major version is 0, a minor release may change how skills behave.
 
+## 0.3.1 - 2026-10-30
+
+Fixes for projects whose `canon.py` copy is not at `scripts/canon.py`, and for docs files that `canon.py` used to overwrite or cut.
+
+- The copy stays where you put it: `canon.py init` without `--script` takes the copy's path from the canon block of the repo root's `AGENTS.md`, so a project set up with `init --script` keeps its copy through upgrades and new modules, and `canon-init` and `canon-sync` run the copy the block names. `init --script` at the repo root moves the copy, rewrites the pre-commit hook `init` wrote, and warns you to remove the old copy and replace its path where files still name it, such as CI.
+- `init` refuses, before changing any file, a copy path that is absolute, holds whitespace or leads out of the repository, a module run that names another copy than the canon block, and a file at the copy's path that is no copy of `canon.py`, which it used to overwrite. `/canon-init` then asks you for a path.
+- `/canon-init` leaves the canon block of `AGENTS.md` as `init` wrote it, instead of offering to translate a block that the next `init` rewrites.
+- A `docs/README.md` whose index start marker has no end marker after it is reported by `check`, and `check --fix`, `index`, `new`, `adopt`, `archive`, `rename`, `renumber` and `init` exit before changing any file, instead of crashing or adding a second index that cut the hand-written text before it on the next run. `init` likewise refuses a canon block start marker in `AGENTS.md` with no end marker after it.
+- Links that `adopt`, `archive`, `rename` and `renumber` rewrite when a doc moves encode whitespace, `%`, `#`, `?` and parentheses in their targets, so they stay valid links.
+- `canon.py` is now canon version 24: run `/canon-init` in an existing project to upgrade its copy.
+
 ## 0.3.0 - 2026-10-29
 
 Brings canon to existing code: every project gets D000, the project overview, behavior no design states is recorded from the code before a change alters it, and `audit` reports the code no design covers.
