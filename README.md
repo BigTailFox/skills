@@ -44,6 +44,8 @@ Design, plan and implementation are separate phases, started with `/canon-design
 
 Workers and reviewers inherit the session's model and reasoning effort, so the session you start sets both; start a risky implementation at high effort. The exception is the cross-family reviewer. `/canon-init` lists this machine's reviewers, with their tools, models and efforts, in `.canon/canon-blind-review/reviewer.md` after a test run of each; a review uses the first one whose family differs from the session's, so a machine whose sessions run on both Claude and GPT needs one of each. Without such a reviewer, the review falls back to a prompt you run in another tool.
 
+Reviewers who confirm fixes read only what the fixes changed: `canon.py snapshot` records the work tree before a review and again before its confirmation, tracing on or off, in the checkout's `.canon/canon/snapshots/`, where each snapshot stays for 30 days. Like trace's snapshots, they hold untracked files that are not ignored, so packaging that does not read `.gitignore` must exclude `.canon/`, as [Tracing](#tracing) says.
+
 ## Tracing
 
 Tracing records how canon's workflows run in your projects, so the skills can be judged and improved on real work. It is off until you turn it on, and nothing it records leaves the machine. Run these with a project's `canon.py`, at the path its `AGENTS.md` names:

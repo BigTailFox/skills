@@ -1232,15 +1232,20 @@ class TraceCase(CanonTest):
         self.config = self.tmpdir()
         self.events = self.root / ".canon/canon/trace/events.jsonl"
 
-    def trace(self, *args, cwd=None, stdin="", returncode=0, **env):
-        """Run `canon.py trace` with the machine switch under a temporary XDG_CONFIG_HOME, no host variables but
-        those in `env`, and `stdin` as its standard input; assert that it exits with `returncode`."""
+    def tool(self, *args, cwd=None, stdin="", returncode=0, **env):
+        """Run `canon.py *args` with the machine switch under a temporary XDG_CONFIG_HOME, no host variables but
+        those in `env`, and `stdin` as its standard input; assert that it exits with `returncode`, and return the
+        finished process."""
         full = {key: value for key, value in os.environ.items() if key not in self.HOST_VARS}
         full.update(XDG_CONFIG_HOME=str(self.config), **env)
-        result = subprocess.run([sys.executable, "-B", str(SCRIPT), "trace", *args], cwd=str(cwd or self.root),
+        result = subprocess.run([sys.executable, "-B", str(SCRIPT), *args], cwd=str(cwd or self.root),
                                 env=full, input=stdin, capture_output=True, text=True)
         self.assertEqual(result.returncode, returncode, result.stdout + result.stderr)
-        return result.stdout
+        return result
+
+    def trace(self, *args, **options):
+        """Run `canon.py trace` as `tool` does; return its output."""
+        return self.tool("trace", *args, **options).stdout
 
     def files(self):
         return sorted(p for top in (self.root, self.config) for p in top.rglob("*"))
@@ -1279,13 +1284,24 @@ class TraceCase(CanonTest):
     def snapshot_objects(self):
         return set(self.snap("cat-file", "--batch-all-objects", "--batch-check=%(objectname)").split())
 
+    def project_state(self):
+        """The project's work tree outside .canon/, HEAD, refs, the files under its object directory, and its index."""
+        def files(top, skip=()):
+            return {p.relative_to(top).as_posix(): p.read_bytes() for p in top.rglob("*")
+                    if p.is_file() and p.relative_to(top).parts[0] not in skip}
+        git_dir = self.root / ".git"
+        return {"work tree": files(self.root, (".git", ".canon")), "HEAD": (git_dir / "HEAD").read_bytes(),
+                "refs": self.git("for-each-ref", "--format=%(refname) %(objectname)"),
+                "objects": files(git_dir / "objects"), "index": (git_dir / "index").read_bytes()}
+
     @contextlib.contextmanager
-    def lock_held(self, name):
-        """Hold the trace directory's lock `name` as a trace call does, so calls started meanwhile wait on it."""
+    def lock_held(self, name, directory=None):
+        """Hold the lock `name` in `directory`, by default the trace directory, as a call does, so calls started
+        meanwhile wait on it."""
         if fcntl is None:
             yield
             return
-        with open(str(self.events.with_name(name)), "a") as lock:
+        with open(str((directory or self.events.parent) / name), "a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             yield
 
@@ -1537,16 +1553,6 @@ class SnapshotTest(TraceCase):
     def setUp(self):
         super().setUp()
         self.trace("on")
-
-    def project_state(self):
-        """The project's work tree outside .canon/, HEAD, refs, the files under its object directory, and its index."""
-        def files(top, skip=()):
-            return {p.relative_to(top).as_posix(): p.read_bytes() for p in top.rglob("*")
-                    if p.is_file() and p.relative_to(top).parts[0] not in skip}
-        git_dir = self.root / ".git"
-        return {"work tree": files(self.root, (".git", ".canon")), "HEAD": (git_dir / "HEAD").read_bytes(),
-                "refs": self.git("for-each-ref", "--format=%(refname) %(objectname)"),
-                "objects": files(git_dir / "objects"), "index": (git_dir / "index").read_bytes()}
 
     def stored_once(self):
         """Whether the snapshot repository stores each of its objects once, loose or in a single pack."""
@@ -1848,6 +1854,132 @@ class SnapshotTest(TraceCase):
         big.write_bytes(b"\2" * (5 << 20))
         line = self.start_line("design")
         self.assertEqual([line["snapshot"], line["skipped"]], [None, "changes-over-10MiB"])
+
+
+class ReviewSnapshotTest(TraceCase):
+    def setUp(self):
+        super().setUp()
+        self.snapshots = self.root / ".canon/canon/snapshots"
+
+    def snapshot(self, cwd=None, returncode=0):
+        """Run `canon.py snapshot` as `tool` does; return its standard output and standard error."""
+        result = self.tool("snapshot", cwd=cwd, returncode=returncode)
+        return result.stdout, result.stderr
+
+    def take(self):
+        out, err = self.snapshot()
+        self.assertRegex(out, r"^[0-9a-f]{40}([0-9a-f]{24})?\n$")
+        self.assertEqual(err, "")
+        return out.strip()
+
+    def review_git(self, *args):
+        """Run git in the review snapshot repository, as the confirmation's diff command does."""
+        return self.git("-C", ".canon/canon/snapshots", *args)
+
+    def local_objects(self):
+        """The objects the review snapshot repository stores itself, all loose until a gc packs them."""
+        objects = self.snapshots / ".git/objects"
+        self.assertEqual(list(objects.glob("pack/*.pack")), [])
+        return {p.parent.name + p.name for p in objects.glob("??/*")}
+
+    def test_with_tracing_off_a_snapshot_records_the_work_tree_in_its_own_repository_and_leaves_the_project(self):
+        with (self.root / ".gitignore").open("a") as ignore:
+            ignore.write("*.log\n")
+        for name in ("staged.txt", "unstaged.txt"):
+            (self.root / name).write_text("v1\n")
+        self.commit()
+        (self.root / "staged.txt").write_text("v2 staged\n")
+        self.git("add", "staged.txt")
+        (self.root / "unstaged.txt").write_text("v2 unstaged\n")
+        (self.root / "untracked.txt").write_text("new\n")
+        (self.root / "build.log").write_text("ignored\n")
+        before = self.project_state()
+        commit = self.take()
+        after = self.project_state()
+        self.assertEqual([part for part in before if after[part] != before[part]], [])
+        self.assertFalse((self.root / ".canon/canon/trace").exists())
+        self.assertEqual((self.root / ".canon/canon/.gitignore").read_text(), "*\n")
+        refs = self.review_git("for-each-ref", "--format=%(refname) %(objectname)", "refs/snapshots/").splitlines()
+        self.assertEqual(len(refs), 1)
+        self.assertRegex(refs[0], r"^refs/snapshots/\d{8}T\d{6}Z-[0-9a-f]{6} " + commit + "$")
+        self.assertEqual(self.review_git("rev-list", "--parents", "-n", "1", commit), commit)
+        files = set(self.review_git("ls-tree", "-r", "--name-only", commit).splitlines())
+        self.assertEqual({name for name in files if name == "build.log" or name.startswith(".canon/")}, set())
+        self.assertEqual({name: self.review_git("show", "{}:{}".format(commit, name)) for name in
+                          ("staged.txt", "unstaged.txt", "untracked.txt")},
+                         {"staged.txt": "v2 staged", "unstaged.txt": "v2 unstaged", "untracked.txt": "new"})
+        alternates = (self.snapshots / ".git/objects/info/alternates").read_text().splitlines()
+        self.assertEqual(len(alternates), 1)
+        self.assertTrue(os.path.isabs(alternates[0]))
+        self.assertTrue(os.path.samefile(alternates[0], str(self.root / ".git/objects")))
+        local = self.local_objects()
+        self.assertIn(self.git("hash-object", "untracked.txt"), local)
+        self.assertNotIn(self.git("rev-parse", "HEAD:src/base.py"), local)
+
+    def test_the_diff_of_two_snapshots_shows_what_changed_between_them_committed_or_not(self):
+        for name in ("kept.txt", "gone.txt"):
+            (self.root / name).write_text(name + "\n")
+        self.commit()
+        (self.root / "draft.txt").write_text("draft 1\n")
+        first = self.take()
+        (self.root / "src/base.py").write_text("value = 2\n")
+        self.git("commit", "-qam", "committed between the snapshots")
+        (self.root / "draft.txt").write_text("draft 2\n")
+        (self.root / "gone.txt").unlink()
+        (self.root / "created.txt").write_text("created\n")
+        second = self.take()
+        self.assertEqual(self.review_git("diff", "--name-status", first, second).splitlines(),
+                         ["A\tcreated.txt", "M\tdraft.txt", "D\tgone.txt", "M\tsrc/base.py"])
+        self.assertEqual(self.review_git("diff", "--name-status", first, second, "--", "draft.txt", "gone.txt")
+                         .splitlines(), ["M\tdraft.txt", "D\tgone.txt"])
+
+    def test_each_snapshot_deletes_snapshots_older_than_30_days_and_leftovers_older_than_an_hour(self):
+        first = self.take()
+        old, kept = self.unit_id(datetime.timedelta(days=31), 1), self.unit_id(datetime.timedelta(days=29), 2)
+        for unit in (old, kept):
+            self.review_git("update-ref", "refs/snapshots/" + unit, first)
+        hour, git_dir = datetime.timedelta(hours=1), self.snapshots / ".git"
+        copies = [git_dir / ("index-" + self.unit_id(ago, n)) for ago, n in ((2 * hour, 3), (hour / 2, 4))]
+        builds = [self.snapshots / (".init-" + self.unit_id(ago, n)) for ago, n in ((2 * hour, 5), (hour / 2, 6))]
+        for path in copies:
+            path.write_bytes(b"index")
+        for path in builds:
+            (path / ".git").mkdir(parents=True)
+        second = self.take()
+        refs = self.review_git("for-each-ref", "--format=%(refname:lstrip=2) %(objectname)", "refs/snapshots/")
+        self.assertEqual(sorted(line.split()[1] for line in refs.splitlines()), sorted([first, first, second]))
+        self.assertNotIn(old, refs)
+        self.assertIn(kept, refs)
+        self.assertEqual([path.exists() for path in copies + builds], [False, True, False, True])
+
+    def test_a_snapshot_that_cannot_be_taken_prints_its_reason_and_exits_1(self):
+        self.assertEqual(self.snapshot(cwd=self.tmpdir(), returncode=1), ("snapshot error: no-git\n", ""))
+        (self.root / "big.bin").write_bytes(b"\0" * (11 << 20))
+        self.assertEqual(self.snapshot(returncode=1), ("snapshot error: changes-over-10MiB\n", ""))
+        (self.root / "big.bin").unlink()
+        (self.root / ".git/index").write_bytes(b"not an index")
+        out, err = self.snapshot(returncode=1)
+        self.assertEqual(out, "snapshot error: git status: exit 128\n")
+        self.assertIn("index", err)
+
+    @unittest.skipIf(fcntl is None, "lock_held holds no lock without fcntl")
+    def test_a_snapshot_that_waits_5_s_for_snapshot_lock_fails_and_records_nothing(self):
+        self.snapshots.mkdir(parents=True)
+        with self.lock_held("snapshot.lock", self.snapshots):
+            self.assertEqual(self.snapshot(returncode=1), ("snapshot error: snapshot lock: timeout\n", ""))
+        self.assertFalse((self.snapshots / ".git").exists())
+
+    def test_with_tracing_on_a_snapshot_still_writes_nothing_in_the_trace_directory(self):
+        self.trace("on")
+        self.start("design")
+        trace_dir = self.events.parent
+
+        def files():
+            return {p.relative_to(trace_dir).as_posix(): p.read_bytes() for p in trace_dir.rglob("*") if p.is_file()}
+
+        before = files()
+        self.take()
+        self.assertEqual(files(), before)
 
 
 class DispositionsTest(TraceCase):

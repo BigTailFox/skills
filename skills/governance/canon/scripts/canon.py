@@ -28,7 +28,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "21"
+CANON_VERSION = "22"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -2202,6 +2202,8 @@ def cmd_audit(repo, args):
 # ---------------------------------------------------------------- trace
 
 TRACE_DIR = LOCAL_DIR + "canon/trace"
+REVIEW_SNAPSHOT_DIR = LOCAL_DIR + "canon/snapshots"
+REVIEW_SNAPSHOT_DAYS = 30
 TRACE_KINDS = ("design", "plan", "implement", "investigate", "canon-review", "retro", "code-review", "gate", "slice",
                "end-check")
 TOP_LEVEL_KINDS = TRACE_KINDS[:6]
@@ -2546,9 +2548,11 @@ def changes_size(root, status):
     return total
 
 
-def take_snapshot(root, trace_dir, unit, parent):
-    """Record the work tree at refs/trace/<unit> in the snapshot repository, as a commit whose parent holds the tree
-    of commit `parent`, or that has no parent when `parent` is None (D001#snapshots); return the snapshot commit."""
+def take_snapshot(root, trace_dir, unit, parent, namespace="trace", borrow=False):
+    """Record the work tree at refs/<namespace>/<unit> in the snapshot repository, as a commit whose parent holds the
+    tree of commit `parent`, or that has no parent when `parent` is None (D001#snapshots); return the snapshot commit.
+    With `borrow`, the repository reads the project's objects through its alternates instead of copying them
+    (D003#review-snapshots)."""
     env = trace_env(**SNAPSHOT_IDENTITY)
     status = trace_git(root, env, "status", "--porcelain", "-z", "--untracked-files=all")
     if changes_size(root, status) > MAX_CHANGES:
@@ -2557,6 +2561,8 @@ def take_snapshot(root, trace_dir, unit, parent):
                       "--show-object-format").splitlines()
     index, objects = (os.path.abspath(os.path.join(str(root), os.fsdecode(path))) for path in lines[:2])
     git_dir = snapshot_repo(trace_dir, unit, env, sha256=lines[2:] == [b"sha256"])
+    if borrow:
+        borrow_objects(git_dir, objects)
     copy = git_dir / ("index-" + unit)
     try:
         copy_index(index, copy)
@@ -2566,17 +2572,32 @@ def take_snapshot(root, trace_dir, unit, parent):
         tree = trace_git(root, steps, "write-tree").decode().strip()
         parents = []
         if parent:
-            base = trace_git(root, steps, "commit-tree", parent + "^{tree}", "-m", "trace {} base".format(unit))
+            base = trace_git(root, steps, "commit-tree", parent + "^{tree}", "-m",
+                             "{} {} base".format(namespace, unit))
             parents = ["-p", base.decode().strip()]
-        commit = trace_git(root, steps, "commit-tree", tree, *parents, "-m", "trace " + unit).decode().strip()
-        copy_borrowed(root, steps, trace_dir, env, commit)
-        snapshot_git(trace_dir, env, "update-ref", "refs/trace/" + unit, commit)
+        commit = trace_git(root, steps, "commit-tree", tree, *parents, "-m",
+                           "{} {}".format(namespace, unit)).decode().strip()
+        if not borrow:
+            copy_borrowed(root, steps, trace_dir, env, commit)
+        snapshot_git(trace_dir, env, "update-ref", "refs/{}/{}".format(namespace, unit), commit)
     finally:
         with contextlib.suppress(OSError):
             copy.unlink()
     with contextlib.suppress(SnapshotSkip):
         snapshot_git(trace_dir, env, "-c", "gc.autoDetach=false", "gc", "--auto", "--quiet")
     return commit
+
+
+def borrow_objects(git_dir, objects):
+    """Name the project's object directory, the absolute path `objects`, in the snapshot repository's alternates."""
+    path = git_dir / "objects" / "info" / "alternates"
+    data = os.fsencode(objects) + b"\n"
+    try:
+        if not path.is_file() or path.read_bytes() != data:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+    except OSError as error:
+        raise SnapshotSkip("alternates: " + errno_name(error))
 
 
 def copy_borrowed(root, steps, trace_dir, env, commit):
@@ -2747,6 +2768,11 @@ def short_field(value):
     return isinstance(value, str) and len(value) <= MAX_REVIEWER_FIELD and value.splitlines() == [value]
 
 
+def new_id(now):
+    """The id of a unit or review snapshot that starts at the UTC time `now`: that time and 6 random hex digits."""
+    return now.strftime(UNIT_TIME_FORMAT) + "-" + os.urandom(3).hex()
+
+
 def trace_start(args):
     root, is_git = trace_root()
     if not trace_state(root)[0]:
@@ -2763,7 +2789,7 @@ def trace_start(args):
     parent = start_parent(trace_dir, args)
     host, conversation = trace_host()
     now = datetime.datetime.now(datetime.timezone.utc)
-    unit = now.strftime(UNIT_TIME_FORMAT) + "-" + os.urandom(3).hex()
+    unit = new_id(now)
     line = {"v": 1, "type": "start", "id": unit, "kind": args.kind,
             "at": now.astimezone().isoformat(timespec="seconds"), "parent": args.parent,
             "docs": trace_docs(root, is_git, args.docs)}
@@ -3025,10 +3051,10 @@ def prune_git(trace_dir, *args, data=None):
         raise TraceError(failed.reason)
 
 
-def prune_snapshots(trace_dir, cutoff):
-    """Delete the snapshot refs of the units started before `cutoff`; return how many went."""
-    refs = prune_git(trace_dir, "for-each-ref", "--format=%(refname)", "refs/trace/").decode().split()
-    old = [ref for ref in refs if stale(ref, "refs/trace/", cutoff)]
+def prune_snapshots(trace_dir, cutoff, prefix="refs/trace/"):
+    """Delete the snapshot refs under `prefix` whose ids were made before `cutoff`; return how many went."""
+    refs = prune_git(trace_dir, "for-each-ref", "--format=%(refname)", prefix).decode().split()
+    old = [ref for ref in refs if stale(ref, prefix, cutoff)]
     if old:
         prune_git(trace_dir, "update-ref", "--stdin", data="".join("delete {}\n".format(ref) for ref in old).encode())
     return len(old)
@@ -3085,6 +3111,48 @@ def cmd_trace(args):
         print("trace error: {}".format(error))
     except Exception as error:  # a failed call never stops the work
         print("trace error: {}: {}".format(type(error).__name__, error))
+    return 0
+
+
+# ---------------------------------------------------------------- review snapshots
+
+def expire_review_snapshots(snapshot_dir, now):
+    """Delete, best-effort, the review snapshots taken more than REVIEW_SNAPSHOT_DAYS ago and what interrupted calls
+    left more than an hour ago."""
+    hour_ago = (now - datetime.timedelta(hours=1)).strftime(UNIT_TIME_FORMAT)
+    if (snapshot_dir / ".git").is_dir():
+        with contextlib.suppress(TraceError):
+            prune_snapshots(snapshot_dir, (now - datetime.timedelta(days=REVIEW_SNAPSHOT_DAYS))
+                            .strftime(UNIT_TIME_FORMAT), "refs/snapshots/")
+    with contextlib.suppress(OSError):
+        remove_stale(snapshot_dir / ".git", "index-", hour_ago)
+    with contextlib.suppress(OSError):
+        remove_stale(snapshot_dir, ".init-", hour_ago)
+
+
+def cmd_snapshot(_args):
+    """Record the work tree in the review snapshot repository and print the snapshot commit (D003#review-snapshots);
+    exit 1 when no snapshot was recorded."""
+    root, is_git = trace_root()
+    try:
+        if not is_git:
+            raise SnapshotSkip("no-git")
+        try:
+            ignore_trace_dir(root)
+        except OSError as error:
+            raise SnapshotSkip("gitignore: " + errno_name(error))
+        snapshot_dir = root / REVIEW_SNAPSHOT_DIR
+        now = datetime.datetime.now(datetime.timezone.utc)
+        with snapshot_lock(snapshot_dir):
+            expire_review_snapshots(snapshot_dir, now)
+            commit = take_snapshot(root, snapshot_dir, new_id(now), None, "snapshots", borrow=True)
+    except SnapshotSkip as failed:
+        print("snapshot error: " + failed.reason)
+        sys.stdout.flush()
+        if failed.message:
+            sys.stderr.write(failed.message.decode("utf-8", "replace"))
+        return 1
+    print(commit)
     return 0
 
 
@@ -3205,9 +3273,14 @@ def main(argv=None):
     t.add_argument("--days", type=day_count, required=True, metavar="N")
     t.set_defaults(func=trace_prune)
 
+    sub.add_parser("snapshot", help="record the work tree, untracked files included, for a review's confirmation diff "
+                                    "and print the snapshot commit; exit 1 when none was recorded")
+
     args = parser.parse_args(argv)
     if args.command == "trace":
         return cmd_trace(args)
+    if args.command == "snapshot":
+        return cmd_snapshot(args)
     return args.func(Repo(), args)
 
 
