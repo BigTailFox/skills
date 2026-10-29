@@ -5,7 +5,7 @@ updated: 2026-10-29
 revision: 1
 modules: []
 summary: Agent skills built around canon, a documentation system kept in the repository; one module, its capabilities and the designs that own them.
-refs: [D001, D002, D003]
+refs: [D001, D002, D003, D004]
 owns: [architecture]
 paths: []
 reviewed: 1
@@ -33,7 +33,7 @@ implemented: 1
 | As-built designs, and the backfill before a change to behavior no design states | canon | [D002: Project overview and as-built designs](D002-overview-and-as-built.md) |
 | Blind reviews by fresh subagents, a cross-family reviewer included, for the review gate, code review or any request (`canon-blind-review`), and a fresh worker for each plan slice | canon | [D003: Subagents](D003-subagents.md) |
 | Opt-in tracing of workflow runs for replay and analysis (`canon.py trace`) | canon | [D001: Skill telemetry with canon trace](D001-skill-telemetry.md) |
-| Project setup: `docs/`, the `AGENTS.md` block, migration of existing docs and upgrades of a project's `canon.py` (`canon-init`) | canon | none |
+| Project setup: `docs/`, the `AGENTS.md` block, migration of existing docs and upgrades of a project's `canon.py` (`canon-init`) | canon | [D004: Project setup](D004-project-setup.md) |
 | Docs kept in step with the code: the docs step, repair after a merge or rebase, and the doc health audit (`canon-sync`) | canon | none |
 | Code review of a finished change (`canon-code-review`) | canon | none |
 | Codebase review from chosen angles (`canon-review`) | canon | none |
@@ -52,14 +52,14 @@ implemented: 1
 
 | Module | Path | Purpose | Entry points | Design |
 |---|---|---|---|---|
-| canon | skills/, tests/ | The skills: `skills/governance/` builds and maintains the documentation system, `skills/execution/` does development work through it, and `tests/` holds the regression tests of `canon.py` | `skills/governance/canon/SKILL.md`, `skills/governance/canon/scripts/canon.py`, each skill's `SKILL.md` | [D001: Skill telemetry with canon trace](D001-skill-telemetry.md), [D002: Project overview and as-built designs](D002-overview-and-as-built.md), [D003: Subagents](D003-subagents.md) |
+| canon | skills/, tests/ | The skills: `skills/governance/` builds and maintains the documentation system, `skills/execution/` does development work through it, and `tests/` holds the regression tests of `canon.py` | `skills/governance/canon/SKILL.md`, `skills/governance/canon/scripts/canon.py`, each skill's `SKILL.md` | [D001: Skill telemetry with canon trace](D001-skill-telemetry.md), [D002: Project overview and as-built designs](D002-overview-and-as-built.md), [D003: Subagents](D003-subagents.md), [D004: Project setup](D004-project-setup.md) |
 
 ### Dependencies
 
 There is one module, so no direction between modules applies. These hold inside it and at its edges:
 
 - Skills refer to each other by name, never by a relative path across skill directories, since `npx skills` installs them flat by name.
-- A skill runs the project's copy of `canon.py` at the path the canon block of the project's `AGENTS.md` names, and the `canon` skill's own `scripts/canon.py` while the project has no copy. `init` copies `canon.py` into the project, to `scripts/canon.py` unless `--script` names another path, and writes that path into the block.
+- A skill runs the project's copy of `canon.py` at the path the canon block of the project's `AGENTS.md` names, and the `canon` skill's own `scripts/canon.py` while the project has no copy. `init` puts the copy where [D004§init: init](D004-project-setup.md#init) states.
 - Execution skills read and write project docs only through the documentation system the governance skills define.
 - `canon.py` is a single file on the Python 3.8+ standard library, and runs `git` in a Git checkout.
 - The repository tooling, `scripts/validate.py`, checks each skill's layout, frontmatter, length and links, the links of the root's Markdown files, the Skills tables of `README.md` and `CANON_VERSION`, and runs `tests/`. Nothing in the module depends on it.
