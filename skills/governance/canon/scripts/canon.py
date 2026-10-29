@@ -28,7 +28,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "22"
+CANON_VERSION = "23"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -84,6 +84,7 @@ LINK_RE = re.compile(r"(!?)\[([^\]]*)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 FENCE_RE = re.compile(r"^\s*(```|~~~)")
 INLINE_CODE_RE = re.compile(r"`[^`]*`")
+LINK_UNSAFE_RE = re.compile(r"[\s%#?()]")
 STATUS_LINE_RE = re.compile(r"^\s*(?:-\s+)?Status:\s*(.*?)\s*$")
 MOVED_RE = re.compile(r"(?m)^(\s*\|\s*)([^|\s]+)(\s*\|.*\|\s*moved\s+)([CDPREI]\d{3,}[A-Z]?)(\s*\|\s*)$")
 LABEL_RE = re.compile(r"^\s*(?:-\s+)?([A-Za-z ]+?):\s*(.*?)\s*$")
@@ -102,6 +103,7 @@ This repo follows the canon documentation system (`canon` skill). Engineering do
 - State each change's tier (L0, L1, L2) before starting. Designs and plans pass the review gate defined by the `canon` skill.
 - Skip `docs/archived/` unless researching history.
 """ + AGENTS_END
+PRE_COMMIT_HOOK = "#!/bin/sh\nexec python3 {} check\n"
 SUB_AGENTS = "Module docs: [docs/README.md](docs/README.md). The repo root `AGENTS.md` defines the docs rules.\n"
 DOCS_README = """# Docs
 
@@ -1303,6 +1305,7 @@ def rewrite_for_moves(repo, moves, renamed=None, adopted=None):
             if new_dest == dest and new_dir == path.parent:
                 continue
             new_target = "/" + posix_rel(new_dest, repo.root) if target.startswith("/") else posix_rel(new_dest, new_dir)
+            new_target = LINK_UNSAFE_RE.sub(lambda m: urllib.parse.quote(m.group(0), safe=""), new_target)
             if anchor:
                 new_target += "#" + anchor
             if new_target != target:
@@ -1526,22 +1529,67 @@ def script_version(path):
     return int(match.group(1)) if match else None
 
 
+def canon_block_span(text):
+    """The span of the canon block in an `AGENTS.md` text, from its first start marker through the first end marker
+    after it; None without a start marker. Exits when no end marker follows the start marker."""
+    start = text.find(AGENTS_START)
+    if start < 0:
+        return None
+    end = text.find(AGENTS_END, start)
+    if end < 0:
+        sys.exit("canon: the repo root's AGENTS.md has a canon block start marker with no end marker after it; fix "
+                 "the markers and rerun `init`")
+    return start, end + len(AGENTS_END)
+
+
+def repo_relative(path):
+    """`path`, relative to the repo root, with `.` and `..` resolved; None when it is absolute or leads out of the
+    repository."""
+    rel = os.path.normpath(path).replace(os.sep, "/")
+    return None if os.path.isabs(path) or rel.split("/")[0] == ".." else rel
+
+
+def block_script(block):
+    """The path the canon block names: the rest of its first code span that starts with `python3 `; None when no span
+    does."""
+    for code in INLINE_CODE_RE.finditer(block):
+        if code.group(0).startswith("`python3 "):
+            return code.group(0)[len("`python3 "):-1]
+    return None
+
+
 def cmd_init(repo, args):
     require_clean_merge(repo)
     project = Path(os.path.realpath(args.root)) if args.root else repo.root
     top = project == repo.root
     if top and not has_overview(repo):
         architecture_design(repo)  # refuses before any file changes
+    root_agents = repo.root / "AGENTS.md"
+    root_text = root_agents.read_text(encoding="utf-8") if root_agents.is_file() else ""
+    span = canon_block_span(root_text)
+    block_path = block_script(root_text[span[0]:span[1]]) if span else None
     actions = []
 
     def note(verb, path):
         actions.append("{} {}".format(verb, posix_rel(path, repo.root)))
 
-    script = repo.root / (args.script or "scripts/canon.py")
-    script_rel = posix_rel(script, repo.root)
+    copy_path = args.script or block_path or "scripts/canon.py"
+    script_rel = repo_relative(copy_path)
+    if script_rel is None or re.search(r"\s", copy_path):
+        sys.exit("canon: the copy's path {} is not a relative path inside the repository without whitespace; pass "
+                 "`--script` with one".format(copy_path))
+    script = repo.root / script_rel
+    moved = bool(args.script and block_path) and \
+        os.path.realpath(str(repo.root / block_path)) != os.path.realpath(str(script))
+    if moved and not top:
+        sys.exit("canon: the canon block of AGENTS.md names {}; move the copy with `init --script {}` at the repo root "
+                 "first".format(block_path, script_rel))
     me = Path(os.path.realpath(__file__))
     if Path(os.path.realpath(str(script))) != me:
         current = script_version(script)
+        if current is None and script.exists():
+            sys.exit("canon: {} is not a copy of canon.py; move it or pass `--script` with another path"
+                     .format(script_rel))
         if current is None or current < int(CANON_VERSION):
             script.parent.mkdir(parents=True, exist_ok=True)
             script.write_text(me.read_text(encoding="utf-8"), encoding="utf-8")
@@ -1552,6 +1600,10 @@ def cmd_init(repo, args):
         elif script.read_text(encoding="utf-8") != me.read_text(encoding="utf-8"):
             print("warning: {0} differs from this canon.py though both are v{1}; kept it. Unless it has local edits "
                   "to keep, replace it: cp {2} {0}".format(script_rel, current, me))
+    old_rel = repo_relative(block_path) if moved else None
+    if old_rel and script_version(repo.root / old_rel) is not None:
+        print("warning: moved the copy from {}; remove it and replace its path where files still name it, such as "
+              "each `docs/README.md` and CI".format(block_path))
 
     attributes = repo.root / ".gitattributes"
     lines = attributes.read_text(encoding="utf-8").splitlines() if attributes.is_file() else []
@@ -1573,10 +1625,9 @@ def cmd_init(repo, args):
         agents.write_text("# AGENTS.md\n\n" + (block if top else SUB_AGENTS) + "\n", encoding="utf-8")
         note("created", agents)
     elif top:
-        text = agents.read_text(encoding="utf-8")
-        if AGENTS_START in text and AGENTS_END in text:
-            head, rest = text.split(AGENTS_START, 1)
-            new = head + block + rest.split(AGENTS_END, 1)[1]
+        text = root_text
+        if span:
+            new = text[:span[0]] + block + text[span[1]:]
         else:
             new = text.rstrip("\n") + "\n\n" + block + "\n"
         if new != text:
@@ -1607,13 +1658,16 @@ def cmd_init(repo, args):
             note("created", write_doc(find_root(fresh, str(project)), "D", OVERVIEW_ID, OVERVIEW_SLUG,
                                       OVERVIEW_TITLE, fields, template=OVERVIEW_TEMPLATE))
 
-    if args.hook and repo.is_git:
+    if (args.hook or moved) and repo.is_git:
         hook = repo.root / git(repo.root, "rev-parse", "--git-path", "hooks/pre-commit").strip()
-        if hook.exists():
+        if moved and hook.is_file() and hook.read_bytes() == PRE_COMMIT_HOOK.format(block_path).encode("utf-8"):
+            hook.write_text(PRE_COMMIT_HOOK.format(script_rel), encoding="utf-8")
+            note("updated", hook)
+        elif args.hook and hook.exists():
             print("kept the existing pre-commit hook; add `python3 {} check` to it".format(script_rel))
-        else:
+        elif args.hook:
             hook.parent.mkdir(parents=True, exist_ok=True)
-            hook.write_text("#!/bin/sh\nexec python3 {} check\n".format(script_rel), encoding="utf-8")
+            hook.write_text(PRE_COMMIT_HOOK.format(script_rel), encoding="utf-8")
             os.chmod(str(hook), 0o755)
             note("created", hook)
 
@@ -3184,7 +3238,8 @@ def main(argv=None):
 
     p = sub.add_parser("init", help="set up canon in a repo or module (idempotent; also upgrades the script copy)")
     p.add_argument("--root", help="module directory to set up (default: repo root)")
-    p.add_argument("--script", help="where to copy canon.py, relative to the repo root (default: scripts/canon.py)")
+    p.add_argument("--script", help="where to copy canon.py, relative to the repo root (default: the path the canon "
+                                    "block of the repo root's AGENTS.md names, else scripts/canon.py)")
     p.add_argument("--hook", action="store_true", help="install a git pre-commit hook running `check`")
     p.set_defaults(func=cmd_init)
 

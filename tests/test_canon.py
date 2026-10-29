@@ -32,6 +32,8 @@ _spec.loader.exec_module(canon)
 FINDINGS = "## Scope\n\nFixture.\n\n## Findings\n\n| ID | Severity | Finding | Disposition |\n|---|---|---|---|\n{}\n"
 PLAN = "## Current state\n\nNext: S1.\n\n## Slices\n\n### S1: First\n\nStatus: todo\n\n## Notes\n\n{}\n\n## Log\n\nStarted.\n"
 ISSUES = "\n## Known issues\n\n| ID | Severity | Issue | Source | Since | Next |\n|---|---|---|---|---|---|\n{}\n"
+OUTSIDE = ("canon: the copy's path {} is not a relative path inside the repository without whitespace; pass `--script` "
+           "with one")
 NO_OVERVIEW = "ERROR docs: no D000, the project overview every project keeps; run `canon.py init` at the repo root"
 UNIT_TIME_FORMAT = "%Y%m%dT%H%M%SZ"
 
@@ -48,6 +50,10 @@ class CanonTest(unittest.TestCase):
         self.ok("init")
         (self.root / "src").mkdir()
         (self.root / "src/base.py").write_text("value = 1\n")
+
+    def repository_without_docs(self):
+        self.root = self.tmpdir()
+        self.git("init", "-q", "-b", "main")
 
     def tmpdir(self):
         tmp = tempfile.TemporaryDirectory()
@@ -617,12 +623,104 @@ class InitTest(CanonTest):
         self.assertIn("differs from this canon.py", self.ok("init"))
         self.assertTrue(copy.read_text().endswith("# local edit\n"))
 
+    def test_init_refuses_a_file_at_the_copy_path_that_is_no_copy_of_canon_py(self):
+        message = "canon: {} is not a copy of canon.py; move it or pass `--script` with another path"
+        (self.root / "scripts/canon.py").write_text("print('a project script')\n")
+        (self.root / ".gitattributes").unlink()
+        self.refuses(message.format("scripts/canon.py"))
+        self.create("tools/canon.py")
+        self.refuses(message.format("tools/canon.py"), "--script", "tools/canon.py")
+
+    def test_init_keeps_the_copy_where_the_canon_block_names_it(self):
+        self.repository_without_docs()
+        self.ok("init", "--script", "tools/canon.py")
+        self.assertEqual(self.ok("init"), "canon init: nothing to do\n")
+        self.ok("init", "--root", "mod")
+        self.assertFalse((self.root / "scripts").exists())
+        self.assertIn("`python3 tools/canon.py find <words>`", (self.root / "mod/docs/README.md").read_text())
+
+    def refuses(self, message, *args):
+        """`init` with `args` exits with `message` and changes no file."""
+        if self.git("status", "--porcelain"):
+            self.commit()
+        self.assertIn(message, self.fails("init", *args))
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_init_refuses_a_canon_block_start_marker_with_no_end_marker_after_it(self):
+        message = ("canon: the repo root's AGENTS.md has a canon block start marker with no end marker after it; fix "
+                   "the markers and rerun `init`")
+        agents = self.root / "AGENTS.md"
+        (self.root / ".gitattributes").unlink()
+        agents.write_text("# AGENTS.md\n\n{}\n\nNotes.\n\n{}\nOld block.\n".format(canon.AGENTS_END, canon.AGENTS_START))
+        self.refuses(message)
+        agents.write_text("# AGENTS.md\n\n{}\nNotes to keep.\n".format(canon.AGENTS_START))
+        self.refuses(message)
+        self.refuses(message, "--root", "mod")
+
+    def test_init_refuses_a_copy_path_with_whitespace_from_the_canon_block_too(self):
+        message = OUTSIDE.format("my tools/canon.py")
+        self.refuses(message, "--script", "my tools/canon.py")
+        agents = self.root / "AGENTS.md"
+        agents.write_text(agents.read_text().replace("`python3 scripts/canon.py`", "`python3 my tools/canon.py`"))
+        self.refuses(message)
+
+    def test_init_refuses_a_copy_path_that_is_absolute_or_outside_the_repository(self):
+        message = OUTSIDE
+        agents = self.root / "AGENTS.md"
+        agents.write_text(agents.read_text().replace("`python3 scripts/canon.py`", "`python3 ../outside/canon.py`"))
+        self.refuses(message.format("../outside/canon.py"))
+        self.refuses(message.format("tools/../../outside/canon.py"), "--script", "tools/../../outside/canon.py")
+        self.assertFalse((self.root.parent / "outside").exists())
+        absolute = str(self.root / "tools/canon.py")
+        self.refuses(message.format(absolute), "--script", absolute)
+
+    def test_a_module_run_refuses_another_copy_than_the_canon_block_names(self):
+        self.refuses("canon: the canon block of AGENTS.md names scripts/canon.py; move the copy with "
+                     "`init --script tools/canon.py` at the repo root first",
+                     "--root", "mod", "--script", "tools/canon.py")
+        self.refuses(OUTSIDE.format("../canon.py"), "--root", "mod", "--script", "../canon.py")
+        self.ok("init", "--root", "mod", "--script", "./scripts/canon.py")
+        self.assertTrue((self.root / "mod/AGENTS.md").is_file())
+
+    def test_init_at_the_repo_root_moves_the_copy_and_rewrites_the_hook_it_wrote(self):
+        self.ok("init", "--hook")
+        hook = self.root / ".git/hooks/pre-commit"
+        out = self.ok("init", "--script", "tools/canon.py")
+        self.assertIn("warning: moved the copy from scripts/canon.py; remove it and replace its path where files "
+                      "still name it, such as each `docs/README.md` and CI", out)
+        self.assertIn("created tools/canon.py", out)
+        self.assertIn("updated .git/hooks/pre-commit", out)
+        self.assertEqual(hook.read_text(), "#!/bin/sh\nexec python3 tools/canon.py check\n")
+        self.assertIn("`python3 tools/canon.py`", (self.root / "AGENTS.md").read_text())
+        self.assertTrue((self.root / "scripts/canon.py").is_file())
+        hook.write_text("#!/bin/sh\nmake lint\n")
+        self.assertNotIn("pre-commit", self.ok("init", "--script", "bin/canon.py"))
+        self.assertEqual(hook.read_text(), "#!/bin/sh\nmake lint\n")
+
+    def test_init_warns_of_a_move_only_from_a_copy_inside_the_repository(self):
+        agents = self.root / "AGENTS.md"
+        for old in ("old/canon.py", "../shared/canon.py"):
+            agents.write_text(re.sub(r"`python3 [^`]*`", "`python3 {}`".format(old), agents.read_text(), count=1))
+            self.assertNotIn("warning: moved", self.ok("init", "--script", "tools/canon.py"))
+            self.assertIn("`python3 tools/canon.py`", agents.read_text())
+
+
+class AdoptTest(CanonTest):
+    def test_a_rewritten_link_target_stays_percent_encoded(self):
+        (self.root / "other doc.md").write_text("# Other\n")
+        (self.root / "notes.md").write_text("# Notes\n\nSee [Other](other%20doc.md#other).\n")
+        self.ok("adopt", "notes.md", "design")
+        self.assertIn("[Other](../../other%20doc.md#other)", (self.root / "docs/designs/D001-notes.md").read_text())
+
+    def test_a_rewritten_link_target_encodes_only_what_a_link_cannot_hold(self):
+        self.create("my notes/b.md", "设计 (1).md")
+        (self.root / "my notes/a.md").write_text("# A\n\nSee [B](b.md) and [Draft](../%E8%AE%BE%E8%AE%A1%20%281%29.md).\n")
+        self.ok("adopt", "my notes/a.md", "design")
+        self.assertIn("See [B](../../my%20notes/b.md) and [Draft](../../设计%20%281%29.md).",
+                      (self.root / "docs/designs/D001-a.md").read_text())
+
 
 class ProjectOverviewTest(CanonTest):
-    def repository_without_docs(self):
-        self.root = self.tmpdir()
-        self.git("init", "-q", "-b", "main")
-
     def test_init_creates_a_draft_d000_that_check_only_warns_about(self):
         self.repository_without_docs()
         self.assertIn("created " + self.OVERVIEW, self.ok("init"))
