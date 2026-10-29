@@ -38,7 +38,7 @@ When the implementation cannot follow the plan or the design:
 
 Every design or plan revision passes this gate before it is accepted, and every revision of an active design passes it before implementation. The gate runs at the revision's tier, even within work of a lower tier, such as an L1 revision made while implementing an L0 change.
 
-1. Run `canon.py check` and fix its errors, so reviewers spend no effort on formatting. It warns that the revision is not reviewed until step 5.
+1. Run `canon.py check` and fix its errors, so reviewers spend no effort on formatting. For a revision of an accepted or active design, or of an accepted or in-progress plan, it warns that the revision is not reviewed until step 5.
 2. Run `canon.py trace start gate <doc id> --tier <tier> --skill <skill> --model <model> [--parent <parent>] [--base <Changes since commit>]`. Launch the first-round reviewers in parallel, with the `canon-blind-review` skill when it is installed. A blind reviewer is a fresh subagent that carries nothing from the current conversation: never fork the session, and pass only the reviewer prompt below.
    - **Same-model reviewer**: a subagent on the author's model and effort (Subagents below).
    - **Cross-family reviewer**: a model of another family than the session's, run as the reviewer file says (Subagents below), in the first round only. Required for L2, optional for L1. When the file names no such reviewer, or its run stops twice (Subagents below), give the user the filled reviewer prompt to run in another tool, and wait for the result.

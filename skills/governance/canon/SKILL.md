@@ -113,7 +113,7 @@ based_on: [D003@r4]                  # P only
 - Ids are unique on the current branch. When `check` reports a collision with another branch, renumber the doc your branch added with `renumber <path> --base <ref>`, where `<ref>` is the branch you merge or rebase onto, before or after the merge or rebase. Then fix the references it reports as kept; only you can tell which doc they mean.
 - Reference a section as `[D003§token-refresh: refresh flow](../designs/D003-auth.md#token-refresh)` and a whole doc as `[D003: auth design](../designs/D003-auth.md)`. Never reference by line number.
 - Each standard lives only in the design that owns its topic; everywhere else links to it.
-- A design or plan revision must pass the review gate before it is accepted or implemented: `reviewed` equals `revision`. `check` warns while a revision is pending; `check --base` fails.
+- A design or plan revision must pass the review gate before it is accepted or implemented: `reviewed` equals `revision`. Once a design or plan has been accepted, `check` warns while a later revision is pending; `check --base` fails.
 - Replace every `<!-- canon: ... -->` guidance comment with content. While a doc is unfinished (a design or plan before its review gate, any other doc before archiving), `check` only warns about guidance and an empty `summary`; `check --base` fails.
 - After a merge or rebase, run `check --fix`; generated indexes merge line by line and may need regenerating.
 
