@@ -28,7 +28,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "23"
+CANON_VERSION = "24"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -776,22 +776,53 @@ def index_block(repo, root, archived, base_dir):
     return INDEX_START + "\n\n" + body + "\n\n" + INDEX_END
 
 
+def marker_span(text, start_marker, end_marker):
+    """The span of a marked block in `text`, from its first start marker through the first end marker after it; None
+    without a start marker, and an end of None when no end marker follows the start marker."""
+    start = text.find(start_marker)
+    if start < 0:
+        return None
+    end = text.find(end_marker, start)
+    return start, end + len(end_marker) if end >= 0 else None
+
+
+def broken_indexes(repo, project=None):
+    """The `docs/README.md` files whose first index start marker has no end marker after it, in every docs root and in
+    `project`, which `init` is about to make one."""
+    readmes = [root.docs / "README.md" for root in repo.roots] + ([project / "docs/README.md"] if project else [])
+    broken = []
+    for readme in readmes:
+        span = marker_span(readme.read_text(encoding="utf-8"), INDEX_START, INDEX_END) if readme.is_file() else None
+        if span and span[1] is None:
+            broken.append(readme)
+    return broken
+
+
+def require_intact_indexes(repo, project=None):
+    """Exit before a command changes any file when regenerating an index would lose the text after a start marker
+    with no end marker."""
+    broken = broken_indexes(repo, project)
+    if broken:
+        sys.exit("canon: {} has an index start marker with no end marker after it; fix the markers and rerun"
+                 .format(posix_rel(broken[0], repo.root)))
+
+
 def expected_indexes(repo):
-    """Return {path: expected_text} for every docs root."""
+    """Return {path: expected_text} for every docs root, leaving out each `broken_indexes` file."""
     out = {}
     for root in repo.roots:
         if not root.docs.is_dir():
             continue
         readme = root.docs / "README.md"
         current = readme.read_text(encoding="utf-8") if readme.is_file() else None
+        span = marker_span(current, INDEX_START, INDEX_END) if current is not None else None
         block = index_block(repo, root, False, root.docs)
         if current is None:
             out[readme] = "# Docs\n\n" + block + "\n"
-        elif INDEX_START in current and INDEX_END in current:
-            head, rest = current.split(INDEX_START, 1)
-            out[readme] = head + block + rest.split(INDEX_END, 1)[1]
-        else:
+        elif span is None:
             out[readme] = current.rstrip("\n") + "\n\n" + block + "\n"
+        elif span[1] is not None:
+            out[readme] = current[:span[0]] + block + current[span[1]:]
         archive_dir = root.docs / "archived"
         if any(d.root is root and d.archived for d in repo.docs) or (archive_dir / "README.md").is_file():
             out[archive_dir / "README.md"] = "# Archived docs\n\n" + index_block(repo, root, True, archive_dir) + "\n"
@@ -1207,6 +1238,9 @@ def run_check(repo, base=None):
             repo.problem("WARN", posix_rel(path, repo.root), "{} lines (max {}); move detail into docs".format(
                 len(lines), MAX_AGENTS_LINES))
 
+    for path in broken_indexes(repo):
+        repo.problem("ERROR", posix_rel(path, repo.root),
+                     "index start marker with no end marker after it; fix the markers")
     for path, text in expected_indexes(repo).items():
         current = path.read_text(encoding="utf-8") if path.is_file() else None
         if current != text:
@@ -1390,6 +1424,8 @@ def find_root(repo, root_arg):
 
 
 def cmd_check(repo, args):
+    if args.fix:
+        require_intact_indexes(repo)
     run_check(repo, args.base)
     if args.fix:
         done, index = apply_fixes(repo)
@@ -1445,6 +1481,7 @@ def write_doc(root, letter, doc_id, slug, title, fields, implements="", template
 
 
 def cmd_new(repo, args):
+    require_intact_indexes(repo)
     with id_lock(repo):
         return new_doc(Repo(), args)
 
@@ -1484,6 +1521,7 @@ def new_doc(repo, args):
 
 def cmd_archive(repo, args):
     require_clean_merge(repo)
+    require_intact_indexes(repo)
     doc = repo.get(args.id)
     info = TYPES[doc.type]
     if doc.id == OVERVIEW_ID:
@@ -1513,6 +1551,7 @@ def cmd_archive(repo, args):
 
 def cmd_rename(repo, args):
     require_clean_merge(repo)
+    require_intact_indexes(repo)
     doc = repo.get(args.id)
     if not SLUG_RE.match(args.slug):
         sys.exit("canon: slug must be kebab-case")
@@ -1532,14 +1571,11 @@ def script_version(path):
 def canon_block_span(text):
     """The span of the canon block in an `AGENTS.md` text, from its first start marker through the first end marker
     after it; None without a start marker. Exits when no end marker follows the start marker."""
-    start = text.find(AGENTS_START)
-    if start < 0:
-        return None
-    end = text.find(AGENTS_END, start)
-    if end < 0:
+    span = marker_span(text, AGENTS_START, AGENTS_END)
+    if span and span[1] is None:
         sys.exit("canon: the repo root's AGENTS.md has a canon block start marker with no end marker after it; fix "
                  "the markers and rerun `init`")
-    return start, end + len(AGENTS_END)
+    return span
 
 
 def repo_relative(path):
@@ -1561,6 +1597,7 @@ def block_script(block):
 def cmd_init(repo, args):
     require_clean_merge(repo)
     project = Path(os.path.realpath(args.root)) if args.root else repo.root
+    require_intact_indexes(repo, project)
     top = project == repo.root
     if top and not has_overview(repo):
         architecture_design(repo)  # refuses before any file changes
@@ -1724,6 +1761,7 @@ def slugify(text):
 
 def cmd_adopt(repo, args):
     require_clean_merge(repo)
+    require_intact_indexes(repo)
     with id_lock(repo):
         return adopt_doc(Repo(), args)
 
@@ -1774,6 +1812,7 @@ def adopt_doc(repo, args):
 
 def cmd_renumber(repo, args):
     require_clean_merge(repo)
+    require_intact_indexes(repo)
     with id_lock(repo):
         return renumber_doc(Repo(), args)
 
@@ -1972,6 +2011,7 @@ def remap_ids(doc, text, pick, own=None):
 
 
 def cmd_index(repo, args):
+    require_intact_indexes(repo)
     for rel in write_indexes(repo):
         print("wrote " + rel)
     return 0

@@ -610,6 +610,59 @@ class KnownIssuesTest(CanonTest):
         self.assertIn("known issue D001-K1 is still listed", self.fails("check"))
 
 
+class IndexTest(CanonTest):
+    BROKEN = "ERROR {}: index start marker with no end marker after it; fix the markers"
+    REFUSED = "canon: {} has an index start marker with no end marker after it; fix the markers and rerun"
+
+    def commit_readme(self, readme, text):
+        readme.write_text(text)
+        self.git("commit", "-qam", "index markers")
+
+    def test_commands_refuse_an_index_start_marker_with_no_end_marker_after_it(self):
+        self.design()
+        (self.root / "notes.md").write_text("# Notes\n")
+        self.commit()
+        readme = self.root / "docs/README.md"
+        intro = readme.read_text().split(canon.INDEX_START)[0]
+        for tail in ("{}\nOld.\n\n{}\nNotes to keep.\n".format(canon.INDEX_END, canon.INDEX_START),
+                     "{}\nNotes to keep.\n".format(canon.INDEX_START)):
+            self.commit_readme(readme, intro + tail)
+            out = self.fails("check")
+            self.assertIn(self.BROKEN.format("docs/README.md"), out)
+            self.assertNotIn("index out of date", out)
+            for args in (("check", "--fix"), ("index",), ("new", "C", "idea"), ("adopt", "notes.md", "C"),
+                         ("archive", "D001", "retired"), ("rename", "D001", "zone"), ("renumber", "D001"),
+                         ("init",)):
+                self.assertIn(self.REFUSED.format("docs/README.md"), self.fails(*args), args)
+                self.assertEqual(self.git("status", "--porcelain"), "", args)
+
+    def test_a_module_index_with_no_end_marker_blocks_commands_at_the_repo_root(self):
+        self.ok("init", "--root", "mod")
+        self.commit()
+        readme = self.root / "mod/docs/README.md"
+        self.commit_readme(readme, readme.read_text().split(canon.INDEX_END)[0])
+        self.assertIn(self.REFUSED.format("mod/docs/README.md"), self.fails("new", "C", "idea"))
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_init_refuses_a_broken_index_in_the_project_it_sets_up(self):
+        readme = self.root / "mod/docs/README.md"
+        readme.parent.mkdir(parents=True)
+        readme.write_text("# Docs\n\n{}\nNotes to keep.\n".format(canon.INDEX_START))
+        self.commit()
+        self.assertIn(self.REFUSED.format("mod/docs/README.md"), self.fails("init", "--root", "mod"))
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_markers_outside_the_index_stay_as_text(self):
+        readme = self.root / "docs/README.md"
+        readme.write_text(readme.read_text() + "\nA stray {} after the index.\n".format(canon.INDEX_START))
+        self.ok("check")
+        readme.write_text("# Docs\n\nA stray {} before any index.\n".format(canon.INDEX_END))
+        self.assertIn("wrote docs/README.md", self.ok("index"))
+        self.assertTrue(readme.read_text().startswith(
+            "# Docs\n\nA stray {} before any index.\n\n{}\n".format(canon.INDEX_END, canon.INDEX_START)))
+        self.ok("check")
+
+
 class InitTest(CanonTest):
     def test_init_replaces_an_older_script_copy(self):
         copy = self.root / "scripts/canon.py"

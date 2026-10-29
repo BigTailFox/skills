@@ -9,6 +9,6 @@
 - [D002: Project overview and as-built designs](designs/D002-overview-and-as-built.md) · active · D000 project overview in every project, as-built designs that record existing code, backfill before changing unspecified behavior, and design coverage in audit. · owns: project-overview, as-built-design, design-coverage · modules: canon
 - [D003: Subagents](designs/D003-subagents.md) · active · 2 known issues · How canon runs reviewers and workers as new subagents on the session's model, resumed by id, the review snapshots confirmations diff, and the reviewer file. · owns: subagents · modules: canon
 - [D004: Project setup](designs/D004-project-setup.md) · active · Project setup and upgrades with canon.py init, migration of existing docs with adopt, and the canon-init flows for setup, upgrade and new modules. · owns: project-setup · modules: canon
-- [D005: Docs index](designs/D005-docs-index.md) · active · 1 known issue · The generated doc index in each docs root's README.md and archived/README.md, its markers and format, the commands that regenerate it and check's index errors. · owns: docs-index · modules: canon
+- [D005: Docs index](designs/D005-docs-index.md) · active · The generated doc index in each docs root's README.md and archived/README.md, its markers and format, the commands that regenerate it and check's index errors. · owns: docs-index · modules: canon
 
 <!-- canon:index:end -->

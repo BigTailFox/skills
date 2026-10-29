@@ -57,7 +57,7 @@ An index is the start marker, a blank line, its groups, a blank line and the end
   - A missing file becomes `# Docs`, a blank line, the index and a newline.
   - The index spans from the first start marker through the first end marker after it; regeneration replaces that span and keeps the text around it as it is.
   - Without a start marker, the index is appended: the text without its trailing newlines, a blank line, the index and a newline.
-  - When the first start marker in any docs root's `docs/README.md` has no end marker after it, `check --fix`, `index`, `new`, `adopt`, `archive`, `rename`, `renumber` and `init` change no file and exit with `canon: <path> has an index start marker with no end marker after it; fix the markers and rerun`, `<path>` being relative to the repo root.
+  - When the first start marker in the `docs/README.md` of any docs root, or of the project `init` sets up, has no end marker after it, `check --fix`, `index`, `new`, `adopt`, `archive`, `rename`, `renumber` and `init` change no file and exit with `canon: <path> has an index start marker with no end marker after it; fix the markers and rerun`, `<path>` being relative to the repo root.
 - `docs/archived/README.md` is rewritten whole.
 
 ### Check
@@ -65,12 +65,6 @@ An index is the start marker, a blank line, its groups, a blank line and the end
 - `check` reports `ERROR <path>: index out of date`, fixable with `--fix`, for each index file whose text differs from what regeneration would write: a missing `docs/README.md`, and a missing `docs/archived/README.md` once the root has an archived doc, included.
 - For a `docs/README.md` whose first start marker has no end marker after it, `check` reports `ERROR <path>: index start marker with no end marker after it; fix the markers` in place of comparing it; `check --fix` exits as [Regeneration](#regeneration) states.
 - `check` checks the links of an index file, hand-written ones included, only while the file is up to date.
-
-## Known issues
-
-| ID | Severity | Issue | Source | Since | Next |
-|----|----------|-------|--------|-------|------|
-| D005-K1 | major | A `docs/README.md` whose first start marker has no end marker after it is not refused. With an end marker only before that start marker, `check`, `index`, `new`, `adopt`, `archive`, `rename`, `renumber` and `init` fail with an `IndexError`, all but `check` and `index` after changing other files. With no end marker, `check` reports the file out of date, and `check --fix` and the other commands append a second index; the next run replaces everything from the stray start marker through the appended index's end marker, the hand-written text between them included | as-built 765903e | 2026-10-29 | fix |
 
 ## Decisions
 
