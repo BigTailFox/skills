@@ -1,11 +1,11 @@
 ---
 status: active
 created: 2026-10-23
-updated: 2026-10-29
+updated: 2026-10-30
 revision: 1
 modules: []
 summary: Agent skills built around canon, a documentation system kept in the repository; one module, its capabilities and the designs that own them.
-refs: [D001, D002, D003, D004]
+refs: [D001, D002, D003, D004, D005]
 owns: [architecture]
 paths: []
 reviewed: 1
@@ -27,7 +27,8 @@ implemented: 1
 
 | Capability | Modules | Design |
 |---|---|---|
-| Docs that live in the repository: numbered docs with frontmatter, references, a lifecycle, archiving and an index, created, checked, queried and archived with `canon.py` | canon | none |
+| Docs that live in the repository: numbered docs with frontmatter, references, a lifecycle and archiving, created, checked, queried and archived with `canon.py` | canon | none |
+| The generated index of each docs root's docs in `docs/README.md` and `docs/archived/README.md` (`canon.py index`) | canon | [D005: Docs index](D005-docs-index.md) |
 | Change tiers and the flow each sets: design, review gate, plan, implementation, code review and docs step (`canon-design`, `canon-plan`, `canon-implement`) | canon | none |
 | The project overview, D000, with the designs `audit` finds D000 does not reach and the source areas it finds no design covers | canon | [D002: Project overview and as-built designs](D002-overview-and-as-built.md) |
 | As-built designs, and the backfill before a change to behavior no design states | canon | [D002: Project overview and as-built designs](D002-overview-and-as-built.md) |
@@ -52,7 +53,7 @@ implemented: 1
 
 | Module | Path | Purpose | Entry points | Design |
 |---|---|---|---|---|
-| canon | skills/, tests/ | The skills: `skills/governance/` builds and maintains the documentation system, `skills/execution/` does development work through it, and `tests/` holds the regression tests of `canon.py` | `skills/governance/canon/SKILL.md`, `skills/governance/canon/scripts/canon.py`, each skill's `SKILL.md` | [D001: Skill telemetry with canon trace](D001-skill-telemetry.md), [D002: Project overview and as-built designs](D002-overview-and-as-built.md), [D003: Subagents](D003-subagents.md), [D004: Project setup](D004-project-setup.md) |
+| canon | skills/, tests/ | The skills: `skills/governance/` builds and maintains the documentation system, `skills/execution/` does development work through it, and `tests/` holds the regression tests of `canon.py` | `skills/governance/canon/SKILL.md`, `skills/governance/canon/scripts/canon.py`, each skill's `SKILL.md` | [D001: Skill telemetry with canon trace](D001-skill-telemetry.md), [D002: Project overview and as-built designs](D002-overview-and-as-built.md), [D003: Subagents](D003-subagents.md), [D004: Project setup](D004-project-setup.md), [D005: Docs index](D005-docs-index.md) |
 
 ### Dependencies
 

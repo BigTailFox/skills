@@ -1,11 +1,11 @@
 ---
 status: active
 created: 2026-10-29
-updated: 2026-10-29
+updated: 2026-10-30
 revision: 3
 modules: [canon]
 summary: Project setup and upgrades with canon.py init, migration of existing docs with adopt, and the canon-init flows for setup, upgrade and new modules.
-refs: [D000, D001, D002, D003]
+refs: [D000, D001, D002, D003, D005]
 owns: [project-setup]
 paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md]
 reviewed: 3
@@ -49,7 +49,7 @@ canon.py init [--root DIR] [--script PATH] [--hook]
 - **Repository files.** `.gitattributes` gets each missing line of `**/docs/README.md merge=union` and `**/docs/archived/README.md merge=union`, and `.gitignore` gets `.canon/` unless a line already names `.canon`, with or without slashes. Both are at the repo root and are created when missing.
 - **`AGENTS.md`.** A run without `--root` writes the canon block into the repo root's `AGENTS.md`: the `## Docs` section of the template in `canon.py`, between a start and an end marker, the HTML comments `canon:agents:start` and `canon:agents:end`. The section names D000 and the index ([D002§project-overview-d000: D000](D002-overview-and-as-built.md#project-overview-d000)), and its Tool line reads ``- Tool: `python3 <copy>` from the repo root (`-h` lists commands). …``. Without `AGENTS.md`, `init` creates one holding `# AGENTS.md` and the block. Without a start marker, it appends the block; otherwise it replaces the text from the first start marker to the first end marker after it. A start marker in the repo root's `AGENTS.md` with no end marker after it makes every run, a module's included, change no file and exit with ``canon: the repo root's AGENTS.md has a canon block start marker with no end marker after it; fix the markers and rerun `init` ``.
 - A module run leaves the repo root's `AGENTS.md` alone. A module without an `AGENTS.md` gets one holding `# AGENTS.md` and a line that links the module's `docs/README.md` and says the repo root's `AGENTS.md` defines the docs rules; a module's existing `AGENTS.md` stays as it is.
-- **Docs index.** When the project's `docs/README.md` is missing, `init` creates it with an intro that names `python3 <copy> find <words>` and an `## Index` heading. Each run then regenerates every index.
+- **Docs index.** When the project's `docs/README.md` is missing, `init` creates it with an intro that names `python3 <copy> find <words>` and an `## Index` heading. Each run then regenerates every index ([D005§regeneration: regeneration](D005-docs-index.md#regeneration)).
 - **D000.** At the repo root only, as [D002§project-overview-d000: D000](D002-overview-and-as-built.md#project-overview-d000) states.
 - **`--hook`.** In a Git checkout, `init` writes the pre-commit hook at the path `git rev-parse --git-path hooks/pre-commit` prints, holding `#!/bin/sh` and `exec python3 <copy> check`, with mode 755. An existing hook stays, and `init` prints ``kept the existing pre-commit hook; add `python3 <copy> check` to it``. Outside Git, `--hook` does nothing.
 
@@ -84,12 +84,6 @@ canon.py adopt FILE TYPE [--slug SLUG] [--title TITLE] [--root DIR]
 - **Upgrade**: from the repo root, run `python3 <canon>/scripts/canon.py init`, where `<canon>` is the `canon` skill's directory; when it exits because of the copy's path, ask the user for one and rerun with `--script <path>`. Then run `check --fix`, and fix what the new version still reports apart from D000's guidance. `--fix` gives `implemented: 1` only to an active design never revised and without an open plan; every other active design gets the revision its code fully implements, found by comparing the code with each revision of its spec in the Git history, or the open plan's `based_on`. A plan in progress whose `reviewed` is below its `revision` passes the review gate before its slices continue. When `init` moved the design owning `architecture` to D000, commit its output as it is before anything else, so Git keeps the rename, with `--no-verify` when a pre-commit hook runs `check`, since the guidance `init` appended fails `check` until the D000 work replaces it. A project that had no D000 then continues as [D002§setup: setup](D002-overview-and-as-built.md#setup) states.
 - **Add a module**: run `python3 <copy> init --root <module> --script <copy>`, then add or update the module's row in D000's Modules table, linking the designs in the module's docs root.
 - `canon-sync`'s audit compares the copy's `--version` with that of the `canon` skill's `scripts/canon.py`. An older copy is upgraded as above; a copy of the same version with other content is shown to the user as a diff before it is replaced, since it may hold local edits.
-
-## Known issues
-
-| ID | Severity | Issue | Source | Since | Next |
-|----|----------|-------|--------|-------|------|
-| D004-K5 | major | The index markers of a `docs/README.md` have the defect the canon block's markers had before `CANON_VERSION` 23: with an end marker before the start marker and none after it, `check`, `index`, `new`, `adopt`, `archive`, `rename`, `renumber` and `init` fail with an `IndexError`, all but `check` and `index` after changing other files; with no end marker, they append a second index, and the next run deletes the text between the stray start marker and it. No design owns the indexes, so the fix needs one | code review 8dd8d6c | 2026-10-29 | L2 |
 
 ## Decisions
 
