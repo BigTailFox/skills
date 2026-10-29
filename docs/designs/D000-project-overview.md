@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-10-23
-updated: 2026-10-23
+updated: 2026-10-29
 revision: 1
 modules: []
 summary: Agent skills built around canon, a documentation system kept in the repository; one module, its capabilities and the designs that own them.
@@ -73,12 +73,6 @@ The module and the repository tooling share these terms. The Skill rules of [AGE
 - **Manual skill**: a skill that runs only as a command. An **auto skill** also loads when the context calls for it. The README's Skills tables give each skill's trigger mode.
 - **Ported skill**: a skill adapted from [mattpocock/skills](https://github.com/mattpocock/skills), whose directory holds the upstream `LICENSE` and a `NOTICE`.
 - **`CANON_VERSION`**: the decimal integer, written as a string, that `canon.py` carries and `init` compares with a project's copy to decide whether to replace it.
-
-## Known issues
-
-| ID | Severity | Issue | Source | Since | Next |
-|----|----------|-------|--------|-------|------|
-| D000-K1 | minor | `canon-sync`'s Audit step 1 and `canon-init`'s Upgrade and Add a module take `scripts/canon.py` for the project's copy instead of the path `AGENTS.md` names: in a project set up with `init --script`, such as this one, Audit step 1 reads a missing file and Upgrade, run without `--script`, copies `canon.py` to `scripts/canon.py` and points `AGENTS.md` there | as-built 80979959e860 | 2026-10-23 | fix |
 
 ## Decisions
 

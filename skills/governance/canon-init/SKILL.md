@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Canon init
 
-Read the `canon` skill first; it defines the system. Until the project has its own copy, run `scripts/canon.py` from the `canon` skill directory, written below as `<canon>/scripts/canon.py`.
+Read the `canon` skill first; it defines the system. Until the project has its own copy, run `scripts/canon.py` from the `canon` skill directory, written below as `<canon>/scripts/canon.py`. In a project already set up, `<copy>` is the copy the canon block of `AGENTS.md` names; pass `--script <copy>` to every `init`, which otherwise copies `canon.py` to `scripts/canon.py` and names that path in the files it writes.
 
 ## Set up a project
 
@@ -40,7 +40,7 @@ Without another family, skip this; reviews then use the manual fallback.
 
 ## Upgrade
 
-From the repo root run `python3 <canon>/scripts/canon.py init`. It replaces an older `scripts/canon.py` (by `CANON_VERSION`), refreshes the `AGENTS.md` block between its markers and gives a project without D000 one, as below; everything else is kept. Then run `check --fix` and fix what the new version still reports, apart from D000's guidance, which the D000 work below replaces. `--fix` gives `implemented: 1` only to an active design never revised and without an open plan; give any other active design the revision its code fully implements, found by comparing the code with each revision of the spec in the git history, and the open plan's `based_on` when there is one. A plan in progress whose `reviewed` is below its `revision` passes the review gate before its slices continue.
+From the repo root run `python3 <canon>/scripts/canon.py init --script <copy>`. It replaces an older `<copy>` (by `CANON_VERSION`), refreshes the `AGENTS.md` block between its markers and gives a project without D000 one, as below; everything else is kept. Then run `check --fix` and fix what the new version still reports, apart from D000's guidance, which the D000 work below replaces. `--fix` gives `implemented: 1` only to an active design never revised and without an open plan; give any other active design the revision its code fully implements, found by comparing the code with each revision of the spec in the git history, and the open plan's `based_on` when there is one. A plan in progress whose `reviewed` is below its `revision` passes the review gate before its slices continue.
 
 When the project had no D000, `init` prints how it got one:
 
@@ -50,4 +50,4 @@ When the project had no D000, `init` prints how it got one:
 
 ## Add a module
 
-Run `python3 scripts/canon.py init --root <module>`, then add the module's row to D000's Modules table, or update the row it has, linking the designs in the module's docs root.
+Run `python3 <copy> init --root <module> --script <copy>`, then add the module's row to D000's Modules table, or update the row it has, linking the designs in the module's docs root.
