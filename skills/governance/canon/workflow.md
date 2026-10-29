@@ -58,7 +58,7 @@ Target: {path}
 Changes since: {commit} (review what changed; read the rest for context)
 As-built: {the target | what this revision adds} records {the code at {commit}, read with `git show {commit}:<path>` since the work tree may hold a later change | the files as they are} and specifies no change to it.
 
-Read the target, the docs it links to, and the code it governs. Do not read `.canon/`. Do not modify any file.
+Read the target, the docs it links to, and the code it governs. Do not read `.canon/`. Do not modify any file or write scratch files; read long command output in parts instead.
 
 Assess:
 - Correctness and feasibility against {the current code | the code it records}.

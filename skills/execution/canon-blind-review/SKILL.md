@@ -5,7 +5,7 @@ description: Runs blind reviews with fresh reviewers. Use for the canon review g
 
 # Blind review
 
-A reviewer is **blind** when its only input is the prompt. It never sees the conversation, a summary of it, the author's reasoning, worries or expected verdict. The prompt names files in the repository and the reviewer reads them itself. Reviewers never modify files.
+A reviewer is **blind** when its only input is the prompt. It never sees the conversation, a summary of it, the author's reasoning, worries or expected verdict. The prompt names files in the repository and the reviewer reads them itself. Reviewers never modify files or write scratch files.
 
 ## Prompt
 
@@ -17,7 +17,7 @@ You are reviewing {artifact} in this repository with no prior context. Judge it 
 
 Target: {paths, or the diff command}
 
-Read the target and whatever it links to or depends on. Do not read `.canon/`. Do not modify any file.
+Read the target and whatever it links to or depends on. Do not read `.canon/`. Do not modify any file or write scratch files; read long command output in parts instead.
 
 Assess:
 - {criterion, e.g. correctness against the code it describes}
@@ -44,13 +44,15 @@ End with one line: Verdict: approve | revise
 
 The review gate and code review say when the cross-family reviewer runs; other reviews run the same-model reviewer, plus the cross-family reviewer when the user asks for another family.
 
-Launch all first-round reviewers in parallel. Each is a new agent, never a fork of the current session. Keep each reviewer's files in `.canon/canon-blind-review/<topic>/` (topic: the doc id or change under review), named by its role, `same-model` or `cross-family`: its prompt in `<role>-prompt.md`, its findings in `<role>.md` and its agent or session id in `<role>-id.txt`. The confirmation round needs them. On every route the prompt is what forbids modifying files. A reviewer whose run stops before it reports gets one more run, as the `canon` skill's workflow (Subagents) says; when a same-model reviewer's run stops twice, the review waits for the user.
+Launch all first-round reviewers in parallel. Each is a new agent, never a fork of the current session. Keep each reviewer's files in `.canon/canon-blind-review/<topic>/` (topic: the doc id or change under review), named by its role, `same-model` or `cross-family`: its prompt in `<role>-prompt.md`, its findings in `<role>.md` and its agent or session id in `<role>-id.txt`. Before launching them, take the **reviewed copies**: copy each existing file under review, meaning the target's paths or the files its diff and untracked list name, to `reviewed/<path>` in that directory. The confirmation round needs all of these files. On every route the prompt is what keeps reviewers from modifying files, writing scratch files and reading `.canon/`. A reviewer whose run stops before it reports gets one more run, as the `canon` skill's workflow (Subagents) says; when a same-model reviewer's run stops twice, the review waits for the user.
 
 ## Manual fallback
 
 When the reviewer file is missing or names no reviewer of another family than yours, or when the cross-family reviewer's first-round run stops twice (the `canon` skill's workflow, Subagents), tell the user why in one line (`/canon-init` sets up a missing reviewer), give them the filled prompt in one code block and say that any tool able to read the repository can run it. Wait for the pasted result. Record the reviewer as `manual:<model>`, and keep its prompt and result as the `cross-family` reviewer's files, without an id.
 
 ## Merge
+
+Before a fix first edits a file that has no reviewed copy from this review, copy it to `reviewed/<path>` too, overwriting any copy an earlier review left.
 
 For the review gate, follow its merge rules in the `canon` skill. Otherwise merge the findings: accept and fix, decline with a one-line reason for the user, or escalate to the user. A finding raised by two reviewers is accepted unless it is clearly wrong.
 
@@ -59,11 +61,12 @@ For the review gate, follow its merge rules in the `canon` skill. Otherwise merg
 After the author fixes accepted blocker or major findings, the reviewers that raised them confirm the fixes in one round. Send only this prompt, never the author's reasoning:
 
 ```text
-The author revised the target after your review. Fixed findings: {F-ids, each with the location of its fix}. Diff since your review: {diff command}.
-For each listed finding, answer resolved or not resolved, citing the location that shows it. Then report any new blocker the diff introduces. Do not modify any file.
+The author revised the target after your review. Fixed findings: {F-ids, each with the location of its fix}. Diff since your review: {diff commands}. They read the reviewed copies in `.canon/`; read nothing else there.
+For each listed finding, answer resolved or not resolved, citing the location that shows it. Then report any new blocker the diff introduces. Do not modify any file or write scratch files; read long command output in parts instead.
 End with one line: Verdict: approve | revise
 ```
 
+- The diff commands are `git diff --no-index -- .canon/canon-blind-review/<topic>/reviewed/<path> <path>`, one for each file the fixes touched, with `/dev/null` for the side missing when a fix created or deleted the file.
 - Resume each reviewer by its kept id, as the `canon` skill's workflow (Subagents) says, so it judges the fixes against its own findings.
 - A cross-family reviewer that runs as a command, and a reviewer that cannot be resumed, gets a new run of the same reviewer instead, given the confirmation prompt followed by its first-round findings.
 - Findings from a manual-fallback reviewer, and those of a cross-family reviewer whose confirmation run stops twice, go to the resumed same-model reviewer, given the confirmation prompt followed by those findings, named `cross-family:F<n>`; in a code review, each goes to the resumed reviewer of its axis. The user relays nothing a second time.

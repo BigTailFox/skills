@@ -10,7 +10,7 @@ owns: [subagents]
 paths: [skills/governance/canon/workflow.md, skills/execution/canon-blind-review/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/governance/canon-init/SKILL.md, skills/execution/canon-plan/SKILL.md]
 reviewed: 3
 reviewers: [claude-opus-5.5]
-implemented: 2
+implemented: 3
 ---
 
 # D003: Subagents
