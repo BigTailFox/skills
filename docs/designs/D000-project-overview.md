@@ -59,7 +59,7 @@ implemented: 1
 There is one module, so no direction between modules applies. These hold inside it and at its edges:
 
 - Skills refer to each other by name, never by a relative path across skill directories, since `npx skills` installs them flat by name.
-- A skill runs the project's copy of `canon.py` at the path the canon block of the project's `AGENTS.md` names, and the `canon` skill's own `scripts/canon.py` while the project has no copy. `init` puts the copy where [D004§init: init](D004-project-setup.md#init) states.
+- A skill runs the project's copy of `canon.py` at the path the canon block of the repo root's `AGENTS.md` names, and the `canon` skill's own `scripts/canon.py` while the project has no copy. `init` puts the copy where [D004§init: init](D004-project-setup.md#init) states.
 - Execution skills read and write project docs only through the documentation system the governance skills define.
 - `canon.py` is a single file on the Python 3.8+ standard library, and runs `git` in a Git checkout.
 - The repository tooling, `scripts/validate.py`, checks each skill's layout, frontmatter, length and links, the links of the root's Markdown files, the Skills tables of `README.md` and `CANON_VERSION`, and runs `tests/`. Nothing in the module depends on it.
