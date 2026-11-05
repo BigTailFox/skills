@@ -28,7 +28,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "27"
+CANON_VERSION = "28"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -3311,35 +3311,39 @@ def main(argv=None):
     parser.add_argument("--version", action="version", version="canon " + CANON_VERSION)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("check", help="validate all docs; exit 1 on errors")
+    def command(actions, name, help):
+        return actions.add_parser(name, help=help, description=help)
+
+    p = command(sub, "check", help="validate all docs; exit 1 on errors")
     p.add_argument("--fix", action="store_true",
                    help="apply mechanical fixes (refs, updated, implemented, as_built, indexes)")
     p.add_argument("--base", help="also check this branch against a ref, e.g. origin/main: deleted docs, id "
                                   "collisions, revisions pending review and unfinished docs fail")
     p.set_defaults(func=cmd_check)
 
-    p = sub.add_parser("new", help="create a doc from its template with the next free id")
+    p = command(sub, "new", help="create a doc from its template with the next free id")
     p.add_argument("type", help="C D P R E I (or concept, design, plan, ...)")
     p.add_argument("slug", help="kebab-case file slug")
-    p.add_argument("--title")
+    p.add_argument("--title", help="title (default: the slug with spaces, capitalized)")
     p.add_argument("--root", help="project directory (with AGENTS.md); default: nearest to cwd")
     p.add_argument("--parent", help="top-level design to split, creates D00XA, D00XB, ...")
     p.add_argument("--from", dest="design", help="design a plan implements; fills based_on")
     p.set_defaults(func=cmd_new)
 
-    p = sub.add_parser("archive", help="set a terminal status, move to archived/, rewrite links")
+    p = command(sub, "archive", help="set a terminal status, move to archived/, rewrite links")
     p.add_argument("id")
-    p.add_argument("status")
+    p.add_argument("status", help="; ".join("{}: {}".format(letter, ", ".join(info["terminal"]))
+                                            for letter, info in TYPES.items()))
     p.set_defaults(func=cmd_archive)
 
-    p = sub.add_parser("init", help="set up canon in a repo or module (idempotent; also upgrades the script copy)")
+    p = command(sub, "init", help="set up canon in a repo or module (idempotent; also upgrades the script copy)")
     p.add_argument("--root", help="module directory to set up (default: repo root)")
     p.add_argument("--script", help="where to copy canon.py, relative to the repo root (default: the path the canon "
                                     "block of the repo root's AGENTS.md names, else scripts/canon.py)")
     p.add_argument("--hook", action="store_true", help="install a git pre-commit hook running `check`")
     p.set_defaults(func=cmd_init)
 
-    p = sub.add_parser("adopt", help="turn an existing markdown file into a canon doc, keeping history and links")
+    p = command(sub, "adopt", help="turn an existing markdown file into a canon doc, keeping history and links")
     p.add_argument("file")
     p.add_argument("type", help="C D P R E I (or concept, design, plan, ...)")
     p.add_argument("--slug", help="kebab-case slug (default: from the file name)")
@@ -3347,51 +3351,55 @@ def main(argv=None):
     p.add_argument("--root", help="project directory (default: nearest AGENTS.md above the file)")
     p.set_defaults(func=cmd_adopt)
 
-    p = sub.add_parser("rename", help="change a doc's file slug and rewrite every link to it")
+    p = command(sub, "rename", help="change a doc's file slug and rewrite every link to it")
     p.add_argument("id")
-    p.add_argument("slug")
+    p.add_argument("slug", help="new kebab-case file slug")
     p.set_defaults(func=cmd_rename)
 
-    p = sub.add_parser("renumber", help="give a doc a new id, or a sub-design a new letter, and rewrite the links "
-                                        "and references to it")
+    p = command(sub, "renumber", help="give a doc a new id, which its sub-designs follow, or a sub-design a new "
+                                      "letter, and rewrite the links and references to them; only when `check` asks "
+                                      "for it, for an id collision or a D000 in a module's docs")
     p.add_argument("target", help="doc id, or its path when the id is duplicated")
     p.add_argument("new", nargs="?", help="new id (default: next free)")
     p.add_argument("--base", help="the branch merged or rebased onto, e.g. origin/main: its ids stay taken, and "
                                   "what exists there belongs to the doc that exists there")
     p.set_defaults(func=cmd_renumber)
 
-    p = sub.add_parser("index", help="regenerate docs/README.md and docs/archived/README.md indexes")
+    p = command(sub, "index", help="regenerate docs/README.md and docs/archived/README.md indexes")
     p.set_defaults(func=cmd_index)
 
-    p = sub.add_parser("show", help="print a doc's outline, or one section with ID#slug")
-    p.add_argument("ref")
+    p = command(sub, "show", help="print a doc's outline, or one section with ID#slug")
+    p.add_argument("ref", help="a doc id such as D003, or D003#slug for the section whose heading has that slug")
     p.set_defaults(func=cmd_show)
 
-    p = sub.add_parser("find", help="search ids, titles, summaries, owns, modules and headings")
+    p = command(sub, "find", help="search ids, titles, summaries, owns, modules and headings")
     p.add_argument("words", nargs="+")
     p.add_argument("--archived", action="store_true", help="include archived docs")
     p.set_defaults(func=cmd_find)
 
-    p = sub.add_parser("which", help="list the designs whose `paths` govern the given files")
+    p = command(sub, "which", help="list the designs whose `paths` govern the given files; `doc` for a project "
+                                   "doc no `paths` entry names exactly, `no design` for other files")
     p.add_argument("files", nargs="+")
     p.set_defaults(func=cmd_which)
 
-    p = sub.add_parser("affected", help="designs and plans governing changed files (default: uncommitted)")
-    p.add_argument("files", nargs="*")
-    p.add_argument("--base", help="include changes since the merge base with this ref")
+    p = command(sub, "affected", help="designs and plans governing changed files (default: uncommitted)")
+    p.add_argument("files", nargs="*", help="files to check instead of the changed ones")
+    p.add_argument("--base", help="include changes since the merge base with this ref; ignored with files")
     p.set_defaults(func=cmd_affected)
 
-    p = sub.add_parser("audit", help="report designs with unchecked code commits, known issues, idle open docs, due "
-                                     "reviews, source areas no design covers, and designs D000 does not reach")
-    p.add_argument("--days", type=int, default=30, help="idle threshold (default 30)")
+    p = command(sub, "audit", help="report designs with unchecked code commits, known issues, idle open docs, due "
+                                   "reviews, source areas no design covers, and designs D000 does not reach")
+    p.add_argument("--days", type=int, default=30,
+                   help="days without an update before an open doc other than a concept or active design is idle "
+                        "(default 30)")
     p.add_argument("--review-after", type=int, default=5, help="finished plans before a review is due (default 5)")
     p.add_argument("--review-commits", type=int, default=50,
                    help="code commits before a review is due (default 50)")
     p.set_defaults(func=cmd_audit)
 
-    p = sub.add_parser("trace", help="record canon workflow units for skill telemetry; off unless `trace on` ran")
+    p = command(sub, "trace", help="record canon workflow units for skill telemetry; off unless `trace on` ran")
     actions = p.add_subparsers(dest="action", required=True)
-    t = actions.add_parser("start", help="start a unit and print `trace <id>`")
+    t = command(actions, "start", help="start a unit and print `trace <id>`")
     t.add_argument("kind", choices=TRACE_KINDS)
     t.add_argument("docs", nargs="*", metavar="DOC", help="ids of the docs the unit works on")
     t.add_argument("--parent", metavar="UNIT", help="id of the open unit this one runs inside")
@@ -3402,30 +3410,34 @@ def main(argv=None):
     t.add_argument("--skill", metavar="DIR", help="directory of the SKILL.md being followed")
     t.add_argument("--model", metavar="ID", help="the session's model id")
     t.set_defaults(func=trace_start)
-    t = actions.add_parser("end", help="end an open unit")
+    t = command(actions, "end", help="end an open unit; a slice ends with its commit or the next start under its "
+                                     "implement unit instead")
     t.add_argument("unit")
-    t.add_argument("outcome")
+    t.add_argument("outcome", help="; ".join("{}: {}".format(kinds, ", ".join(outcomes)) for kinds, outcomes in
+                                             [("other kinds", OUTCOMES)] + list(KIND_OUTCOMES.items())))
     t.add_argument("--to", choices=("L1", "L2", "plan"), help="the tier or plan an escalated unit needs")
     t.add_argument("--dir", metavar="DIR", help="directory under .canon/ whose files changed since the unit started "
                                                 "are archived with it")
     t.add_argument("--input", metavar="FILE|-", help="a gate's or code review's dispositions as JSON, from FILE or "
                                                      "from stdin for -")
     t.set_defaults(func=trace_end)
-    t = actions.add_parser("status", help="say whether tracing is on and why, and list the open units")
+    t = command(actions, "status", help="say whether tracing is on and why, and list the open units")
     t.set_defaults(func=trace_status)
-    t = actions.add_parser("on", help="turn tracing on for this machine; --here deletes this checkout's off file")
-    t.add_argument("--here", action="store_true")
+    t = command(actions, "on", help="turn tracing on for this machine; --here deletes this checkout's off file")
+    t.add_argument("--here", action="store_true",
+                   help="only delete this checkout's off file; the machine switch stays as it is")
     t.set_defaults(func=trace_switch)
-    t = actions.add_parser("off", help="turn tracing off for this machine; --here opts this checkout out")
-    t.add_argument("--here", action="store_true")
+    t = command(actions, "off", help="turn tracing off for this machine; --here opts this checkout out")
+    t.add_argument("--here", action="store_true",
+                   help="only write this checkout's off file, opting it out; the machine switch stays as it is")
     t.set_defaults(func=trace_switch)
-    t = actions.add_parser("prune", help="delete the snapshots and archives of units started more than N days ago, "
-                                         "tracing on or off")
+    t = command(actions, "prune", help="delete the snapshots and archives of units started more than N days ago, "
+                                       "tracing on or off")
     t.add_argument("--days", type=day_count, required=True, metavar="N")
     t.set_defaults(func=trace_prune)
 
-    sub.add_parser("snapshot", help="record the work tree, untracked files included, for a review's confirmation diff "
-                                    "and print the snapshot commit; exit 1 when none was recorded")
+    command(sub, "snapshot", help="record the work tree, untracked files included, for a review's confirmation diff "
+                                  "and print the snapshot commit; exit 1 when none was recorded")
 
     args = parser.parse_args(argv)
     if args.command == "trace":

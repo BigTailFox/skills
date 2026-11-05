@@ -17,13 +17,13 @@ Execute `canon.py`; do not read it. Use the project's copy at the path named in 
 | `new TYPE SLUG [--title T] [--from D00X] [--parent D00X] [--root DIR]` | Create a doc from its template with the next free id. `--from` links a plan to its design; `--parent` creates a sub-design. |
 | `archive ID STATUS` | Set a terminal status, move the doc to `archived/`, rewrite every link to it. Refuses D000. |
 | `rename ID SLUG` | Change a doc's file slug and rewrite every link to it. |
-| `renumber ID\|PATH --base REF` | Give a doc a new id, or a sub-design a new letter, and rewrite the links and references to it. Only for collisions reported by `check`; REF is the branch merged or rebased onto. |
+| `renumber ID\|PATH [NEW] [--base REF]` | Give a doc a new id, NEW or the next free one, which its sub-designs follow, or a sub-design a new letter, and rewrite the links and references to them. Only when `check` asks for it: for an id collision, with REF the branch merged or rebased onto, or for a D000 in a module's docs. |
 | `index` | Regenerate the indexes in `docs/README.md` and `docs/archived/README.md`. |
 | `show ID` / `show ID#slug` | Print a doc's frontmatter and outline, or one section. |
 | `find WORDS [--archived]` | Search ids, titles, summaries, owned topics, modules and headings. |
-| `which FILE...` | List the designs whose `paths` govern the files, or `doc` for a [project doc](#layout) that no `paths` entry names exactly. |
-| `affected [--base REF]` | Designs and plans governing the uncommitted (or branch) changes. |
-| `audit` | Designs with code commits since the design last changed that no `Refs:` trailer names, known issues oldest first, idle open docs other than concepts, due reviews, source areas under D000's module Paths that no design covers, ranked by commits in the last 90 days, and designs D000 does not reach by following `refs` from design to design. |
+| `which FILE...` | List the designs whose `paths` govern the files, `doc` for a [project doc](#layout) that no `paths` entry names exactly, and `no design` for any other file. |
+| `affected [FILE...] [--base REF]` | Designs and plans governing the given files, else the uncommitted changes plus, with `--base`, the branch's. |
+| `audit` | Designs with code commits since the design last changed that no `Refs:` trailer names, known issues oldest first, idle open docs other than concepts and active designs, due reviews, source areas under D000's module Paths that no design covers, ranked by commits in the last 90 days, and designs D000 does not reach by following `refs` from design to design. |
 | `snapshot` | Record the work tree, untracked files included, and print the snapshot commit, for a review's confirmation diff (the `canon-blind-review` skill). |
 | `init`, `adopt` | Project setup, upgrades and migration; the user runs them through the `canon-init` skill. |
 

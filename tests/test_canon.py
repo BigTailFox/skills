@@ -1102,6 +1102,24 @@ class WhichTest(CanonTest):
         self.assertEqual(lines[1:], ["src/base.py: no design", "mod/README.md: doc"])
 
 
+class HelpTest(CanonTest):
+    def help(self, *command):
+        result = subprocess.run([sys.executable, "-B", str(SCRIPT), *command, "-h"], cwd=self.root,
+                                env=dict(os.environ, COLUMNS="200"), capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return " ".join(result.stdout.split())
+
+    def test_a_commands_help_says_what_it_does_and_which_values_it_accepts(self):
+        archive = self.help("archive")
+        for letter, info in canon.TYPES.items():
+            self.assertIn("{}: {}".format(letter, ", ".join(info["terminal"])), archive)
+        end = self.help("trace", "end")
+        for kinds, outcomes in [("other kinds", canon.OUTCOMES)] + list(canon.KIND_OUTCOMES.items()):
+            self.assertIn("{}: {}".format(kinds, ", ".join(outcomes)), end)
+        self.assertIn("`no design` for other files", self.help("which"))
+        self.assertIn("only when `check` asks for it", self.help("renumber"))
+
+
 class ProjectDocsTest(CanonTest):
     """READMEs, AGENTS.md and the other project docs, and the files under a docs root, are docs, never code."""
     DOCS = ["README.md", "src/a/readme.rst", "AGENTS.md", "CLAUDE.md", "LICENSE", "NOTICE", "CHANGELOG.md",
