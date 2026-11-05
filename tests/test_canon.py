@@ -1937,6 +1937,39 @@ class SnapshotTest(TraceCase):
         for ref in ("no-such-ref", "--git-dir=x"):
             self.rejects("start", "code-review", "--base=" + ref)
 
+    def test_an_as_built_gate_gets_the_recorded_commits_tree_as_the_snapshots_second_parent(self):
+        design = self.design("area")
+        self.commit()
+        moved_past = self.git("rev-parse", "HEAD")
+        self.git("checkout", "-qb", "side")
+        (self.root / "src/base.py").write_text("value = 3\n")
+        self.git("commit", "-qam", "left out by a rebase")
+        left_out = self.git("rev-parse", "HEAD")
+        self.git("checkout", "-q", "main")
+        self.git("branch", "-qD", "side")
+        (self.root / "src/base.py").write_text("value = 2\n")
+        self.git("commit", "-qam", "HEAD moves on")
+        for recorded, value in ((moved_past, "value = 1"), (left_out, "value = 3")):
+            self.set(design, revision=2, as_built=recorded[:7])
+            snapshot = self.start_line("gate", "D001", "--tier", "L1", "--base", "HEAD")["snapshot"]
+            self.assertEqual(self.snap("show", snapshot + "^2:src/base.py"), value)
+            self.assertEqual(self.snap("rev-parse", snapshot + "^2^{tree}"), self.git("rev-parse", recorded + "^{tree}"))
+            self.assertEqual(self.snap("rev-list", "--count", snapshot + "^2"), "1")
+            self.assertEqual(self.snap("diff", "--name-only", snapshot + "^", snapshot), design.relative_to(self.root)
+                             .as_posix())
+        head = self.git("rev-parse", "HEAD")
+        self.set(design, as_built=head[:7])
+        snapshot = self.start_line("gate", "D001", "--tier", "L1")["snapshot"]
+        self.assertEqual([self.snap("rev-parse", snapshot + rev) for rev in ("^1^{tree}", "^2^{tree}")],
+                         [self.git("rev-parse", "HEAD^{tree}")] * 2)
+        snapshot = self.start_line("code-review", "D001", "--base", "HEAD")["snapshot"]
+        self.assertEqual(len(self.snap("rev-list", "--parents", "-n", "1", snapshot).split()), 2)
+        self.git("branch", "deadbee", moved_past)
+        for value in ("worktree", "0123456", "deadbee"):
+            self.set(design, as_built=value)
+            snapshot = self.start_line("gate", "D001", "--tier", "L1", "--base", "HEAD")["snapshot"]
+            self.assertEqual(len(self.snap("rev-list", "--parents", "-n", "1", snapshot).split()), 2, value)
+
     def test_a_snapshot_adds_only_the_objects_its_repository_lacks(self):
         (self.root / "src/deep").mkdir()
         for name in ("src/deep/one.txt", "src/deep/two.txt", "src/three.txt"):

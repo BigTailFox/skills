@@ -38,17 +38,17 @@ Each angle's report, with locations, evidence and suggestions, is attached: [arc
 | R001-F11 | minor | architecture: Uncovered contracts other skills execute (grill triage, tdd, `smells.md`, `writing.md`, skill layout) need designs first | moved C001 |
 | R001-F12 | minor | architecture: One doc type's rules are spread across many places in `canon.py` | moved C001 |
 | R001-F13 | major | usability: Auto skills fire in projects without canon, and `canon.py new` then writes canon docs there | moved C001 |
-| R001-F14 | major | usability: `init --hook` crashes in the agent sandbox and its hook blocks setup's own step-4 commit | open |
-| R001-F15 | major | usability: A Claude Code project with an existing `CLAUDE.md` never imports the canon block | open |
-| R001-F16 | minor | usability: `/canon-init` has no rule for which flow to run | open |
+| R001-F14 | major | usability: `init --hook` crashes in the agent sandbox and its hook blocks setup's own step-4 commit | fixed 116798a |
+| R001-F15 | major | usability: A Claude Code project with an existing `CLAUDE.md` never imports the canon block | fixed 116798a |
+| R001-F16 | minor | usability: `/canon-init` has no rule for which flow to run | fixed 116798a |
 | R001-F17 | minor | usability: Several `canon.py` error messages do not name the value or the next step | moved C001 |
 | R001-F18 | minor | usability: `--base` errors do not say whether the ref is missing or the history shallow | moved C001 |
 | R001-F19 | minor | usability: `which` answers confidently for paths that do not exist | moved C001 |
 | R001-F20 | minor | usability: Phase-closing commands use the `/skill` form, which Codex does not accept | open |
-| R001-F21 | minor | usability: The canon block does not say where to get the skills | open |
+| R001-F21 | minor | usability: The canon block does not say where to get the skills | fixed 116798a |
 | R001-F22 | minor | usability: The README states no requirements (Python 3.8+, Git) | open |
 | R001-F23 | minor | usability: `-h` texts are thin, and `renumber` runs without a collision | open |
-| R001-F24 | minor | usability: `init --root` with a typo silently creates a module | open |
+| R001-F24 | minor | usability: `init --root` with a typo silently creates a module | fixed 116798a |
 | R001-F25 | minor | usability: `canon-retro`'s closing-step trigger sits past the 190-character cut | open |
 | R001-F26 | major | functional: D001 revision 6 (as-built gate snapshots) is not implemented and no plan carries it | open |
 | R001-F27 | major | functional: Tests that expect a directory outside Git write docs into whatever repo holds `TMPDIR` | fixed eb76e61 |

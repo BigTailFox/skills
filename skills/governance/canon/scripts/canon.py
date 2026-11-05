@@ -28,7 +28,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "26"
+CANON_VERSION = "27"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -270,9 +270,9 @@ def path_id(rel):
     return None
 
 
-def git(cwd, *args):
+def git(cwd, *args, env=None):
     try:
-        result = subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True)
+        result = subprocess.run(["git", *args], cwd=str(cwd), env=env, capture_output=True, text=True)
     except FileNotFoundError:
         return None
     return result.stdout if result.returncode == 0 else None
@@ -1176,13 +1176,19 @@ def check_doc(repo, doc, changed, strict=False):
         err("content changed but `updated` was not bumped", fix=(doc, "updated", today()))
 
 
+def commit_name(root, value, env=None):
+    """The full name of the commit that `value` names when it is the hex object name of exactly one commit, full or
+    of at least 7 digits; else None. A ref such as HEAD or a branch names none, even one named like a hash, since it
+    moves once the change commits."""
+    if not isinstance(value, str) or not HEX_NAME_RE.match(value):
+        return None
+    objects = (git(root, "rev-parse", "--disambiguate=" + value, env=env) or "").split()
+    commits = [name for name in objects if (git(root, "cat-file", "-t", name, env=env) or "").strip() == "commit"]
+    return commits[0] if len(commits) == 1 else None
+
+
 def names_commit(repo, value):
-    """Whether `value` is the hex object name of exactly one commit, full or of at least 7 digits; a ref such as HEAD
-    or a branch names none, even one named like a hash, since it moves once the change commits."""
-    if not HEX_NAME_RE.match(value):
-        return False
-    objects = (git(repo.root, "rev-parse", "--disambiguate=" + value) or "").split()
-    return sum((git(repo.root, "cat-file", "-t", name) or "").strip() == "commit" for name in objects) == 1
+    return commit_name(repo.root, value) is not None
 
 
 def owned_architecture(repo, commit, rel):
@@ -2391,9 +2397,9 @@ def trace_state(root):
     return True, "trace on: the machine switch {} exists and this checkout has no {}".format(switch, off)
 
 
-def trace_docs(root, is_git, names):
-    """Each doc id as `<id>@r<revision>`, from the doc in docs/ or docs/archived/ at `root`, else in any docs/
-    directory Git lists; a name that finds no doc stays as given."""
+def trace_doc_paths(root, is_git, names):
+    """The file of each doc id that finds one: the doc in docs/ or docs/archived/ at `root`, else in any docs/
+    directory Git lists."""
     paths, missing = {}, []
     for name in dict.fromkeys(names):
         category = TYPES[name[0]]["dir"]
@@ -2413,17 +2419,34 @@ def trace_docs(root, is_git, names):
             doc_id = path_id(rel)
             if doc_id in missing and doc_id not in paths and rel.split("/")[-2] == TYPES[doc_id[0]]["dir"]:
                 paths[doc_id] = root / rel
+    return paths
+
+
+def trace_docs(names, paths):
+    """Each doc id as `<id>@r<revision>`, from its file in `paths`; a name without a file or revision stays as
+    given."""
     revisions = {name: doc_revision(path) for name, path in paths.items()}
     return ["{}@r{}".format(name, revisions[name]) if revisions.get(name) else name for name in names]
 
 
-def doc_revision(path):
-    """The `revision` in a doc file's frontmatter; None when it has none or the file cannot be read."""
+def doc_field(path, key):
+    """Field `key` of a doc file's frontmatter; None when it has none or the file cannot be read."""
     try:
-        revision = (parse_frontmatter(path.read_text(encoding="utf-8").split("\n"))[0] or {}).get("revision")
+        return (parse_frontmatter(path.read_text(encoding="utf-8").split("\n"))[0] or {}).get(key)
     except (OSError, ValueError):
         return None
+
+
+def doc_revision(path):
+    """The `revision` in a doc file's frontmatter; None when it has none or the file cannot be read."""
+    revision = doc_field(path, "revision")
     return revision if isinstance(revision, int) else None
+
+
+def as_built_commit(root, path):
+    """The full name of the commit that the `as_built` field of the doc at `path` names; None when the field names
+    none, as `worktree` does (D002#as-built-revisions)."""
+    return commit_name(root, doc_field(path, "as_built"), env=trace_env())
 
 
 def trace_host():
@@ -2670,11 +2693,11 @@ def changes_size(root, status):
     return total
 
 
-def take_snapshot(root, trace_dir, unit, parent, namespace="trace", borrow=False):
+def take_snapshot(root, trace_dir, unit, parent, namespace="trace", borrow=False, as_built=None):
     """Record the work tree at refs/<namespace>/<unit> in the snapshot repository, as a commit whose parent holds the
-    tree of commit `parent`, or that has no parent when `parent` is None (D001#snapshots); return the snapshot commit.
-    With `borrow`, the repository reads the project's objects through its alternates instead of copying them
-    (D003#review-snapshots)."""
+    tree of commit `parent`, or that has no parent when `parent` is None (D001#snapshots); with a `parent`, the tree
+    of commit `as_built` is its second parent. Return the snapshot commit. With `borrow`, the repository reads the
+    project's objects through its alternates instead of copying them (D003#review-snapshots)."""
     env = trace_env(**SNAPSHOT_IDENTITY)
     status = trace_git(root, env, "status", "--porcelain", "-z", "--untracked-files=all")
     if changes_size(root, status) > MAX_CHANGES:
@@ -2692,11 +2715,13 @@ def take_snapshot(root, trace_dir, unit, parent, namespace="trace", borrow=False
                      GIT_ALTERNATE_OBJECT_DIRECTORIES=objects)
         trace_git(root, steps, "add", "-A")
         tree = trace_git(root, steps, "write-tree").decode().strip()
+        sources = [(parent, "base"), (as_built, "as-built")] if parent else []
         parents = []
-        if parent:
-            base = trace_git(root, steps, "commit-tree", parent + "^{tree}", "-m",
-                             "{} {} base".format(namespace, unit))
-            parents = ["-p", base.decode().strip()]
+        for source, role in sources:
+            if source:
+                tree_commit = trace_git(root, steps, "commit-tree", source + "^{tree}", "-m",
+                                        "{} {} {}".format(namespace, unit, role))
+                parents += ["-p", tree_commit.decode().strip()]
         commit = trace_git(root, steps, "commit-tree", tree, *parents, "-m",
                            "{} {}".format(namespace, unit)).decode().strip()
         if not borrow:
@@ -2752,17 +2777,17 @@ def snapshot_lock(trace_dir):
         yield
 
 
-def record_snapshot(root, is_git, trace_dir, unit, parent, manifest, files):
-    """Under snapshot.lock, take the unit's snapshot, then store the skill files of `manifest` when the snapshot
-    repository exists; return the snapshot commit and the reason none was recorded, one of them None. A start that
-    cannot take the lock records and stores nothing."""
+def record_snapshot(root, is_git, trace_dir, unit, parent, manifest, files, as_built):
+    """Under snapshot.lock, take the unit's snapshot as take_snapshot does, then store the skill files of `manifest`
+    when the snapshot repository exists; return the snapshot commit and the reason none was recorded, one of them
+    None. A start that cannot take the lock records and stores nothing."""
     if not is_git:
         return None, "no-git"
     snapshot = skip = None
     try:
         with snapshot_lock(trace_dir):
             try:
-                snapshot = take_snapshot(root, trace_dir, unit, parent)
+                snapshot = take_snapshot(root, trace_dir, unit, parent, as_built=as_built)
             except SnapshotSkip as failed:
                 skip = failed
             if manifest and (trace_dir / ".git").is_dir():
@@ -2912,9 +2937,10 @@ def trace_start(args):
     host, conversation = trace_host()
     now = datetime.datetime.now(datetime.timezone.utc)
     unit = new_id(now)
+    paths = trace_doc_paths(root, is_git, args.docs)
     line = {"v": 1, "type": "start", "id": unit, "kind": args.kind,
             "at": now.astimezone().isoformat(timespec="seconds"), "parent": args.parent,
-            "docs": trace_docs(root, is_git, args.docs)}
+            "docs": trace_docs(args.docs, paths)}
     if args.slice:
         line["slice"] = args.slice
     head = trace_head(root, is_git)
@@ -2926,7 +2952,9 @@ def trace_start(args):
         skill = os.path.abspath(args.skill) if args.skill else None
     manifest, files = skill_manifest(skill) if skill else (None, [])
     ignore_trace_dir(root)
-    snapshot, skipped = record_snapshot(root, is_git, trace_dir, unit, base or head, manifest, files)
+    gate_doc = paths.get(args.docs[0]) if args.kind == "gate" and args.docs and is_git else None
+    as_built = as_built_commit(root, gate_doc) if gate_doc else None
+    snapshot, skipped = record_snapshot(root, is_git, trace_dir, unit, base or head, manifest, files, as_built)
     line.update(tier=args.tier or (parent or {}).get("tier"), base=base, head=head, snapshot=snapshot,
                 skipped=skipped, host=host, conversation=conversation, model=model, skill=skill,
                 manifest=manifest["digest"] if manifest else None)

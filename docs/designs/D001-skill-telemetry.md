@@ -1,16 +1,16 @@
 ---
 status: active
 created: 2026-10-15
-updated: 2026-10-23
-revision: 7
+updated: 2026-11-05
+revision: 8
 modules: [canon]
 summary: Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions.
 refs: [D002, D003]
 owns: [skill-telemetry]
 paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py, skills/governance/canon/trace.md, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/execution/canon-blind-review/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-handoff/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-investigate/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-retro/SKILL.md, skills/execution/canon-review/SKILL.md]
-reviewed: 7
+reviewed: 8
 reviewers: [claude-opus-5.5]
-implemented: 5
+implemented: 8
 ---
 
 # D001: Skill telemetry with canon trace
@@ -117,7 +117,7 @@ canon.py trace off [--here]
 canon.py trace prune --days N
 ```
 
-- `start` prints `trace <id>`, or `trace off` without touching Git or writing anything when tracing is off. It resolves each `DOC`, which must be shaped like a doc id such as `D001`, to `<doc>@r<revision>` from the doc's frontmatter, keeping a doc it cannot find as given; checks that `--model` is one line of at most 200 characters, like a reviewer's `model`; checks that `--parent` names an open unit that is neither a slice nor an end check, and an `implement` unit for a slice, and that a kind of the first row of [Units](#units) has none; resolves `--base` to the merge base of that commit and HEAD, which is the commit itself when HEAD descends from it, and treats a `--base` without a merge base, or on an unborn branch, as absent; for a `gate` whose doc's frontmatter has an `as_built` that names a commit ([D002§as-built-revisions: as-built revisions](D002-overview-and-as-built.md#as-built-revisions)), keeps that commit itself, never its merge base with HEAD, for the snapshot's second parent; takes a [snapshot](#snapshots); computes the [manifest](#skill-digests); and appends one line.
+- `start` prints `trace <id>`, or `trace off` without touching Git or writing anything when tracing is off. It resolves each `DOC`, which must be shaped like a doc id such as `D001`, to `<doc>@r<revision>` from the doc's frontmatter, keeping a doc it cannot find as given; checks that `--model` is one line of at most 200 characters, like a reviewer's `model`; checks that `--parent` names an open unit that is neither a slice nor an end check, and an `implement` unit for a slice, and that a kind of the first row of [Units](#units) has none; resolves `--base` to the merge base of that commit and HEAD, which is the commit itself when HEAD descends from it, and treats a `--base` without a merge base, or on an unborn branch, as absent; for a `gate` whose doc's frontmatter has an `as_built` that names a commit ([D002§as-built-revisions: as-built revisions](D002-overview-and-as-built.md#as-built-revisions)), keeps that commit itself, never its merge base with HEAD, for the snapshot's second parent, which a snapshot without a first parent does not get; takes a [snapshot](#snapshots); computes the [manifest](#skill-digests); and appends one line.
 - `end` closes the open unit `UNIT` and prints `trace <id> ended`, or, like `start`, `trace off` when tracing is off; `OUTCOME` must be one the unit's kind allows, and `--to` comes with `escalated` only. `--dir`, taken from the directory holding `.canon/` when relative, must lie under `.canon/`. It copies the regular files directly in it that changed since the unit started into `.canon/canon/trace/<id>/` when they total at most 2 MiB, and otherwise copies nothing; no such file records `none`, and a missing directory `copy: ENOENT`, the unit ending either way. It copies only once the final check under `events.lock` passes, so a call that fails that check archives nothing. `--input` reads the [dispositions](#review-dispositions).
 - `status` prints whether tracing is on and why; the open units started in the last 24 hours, newest first, with their ids, kinds, docs and start times, marking those of this conversation when the host names it; the number of snapshots, and of skipped ones by reason; and the snapshot repository's disk size.
 - `on` and `off` create and delete the machine switch; with `--here` they delete and create this checkout's `off` file.
@@ -153,7 +153,7 @@ Every start records a snapshot of the work tree in the snapshot repository, a no
 1. List the untracked files and the files with unstaged changes with `git status --porcelain -z --untracked-files=all`; when they total more than 10 MiB, record no snapshot and set `"skipped": "changes-over-10MiB"`.
 2. Copy the checkout's index (`git rev-parse --git-path index`) to `index-<id>` in the snapshot repository's Git directory, keeping its modification time, which Git compares entries against to find racily clean ones; when there is no index, start without one.
 3. With `GIT_INDEX_FILE` set to that copy, `GIT_OBJECT_DIRECTORY` to the snapshot repository's objects and `GIT_ALTERNATE_OBJECT_DIRECTORIES` to the project's, run `git add -A` and `git write-tree`.
-4. With the same variables, `git commit-tree` the tree of the resolved base, or of HEAD without `--base`, as a parentless commit, then the snapshot tree as a commit whose parent is that one; on an unborn branch without `--base`, the snapshot commit has no parent. `git diff <snapshot>^ <snapshot>` then shows the change under review. For an as-built gate, the tree of its `as_built` commit becomes a second parentless commit and the snapshot's second parent, so `git show <snapshot>^2:<path>` gives the code the revision records.
+4. With the same variables, `git commit-tree` the tree of the resolved base, or of HEAD without `--base`, as a parentless commit, then the snapshot tree as a commit whose parent is that one; on an unborn branch without `--base`, the snapshot commit has no parent, not even the as-built one below. `git diff <snapshot>^ <snapshot>` then shows the change under review. For an as-built gate, the tree of its `as_built` commit becomes a second parentless commit and the snapshot's second parent, so `git show <snapshot>^2:<path>` gives the code the revision records.
 5. List the objects the snapshot reaches with `git rev-list --objects <commit>`, keep those that `git cat-file --batch-check`, run in the snapshot repository without the variables, reports missing, pack them with `git pack-objects --stdout` into a temporary file in the snapshot repository's Git directory, and feed that to `git index-pack --stdin` there.
 6. Run `git update-ref refs/trace/<id> <commit>` in the snapshot repository, which records the snapshot. Then, best-effort and never setting `skipped`, delete the index copy and run `git -c gc.autoDetach=false gc --auto --quiet` there, which repacks once 50 packs or 6,700 loose objects accumulate.
 
@@ -260,6 +260,8 @@ Each version runs at least three times per unit. The replay harness is its own d
 3. `scripts/trace_report.py`, tested on redacted real Cursor transcripts and Codex rollouts.
 4. The replay harness, as its own design.
 
+Delivery is staged: each step starts once the one before it has ended, so [Analysis](#analysis) specifies step 3 ahead of its code, and [Replay](#replay) states what step 4 can rely on. Until step 3 lands, `implemented` is the latest revision whose step 1 the repository fully implements, and step 1 ends when `implemented` reaches `revision`. Only units traced after that count toward the pilot, and a capture fix during the pilot does not restart it. Step 3 is written against the revision current when the pilot ends; the change that delivers it adds `scripts/trace_report.py` to `paths`, and from then on `implemented` counts steps 1 and 3. Step 4 starts once step 3 has ended and 20 replayable units exist.
+
 Scenarios for step 1, tested through the commands:
 
 - With no machine switch, or with an `off` file, `start` prints `trace off`, runs no Git command and writes nothing.
@@ -317,5 +319,6 @@ Measured in the pilot.
 - Tokens come from host records, offline: no host offers a portable runtime source, and Codex records them locally.
 - Retro keeps its records, and the analysis joins `notes.md` and `skills.jsonl` by session, so each record keeps one owner.
 - Replays judge skill changes, and real work finds problems and checks recurrence: personal volumes cannot support per-version rates.
+- Delivery is staged and, until step 3 lands, `implemented` counts step 1 alone: the analysis is tested on the pilot's real records, which do not exist before it, and a spec lead for code not yet due would show beside every file the design governs (the user's decision; R001-F32).
 - Data is kept until the user prunes or deletes it: a baseline at personal volume can take months.
 - Evidence feeds human-reviewed experiments, never automatic skill changes.
