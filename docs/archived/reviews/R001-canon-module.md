@@ -1,5 +1,5 @@
 ---
-status: open
+status: closed
 created: 2026-11-03
 updated: 2026-11-05
 revision: 1
@@ -16,8 +16,8 @@ refs: [D000, D001, D002, D003, D004, D005]
 - Modules and paths: the one module, canon (`skills/`, `tests/`), plus the repository tooling `scripts/validate.py`.
 - Angles: architecture, usability, functional.
 - Hot spots, by commits in the last 90 days: `skills/governance/canon/scripts/canon.py` (25, 3383 lines), `tests/test_canon.py` (22), `skills/governance/canon/workflow.md` (21), `skills/governance/canon/SKILL.md` (19), `canon-implement` (18), `canon-blind-review` (14), `canon-init` and `canon-code-review` (13 each), `canon-review` (10).
-- Design coverage: 14 of D000's 21 capabilities name no design. `audit` lists, among others, `canon-teach`, `canon-codebase-design`, `canon-prototype`, `canon-tdd`, `canon-grill`, `canon-research` and `canon-agent-writing` as wholly uncovered; no design is over 500 lines. [D001: Skill telemetry with canon trace](../designs/D001-skill-telemetry.md) is at revision 7 with `implemented: 5`, and no plan is open.
-- Governing designs: [D000: Project overview](../designs/D000-project-overview.md), [D001: Skill telemetry](../designs/D001-skill-telemetry.md), [D002: Project overview and as-built designs](../designs/D002-overview-and-as-built.md), [D003: Subagents](../designs/D003-subagents.md), [D004: Project setup](../designs/D004-project-setup.md), [D005: Docs index](../designs/D005-docs-index.md).
+- Design coverage: 14 of D000's 21 capabilities name no design. `audit` lists, among others, `canon-teach`, `canon-codebase-design`, `canon-prototype`, `canon-tdd`, `canon-grill`, `canon-research` and `canon-agent-writing` as wholly uncovered; no design is over 500 lines. [D001: Skill telemetry with canon trace](../../designs/D001-skill-telemetry.md) is at revision 7 with `implemented: 5`, and no plan is open.
+- Governing designs: [D000: Project overview](../../designs/D000-project-overview.md), [D001: Skill telemetry](../../designs/D001-skill-telemetry.md), [D002: Project overview and as-built designs](../../designs/D002-overview-and-as-built.md), [D003: Subagents](../../designs/D003-subagents.md), [D004: Project setup](../../designs/D004-project-setup.md), [D005: Docs index](../../designs/D005-docs-index.md).
 
 ## Findings
 
@@ -44,16 +44,16 @@ Each angle's report, with locations, evidence and suggestions, is attached: [arc
 | R001-F17 | minor | usability: Several `canon.py` error messages do not name the value or the next step | moved C001 |
 | R001-F18 | minor | usability: `--base` errors do not say whether the ref is missing or the history shallow | moved C001 |
 | R001-F19 | minor | usability: `which` answers confidently for paths that do not exist | moved C001 |
-| R001-F20 | minor | usability: Phase-closing commands use the `/skill` form, which Codex does not accept | open |
+| R001-F20 | minor | usability: Phase-closing commands use the `/skill` form, which Codex does not accept | fixed 3ab357c |
 | R001-F21 | minor | usability: The canon block does not say where to get the skills | fixed 116798a |
-| R001-F22 | minor | usability: The README states no requirements (Python 3.8+, Git) | open |
+| R001-F22 | minor | usability: The README states no requirements (Python 3.8+, Git) | fixed 3ab357c |
 | R001-F23 | minor | usability: `-h` texts are thin, and `renumber` runs without a collision | fixed 4d74020 |
 | R001-F24 | minor | usability: `init --root` with a typo silently creates a module | fixed 116798a |
-| R001-F25 | minor | usability: `canon-retro`'s closing-step trigger sits past the 190-character cut | open |
+| R001-F25 | minor | usability: `canon-retro`'s closing-step trigger sits past the 190-character cut | fixed 3ab357c |
 | R001-F26 | major | functional: D001 revision 6 (as-built gate snapshots) is not implemented and no plan carries it | fixed 9fdf0c6 |
 | R001-F27 | major | functional: Tests that expect a directory outside Git write docs into whatever repo holds `TMPDIR` | fixed eb76e61 |
 | R001-F28 | minor | functional: `adopt` and the index format and check have almost no tests | moved C001 |
 | R001-F29 | minor | functional: `adopt` breaks links to the adopted file's H1 anchor | moved D004 |
 | R001-F30 | minor | functional: The canon skill's Tool table disagrees with the CLI (`renumber`, `affected FILE`, audit's idle list) | fixed 4d74020 |
-| R001-F31 | minor | functional: `validate.py` does not catch a `SKILL.md` outside `skills/<category>/<name>/` | open |
+| R001-F31 | minor | functional: `validate.py` does not catch a `SKILL.md` outside `skills/<category>/<name>/` | fixed 3ab357c |
 | R001-F32 | minor | functional: D001's `implemented` covers only delivery step 1; analysis and replay are missing | fixed 9fdf0c6 |
