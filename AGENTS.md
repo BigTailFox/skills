@@ -49,7 +49,7 @@ Do not commit a `SKILL.md` outside `skills/`, templates and examples included: t
 <!-- canon:agents:start -->
 ## Docs
 
-This repo follows the canon documentation system (`canon` skill). Engineering docs live in `docs/` and in module `docs/` directories. Start at [D000: Project overview](docs/designs/D000-project-overview.md); [docs/README.md](docs/README.md) indexes every doc.
+This repo follows the canon documentation system (`canon` skill; without it, ask the user to install the skills with `npx skills add BigTailFox/skills -g -s '*'`). Engineering docs live in `docs/` and in module `docs/` directories. Start at [D000: Project overview](docs/designs/D000-project-overview.md); [docs/README.md](docs/README.md) indexes every doc.
 
 - Tool: `python3 skills/governance/canon/scripts/canon.py` from the repo root (`-h` lists commands). Run `check --fix` before committing and after every merge or rebase.
 - When a change may alter behavior or standards a design specifies, run `which <file>` and read the governing sections with `show D00X#slug` first.

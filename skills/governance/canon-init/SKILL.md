@@ -8,11 +8,18 @@ disable-model-invocation: true
 
 Read the `canon` skill first; it defines the system. Until the project has its own copy, run `scripts/canon.py` from the `canon` skill directory, written below as `<canon>/scripts/canon.py`. `<copy>` is the project's copy, at the path the canon block of the repo root's `AGENTS.md` names, where `init` keeps it.
 
+## Pick the flow
+
+Run the flow the user names; resume a setup or upgrade that stopped before its end only then. Otherwise, when the repo root's `AGENTS.md` has no canon block, set up the project. In a project set up, run each of these that applies, in order, and when neither does, ask the user which flow to run:
+
+1. **Upgrade** when `<copy>` is missing, or `python3 <copy> --version` prints a lower version than `python3 <canon>/scripts/canon.py --version`.
+2. **Set up the cross-family reviewer** when that section's first line says to run it alone.
+
 ## Set up a project
 
 1. **Survey.** List existing docs: `docs/`, ADRs, RFCs, design notes, plans, postmortems, benchmark reports. Skip generated and vendored files. Docs by their name outside every docs root, such as READMEs, changelogs and licenses (the `canon` skill's Layout lists the names), and a docs root's own `README.md` stay where they are: they are neither adopted nor folded into D000. Every other file under a docs root is surveyed, whatever its name. In a monorepo, find the modules that deserve their own docs root: independently built or released packages and services.
 2. **Propose a mapping** and wait for the user's approval. One line per file: target type (C, D, P, R, E, I), `guides/`, fold into another doc, or leave in place. A doc that describes the whole project, such as an architecture overview, folds into D000. Also name the modules that get a docs root.
-3. **Initialize** at the repo root: `python3 <canon>/scripts/canon.py init`, adding `--hook` when the user wants a pre-commit hook. Then run `python3 <copy> init --root <module>` for each module. `init` is idempotent. It copies the script to `<copy>`; when `init` exits because of the copy's path, ask the user for one and rerun with `--script <path>`. It also adds the canon block to `AGENTS.md`, adds union-merge rules for the indexes to `.gitattributes`, adds `.canon/` to `.gitignore`, and creates `docs/README.md` and, at the repo root only, D000, the project overview, from its template.
+3. **Initialize** at the repo root: `python3 <canon>/scripts/canon.py init`. Then run `python3 <copy> init --root <module>` for each module. `init` is idempotent. It copies the script to `<copy>`; when `init` exits because of the copy's path, ask the user for one and rerun with `--script <path>`. It also adds the canon block to `AGENTS.md`, adds union-merge rules for the indexes to `.gitattributes`, adds `.canon/` to `.gitignore`, and creates `docs/README.md` and, at the repo root only, D000, the project overview, from its template.
 4. **Adopt** each mapped file: `python3 <copy> adopt <file> <type> [--slug <slug>]`. It keeps git history, assigns the id, prepends frontmatter, appends missing sections and rewrites every link to the file. Move guides into `docs/guides/` with `git mv`. Commit before restructuring so git still recognizes the renames.
 5. **Restructure** the adopted docs:
    - Move content into the required sections and replace the guidance comments.
@@ -21,11 +28,12 @@ Read the `canon` skill first; it defines the system. Until the project has its o
    - Fold each ADR into the owning design as a Decision line, and each doc that describes the whole project into D000, then remove the folded file.
    - Archive docs about finished or obsolete work, e.g. `archive P001 done`, `archive D004 superseded`.
 6. **D000.** Fill it from the code, as an as-built revision of HEAD (the `canon` skill's `as-built.md`) that follows D000's rules in the `canon` skill's doc types: Goals; every capability, and every module with its Path, each row linking its designs or reading `none`; the standards designs own across modules; the dependency directions; and the glossary. In a project without code, D000 is the project's first L2 design instead: skip it here and in the Review step, and end setup by giving the user `/canon-design D000`.
-7. **AGENTS.md.** Leave the canon block as `init` wrote it, since every `init` at the repo root rewrites it from its template. Move spec-like content from the rest of `AGENTS.md` into designs, and remove instructions that conflict with canon, such as old doc conventions. If the project uses Claude Code and has no `CLAUDE.md`, create one containing `@AGENTS.md`.
+7. **AGENTS.md.** Leave the canon block as `init` wrote it, since every `init` at the repo root rewrites it from its template. Move spec-like content from the rest of `AGENTS.md` into designs, and remove instructions that conflict with canon, such as old doc conventions. If the project uses Claude Code, make sure its `CLAUDE.md` imports `AGENTS.md`: create it containing `@AGENTS.md`, or add that line to an existing one that lacks it, unless `CLAUDE.md` and `AGENTS.md` are the same file. Remove the instructions in `CLAUDE.md` that conflict with canon too.
 8. **Cross-family reviewer.** Set it up as described below.
 9. **CI.** If the project has CI, add `python3 <copy> check --base origin/<default branch>`, with a fetch depth that includes the merge base.
 10. **Review.** D000 and every adopted design that describes existing code are as-built revisions of HEAD, each with its `as_built` set: pass each through the review gate at L1, whose status step makes it `active` with `implemented` equal to its revision. Setup ends once they have passed. Write no other as-built design: the first change that alters behavior no design states records what it needs. Show the user D000.
 11. Run `python3 <copy> check --fix` until it reports no errors, and commit as `docs: adopt canon`, with a `Refs:` trailer naming D000 and the adopted designs that describe existing code.
+12. **Hook.** If the user wants a pre-commit hook, run `python3 <copy> init --hook` now, not earlier: its `check` would reject step 4's commit. When it warns that it cannot write the hook, give the user the command the warning names.
 
 ## Set up the cross-family reviewer
 

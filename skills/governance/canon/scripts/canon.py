@@ -28,7 +28,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "25"
+CANON_VERSION = "26"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -96,7 +96,7 @@ AGENTS_END = "<!-- canon:agents:end -->"
 AGENTS_BLOCK = AGENTS_START + """
 ## Docs
 
-This repo follows the canon documentation system (`canon` skill). Engineering docs live in `docs/` and in module `docs/` directories. Start at [D000: Project overview](docs/designs/D000-project-overview.md); [docs/README.md](docs/README.md) indexes every doc.
+This repo follows the canon documentation system (`canon` skill; without it, ask the user to install the skills with `npx skills add BigTailFox/skills -g -s '*'`). Engineering docs live in `docs/` and in module `docs/` directories. Start at [D000: Project overview](docs/designs/D000-project-overview.md); [docs/README.md](docs/README.md) indexes every doc.
 
 - Tool: `python3 {script}` from the repo root (`-h` lists commands). Run `check --fix` before committing and after every merge or rebase.
 - When a change may alter behavior or standards a design specifies, run `which <file>` and read the governing sections with `show D00X#slug` first.
@@ -1615,6 +1615,8 @@ def block_script(block):
 def cmd_init(repo, args):
     require_clean_merge(repo)
     project = Path(os.path.realpath(args.root)) if args.root else repo.root
+    if not project.is_dir() or (project != repo.root and repo.root not in project.parents):
+        sys.exit("canon: --root {} is not a directory inside the repository".format(args.root))
     require_intact_indexes(repo, project)
     top = project == repo.root
     if top and not has_overview(repo):
@@ -1676,7 +1678,6 @@ def cmd_init(repo, args):
     agents = project / "AGENTS.md"
     block = AGENTS_BLOCK.format(script=script_rel)
     if not agents.is_file():
-        project.mkdir(parents=True, exist_ok=True)
         agents.write_text("# AGENTS.md\n\n" + (block if top else SUB_AGENTS) + "\n", encoding="utf-8")
         note("created", agents)
     elif top:
@@ -1714,17 +1715,26 @@ def cmd_init(repo, args):
                                       OVERVIEW_TITLE, fields, template=OVERVIEW_TEMPLATE))
 
     if (args.hook or moved) and repo.is_git:
-        hook = repo.root / git(repo.root, "rev-parse", "--git-path", "hooks/pre-commit").strip()
-        if moved and hook.is_file() and hook.read_bytes() == PRE_COMMIT_HOOK.format(block_path).encode("utf-8"):
-            hook.write_text(PRE_COMMIT_HOOK.format(script_rel), encoding="utf-8")
-            note("updated", hook)
-        elif args.hook and hook.exists():
-            print("kept the existing pre-commit hook; add `python3 {} check` to it".format(script_rel))
-        elif args.hook:
-            hook.parent.mkdir(parents=True, exist_ok=True)
-            hook.write_text(PRE_COMMIT_HOOK.format(script_rel), encoding="utf-8")
-            os.chmod(str(hook), 0o755)
-            note("created", hook)
+        found = git(repo.root, "rev-parse", "--git-path", "hooks/pre-commit")
+        hook = repo.root / found.strip() if found else None
+        try:
+            if hook is None:
+                raise OSError("git rev-parse --git-path hooks/pre-commit failed")
+            if moved and hook.is_file() and hook.read_bytes() == PRE_COMMIT_HOOK.format(block_path).encode("utf-8"):
+                hook.write_text(PRE_COMMIT_HOOK.format(script_rel), encoding="utf-8")
+                note("updated", hook)
+            elif args.hook and hook.exists():
+                print("kept the existing pre-commit hook; add `python3 {} check` to it".format(script_rel))
+            elif args.hook:
+                hook.parent.mkdir(parents=True, exist_ok=True)
+                hook.write_text(PRE_COMMIT_HOOK.format(script_rel), encoding="utf-8")
+                os.chmod(str(hook), 0o755)
+                note("created", hook)
+        except OSError as error:
+            rewrite = moved and (hook is None or os.path.lexists(str(hook)))
+            remedy = ("replace {0} with {1} in it where .git is writable, before removing {0}" if rewrite else
+                      "rerun `python3 {1} init --hook` where .git is writable").format(block_path, script_rel)
+            print("warning: cannot write the pre-commit hook: {}; {}".format(error, remedy))
 
     actions += ["wrote " + rel for rel in write_indexes(Repo())]
     print("\n".join(actions) if actions else "canon init: nothing to do")

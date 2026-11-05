@@ -5,7 +5,7 @@ updated: 2026-11-05
 revision: 4
 modules: [canon]
 summary: How canon runs reviewers and workers as new subagents on the session's model, resumed by id, the review snapshots confirmations diff, and the reviewer file.
-refs: [D001]
+refs: [D001, D004]
 owns: [subagents]
 paths: [skills/governance/canon/workflow.md, skills/execution/canon-blind-review/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/governance/canon-init/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/governance/canon/scripts/canon.py, tests/test_canon.py]
 reviewed: 4
@@ -79,6 +79,7 @@ This design covers the subagents of the `canon` workflow, meaning the reviewers 
 | D003-K4 | minor | Nothing says where the session finds the session id a command reviewer reports, which D001's token analysis reads | as-built e08f898 | 2026-10-22 | L1 |
 | D003-K5 | major | The rules of running a blind review (the report contract, the known-issue rule, the merge rule, stopped runs) are restated in `workflow.md`, `canon-blind-review`, `canon-code-review` and `canon-review`, so one change edits three to six files | R001-F3 | 2026-11-05 | L1 |
 | D003-K6 | minor | The reviewer file, set up per machine, lives in each checkout's `.canon/`, so every clone and linked worktree falls back to the manual reviewer until `/canon-init` runs again | R001-F7 | 2026-11-05 | L1 |
+| D003-K7 | minor | Without a model of another family the reviewer setup writes no file, so every `/canon-init` run without a named flow in a set-up project starts the reviewer setup again ([D004§the-canon-init-skill: flow choice](D004-project-setup.md#the-canon-init-skill)) | D004 gate | 2026-11-05 | L1 |
 
 ## Decisions
 

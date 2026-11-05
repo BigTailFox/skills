@@ -28,7 +28,7 @@ Each angle's report, with locations, evidence and suggestions, is attached: [arc
 | R001-F1 | major | architecture: File-grained `paths` make coverage, `which` and `Refs:` overstate what designs govern; half of `canon.py` has no design yet looks covered | moved D002 |
 | R001-F2 | major | architecture: Installed skills and a project's `canon.py` copy drift apart with no minimum-version check | moved D004 |
 | R001-F3 | major | architecture: Running a blind review is spread over four skill files that restate each other's rules | moved D003 |
-| R001-F4 | major | architecture: A failing Git is read as "outside Git", so `new` can reuse a deleted doc's id | open |
+| R001-F4 | major | architecture: A failing Git is read as "outside Git", so `new` can reuse a deleted doc's id | fixed f9226e2 |
 | R001-F5 | minor | architecture: Closing steps and finding routing are copied into each workflow skill | moved C001 |
 | R001-F6 | minor | architecture: The review snapshot every confirmation needs runs on the opt-in trace subsystem | moved C001 |
 | R001-F7 | minor | architecture: The machine-level reviewer file is stored per checkout | moved D003 |

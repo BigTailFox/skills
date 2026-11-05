@@ -128,6 +128,11 @@ class CanonTest(unittest.TestCase):
         rows = "".join("| m{} | {} | Fixture | none | {} |\n".format(i, cell, design) for i, cell in enumerate(cells, 1))
         path.write_text(path.read_text().replace(self.MODULES, self.MODULES + rows))
 
+    def init_module(self, path, *args):
+        """`init --root <path>` with `args`, on `path` made a directory first, as a module's code makes it."""
+        (self.root / path).mkdir(parents=True, exist_ok=True)
+        return self.ok("init", "--root", path, *args)
+
     def problems(self, out):
         """The ERROR and WARN lines of `check`'s output."""
         return [line for line in out.splitlines() if line.startswith(("ERROR", "WARN"))]
@@ -445,7 +450,7 @@ class HistoryIdTest(CanonTest):
 
     def test_the_id_of_a_deleted_design_stays_taken_under_a_module_path_git_quotes(self):
         self.three_designs()[2].unlink()
-        self.ok("init", "--root", "模块")
+        self.init_module("模块")
         design = self.new("c", "--root", "模块")
         self.assertEqual(design, "模块/docs/designs/D003-c.md")
         self.commit(check=False)
@@ -684,7 +689,7 @@ class IndexTest(CanonTest):
                 self.assertEqual(self.git("status", "--porcelain"), "", args)
 
     def test_a_module_index_with_no_end_marker_blocks_commands_at_the_repo_root(self):
-        self.ok("init", "--root", "mod")
+        self.init_module("mod")
         self.commit()
         readme = self.root / "mod/docs/README.md"
         self.commit_readme(readme, readme.read_text().split(canon.INDEX_END)[0])
@@ -735,7 +740,7 @@ class InitTest(CanonTest):
         self.repository_without_docs()
         self.ok("init", "--script", "tools/canon.py")
         self.assertEqual(self.ok("init"), "canon init: nothing to do\n")
-        self.ok("init", "--root", "mod")
+        self.init_module("mod")
         self.assertFalse((self.root / "scripts").exists())
         self.assertIn("`python3 tools/canon.py find <words>`", (self.root / "mod/docs/README.md").read_text())
 
@@ -747,6 +752,7 @@ class InitTest(CanonTest):
         self.assertEqual(self.git("status", "--porcelain"), "")
 
     def test_init_refuses_a_canon_block_start_marker_with_no_end_marker_after_it(self):
+        (self.root / "mod").mkdir()
         message = ("canon: the repo root's AGENTS.md has a canon block start marker with no end marker after it; fix "
                    "the markers and rerun `init`")
         agents = self.root / "AGENTS.md"
@@ -775,11 +781,12 @@ class InitTest(CanonTest):
         self.refuses(message.format(absolute), "--script", absolute)
 
     def test_a_module_run_refuses_another_copy_than_the_canon_block_names(self):
+        (self.root / "mod").mkdir()
         self.refuses("canon: the canon block of AGENTS.md names scripts/canon.py; move the copy with "
                      "`init --script tools/canon.py` at the repo root first",
                      "--root", "mod", "--script", "tools/canon.py")
         self.refuses(OUTSIDE.format("../canon.py"), "--root", "mod", "--script", "../canon.py")
-        self.ok("init", "--root", "mod", "--script", "./scripts/canon.py")
+        self.init_module("mod", "--script", "./scripts/canon.py")
         self.assertTrue((self.root / "mod/AGENTS.md").is_file())
 
     def test_init_at_the_repo_root_moves_the_copy_and_rewrites_the_hook_it_wrote(self):
@@ -796,6 +803,58 @@ class InitTest(CanonTest):
         hook.write_text("#!/bin/sh\nmake lint\n")
         self.assertNotIn("pre-commit", self.ok("init", "--script", "bin/canon.py"))
         self.assertEqual(hook.read_text(), "#!/bin/sh\nmake lint\n")
+
+    def test_init_that_cannot_write_the_hook_finishes_and_says_how_to_add_it(self):
+        self.repository_without_docs()
+        hooks = self.root / ".git/hooks"
+        shutil.rmtree(str(hooks))
+        hooks.write_text("a file where the hooks directory belongs\n")
+        out = self.ok("init", "--hook")
+        self.assertIn("warning: cannot write the pre-commit hook: ", out)
+        self.assertIn("; rerun `python3 scripts/canon.py init --hook` where .git is writable\n", out)
+        self.assertIn("created AGENTS.md", out)
+        self.assertIn(canon.INDEX_START, (self.root / "docs/README.md").read_text())
+
+    @unittest.skipIf(os.name == "nt" or os.geteuid() == 0, "file modes stop only a non-root POSIX user")
+    def test_init_that_cannot_rewrite_the_hook_for_a_moved_copy_says_to_fix_it_before_removing_the_old_copy(self):
+        for mode in (0o555, 0o000):  # unwritable, then unreadable too
+            with self.subTest(mode=oct(mode)):
+                self.repository_without_docs()
+                self.ok("init", "--hook")
+                hook = self.root / ".git/hooks/pre-commit"
+                hook.chmod(mode)
+                out = self.ok("init", "--script", "tools/canon.py")
+                self.assertIn("warning: cannot write the pre-commit hook: ", out)
+                self.assertIn("; replace scripts/canon.py with tools/canon.py in it where .git is writable, before "
+                              "removing scripts/canon.py\n", out)
+                hook.chmod(0o755)
+                self.assertEqual(hook.read_text(), "#!/bin/sh\nexec python3 scripts/canon.py check\n")
+                self.assertIn("`python3 tools/canon.py`", (self.root / "AGENTS.md").read_text())
+
+    @unittest.skipIf(os.name == "nt", "the stand-in git is a shell script")
+    def test_init_whose_git_cannot_name_the_hook_path_finishes_and_says_how_to_add_it(self):
+        self.repository_without_docs()
+        bin_dir = self.tmpdir()
+        (bin_dir / "git").write_text('#!/bin/sh\ncase "$*" in *--git-path*) exit 128;; esac\nexec {} "$@"\n'
+                                     .format(shutil.which("git")))
+        (bin_dir / "git").chmod(0o755)
+        result = subprocess.run([sys.executable, "-B", str(SCRIPT), "init", "--hook"], cwd=self.root,
+                                env=dict(os.environ, PATH=str(bin_dir)), capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("warning: cannot write the pre-commit hook: git rev-parse --git-path hooks/pre-commit failed; "
+                      "rerun `python3 scripts/canon.py init --hook` where .git is writable\n", result.stdout)
+        self.assertIn(canon.INDEX_START, (self.root / "docs/README.md").read_text())
+
+    def test_init_refuses_a_root_that_is_not_a_directory_inside_the_repository(self):
+        outside = self.tmpdir()
+        for root in ("mod", "src/base.py", str(outside)):
+            self.refuses("canon: --root {} is not a directory inside the repository".format(root), "--root", root)
+        self.assertFalse((self.root / "mod").exists())
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_the_canon_block_names_the_command_that_installs_the_skills(self):
+        self.assertIn("without it, ask the user to install the skills with `npx skills add BigTailFox/skills -g -s '*'`",
+                      (self.root / "AGENTS.md").read_text())
 
     def test_init_warns_of_a_move_only_from_a_copy_inside_the_repository(self):
         agents = self.root / "AGENTS.md"
@@ -848,7 +907,7 @@ class ProjectOverviewTest(CanonTest):
         result = self.canon("init", "--no-architecture")
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn("unrecognized arguments: --no-architecture", result.stderr)
-        self.ok("init", "--root", "mod")
+        self.init_module("mod")
         self.assertTrue((self.root / "mod/AGENTS.md").is_file())
         self.assertTrue((self.root / "mod/docs/README.md").is_file())
         self.assertEqual(list(self.root.glob("**/D000-*")), [])
@@ -1006,7 +1065,7 @@ class OverviewMoveTest(CanonTest):
         out = self.refuses("D001A", "docs/designs/D001A-architecture.md")
         self.assertIn("take `architecture` out of its `owns` and rerun `init`", out)
         self.set(sub, owns=["part"])
-        self.ok("init", "--root", "mod")
+        self.init_module("mod")
         module = self.ok("new", "D", "architecture", "--root", "mod").strip()
         self.set(self.root / module, owns=["architecture"], summary="Fixture")
         self.commit(check=False)
@@ -1034,7 +1093,7 @@ class OverviewMoveTest(CanonTest):
 
 class WhichTest(CanonTest):
     def test_a_module_design_governs_only_the_files_of_its_module(self):
-        self.ok("init", "--root", "mod")
+        self.init_module("mod")
         design = self.root / self.ok("new", "D", "part", "--root", "mod").strip()
         self.set(design, summary="Fixture", owns=["part"], paths=["**"])
         self.create("mod/x.py", "mod/README.md")
@@ -1183,7 +1242,7 @@ class CoverageTest(CanonTest):
 
     def test_only_tracked_files_under_the_module_paths_count_and_no_doc(self):
         self.modules("src/a/")
-        self.ok("init", "--root", "src/a")
+        self.init_module("src/a")
         self.create("src/a/x.py", "src/a/lib/y.py", "src/a/README.md", "src/a/docs/assets/map.svg", "tools/gen.py")
         self.commit()
         self.create("src/a/untracked.py")
@@ -1288,7 +1347,7 @@ class ReachTest(CanonTest):
         out = self.ok("audit")
         self.assertIn(self.UNREACHED, out)
         self.assertIn(CoverageTest.AREAS, out)
-        self.ok("init", "--root", "mod")
+        self.init_module("mod")
         overview = self.root / self.OVERVIEW
         for moved in ("docs/archived/designs/D000-project-overview.md", "mod/docs/designs/D000-project-overview.md"):
             target = self.root / moved
@@ -1385,7 +1444,7 @@ class OverviewCheckTest(CanonTest):
                             for line in out), out)
 
     def test_check_fails_with_a_second_d000_under_a_module_docs_root(self):
-        self.ok("init", "--root", "mod")
+        self.init_module("mod")
         module = self.root / "mod" / self.OVERVIEW
         module.parent.mkdir(parents=True)
         module.write_text((self.root / self.OVERVIEW).read_text())
@@ -1546,7 +1605,7 @@ class TraceTest(TraceCase):
         self.design(revision=3, reviewed=3)
         self.design("old")
         self.ok("archive", "D002", "retired")
-        self.ok("init", "--root", "mod")
+        self.init_module("mod")
         self.ok("new", "D", "part", "--root", "mod")
         unit = self.start("design", "D001", "D002", "D003", "D999")
         [line] = self.lines()
@@ -1576,7 +1635,7 @@ class TraceTest(TraceCase):
 
     def test_a_module_doc_resolves_whatever_repository_the_environment_points_git_at(self):
         self.trace("on")
-        self.ok("init", "--root", "mod")
+        self.init_module("mod")
         self.ok("new", "D", "part", "--root", "mod")
         line = self.start_line("design", "D001", GIT_DIR=str(self.root / "no-such-repository"))
         self.assertEqual(line["docs"], ["D001@r1"])
