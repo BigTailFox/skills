@@ -1,16 +1,16 @@
 ---
 status: active
 created: 2026-10-23
-updated: 2026-10-30
-revision: 1
+updated: 2026-11-05
+revision: 2
 modules: []
 summary: Agent skills built around canon, a documentation system kept in the repository; one module, its capabilities and the designs that own them.
 refs: [D001, D002, D003, D004, D005]
 owns: [architecture]
 paths: []
-reviewed: 1
+reviewed: 2
 reviewers: [claude-opus-5.5]
-implemented: 1
+implemented: 2
 ---
 
 # D000: Project overview
@@ -53,7 +53,7 @@ implemented: 1
 
 | Module | Path | Purpose | Entry points | Design |
 |---|---|---|---|---|
-| canon | skills/, tests/ | The skills: `skills/governance/` builds and maintains the documentation system, `skills/execution/` does development work through it, and `tests/` holds the regression tests of `canon.py` | `skills/governance/canon/SKILL.md`, `skills/governance/canon/scripts/canon.py`, each skill's `SKILL.md` | [D001: Skill telemetry with canon trace](D001-skill-telemetry.md), [D002: Project overview and as-built designs](D002-overview-and-as-built.md), [D003: Subagents](D003-subagents.md), [D004: Project setup](D004-project-setup.md), [D005: Docs index](D005-docs-index.md) |
+| canon | skills/, tests/ | The skills: `skills/governance/` builds and maintains the documentation system, `skills/execution/` does development work through it, and `tests/` holds the regression tests of `canon.py` and of the repository tooling | `skills/governance/canon/SKILL.md`, `skills/governance/canon/scripts/canon.py`, each skill's `SKILL.md` | [D001: Skill telemetry with canon trace](D001-skill-telemetry.md), [D002: Project overview and as-built designs](D002-overview-and-as-built.md), [D003: Subagents](D003-subagents.md), [D004: Project setup](D004-project-setup.md), [D005: Docs index](D005-docs-index.md) |
 
 ### Dependencies
 
@@ -63,7 +63,7 @@ There is one module, so no direction between modules applies. These hold inside 
 - A skill runs the project's copy of `canon.py` at the path the canon block of the repo root's `AGENTS.md` names, and the `canon` skill's own `scripts/canon.py` while the project has no copy. `init` puts the copy where [D004§init: init](D004-project-setup.md#init) states.
 - Execution skills read and write project docs only through the documentation system the governance skills define.
 - `canon.py` is a single file on the Python 3.8+ standard library, and runs `git` in a Git checkout.
-- The repository tooling, `scripts/validate.py`, checks each skill's layout, frontmatter, length and links, the links of the root's Markdown files, the Skills tables of `README.md` and `CANON_VERSION`, and runs `tests/`. Nothing in the module depends on it.
+- The repository tooling, `scripts/validate.py`, checks each skill's layout, frontmatter, length and links, that every `SKILL.md` on disk that Git tracks or does not ignore is a skill's own, directly inside a non-hidden `skills/<category>/<name>/`, failing when Git cannot list the files, the links of the root's Markdown files, the Skills tables of `README.md` and `CANON_VERSION`, and runs `tests/`, where `test_validate.py` tests it. Nothing under `skills/` depends on it.
 
 ### Glossary
 
@@ -80,3 +80,4 @@ The module and the repository tooling share these terms. The Skill rules of [AGE
 - The repository ships no install script; installing, updating and removing are left to `npx skills` (`AGENTS.md`).
 - `CANON_VERSION` is separate from the release version: `init` upgrades a project's copy by version number only (`AGENTS.md`).
 - `canon.py` is one file on the standard library, copied into each project, where agents and CI run it (`canon.py`'s docstring, `canon-init`; reason unknown, kept as found).
+- The tooling's tests share `tests/` with `canon.py`'s, which `validate.py` already runs, and only `skills/`, the part that is installed, must not depend on the tooling (the user's decision; R001-F31). Until a design lists `tests/test_validate.py`, coverage reports it as uncovered; like the tooling it tests, it needs no backfill.

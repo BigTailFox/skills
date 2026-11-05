@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Validate every skill under the category directories, the README skill list and the canon.py version,
-then run the tests in tests/.
+"""Validate every skill under the category directories, that no SKILL.md lies elsewhere, the README skill list
+and the canon.py version, then run the tests in tests/.
 
 Usage: python3 scripts/validate.py
 Exits non-zero if any check or test fails.
@@ -177,6 +177,18 @@ def check_readme(skills):
     return errors
 
 
+def misplaced_skill_files(skill_files):
+    """Every SKILL.md in the checkout, tracked, or untracked and not ignored, other than `skill_files`, those of the
+    validated skills: the skills CLI would treat it as an installable skill."""
+    listed = git("ls-files", "-z", "--cached", "--others", "--exclude-standard")
+    if listed is None:
+        return ["cannot list the checkout's files with git"]
+    return [f"{rel} is not a skill's own skills/<category>/<name>/SKILL.md, yet the skills CLI would treat it as an "
+            "installable skill"
+            for rel in sorted(set(listed.split("\0")))
+            if rel.rsplit("/", 1)[-1] == "SKILL.md" and ROOT / rel not in skill_files and (ROOT / rel).is_file()]
+
+
 def check_canon_version():
     """Projects upgrade their canon.py copy by CANON_VERSION, so every change to canon.py needs a new version."""
     text = (ROOT / CANON_SCRIPT).read_text(encoding="utf-8")
@@ -218,6 +230,7 @@ def report(label, errors):
 def main():
     failures = 0
     skills = {}
+    skill_files = set()
 
     if SKILLS_DIR.is_dir():
         for entry in sorted(SKILLS_DIR.iterdir()):
@@ -235,7 +248,9 @@ def main():
             if skill_dir.name in skills:
                 errors.append(f"duplicate skill name, also defined in skills/{skills[skill_dir.name][0]}")
             skills.setdefault(skill_dir.name, (category, manual))
+            skill_files.add(skill_dir / "SKILL.md")
             failures += report(skill_dir.relative_to(ROOT), errors)
+    failures += report("SKILL.md placement", misplaced_skill_files(skill_files))
 
     for md in sorted(ROOT.glob("*.md")):
         errors = broken_links(md, ROOT)

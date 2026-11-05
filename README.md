@@ -4,10 +4,12 @@ Personal agent skills for long-running software projects, built around **canon**
 
 ## Install
 
+Canon needs Git and Python 3.8+ as `python3` on PATH; `canon.py` uses only the standard library.
+
 The skills refer to each other by name, so install all of them. `-g` installs at user level, for every project:
 
 ```bash
-npx skills add BigTailFox/skills -g                                     # pick skills and agents interactively
+npx skills add BigTailFox/skills -g                                     # pick agents interactively; select every skill
 npx skills add BigTailFox/skills -g -s '*' -a cursor -a claude-code -y  # every skill, for the named agents
 npx skills update -g                                                    # pull the latest version
 npx skills ls -g                                                        # list installed skills
@@ -119,9 +121,10 @@ Auto skills load when the context calls for them. Manual skills run only as comm
 │           ├── agents/openai.yaml  # manual skills: keeps Codex from invoking them implicitly
 │           └── LICENSE, NOTICE     # ported skills: upstream license and provenance
 ├── scripts/
-│   └── validate.py         # checks skills, links, the Skills tables and CANON_VERSION, then runs tests/
+│   └── validate.py         # checks skills, stray SKILL.md files, links, the Skills tables and CANON_VERSION, then runs tests/
 └── tests/
-    └── test_canon.py       # regression tests for canon.py
+    ├── test_canon.py       # regression tests for canon.py
+    └── test_validate.py    # regression tests for validate.py
 ```
 
 `npx skills` discovers skills at `skills/<category>/<skill-name>/SKILL.md`, and would treat a `SKILL.md` anywhere else as an installable skill too, so keep templates and examples under other names. The two categories:

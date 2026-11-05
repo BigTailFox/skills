@@ -1,6 +1,6 @@
 ---
 name: canon-retro
-description: Turns friction a session hit in tooling, docs and the agent workflow into fixes to them. Use when the user asks for a retro, a retrospective or lessons from a session, or when a canon workflow's closing step calls for one. Not for the project's own architecture, performance or functionality, which reviews cover. Proposes only what concrete events justify and stays silent otherwise.
+description: Turns tooling and workflow friction into fixes. Use when the user asks for a retro, a retrospective or lessons from a session, or when a canon workflow's closing step calls for one. Not for the project's own architecture, performance or functionality, which reviews cover. Proposes only what concrete events justify and stays silent otherwise.
 ---
 
 # Retro

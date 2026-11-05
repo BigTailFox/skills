@@ -47,13 +47,13 @@ Each angle's report, with locations, evidence and suggestions, is attached: [arc
 | R001-F20 | minor | usability: Phase-closing commands use the `/skill` form, which Codex does not accept | open |
 | R001-F21 | minor | usability: The canon block does not say where to get the skills | fixed 116798a |
 | R001-F22 | minor | usability: The README states no requirements (Python 3.8+, Git) | open |
-| R001-F23 | minor | usability: `-h` texts are thin, and `renumber` runs without a collision | open |
+| R001-F23 | minor | usability: `-h` texts are thin, and `renumber` runs without a collision | fixed 4d74020 |
 | R001-F24 | minor | usability: `init --root` with a typo silently creates a module | fixed 116798a |
 | R001-F25 | minor | usability: `canon-retro`'s closing-step trigger sits past the 190-character cut | open |
 | R001-F26 | major | functional: D001 revision 6 (as-built gate snapshots) is not implemented and no plan carries it | fixed 9fdf0c6 |
 | R001-F27 | major | functional: Tests that expect a directory outside Git write docs into whatever repo holds `TMPDIR` | fixed eb76e61 |
 | R001-F28 | minor | functional: `adopt` and the index format and check have almost no tests | moved C001 |
 | R001-F29 | minor | functional: `adopt` breaks links to the adopted file's H1 anchor | moved D004 |
-| R001-F30 | minor | functional: The canon skill's Tool table disagrees with the CLI (`renumber`, `affected FILE`, audit's idle list) | open |
+| R001-F30 | minor | functional: The canon skill's Tool table disagrees with the CLI (`renumber`, `affected FILE`, audit's idle list) | fixed 4d74020 |
 | R001-F31 | minor | functional: `validate.py` does not catch a `SKILL.md` outside `skills/<category>/<name>/` | open |
 | R001-F32 | minor | functional: D001's `implemented` covers only delivery step 1; analysis and replay are missing | fixed 9fdf0c6 |

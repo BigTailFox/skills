@@ -2,7 +2,7 @@
 
 This repository is a personal collection of agent skills, installed and distributed with `npx skills` (vercel-labs/skills). Each skill is a directory containing a `SKILL.md`, under `skills/execution/` or `skills/governance/`.
 
-Do not commit a `SKILL.md` outside `skills/`, templates and examples included: the CLI would treat it as an installable skill. Do not add custom install scripts either; installing, updating and removing are left to `npx skills`.
+Do not commit or leave untracked any `SKILL.md` other than a skill's own `skills/<category>/<name>/SKILL.md`, templates and examples included: the CLI would treat it as an installable skill, and `validate.py` fails on it. Do not add custom install scripts either; installing, updating and removing are left to `npx skills`.
 
 ## Categories
 
