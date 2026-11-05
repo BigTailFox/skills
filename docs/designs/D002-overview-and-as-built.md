@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-10-22
-updated: 2026-10-23
+updated: 2026-11-05
 revision: 3
 modules: [canon]
 summary: D000 project overview in every project, as-built designs that record existing code, backfill before changing unspecified behavior, and design coverage in audit.
@@ -184,6 +184,12 @@ Scenarios, tested through the commands:
 - `archive D000` is refused.
 - `which` prints `doc` for `README.md`, `src/a/readme.rst`, `AGENTS.md`, `CLAUDE.md`, `LICENSE` and a file under a docs root, and for `src/auth/README.md` while a design's `paths` hold `src/auth/**`; it prints the design for a README whose exact path a design's `paths` list, and for `src/agents.py` and `src/license.py` while a design's `paths` hold `src/**`. A commit that changes only `src/auth/README.md` is no unchecked commit of that design.
 - `audit` counts only files under D000's module Paths, and no doc among them. It lists a fully uncovered `src/a/` with its subdirectories folded in but never above its module's Path, `src/b/` as `2 of 5 files`, and the files of a module whose Path is `./` as one area `./  <n> files` while a design covers the files of a module whose Path is `src/`; it ranks areas by commits of the last 90 days, lists 10 and counts the rest. It lists a design D000 does not reach, and not one reached through another design's `refs`.
+
+## Known issues
+
+| ID | Severity | Issue | Source | Since | Next |
+|----|----------|-------|--------|-------|------|
+| D002-K1 | major | A `paths` entry matches a whole file, so coverage counts all of `canon.py` as covered while about half of it (the doc model, `check`, archive, rename, `show`, `find`, `affected`) has no design, and any `canon.py` edit must name all five designs in `Refs:` | R001-F1 | 2026-11-05 | L2 |
 
 ## Decisions
 

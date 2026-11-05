@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-10-22
-updated: 2026-10-29
+updated: 2026-11-05
 revision: 4
 modules: [canon]
 summary: How canon runs reviewers and workers as new subagents on the session's model, resumed by id, the review snapshots confirmations diff, and the reviewer file.
@@ -77,6 +77,8 @@ This design covers the subagents of the `canon` workflow, meaning the reviewers 
 |----|----------|-------|--------|-------|------|
 | D003-K3 | minor | No way to resume a subagent is named for Codex | as-built e08f898 | 2026-10-22 | L1 |
 | D003-K4 | minor | Nothing says where the session finds the session id a command reviewer reports, which D001's token analysis reads | as-built e08f898 | 2026-10-22 | L1 |
+| D003-K5 | major | The rules of running a blind review (the report contract, the known-issue rule, the merge rule, stopped runs) are restated in `workflow.md`, `canon-blind-review`, `canon-code-review` and `canon-review`, so one change edits three to six files | R001-F3 | 2026-11-05 | L1 |
+| D003-K6 | minor | The reviewer file, set up per machine, lives in each checkout's `.canon/`, so every clone and linked worktree falls back to the manual reviewer until `/canon-init` runs again | R001-F7 | 2026-11-05 | L1 |
 
 ## Decisions
 

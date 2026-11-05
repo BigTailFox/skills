@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-10-29
-updated: 2026-10-30
+updated: 2026-11-05
 revision: 3
 modules: [canon]
 summary: Project setup and upgrades with canon.py init, migration of existing docs with adopt, and the canon-init flows for setup, upgrade and new modules.
@@ -84,6 +84,13 @@ canon.py adopt FILE TYPE [--slug SLUG] [--title TITLE] [--root DIR]
 - **Upgrade**: from the repo root, run `python3 <canon>/scripts/canon.py init`, where `<canon>` is the `canon` skill's directory; when it exits because of the copy's path, ask the user for one and rerun with `--script <path>`. Then run `check --fix`, and fix what the new version still reports apart from D000's guidance. `--fix` gives `implemented: 1` only to an active design never revised and without an open plan; every other active design gets the revision its code fully implements, found by comparing the code with each revision of its spec in the Git history, or the open plan's `based_on`. A plan in progress whose `reviewed` is below its `revision` passes the review gate before its slices continue. When `init` moved the design owning `architecture` to D000, commit its output as it is before anything else, so Git keeps the rename, with `--no-verify` when a pre-commit hook runs `check`, since the guidance `init` appended fails `check` until the D000 work replaces it. A project that had no D000 then continues as [D002§setup: setup](D002-overview-and-as-built.md#setup) states.
 - **Add a module**: run `python3 <copy> init --root <module> --script <copy>`, then add or update the module's row in D000's Modules table, linking the designs in the module's docs root.
 - `canon-sync`'s audit compares the copy's `--version` with that of the `canon` skill's `scripts/canon.py`. An older copy is upgraded as above; a copy of the same version with other content is shown to the user as a diff before it is replaced, since it may hold local edits.
+
+## Known issues
+
+| ID | Severity | Issue | Source | Since | Next |
+|----|----------|-------|--------|-------|------|
+| D004-K1 | major | Nothing checks that a project's `canon.py` copy is new enough for the installed skills, so an older copy's errors contradict them; a version 18 copy reports the `as_built` field as unknown | R001-F2 | 2026-11-05 | L2 |
+| D004-K2 | minor | `adopt` rewrites the H1, which changes its anchor, and leaves links to the old anchor broken until `check` fails on them | R001-F29 | 2026-11-05 | L1 |
 
 ## Decisions
 
