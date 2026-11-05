@@ -398,6 +398,44 @@ class HistoryIdTest(CanonTest):
     def test_on_an_unborn_branch_ids_follow_the_files_alone(self):
         self.assertEqual([self.new("x"), self.new("x")], ["docs/designs/D001-x.md", "docs/designs/D002-x.md"])
 
+    def run_with_path(self, bin_dir, *args, cwd=None):
+        return subprocess.run([sys.executable, "-B", str(SCRIPT), *args], cwd=cwd or self.root,
+                              env=dict(os.environ, PATH=str(bin_dir)), capture_output=True, text=True)
+
+    def new_with_git_from(self, bin_dir):
+        """The error of `new D x` run with `bin_dir` as the whole PATH, after D003 was committed and deleted; `which`,
+        which assigns no id, still runs."""
+        design = self.three_designs()[2]
+        self.commit()
+        self.git("rm", "-q", str(design.relative_to(self.root)))
+        self.commit(check=False)
+        result = self.run_with_path(bin_dir, "new", "D", "x")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertFalse((self.root / "docs/designs/D003-x.md").exists())
+        which = self.run_with_path(bin_dir, "which", "src/base.py")
+        self.assertEqual(which.returncode, 0, which.stderr)
+        self.assertTrue(which.stdout.startswith("src/base.py: D001 docs/designs/D001-a.md"), which.stdout)
+        return result.stderr
+
+    @unittest.skipIf(os.name == "nt", "the refusing git is a shell script")
+    def test_a_git_that_refuses_the_checkout_ends_new_instead_of_reusing_an_id(self):
+        refusing = self.tmpdir()
+        (refusing / "git").write_text("#!/bin/sh\necho 'fatal: detected dubious ownership in repository' >&2\nexit 128\n")
+        (refusing / "git").chmod(0o755)
+        self.assertEqual(self.new_with_git_from(refusing),
+                         "canon: cannot read the history of HEAD in {}: fatal: detected dubious ownership in "
+                         "repository\n".format(self.root.resolve()))
+
+    def test_a_checkout_without_git_on_path_ends_new_instead_of_reusing_an_id(self):
+        no_git = self.tmpdir()
+        message = "canon: cannot read the history of HEAD in {}: git is not on PATH\n".format(self.root.resolve())
+        self.assertEqual(self.new_with_git_from(no_git), message)
+        nested = self.root / "pkg"
+        nested.mkdir()
+        shutil.copy(self.root / "AGENTS.md", nested / "AGENTS.md")
+        result = self.run_with_path(no_git, "new", "D", "y", cwd=nested)
+        self.assertEqual((result.returncode, result.stderr), (1, message))
+
     def test_the_id_of_a_deleted_design_stays_taken(self):
         design = self.three_designs()[2]
         self.commit()

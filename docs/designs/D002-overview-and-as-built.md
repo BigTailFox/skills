@@ -190,6 +190,7 @@ Scenarios, tested through the commands:
 | ID | Severity | Issue | Source | Since | Next |
 |----|----------|-------|--------|-------|------|
 | D002-K1 | major | A `paths` entry matches a whole file, so coverage counts all of `canon.py` as covered while about half of it (the doc model, `check`, archive, rename, `show`, `find`, `affected`) has no design, and any `canon.py` edit must name all five designs in `Refs:` | R001-F1 | 2026-11-05 | L2 |
+| D002-K2 | minor | In a checkout Git cannot read, `audit` takes each failing `git` call for an empty result: coverage lists no source areas, every commit count reads 0, and `unchecked_commits` finds no commits, so the report looks clean instead of naming the failure | code review eb76e61 | 2026-11-05 | fix |
 
 ## Decisions
 

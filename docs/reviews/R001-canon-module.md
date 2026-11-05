@@ -1,7 +1,7 @@
 ---
 status: open
 created: 2026-11-03
-updated: 2026-11-03
+updated: 2026-11-05
 revision: 1
 modules: []
 summary: First codebase review of the canon module at release 0.3.1, from the architecture, usability and functional angles.
@@ -51,7 +51,7 @@ Each angle's report, with locations, evidence and suggestions, is attached: [arc
 | R001-F24 | minor | usability: `init --root` with a typo silently creates a module | open |
 | R001-F25 | minor | usability: `canon-retro`'s closing-step trigger sits past the 190-character cut | open |
 | R001-F26 | major | functional: D001 revision 6 (as-built gate snapshots) is not implemented and no plan carries it | open |
-| R001-F27 | major | functional: Tests that expect a directory outside Git write docs into whatever repo holds `TMPDIR` | open |
+| R001-F27 | major | functional: Tests that expect a directory outside Git write docs into whatever repo holds `TMPDIR` | fixed eb76e61 |
 | R001-F28 | minor | functional: `adopt` and the index format and check have almost no tests | moved C001 |
 | R001-F29 | minor | functional: `adopt` breaks links to the adopted file's H1 anchor | moved D004 |
 | R001-F30 | minor | functional: The canon skill's Tool table disagrees with the CLI (`renumber`, `affected FILE`, audit's idle list) | open |

@@ -28,7 +28,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "24"
+CANON_VERSION = "25"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -276,6 +276,21 @@ def git(cwd, *args):
     except FileNotFoundError:
         return None
     return result.stdout if result.returncode == 0 else None
+
+
+def unreadable_checkout(start):
+    """For a directory Git finds in no checkout: the nearest directory at or above it that holds `.git`, and why Git
+    cannot read it; else None."""
+    start = start.resolve()
+    for path in (start, *start.parents):
+        if (path / ".git").exists():
+            try:
+                result = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=str(start),
+                                        capture_output=True, text=True)
+            except FileNotFoundError:
+                return path, "git is not on PATH"
+            return path, result.stderr.strip() or "git rev-parse exited {}".format(result.returncode)
+    return None
 
 
 def parse_value(key, raw):
@@ -557,6 +572,7 @@ class Repo:
         start = Path(start or os.getcwd())
         top = git(start, "rev-parse", "--show-toplevel")
         self.is_git = top is not None
+        self.unreadable = None if self.is_git else unreadable_checkout(start)
         self.root = Path(os.path.realpath(top.strip() if top else str(start)))
         self.has_head = self.is_git and git(self.root, "rev-parse", "--verify", "-q", "HEAD") is not None
         self.files = self._list_files()
@@ -689,6 +705,8 @@ class Repo:
         """Ids of the doc files in the history of HEAD, those since deleted or renamed away included.
         `--full-history` walks the side branches whose docs a merge discarded, and `-m` lists the docs that only a
         merge's resolution added."""
+        if self.unreadable:
+            sys.exit("canon: cannot read the history of HEAD in {}: {}".format(*self.unreadable))
         if not self.has_head:
             return set()
         out = git(self.root, "log", "-z", "--format=", "--name-only", "--no-renames", "--full-history", "-m",
