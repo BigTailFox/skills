@@ -195,11 +195,14 @@ def check_canon_version():
 
 
 def run_tests():
+    """The label of the suite's line, counting skipped tests, and its failures."""
     if not TESTS_DIR.is_dir():
-        return []
+        return "tests", []
     result = subprocess.run([sys.executable, "-B", "-m", "unittest", "discover", "-s", str(TESTS_DIR)],
                             cwd=ROOT, capture_output=True, text=True)
-    return [] if result.returncode == 0 else [result.stderr.rstrip()]
+    skipped = re.search(r"skipped=(\d+)", result.stderr.rstrip().rsplit("\n", 1)[-1])
+    label = f"tests ({skipped.group(1)} skipped)" if skipped else "tests"
+    return label, [] if result.returncode == 0 else [result.stderr.rstrip()]
 
 
 def report(label, errors):
@@ -241,7 +244,7 @@ def main():
         failures += report(md.name, errors)
     if (ROOT / CANON_SCRIPT).is_file():
         failures += report(CANON_SCRIPT + " version", check_canon_version())
-    failures += report("tests", run_tests())
+    failures += report(*run_tests())
     print(f"\n{len(skills)} skill(s) checked, {failures} problem(s)")
     return 1 if failures else 0
 

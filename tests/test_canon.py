@@ -4,6 +4,7 @@ import contextlib
 import datetime
 import hashlib
 import importlib.util
+import inspect
 import json
 import os
 import re
@@ -59,6 +60,14 @@ class CanonTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         return Path(tmp.name)
+
+    def outside_checkouts(self):
+        """A new directory in no checkout: `canon.py` run there would otherwise act on the checkout around TMPDIR."""
+        path = self.tmpdir()
+        for parent in path.resolve().parents:
+            if (parent / ".git").exists() or (parent / "AGENTS.md").exists():
+                self.skipTest("TMPDIR is inside {}, which holds .git or AGENTS.md".format(parent))
+        return path
 
     def run_here(self, *args):
         return subprocess.run(args, cwd=self.root, capture_output=True, text=True)
@@ -382,7 +391,7 @@ class HistoryIdTest(CanonTest):
         self.assertEqual(self.new("y", "--parent", "D001"), "docs/designs/D001C-y.md")
 
     def test_outside_git_ids_follow_the_files_alone(self):
-        self.root = self.tmpdir()
+        self.root = self.outside_checkouts()
         self.ok("init")
         self.assertEqual([self.new("x"), self.new("x")], ["docs/designs/D001-x.md", "docs/designs/D002-x.md"])
 
@@ -1228,7 +1237,7 @@ class ReachTest(CanonTest):
         self.create("lib/x.py")
 
     def test_outside_git_audit_prints_reach_but_no_coverage(self):
-        self.root = self.tmpdir()
+        self.root = self.outside_checkouts()
         self.ok("init")
         self.project()
         out = self.ok("audit")
@@ -1288,7 +1297,7 @@ class AsBuiltTest(CanonTest):
     def test_worktree_passes_before_the_first_commit_and_outside_git_where_a_hash_fails(self):
         self.doc("D", "area", as_built="worktree")
         self.assertNotIn("as_built", self.ok("check", "--fix"))
-        self.root = self.tmpdir()
+        self.root = self.outside_checkouts()
         self.ok("init")
         design = self.doc("D", "area", as_built="worktree")
         self.assertNotIn("as_built", self.ok("check", "--fix"))
@@ -1690,7 +1699,7 @@ class TraceTest(TraceCase):
         (self.root / "src/AGENTS.md").write_text("# AGENTS.md\n")
         self.start("design", cwd=self.root / "src")
         self.assertEqual(len(self.lines()), 1)
-        top = self.tmpdir()
+        top = self.outside_checkouts()
         (top / "a/b").mkdir(parents=True)
         (top / "AGENTS.md").write_text("# AGENTS.md\n")
         self.start("design", cwd=top / "a/b")
@@ -1987,7 +1996,7 @@ class SnapshotTest(TraceCase):
             self.assertEqual(self.git("-C", snap, "rev-parse", "--show-object-format"), "sha1")
 
     def test_a_directory_outside_git_records_no_git_with_null_head_and_base(self):
-        outside = self.tmpdir()
+        outside = self.outside_checkouts()
         (outside / "AGENTS.md").write_text("# AGENTS.md\n")
         self.start("code-review", "--base", "main", cwd=outside)
         [line] = self.lines(outside / ".canon/canon/trace/events.jsonl")
@@ -2104,7 +2113,6 @@ class ReviewSnapshotTest(TraceCase):
         self.assertEqual([path.exists() for path in copies + builds], [False, True, False, True])
 
     def test_a_snapshot_that_cannot_be_taken_prints_its_reason_and_exits_1(self):
-        self.assertEqual(self.snapshot(cwd=self.tmpdir(), returncode=1), ("snapshot error: no-git\n", ""))
         (self.root / "big.bin").write_bytes(b"\0" * (11 << 20))
         self.assertEqual(self.snapshot(returncode=1), ("snapshot error: changes-over-10MiB\n", ""))
         (self.root / "big.bin").unlink()
@@ -2112,6 +2120,7 @@ class ReviewSnapshotTest(TraceCase):
         out, err = self.snapshot(returncode=1)
         self.assertEqual(out, "snapshot error: git status: exit 128\n")
         self.assertIn("index", err)
+        self.assertEqual(self.snapshot(cwd=self.outside_checkouts(), returncode=1), ("snapshot error: no-git\n", ""))
 
     @unittest.skipIf(fcntl is None, "lock_held holds no lock without fcntl")
     def test_a_snapshot_that_waits_5_s_for_snapshot_lock_fails_and_records_nothing(self):
@@ -2459,7 +2468,7 @@ class SkillDigestTest(TraceCase):
         self.assertEqual(self.snapshot_objects() - before,
                          {line["snapshot"], self.snap("rev-parse", line["snapshot"] + "^")})
         self.assertEqual(self.snap("for-each-ref", "--format=%(refname) %(objectname)", "refs/skills/"), refs)
-        outside = self.tmpdir()
+        outside = self.outside_checkouts()
         (outside / "AGENTS.md").write_text("# AGENTS.md\n")
         self.start("design", "--skill", str(skill), cwd=outside)
         self.assertEqual(self.lines(outside / ".canon/canon/trace/events.jsonl")[-1]["manifest"], digest)
@@ -2618,7 +2627,7 @@ class PruneTest(TraceCase):
         self.assertEqual([path.exists() for path in (self.trace_dir / old, copy, build)], [True, True, True])
 
     def test_outside_git_prune_deletes_old_archives_and_creates_nothing(self):
-        outside = self.tmpdir()
+        outside = self.outside_checkouts()
         (outside / "AGENTS.md").write_text("# AGENTS.md\n")
         out = self.trace("prune", "--days", "7", cwd=outside)
         self.assertEqual(out.splitlines()[-1], "snapshots: 0, 0.0 KiB on disk")
@@ -2629,6 +2638,24 @@ class PruneTest(TraceCase):
         self.assertRegex(self.trace("prune", "--days", "7", cwd=outside),
                          r"^removed 0 snapshots and 1 archive of units started more than 7 days ago\n")
         self.assertEqual(list(archive.parent.iterdir()), [])
+
+
+class OutsideCheckoutTest(CanonTest):
+    def test_tests_that_need_a_directory_outside_git_leave_a_checkout_holding_tmpdir_untouched(self):
+        names = sorted("{}.{}.{}".format(Path(__file__).stem, cls.__name__, name)
+                       for cls in globals().values() if isinstance(cls, type) and issubclass(cls, CanonTest)
+                       for name, method in vars(cls).items()
+                       if name.startswith("test") and cls is not OutsideCheckoutTest
+                       and "self.outside_checkouts()" in inspect.getsource(method))
+        self.assertTrue(names)
+        self.commit()
+        tmp = self.root / "tmp"
+        tmp.mkdir()
+        env = dict(os.environ, TMPDIR=str(tmp), TEMP=str(tmp), TMP=str(tmp))
+        result = subprocess.run([sys.executable, "-B", "-m", "unittest", *names], cwd=str(Path(__file__).parent),
+                                env=env, capture_output=True, text=True)
+        self.assertIn("OK (skipped={})".format(len(names)), result.stderr, result.stderr)
+        self.assertEqual(self.git("status", "--porcelain", "--untracked-files=all"), "")
 
 
 if __name__ == "__main__":
