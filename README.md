@@ -121,7 +121,7 @@ Auto skills load when the context calls for them. Manual skills run only as comm
 │           ├── agents/openai.yaml  # manual skills: keeps Codex from invoking them implicitly
 │           └── LICENSE, NOTICE     # ported skills: upstream license and provenance
 ├── scripts/
-│   └── validate.py         # checks skills, stray SKILL.md files, links, the Skills tables and CANON_VERSION, then runs tests/
+│   └── validate.py         # checks skills, stray SKILL.md files, links, the Skills tables, CANON_VERSION and D001's text budgets, then runs tests/
 └── tests/
     ├── test_canon.py       # regression tests for canon.py
     └── test_validate.py    # regression tests for validate.py
@@ -141,7 +141,7 @@ cd skills/execution && npx skills init canon-my-task && cd -
 Complete the frontmatter as [AGENTS.md](AGENTS.md) describes: `name` equals the directory name, and `description` leads with the triggers for an auto skill or is a one-line summary for a manual one. A manual skill also gets `disable-model-invocation: true` and `agents/openai.yaml`. Add a row to the Skills tables above, then check:
 
 ```bash
-python3 scripts/validate.py    # structure, frontmatter, links, Skills tables, CANON_VERSION, tests
+python3 scripts/validate.py    # structure, frontmatter, links, Skills tables, CANON_VERSION, text budgets, tests
 npx skills add . --list        # the CLI discovers the skill
 ```
 

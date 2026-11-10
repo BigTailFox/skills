@@ -1,16 +1,16 @@
 ---
 status: active
 created: 2026-10-23
-updated: 2026-11-05
-revision: 2
+updated: 2026-11-10
+revision: 3
 modules: []
 summary: Agent skills built around canon, a documentation system kept in the repository; one module, its capabilities and the designs that own them.
 refs: [D001, D002, D003, D004, D005]
 owns: [architecture]
 paths: []
-reviewed: 2
+reviewed: 3
 reviewers: [claude-opus-5.5]
-implemented: 2
+implemented: 3
 ---
 
 # D000: Project overview
@@ -63,7 +63,7 @@ There is one module, so no direction between modules applies. These hold inside 
 - A skill runs the project's copy of `canon.py` at the path the canon block of the repo root's `AGENTS.md` names, and the `canon` skill's own `scripts/canon.py` while the project has no copy. `init` puts the copy where [D004§init: init](D004-project-setup.md#init) states.
 - Execution skills read and write project docs only through the documentation system the governance skills define.
 - `canon.py` is a single file on the Python 3.8+ standard library, and runs `git` in a Git checkout.
-- The repository tooling, `scripts/validate.py`, checks each skill's layout, frontmatter, length and links, that every `SKILL.md` on disk that Git tracks or does not ignore is a skill's own, directly inside a non-hidden `skills/<category>/<name>/`, failing when Git cannot list the files, the links of the root's Markdown files, the Skills tables of `README.md` and `CANON_VERSION`, and runs `tests/`, where `test_validate.py` tests it. Nothing under `skills/` depends on it.
+- The repository tooling, `scripts/validate.py`, checks each skill's layout, frontmatter, length and links, that every `SKILL.md` on disk that Git tracks or does not ignore is a skill's own, directly inside a non-hidden `skills/<category>/<name>/`, failing when Git cannot list the files, the links of the root's Markdown files, the Skills tables of `README.md`, `CANON_VERSION`, and [D001§budgets: budgets](D001-skill-telemetry.md#budgets) for skill text, failing when no paragraph of the `canon` skill starts as they say. That last check needs tiktoken and its `cl100k_base` encoding; when either fails to load, it prints why, with the `uv run` command that adds a missing tiktoken. It runs `tests/`, where `test_validate.py` tests it. Nothing under `skills/` depends on it.
 
 ### Glossary
 

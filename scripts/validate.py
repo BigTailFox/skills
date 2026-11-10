@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Validate every skill under the category directories, that no SKILL.md lies elsewhere, the README skill list
-and the canon.py version, then run the tests in tests/.
+"""Validate every skill under the category directories, that no SKILL.md lies elsewhere, the README skill list,
+the canon.py version and D001's text budgets, then run the tests in tests/.
 
 Usage: python3 scripts/validate.py
 Exits non-zero if any check or test fails.
@@ -29,6 +29,13 @@ TRIGGER = {False: "Auto", True: "Manual"}
 IMPLICIT_RE = re.compile(r"^\s*allow_implicit_invocation:\s*['\"]?(\w+)", re.M)
 CANON_SCRIPT = "skills/governance/canon/scripts/canon.py"
 VERSION_RE = re.compile(r'^CANON_VERSION = "\d+"', re.M)
+TRACE_CALL_RE = re.compile(r"`canon\.py trace (?:start|end) [^`]*`")
+LIST_MARKER_RE = re.compile(r"^\s*(?:\d+\.|[-*])\s+")
+SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\0(\[*_\"'])")
+CALL_SITE_TOKENS = 40
+PLACEHOLDERS = ("skills/governance/canon/SKILL.md", "In `trace` calls", 110)
+TRACE_MD = ("skills/governance/canon/trace.md", 420)
+UV_COMMAND = "uv run --no-project --with tiktoken python3 scripts/validate.py"
 
 
 def git(*args):
@@ -39,16 +46,54 @@ def git(*args):
     return result.stdout if result.returncode == 0 else None
 
 
-def link_targets(text):
-    """Yield link targets outside fenced code blocks and inline code."""
+def prose_lines(text):
+    """Yield (line number, line) for the lines outside fenced code blocks."""
     fence = None
-    for line in text.splitlines():
+    for number, line in enumerate(text.splitlines(), 1):
         match = FENCE_RE.match(line)
         if match:
             fence = match.group(1) if fence is None else (None if fence == match.group(1) else fence)
             continue
         if fence is None:
-            yield from LINK_RE.findall(INLINE_CODE_RE.sub("", line))
+            yield number, line
+
+
+def link_targets(text):
+    """Yield link targets outside fenced code blocks and inline code."""
+    for _number, line in prose_lines(text):
+        yield from LINK_RE.findall(INLINE_CODE_RE.sub("", line))
+
+
+def paragraph_lines(text):
+    """Yield (first line number, text) for each paragraph, list item, heading or table row outside fenced code blocks,
+    with its wrapped lines joined."""
+    current, last, single = None, None, False
+    for number, line in prose_lines(text):
+        opens = LIST_MARKER_RE.match(line) or line.lstrip().startswith(("#", "|", ">"))
+        if current and line.strip() and not opens and not single and number == last + 1:
+            current[1] += " " + line.strip()
+        else:
+            if current:
+                yield tuple(current)
+            current = [number, line] if line.strip() else None
+            single = line.lstrip().startswith(("#", "|"))
+        last = number
+    if current:
+        yield tuple(current)
+
+
+def trace_call_sites(text):
+    """Yield (line number, sentence) for each sentence that holds a `canon.py trace start` or `end` call; a code span
+    never ends a sentence."""
+    for number, line in paragraph_lines(text):
+        body = LIST_MARKER_RE.sub("", line)
+        masked = INLINE_CODE_RE.sub(lambda m: "\0" * len(m.group(0)), body)
+        start = 0
+        for end in [m.start() for m in SENTENCE_END_RE.finditer(masked)] + [len(body)]:
+            sentence = body[start:end].strip()
+            if TRACE_CALL_RE.search(sentence):
+                yield number, sentence
+            start = end
 
 
 def broken_links(md, base):
@@ -206,6 +251,41 @@ def check_canon_version():
     return []
 
 
+def text_budgets():
+    """D001's budgets for the skill text tracing adds, in tiktoken's cl100k_base tokens: the errors, and why they were
+    not measured when tiktoken is missing or cannot load the encoding."""
+    try:
+        import tiktoken
+    except ImportError:
+        return [], f"tiktoken is not installed; run `{UV_COMMAND}`"
+    try:
+        encoding = tiktoken.get_encoding("cl100k_base")
+    except Exception as error:  # tiktoken downloads the encoding on first use
+        return [], f"tiktoken cannot load cl100k_base ({error})"
+
+    def tokens(text):
+        return len(encoding.encode(text))
+
+    errors = []
+    for md in sorted(SKILLS_DIR.rglob("*.md")):
+        for number, sentence in trace_call_sites(md.read_text(encoding="utf-8")):
+            if (count := tokens(sentence)) > CALL_SITE_TOKENS:
+                errors.append(f"{md.relative_to(ROOT).as_posix()}:{number}: a trace call site of {count} tokens "
+                              f"(max {CALL_SITE_TOKENS})")
+    rel, opening, limit = PLACEHOLDERS
+    if (ROOT / rel).is_file():
+        text = (ROOT / rel).read_text(encoding="utf-8")
+        paragraph = next((p for p in text.split("\n\n") if p.startswith(opening)), None)
+        if paragraph is None:
+            errors.append(f"{rel}: no paragraph starts with {opening}")
+        elif (count := tokens(paragraph)) > limit:
+            errors.append(f"{rel}: the paragraph on trace placeholders is {count} tokens (max {limit})")
+    rel, limit = TRACE_MD
+    if (ROOT / rel).is_file() and (count := tokens((ROOT / rel).read_text(encoding="utf-8"))) > limit:
+        errors.append(f"{rel}: {count} tokens (max {limit})")
+    return errors, None
+
+
 def run_tests():
     """The label of the suite's line, counting skipped tests, and its failures."""
     if not TESTS_DIR.is_dir():
@@ -259,6 +339,11 @@ def main():
         failures += report(md.name, errors)
     if (ROOT / CANON_SCRIPT).is_file():
         failures += report(CANON_SCRIPT + " version", check_canon_version())
+    budget_errors, unmeasured = text_budgets()
+    if unmeasured:
+        print(f"skip D001 text budgets: {unmeasured}")
+    else:
+        failures += report("D001 text budgets", budget_errors)
     failures += report(*run_tests())
     print(f"\n{len(skills)} skill(s) checked, {failures} problem(s)")
     return 1 if failures else 0

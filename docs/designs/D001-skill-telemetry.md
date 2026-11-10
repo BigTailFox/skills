@@ -1,16 +1,16 @@
 ---
 status: active
 created: 2026-10-15
-updated: 2026-11-05
-revision: 8
+updated: 2026-11-10
+revision: 9
 modules: [canon]
 summary: Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions.
-refs: [D002, D003]
+refs: [D002, D003, D000]
 owns: [skill-telemetry]
 paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py, skills/governance/canon/trace.md, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/execution/canon-blind-review/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-handoff/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-investigate/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-retro/SKILL.md, skills/execution/canon-review/SKILL.md]
-reviewed: 8
+reviewed: 9
 reviewers: [claude-opus-5.5]
-implemented: 8
+implemented: 9
 ---
 
 # D001: Skill telemetry with canon trace
@@ -260,7 +260,7 @@ Each version runs at least three times per unit. The replay harness is its own d
 3. `scripts/trace_report.py`, tested on redacted real Cursor transcripts and Codex rollouts.
 4. The replay harness, as its own design.
 
-Delivery is staged: each step starts once the one before it has ended, so [Analysis](#analysis) specifies step 3 ahead of its code, and [Replay](#replay) states what step 4 can rely on. Until step 3 lands, `implemented` is the latest revision whose step 1 the repository fully implements, and step 1 ends when `implemented` reaches `revision`. Only units traced after that count toward the pilot, and a capture fix during the pilot does not restart it. Step 3 is written against the revision current when the pilot ends; the change that delivers it adds `scripts/trace_report.py` to `paths`, and from then on `implemented` counts steps 1 and 3. Step 4 starts once step 3 has ended and 20 replayable units exist.
+Delivery is staged: each step starts once the one before it has ended, so [Analysis](#analysis) specifies step 3 ahead of its code, and [Replay](#replay) states what step 4 can rely on. Until step 3 lands, `implemented` is the latest revision whose step 1 the repository fully implements, and step 1 ends when `implemented` reaches `revision`. Only units traced after that count toward the pilot, and neither a capture fix during the pilot nor a revision that changes no capture restarts it; the check of the text [budgets](#budgets) lies outside the staged steps. Step 3 is written against the revision current when the pilot ends; the change that delivers it adds `scripts/trace_report.py` to `paths`, and from then on `implemented` counts steps 1 and 3. Step 4 starts once step 3 has ended and 20 replayable units exist.
 
 Scenarios for step 1, tested through the commands:
 
@@ -290,10 +290,10 @@ If capture falls short, it is fixed before the report is built.
 
 ## Budgets
 
-Measured in the pilot.
+Calls and latency are measured in the pilot; `canon.py` enforces the sizes, and `scripts/validate.py` checks the text limits, as [D000§dependencies: dependencies](D000-project-overview.md#dependencies) says.
 
 - Calls: two per unit except a slice, which takes one; one per skill invocation when tracing is off.
-- Text, counted in tiktoken's `cl100k_base` tokens: at most 40 per call site in a skill; at most 110 for the `canon` skill's paragraph on the placeholders and the first-start rule, read whether tracing is on or off; `trace.md` at most 420, read only when tracing is on.
+- Text, counted in tiktoken's `cl100k_base` tokens: at most 40 per call site in a skill, which is the sentence holding a `canon.py trace start` or `end` call, a code span never ending it; at most 110 for the `canon` skill's paragraph on the placeholders and the first-start rule, the one that starts with ``In `trace` calls``, read whether tracing is on or off; `trace.md` at most 420, read only when tracing is on.
 - Latency: `start` and `end` p95 under 300 ms on a local disk, including a snapshot of a 20,000-file checkout and the digests of 20 skill directories of 1 MiB in total; a checkout's first snapshot, which copies the whole tree, is exempt.
 - Size: 16 KiB per line, 2 MiB per archive, 10 MiB of untracked and unstaged files per snapshot, 64 KiB per `snapshot-error.txt`, which keeps the end of Git's message.
 
