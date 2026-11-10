@@ -49,7 +49,7 @@ Every design or plan revision passes this gate before it is accepted, and every 
 
 ### Reviewer prompt
 
-Fill the placeholders and pass nothing else. The `Changes since` line is only for revisions of an existing doc. The `As-built` line is only for [as-built revisions](as-built.md), filled from `as_built`: the first of each choice for a new design and for a commit, the second for a revision and for `worktree`. In Correctness and Completeness, as-built revisions take the second choice and other revisions the first.
+Fill the placeholders and pass nothing else. The `Changes since` line is only for revisions of an existing doc. The `As-built` line is only for [as-built revisions](as-built.md), filled from `as_built`: the first of each choice for a new design and for a commit, the second for a revision and for `worktree`. In Correctness and Completeness, as-built revisions take the second choice and other revisions the first. `{documentation language}` is the language the project's docs are written in.
 
 ```text
 You are reviewing a {design | plan} in this repository with no prior context. Judge it only from the repository.
@@ -58,7 +58,7 @@ Target: {path}
 Changes since: {commit} (review what changed; read the rest for context)
 As-built: {the target | what this revision adds} records {the code at {commit}, read with `git show {commit}:<path>` since the work tree may hold a later change | the files as they are} and specifies no change to it.
 
-Read the target, the docs it links to, and the code it governs. Do not read `.canon/`. Do not modify any file or write scratch files; read long command output in parts instead.
+Read the target, the docs it links to, and the code it governs. Do not read `.canon/`. Do not modify any file or write scratch files; read long command output in parts instead. You may run the canon.py that `AGENTS.md` names with `show`, `find`, `which`, `affected`, or `check` without `--fix`, which only read; when the host blocks one, read the files instead.
 
 Assess:
 - Correctness and feasibility against {the current code | the code it records}.
@@ -79,6 +79,7 @@ Suggestion: ...
 
 Keep each finding as short as it can be while a reader can understand and verify it without redoing your review.
 Then list Questions: anything you could not understand from the repository alone.
+Write the report in {documentation language}, even where your instructions set another reply language.
 End with one line: Verdict: approve | revise
 ```
 
@@ -91,6 +92,8 @@ Fix findings in the change; when blocker or major fixes changed it, the reviewer
 ## Subagents
 
 The user sets each session's model and reasoning effort. Reviewers and implementation workers are new subagents from the host's own tool (the Task tool in Cursor, the Agent tool in Claude Code, multi-agent subagents in Codex), never forks of the session. Launch them without a model or effort, so they run on the session's.
+
+Run a reviewer that is a host subagent in the foreground unless you have other work meanwhile, such as edits or another target's review; start one that runs as a command first, in the background. Save each report as the `canon-blind-review` skill says. Once you have no other work, look for the report of a host subagent whose completion notice has not come in the host's record of its run: in Cursor, `subagents/<agent id>.jsonl` in `<cursor home>/projects/<project>/agent-transcripts/$CURSOR_CONVERSATION_ID/`; in Codex, the `rollout-*.jsonl` under `$CODEX_HOME/sessions/` whose `session_meta` names your session as `parent_thread_id`.
 
 The cross-family reviewer runs as the reviewer file, `.canon/canon-blind-review/reviewer.md`, says. The file is local because the tools and logins it relies on differ between machines; the `canon-init` skill writes it. It lists one or more reviewers, each with its model and effort, how to run it (a shell command with `<prompt>` and `<out>` placeholders that starts a new read-only session and leaves the final review in `<out>`, or a host subagent with a named model), and what the host needs to run it, such as running outside its sandbox. The cross-family reviewer is the first one whose model is of another family than the current session's.
 

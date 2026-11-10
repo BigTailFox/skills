@@ -1,11 +1,11 @@
 ---
 status: draft
 created: 2026-11-05
-updated: 2026-11-05
+updated: 2026-11-10
 revision: 1
 modules: [canon]
 summary: Ideas for the canon module that no design tracks yet, from codebase reviews and deferred findings.
-refs: [R001, D003]
+refs: [R001]
 ---
 
 # C001: Canon backlog
@@ -26,7 +26,6 @@ Findings that are not defects of code a design governs, and work that needs a ne
 - **Error messages that name the next step** (R001-F17, F18). `check`'s unknown entry, `new`'s slug and `--from` errors, `show`'s missing section, `find`'s miss of an archived doc, `adopt` of a missing file (whose wording D004 states) and the `--base` errors (missing ref or shallow history) stop short of the value or the command to run.
 - **`which` on missing paths** (R001-F19). `which` answers `no design`, or a design, for paths that exist neither on disk nor in Git.
 - **Tests for `adopt` and the index format** (R001-F28). D004's `adopt` and D005's format and `index out of date` error are as-built and almost untested.
-- **Waiting on a background reviewer** (retro, 2026-11-05). A reviewer resumed in the background for D001 r8's confirmation finished with approve, but the host sent no completion notice and the session idled until the user asked whether it was stuck. [D003: Subagents](../designs/D003-subagents.md) could run a reviewer in the foreground when the session has nothing else to do meanwhile, and have a session that waits on a background one check its status instead of relying on the notice alone. An L1 revision of D003.
 
 ## Open questions
 

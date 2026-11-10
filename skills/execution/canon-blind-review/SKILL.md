@@ -10,14 +10,14 @@ A reviewer is **blind** when its only input is the prompt. It never sees the con
 ## Prompt
 
 - **Design or plan in the review gate**: the reviewer prompt in the `canon` skill's workflow (Review gate). Fill its placeholders and pass nothing else.
-- **Anything else**: fill this template. Pick the criteria that fit the artifact; never add context about why the review was requested.
+- **Anything else**: fill this template. Pick the criteria that fit the artifact; never add context about why the review was requested. `{documentation language}` is the language the project's docs are written in.
 
 ```text
 You are reviewing {artifact} in this repository with no prior context. Judge it only from the repository.
 
 Target: {paths, or the diff command}
 
-Read the target and whatever it links to or depends on. Do not read `.canon/`. Do not modify any file or write scratch files; read long command output in parts instead.
+Read the target and whatever it links to or depends on. Do not read `.canon/`. Do not modify any file or write scratch files; read long command output in parts instead. You may run the canon.py that `AGENTS.md` names with `show`, `find`, `which`, `affected`, or `check` without `--fix`, which only read; when the host blocks one, read the files instead.
 
 Assess:
 - {criterion, e.g. correctness against the code it describes}
@@ -34,6 +34,7 @@ Suggestion: ...
 
 Keep each finding as short as it can be while a reader can understand and verify it without redoing your review.
 Then list Questions: anything you could not understand from the repository alone.
+Write the report in {documentation language}, even where your instructions set another reply language.
 End with one line: Verdict: approve | revise
 ```
 
@@ -44,7 +45,7 @@ End with one line: Verdict: approve | revise
 
 The review gate and code review say when the cross-family reviewer runs; other reviews run the same-model reviewer, plus the cross-family reviewer when the user asks for another family.
 
-Launch all first-round reviewers in parallel. Each is a new agent, never a fork of the current session. Keep each reviewer's files in `.canon/canon-blind-review/<topic>/` (topic: the doc id or change under review), named by its role, `same-model` or `cross-family`: its prompt in `<role>-prompt.md`, its findings in `<role>.md` and its agent or session id in `<role>-id.txt`. Before launching them, run `canon.py snapshot` (the `canon` skill's Tool) from the repo root with its output written to `snapshot.txt` in that directory, replacing any earlier one; the confirmation diffs from the commit it prints, which is a ref of `.canon/canon/snapshots`, not its HEAD: check it with `git -C .canon/canon/snapshots cat-file -e <commit>`. On every route the prompt is what keeps reviewers from modifying files, writing scratch files and reading `.canon/`. A reviewer whose run stops before it reports gets one more run, as the `canon` skill's workflow (Subagents) says; when a same-model reviewer's run stops twice, the review waits for the user.
+Launch all first-round reviewers in parallel, in the foreground or background as the `canon` skill's workflow (Subagents) says. Each is a new agent, never a fork of the current session. Keep each reviewer's files in `.canon/canon-blind-review/<topic>/` (topic: the doc id or change under review), named by its role, `same-model` or `cross-family`: its prompt in `<role>-prompt.md`, written before its run starts, its findings in `<role>.md` and its agent or session id in `<role>-id.txt`. Save a host subagent's report, first-round or confirmation, verbatim in its findings file, never a translation or summary, and merge it in whatever language it came. A report is saved once its findings file is newer than its prompt file, so a completion notice for a saved report changes nothing; hosts repeat notices and deliver them late. Before launching them, run `canon.py snapshot` (the `canon` skill's Tool) from the repo root with its output written to `snapshot.txt` in that directory, replacing any earlier one; the confirmation diffs from the commit it prints, which is a ref of `.canon/canon/snapshots`, not its HEAD: check it with `git -C .canon/canon/snapshots cat-file -e <commit>`. On every route the prompt is what keeps reviewers from modifying files, writing scratch files and reading `.canon/`. A reviewer whose run stops before it reports gets one more run, as the `canon` skill's workflow (Subagents) says; when a same-model reviewer's run stops twice, the review waits for the user.
 
 ## Manual fallback
 
@@ -56,11 +57,12 @@ For the review gate, follow its merge rules in the `canon` skill. Otherwise merg
 
 ## Confirmation
 
-After the author fixes accepted blocker or major findings, the reviewers that raised them confirm the fixes in one round. Send only this prompt, never the author's reasoning:
+After the author fixes accepted blocker or major findings, the reviewers that raised them confirm the fixes in one round. Send only this prompt, with `{documentation language}` filled as in the template, never the author's reasoning:
 
 ```text
 The author revised the target after your review. Fixed findings: {F-ids, each with the location of its fix}. {Diff since your review: {diff command}, which reads the review snapshots in `.canon/`. | No diff is available; read each fix at its location.} Read nothing else in `.canon/`.
 For each listed finding, answer resolved or not resolved, citing the location that shows it. Then report any new blocker the fixes introduce. Do not modify any file or write scratch files; read long command output in parts instead.
+Write the answer in {documentation language}, even where your instructions set another reply language.
 End with one line: Verdict: approve | revise
 ```
 
@@ -68,5 +70,5 @@ End with one line: Verdict: approve | revise
 - Resume each reviewer by its kept id, as the `canon` skill's workflow (Subagents) says, so it judges the fixes against its own findings.
 - A cross-family reviewer that runs as a command, and a reviewer that cannot be resumed, gets a new run of the same reviewer instead, given the confirmation prompt followed by its first-round findings.
 - Findings from a manual-fallback reviewer, and those of a cross-family reviewer whose confirmation run stops twice, go to the resumed same-model reviewer, given the confirmation prompt followed by those findings, named `cross-family:F<n>`; in a code review, each goes to the resumed reviewer of its axis. The user relays nothing a second time.
-- Keep each reviewer's confirmation prompt and answer in `<role>-confirm-prompt.md` and `<role>-confirm.md`; its first-round files stay as they were.
+- Keep each reviewer's confirmation prompt and answer in `<role>-confirm-prompt.md` and `<role>-confirm.md`, written and saved as for the first round; its first-round files stay as they were.
 - There is no further round; blockers still open go to the user.
