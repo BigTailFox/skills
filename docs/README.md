@@ -11,6 +11,10 @@
 - [D004: Project setup](designs/D004-project-setup.md) · active · 2 known issues · Project setup and upgrades with canon.py init, migration of existing docs with adopt, and the canon-init flows for setup, upgrade and new modules. · owns: project-setup · modules: canon
 - [D005: Docs index](designs/D005-docs-index.md) · active · The generated doc index in each docs root's README.md and archived/README.md, its markers and format, the commands that regenerate it and check's index errors. · owns: docs-index · modules: canon
 
+### Reviews
+
+- [R002: Open items from local retro and review records](reviews/R002-local-records.md) · open · Open findings from the retro notes, canon friction log and blind-review outputs kept only in .canon/, and what to restore when moving machines. · modules: canon
+
 ### Concepts
 
 - [C001: Canon backlog](concepts/C001-canon-backlog.md) · draft · Ideas for the canon module that no design tracks yet, from codebase reviews and deferred findings. · modules: canon
