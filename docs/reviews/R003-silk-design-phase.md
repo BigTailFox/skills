@@ -19,7 +19,7 @@ refs: [C001, D000, D001, D003, D005, R001, R002]
 - Sources name a session by the first 8 characters of its id and a 0-based line of its transcript, e.g. e56224b2 L237. The raw event lists stay untracked in Silk's `.canon/canon-retro/all-sessions/`.
 - Angles: usability, functional, architecture. Severity: the review's high-cost findings are major, the rest minor.
 - Left out as fixed after canon 24: the canon block naming how to install missing skills ([R001: Codebase review of the canon module](../archived/reviews/R001-canon-module.md), F21, fixed in `116798a`).
-- Tiers: no design owns the change tiers and their flow, the doc types and lifecycle, `check`, `show`, `rename` or the research and grill skills ([D000§capabilities: capabilities](../designs/D000-project-overview.md#capabilities) reads `none`). A rule change there is a new topic (L2); a change to one of those commands needs an as-built revision first (backfill).
+- Tiers: no design owns the change tiers and their flow, the doc types and lifecycle, `check`, `show`, `rename` or the research and grill skills ([D000§capabilities: capabilities](../designs/D000-project-overview.md#capabilities) reads `none`). A change to an existing rule or command there needs an as-built revision of it first (backfill), after which the user decides on it as a design problem, unless it fixes a defect no caller could rely on (L0); a rule with nothing existing to record is a new topic (L2).
 
 ## Findings
 
@@ -28,15 +28,15 @@ refs: [C001, D000, D001, D003, D005, R001, R002]
 | R003-F1 | major | usability: The review gate runs per doc revision, so one change across several designs takes a gate and reviewers per doc | open |
 | R003-F2 | major | usability: No rule covers edits after a gate passes, so sessions rerun whole gates or commit edits no reviewer saw | open |
 | R003-F3 | major | usability: Without a reviewer file every L2 gate rediscovers the cross-family reviewer, and a hung reviewer stalls the session | open |
-| R003-F4 | minor | usability: Reviewer reports live only in tool results and follow the user's reply language | open |
+| R003-F4 | minor | usability: Reviewer reports live only in tool results and follow the user's reply language | fixed 0872d6d |
 | R003-F5 | minor | functional: Reviewers read the live work tree, which the author and other sessions change during the review | open |
 | R003-F6 | minor | usability: A revision that passed its gate but was not committed leaves the next gate no `Changes since` commit | open |
 | R003-F7 | minor | usability: The reviewer prompt assumes code exists, and nothing allows a qualitative target before a first measurement | open |
-| R003-F8 | minor | usability: A session learns that trace is off only by calling `trace start` in each gate | open |
-| R003-F9 | minor | usability: `snapshot` prints a commit that is not the snapshot repository's HEAD | open |
+| R003-F8 | minor | usability: A session learns that trace is off only by calling `trace start` in each gate | declined a session learns it from the `trace start` call D001§budgets designs as the one call per skill invocation when tracing is off |
+| R003-F9 | minor | usability: `snapshot` prints a commit that is not the snapshot repository's HEAD | fixed 80b9688 |
 | R003-F10 | minor | usability: Gate directories have no layout for joint gates, later revisions or extra rounds | open |
-| R003-F11 | minor | usability: Reviewers cannot tell whether they may run `check` or read `.canon/canon/snapshots` | open |
-| R003-F12 | minor | usability: A late, repeated completion notice makes the session handle a reviewer twice | open |
+| R003-F11 | minor | usability: Reviewers cannot tell whether they may run `check` or read `.canon/canon/snapshots` | fixed 0872d6d |
+| R003-F12 | minor | usability: A late, repeated completion notice makes the session handle a reviewer twice | fixed 0872d6d |
 | R003-F13 | major | usability: A session cannot pass a request to another running session; handoff files go unnoticed or are read stale | open |
 | R003-F14 | major | functional: Sessions sharing a checkout disturb each other: `check --fix` rewrites others' docs and staging one's own index lines takes hand-built blobs | open |
 | R003-F15 | major | usability: A background researcher writes only at the end, so an interrupted one loses its work | open |
@@ -59,7 +59,7 @@ refs: [C001, D000, D001, D003, D005, R001, R002]
 | R003-F32 | minor | usability: Permanent `check` warnings for planned paths and modules bury new ones | open |
 | R003-F33 | minor | functional: `check` skips links and anchors in attachment Markdown | open |
 | R003-F34 | minor | functional: `check` cannot validate a commit or the staged state | open |
-| R003-F35 | minor | usability: `show D00X#known-issues` fails when a design has no Known issues section | open |
+| R003-F35 | minor | usability: `show D00X#known-issues` fails when a design has no Known issues section | fixed 8f4f34c |
 | R003-F36 | minor | usability: No command changes a non-terminal status | open |
 | R003-F37 | minor | functional: `rename` leaves the H1 title, link texts and attachments named after the slug | open |
 | R003-F38 | minor | usability: The 160-character `summary` limit shows only after the summary is written | open |

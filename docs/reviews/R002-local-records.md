@@ -25,17 +25,17 @@ refs: [C001, D000, D001, D002, D003, D004]
 
 | ID | Severity | Finding | Disposition |
 |----|----------|---------|-------------|
-| R002-F1 | minor | functional: Three `git` calls besides `audit`'s (D002-K2) still read a failing Git as an empty result | open |
-| R002-F2 | minor | functional: `check` takes canon's own comment markers, quoted in inline code or a fenced block, for leftover template guidance | open |
+| R002-F1 | minor | functional: Three `git` calls besides `audit`'s (D002-K2) still read a failing Git as an empty result | fixed 8f4f34c |
+| R002-F2 | minor | functional: `check` takes canon's own comment markers, quoted in inline code or a fenced block, for leftover template guidance | fixed 8f4f34c |
 | R002-F3 | minor | usability: A gate's reviewer files are named by doc id and role, so the next revision's gate overwrites the previous one's | open |
-| R002-F4 | minor | functional: D002 omits the unreadable-checkout refusal of `new`, `adopt` and `renumber` | open |
+| R002-F4 | minor | functional: D002 omits the unreadable-checkout refusal of `new`, `adopt` and `renumber` | fixed e01ecd5 |
 | R002-F5 | minor | architecture: D000 revision 2 relaxed a Dependencies rule under a same-model gate, and whether it was L2 is unanswered | open |
-| R002-F6 | minor | functional: `validate.py` does not measure D001's 40-token call-site budget | open |
-| R002-F7 | minor | functional: `OutsideCheckoutTest` finds the outside-Git tests by matching their source text | open |
-| R002-F8 | minor | functional: Test repositories sit directly in the OS temp directory, so a stray `../` write lands in the shared `/tmp` | open |
+| R002-F6 | minor | functional: `validate.py` does not measure D001's 40-token call-site budget | fixed f4d5a01 |
+| R002-F7 | minor | functional: `OutsideCheckoutTest` finds the outside-Git tests by matching their source text | fixed 8f4f34c |
+| R002-F8 | minor | functional: Test repositories sit directly in the OS temp directory, so a stray `../` write lands in the shared `/tmp` | fixed 8f4f34c |
 | R002-F9 | minor | usability: Standards in a project's kept `CONTRIBUTING.md` or `CLAUDE.md` stay outside the designs after setup | open |
-| R002-F10 | minor | usability: `canon-review/functional.md` calls unspecified behavior a spec gap or code to remove, without as-built revisions | open |
-| R002-F11 | minor | usability: `canon-blind-review`'s manual fallback names `/canon-init` in slash form | open |
+| R002-F10 | minor | usability: `canon-review/functional.md` calls unspecified behavior a spec gap or code to remove, without as-built revisions | fixed 80b9688 |
+| R002-F11 | minor | usability: `canon-blind-review`'s manual fallback names `/canon-init` in slash form | fixed 80b9688 |
 | R002-F12 | minor | usability: In Cursor, an interrupted reviewer command reran three times, and auto-review blocked a reviewer's `canon.py` calls | open |
 
 ## Details
