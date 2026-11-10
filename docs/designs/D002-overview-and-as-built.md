@@ -1,16 +1,16 @@
 ---
 status: active
 created: 2026-10-22
-updated: 2026-11-05
-revision: 3
+updated: 2026-11-10
+revision: 4
 modules: [canon]
 summary: D000 project overview in every project, as-built designs that record existing code, backfill before changing unspecified behavior, and design coverage in audit.
-refs: [D001]
+refs: [D001, R002]
 owns: [project-overview, as-built-design, design-coverage]
 paths: [skills/governance/canon/as-built.md, skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/governance/canon/doc-types.md, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-review/architecture.md]
-reviewed: 3
+reviewed: 4
 reviewers: [claude-opus-5.5]
-implemented: 3
+implemented: 4
 ---
 
 # D002: Project overview and as-built designs
@@ -68,6 +68,7 @@ Every repository that follows canon has `designs/D000-project-overview.md` in th
   - A Modules Path is a directory of the project when it exists on disk inside the project directory, so a file, a missing path and a path leading out through `..` warn.
 - `archive D000` is refused.
 - In a Git checkout, `new`, `adopt` and `renumber` never assign an id, or a sub-design letter, that a doc file of that type has had in the history of HEAD. The ids come from the doc paths `git log -z --format= --name-only --no-renames --full-history -m HEAD` lists: without `--full-history`, history simplification skips a merged side branch whose docs the merge discarded, and without `-m`, `git log` lists no paths for a merge, whose resolution alone may have added a doc. With a HEAD commit, a history query that fails ends the command with `canon: cannot read the history of HEAD`, since going on could reuse an id.
+  - When Git finds no checkout but a directory at or above the working directory holds `.git`, as when Git is not on PATH, refuses a checkout of dubious ownership or stops at `GIT_CEILING_DIRECTORIES`, the three commands end with `canon: cannot read the history of HEAD in <dir>: <reason>` once their argument and project checks pass and before assigning anything, on an unborn branch too. `<dir>` is the nearest such directory, resolved; `<reason>` is what `git rev-parse --show-toplevel` printed on standard error, else `git rev-parse exited <code>`, or `git is not on PATH`. Ids follow the doc files alone only with no `.git` at or above the working directory, and on an unborn branch of a checkout Git reads.
 - `init` at the repo root creates D000 from its template when there is none; it has no flag to skip it. Only a non-archived design that owns `architecture` stands for an existing one: an archived owner does not stop `init`, and a D000 already in the repo root's `docs/`, archived or not, does. The template gives each table its header row and each part a guidance comment: `## Spec`'s states the rules for rows and `paths`, and a second one at the end of `### Glossary` says when to add `### Standards`.
 - `init` in a project with no D000 but a design that owns `architecture` moves that design to `D000-project-overview.md`, titled `D000: Project overview`, as `renumber` moves a doc: its frontmatter, body, sub-designs, attachments and known issues come along, and every link, `refs`, `based_on` and `moved` entry follows. It then appends the subsections D000 lacks at the end of `## Spec`, each with a guidance comment. The id rule above keeps the old number taken.
   - Only a non-archived owner moves, and it keeps its status. Like `renumber`, the move rewrites references in other docs without bumping their `updated`, so the agent runs `check --fix` after it.
@@ -180,6 +181,7 @@ Scenarios, tested through the commands:
 
 - `init` in a repository without docs creates D000 with the four subsections, and `check` reports only the warnings of an unfinished design; `init --root <module>` creates none.
 - `init` in a project whose D003 owns `architecture`, lists D003-K1 and is in plan P002's `based_on` moves it to D000 with D000-K1 and `based_on: [D000@r<n>]`, rewrites the links to it and appends the missing subsections at the end of `## Spec`. After D000 is filled out to over twice the old doc's size, neither `check` nor `check --base` reports a deleted doc. A later `new D` does not get D003, even when D003 was the highest D number, and `new D --parent` does not reuse the letter of a sub-design that `renumber` gave another letter.
+- After D003 was committed and deleted, `new D x` with Git missing from PATH, or with a Git that refuses the checkout, ends with `canon: cannot read the history of HEAD in <repo>: <reason>` and creates no doc, also when run from a module directory below the repo root that holds its own `AGENTS.md`.
 - `check` errors without D000, with a D000 under a module's docs root, with a subsection missing, with `src/**`, `src/` or an existing directory in D000's `paths`, with an `as_built` that names no commit, or reads `worktree` once HEAD has a commit, and with an `as_built` left on a reviewed revision, which `check --fix` removes. It only warns for a Modules Path that is not a directory.
 - `archive D000` is refused.
 - `which` prints `doc` for `README.md`, `src/a/readme.rst`, `AGENTS.md`, `CLAUDE.md`, `LICENSE` and a file under a docs root, and for `src/auth/README.md` while a design's `paths` hold `src/auth/**`; it prints the design for a README whose exact path a design's `paths` list, and for `src/agents.py` and `src/license.py` while a design's `paths` hold `src/**`. A commit that changes only `src/auth/README.md` is no unchecked commit of that design.
@@ -191,6 +193,7 @@ Scenarios, tested through the commands:
 |----|----------|-------|--------|-------|------|
 | D002-K1 | major | A `paths` entry matches a whole file, so coverage counts all of `canon.py` as covered while about half of it (the doc model, `check`, archive, rename, `show`, `find`, `affected`) has no design, and any `canon.py` edit must name all five designs in `Refs:` | R001-F1 | 2026-11-05 | L2 |
 | D002-K2 | minor | In a checkout Git cannot read, `audit` takes each failing `git` call for an empty result: coverage lists no source areas, every commit count reads 0, and `unchecked_commits` finds no commits, so the report looks clean instead of naming the failure | code review eb76e61 | 2026-11-05 | fix |
+| D002-K3 | minor | In a checkout Git reads, a HEAD lookup (`git rev-parse --verify -q HEAD`) that fails for another reason than an unborn branch reads as an unborn branch, so `new`, `adopt` and `renumber` can reuse an id ([R002: Open items from local records](../reviews/R002-local-records.md), F1) | as-built b2ee3fd | 2026-11-10 | fix |
 
 ## Decisions
 
