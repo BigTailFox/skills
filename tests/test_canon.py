@@ -4,7 +4,6 @@ import contextlib
 import datetime
 import hashlib
 import importlib.util
-import inspect
 import json
 import os
 import re
@@ -37,6 +36,19 @@ OUTSIDE = ("canon: the copy's path {} is not a relative path inside the reposito
            "with one")
 NO_OVERVIEW = "ERROR docs: no D000, the project overview every project keeps; run `canon.py init` at the repo root"
 UNIT_TIME_FORMAT = "%Y%m%dT%H%M%SZ"
+RUN_DIR = None
+
+
+def setUpModule():
+    """One directory per run under TMPDIR holds every test's directories, so a stray write to `../` stays in it."""
+    global RUN_DIR
+    run = tempfile.TemporaryDirectory(prefix="test_canon-")
+    unittest.addModuleCleanup(run.cleanup)
+    RUN_DIR = Path(run.name).resolve()
+
+
+def within(path, top):
+    return path == top or top in path.parents
 
 
 class CanonTest(unittest.TestCase):
@@ -56,8 +68,10 @@ class CanonTest(unittest.TestCase):
         self.root = self.tmpdir()
         self.git("init", "-q", "-b", "main")
 
+    outside = ()
+
     def tmpdir(self):
-        tmp = tempfile.TemporaryDirectory()
+        tmp = tempfile.TemporaryDirectory(dir=RUN_DIR)
         self.addCleanup(tmp.cleanup)
         return Path(tmp.name)
 
@@ -67,6 +81,7 @@ class CanonTest(unittest.TestCase):
         for parent in path.resolve().parents:
             if (parent / ".git").exists() or (parent / "AGENTS.md").exists():
                 self.skipTest("TMPDIR is inside {}, which holds .git or AGENTS.md".format(parent))
+        self.outside = (*self.outside, path.resolve())
         return path
 
     def run_here(self, *args):
@@ -77,8 +92,19 @@ class CanonTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return result.stdout.strip()
 
+    def canon_process(self, *args, cwd=None, start=subprocess.run, **options):
+        """`canon.py args` started with `start` and `options`, its output captured as text. `cwd`, by default the test
+        repository, must lie in a test repository or in a directory from `outside_checkouts`: anywhere else canon.py
+        would act on the checkout around TMPDIR."""
+        cwd = Path(cwd or self.root).resolve()
+        if not any((d / ".git").exists() for d in (cwd, *cwd.parents) if within(d, RUN_DIR)) \
+                and not any(within(cwd, d) for d in self.outside):
+            self.fail("canon.py would run in {}, in no test repository and not from outside_checkouts()".format(cwd))
+        return start([sys.executable, "-B", str(SCRIPT), *args], cwd=str(cwd), stdout=subprocess.PIPE,
+                     stderr=subprocess.PIPE, text=True, **options)
+
     def canon(self, *args):
-        return self.run_here(sys.executable, "-B", str(SCRIPT), *args)
+        return self.canon_process(*args)
 
     def ok(self, *args):
         result = self.canon(*args)
@@ -359,8 +385,7 @@ class IdAllocationTest(CanonTest):
         root = Path(os.path.realpath(str(self.root)))
         with canon.id_lock(SimpleNamespace(root=root)):
             os.utime(str(root / ".canon/id.lock"), (0, 0))
-            waiter = subprocess.Popen([sys.executable, "-B", str(SCRIPT), "new", "E", "waiter"], cwd=root,
-                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            waiter = self.canon_process("new", "E", "waiter", cwd=root, start=subprocess.Popen)
             time.sleep(1)
             self.assertIsNone(waiter.poll())
         out, err = waiter.communicate(timeout=60)
@@ -404,8 +429,7 @@ class HistoryIdTest(CanonTest):
         self.assertEqual([self.new("x"), self.new("x")], ["docs/designs/D001-x.md", "docs/designs/D002-x.md"])
 
     def run_with_path(self, bin_dir, *args, cwd=None):
-        return subprocess.run([sys.executable, "-B", str(SCRIPT), *args], cwd=cwd or self.root,
-                              env=dict(os.environ, PATH=str(bin_dir)), capture_output=True, text=True)
+        return self.canon_process(*args, cwd=cwd, env=dict(os.environ, PATH=str(bin_dir)))
 
     def new_with_git_from(self, bin_dir):
         """The error of `new D x` run with `bin_dir` as the whole PATH, after D003 was committed and deleted; `which`,
@@ -506,6 +530,12 @@ class UnfinishedDocTest(CanonTest):
         self.set(path, status="accepted", reviewed=1, reviewers=["fixture"], summary="Fixture")
         self.assertRegex(self.fails("check"), r"ERROR .*template guidance")
 
+    def test_a_guidance_marker_quoted_in_code_is_no_guidance(self):
+        design = self.design()
+        design.write_text(design.read_text() + "\nThe index starts at `<!-- canon:index:start -->`.\n\n"
+                          "```markdown\n<!-- canon:agents:start -->\n```\n")
+        self.assertNotIn("D001-area.md: template guidance", self.ok("check", "--fix"))
+
 
 class ChangedFilesTest(CanonTest):
     def test_affected_reads_names_with_spaces_and_non_ascii(self):
@@ -579,12 +609,70 @@ class AuditTest(CanonTest):
         self.commit()
         self.assertRegex(self.ok("audit"), r"1 commits since [0-9a-f]+  D001 ")
 
+    def test_a_paths_entry_outside_the_repository_counts_no_commits(self):
+        self.design(paths=["../elsewhere/**", "/elsewhere/**"])
+        self.commit()
+        self.code_commit("fix: unchecked")
+        self.assertNotIn("commits since", self.ok("audit"))
+
     def test_idle_docs_skip_concepts(self):
         self.doc("C", "backlog", created="2020-01-01", updated="2020-01-01")
         self.doc("I", "flaky", created="2020-01-01", updated="2020-01-01")
         out = self.ok("audit")
         self.assertIn("I001", out)
         self.assertNotIn("C001", out)
+
+
+@unittest.skipIf(os.name == "nt", "the failing git is a shell script")
+class GitFailureTest(CanonTest):
+    def fails_with_git(self, failing, *args):
+        """The error of `args` run with a `git` first on PATH that fails with `fatal: boom` when its arguments start
+        with `failing`, and runs the real Git otherwise."""
+        bin_dir = self.tmpdir()
+        (bin_dir / "git").write_text('#!/bin/sh\ncase "$*" in "{}"*) echo "fatal: boom" >&2; exit 128;; esac\n'
+                                     'exec "{}" "$@"\n'.format(failing, shutil.which("git")))
+        (bin_dir / "git").chmod(0o755)
+        result = self.canon_process(*args, env=dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ["PATH"]))
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        return result.stderr
+
+    def message(self, subcommand):
+        return "canon: git {} failed in {}: fatal: boom\n".format(subcommand, self.root.resolve())
+
+    def test_a_failing_head_lookup_ends_new_instead_of_reading_as_an_unborn_branch(self):
+        self.design()
+        self.commit()
+        self.assertEqual(self.fails_with_git("rev-parse --verify -q HEAD", "new", "D", "x"), self.message("rev-parse"))
+        self.assertFalse((self.root / "docs/designs/D002-x.md").exists())
+
+    def test_a_failing_file_listing_ends_check_instead_of_finding_no_docs(self):
+        self.design()
+        self.assertEqual(self.fails_with_git("ls-files -z -co", "check"), self.message("ls-files"))
+
+    def test_a_failing_unmerged_lookup_ends_adopt_before_any_change(self):
+        self.commit()
+        (self.root / "notes.md").write_text("# Notes\n\nKept notes.\n")
+        status = self.git("status", "--porcelain")
+        self.assertEqual(self.fails_with_git("ls-files -u", "adopt", "notes.md", "design"), self.message("ls-files"))
+        self.assertEqual(self.git("status", "--porcelain"), status)
+
+    def test_a_failing_diff_ends_affected_instead_of_finding_no_changes(self):
+        self.design()
+        self.commit()
+        (self.root / "src/base.py").write_text("value = 2\n")
+        self.assertEqual(self.fails_with_git("diff -z --name-only HEAD", "affected"), self.message("diff"))
+        self.assertEqual(self.fails_with_git("ls-files -z -o", "affected"), self.message("ls-files"))
+
+    def test_a_failing_history_query_ends_audit_instead_of_reporting_nothing(self):
+        self.design()
+        self.commit()
+        self.assertEqual(self.fails_with_git("log", "audit"), self.message("log"))
+
+    def test_audit_in_a_checkout_git_cannot_read_ends_instead_of_reporting_nothing(self):
+        self.design()
+        self.commit()
+        self.assertEqual(self.fails_with_git("", "audit"),
+                         "canon: cannot read the history of HEAD in {}: fatal: boom\n".format(self.root.resolve()))
 
 
 class KnownIssuesTest(CanonTest):
@@ -628,6 +716,12 @@ class KnownIssuesTest(CanonTest):
         self.assertIn(" - Fixture [1 known issue]", self.ok("find", "D002"))
         self.assertIn("D001 active docs/designs/D001-area.md - Fixture [2 known issues]",
                       self.ok("affected", "src/base.py"))
+
+    def test_show_says_a_design_without_known_issues_has_none(self):
+        self.design()
+        self.assertEqual(self.ok("show", "D001#known-issues"), "D001 has no known issues\n")
+        self.assertIn("canon: D001 has no section #nope", self.fails("show", "D001#nope"))
+        self.assertIn("canon: D000 has no section #nope", self.fails("show", "D000#nope"))
 
     def test_check_rejects_a_future_date_and_warns_on_a_section_without_issues(self):
         later = datetime.date.today() + datetime.timedelta(days=1)
@@ -838,8 +932,7 @@ class InitTest(CanonTest):
         (bin_dir / "git").write_text('#!/bin/sh\ncase "$*" in *--git-path*) exit 128;; esac\nexec {} "$@"\n'
                                      .format(shutil.which("git")))
         (bin_dir / "git").chmod(0o755)
-        result = subprocess.run([sys.executable, "-B", str(SCRIPT), "init", "--hook"], cwd=self.root,
-                                env=dict(os.environ, PATH=str(bin_dir)), capture_output=True, text=True)
+        result = self.canon_process("init", "--hook", env=dict(os.environ, PATH=str(bin_dir)))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("warning: cannot write the pre-commit hook: git rev-parse --git-path hooks/pre-commit failed; "
                       "rerun `python3 scripts/canon.py init --hook` where .git is writable\n", result.stdout)
@@ -1104,8 +1197,7 @@ class WhichTest(CanonTest):
 
 class HelpTest(CanonTest):
     def help(self, *command):
-        result = subprocess.run([sys.executable, "-B", str(SCRIPT), *command, "-h"], cwd=self.root,
-                                env=dict(os.environ, COLUMNS="200"), capture_output=True, text=True)
+        result = self.canon_process(*command, "-h", env=dict(os.environ, COLUMNS="200"))
         self.assertEqual(result.returncode, 0, result.stderr)
         return " ".join(result.stdout.split())
 
@@ -1513,8 +1605,7 @@ class TraceCase(CanonTest):
         finished process."""
         full = {key: value for key, value in os.environ.items() if key not in self.HOST_VARS}
         full.update(XDG_CONFIG_HOME=str(self.config), **env)
-        result = subprocess.run([sys.executable, "-B", str(SCRIPT), *args], cwd=str(cwd or self.root),
-                                env=full, input=stdin, capture_output=True, text=True)
+        result = self.canon_process(*args, cwd=cwd, env=full, input=stdin)
         self.assertEqual(result.returncode, returncode, result.stdout + result.stderr)
         return result
 
@@ -2789,21 +2880,11 @@ class PruneTest(TraceCase):
 
 
 class OutsideCheckoutTest(CanonTest):
-    def test_tests_that_need_a_directory_outside_git_leave_a_checkout_holding_tmpdir_untouched(self):
-        names = sorted("{}.{}.{}".format(Path(__file__).stem, cls.__name__, name)
-                       for cls in globals().values() if isinstance(cls, type) and issubclass(cls, CanonTest)
-                       for name, method in vars(cls).items()
-                       if name.startswith("test") and cls is not OutsideCheckoutTest
-                       and "self.outside_checkouts()" in inspect.getsource(method))
-        self.assertTrue(names)
-        self.commit()
-        tmp = self.root / "tmp"
-        tmp.mkdir()
-        env = dict(os.environ, TMPDIR=str(tmp), TEMP=str(tmp), TMP=str(tmp))
-        result = subprocess.run([sys.executable, "-B", "-m", "unittest", *names], cwd=str(Path(__file__).parent),
-                                env=env, capture_output=True, text=True)
-        self.assertIn("OK (skipped={})".format(len(names)), result.stderr, result.stderr)
-        self.assertEqual(self.git("status", "--porcelain", "--untracked-files=all"), "")
+    def test_canon_py_runs_only_in_a_test_repository_or_a_directory_from_outside_checkouts(self):
+        self.assertEqual(self.canon_process("which", "base.py", cwd=self.root / "src").returncode, 0)
+        with self.assertRaisesRegex(AssertionError, "in no test repository and not from outside_checkouts"):
+            self.canon_process("init", cwd=self.tmpdir())
+        self.assertEqual(self.canon_process("init", cwd=self.outside_checkouts()).returncode, 0)
 
 
 if __name__ == "__main__":

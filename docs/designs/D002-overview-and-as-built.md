@@ -5,7 +5,7 @@ updated: 2026-11-10
 revision: 4
 modules: [canon]
 summary: D000 project overview in every project, as-built designs that record existing code, backfill before changing unspecified behavior, and design coverage in audit.
-refs: [D001, R002]
+refs: [D001]
 owns: [project-overview, as-built-design, design-coverage]
 paths: [skills/governance/canon/as-built.md, skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/governance/canon/doc-types.md, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-review/architecture.md]
 reviewed: 4
@@ -166,7 +166,7 @@ Source areas no design covers (commits in the last 90 days, most first):
 - Each uncovered file starts in the area of its directory. While every counted file of its module under the parent directory is uncovered, the area moves up to the parent, never above its module's Path. The files of other modules under that parent neither stop the area nor join it.
 - An area whose counted files of its module are all uncovered, its subdirectories' included, shows `<n> files`, counting them all. Any other area shows `<uncovered> of <counted> files`, counting its module's files directly in it.
 - Areas rank by the commits of the last 90 days that touch their uncovered files, then by uncovered files, then by path; a merge touches none, since `git log` without `-m` lists no files for it. The first 10 are listed and the rest counted. The repo root's area reads `./`, the commit counts are right-aligned, and the lines keep the plural forms above, as `1 commits`. The list follows `audit`'s other sections.
-- Coverage never makes `check` fail, and `audit` exits 0.
+- Coverage never makes `check` or `audit` fail.
 - `canon-sync` reports the listed areas, and `canon-review` takes its design-coverage scope from them, the architecture angle's hard check included.
 
 ### Delivery
@@ -192,9 +192,6 @@ Scenarios, tested through the commands:
 | ID | Severity | Issue | Source | Since | Next |
 |----|----------|-------|--------|-------|------|
 | D002-K1 | major | A `paths` entry matches a whole file, so coverage counts all of `canon.py` as covered while about half of it (the doc model, `check`, archive, rename, `show`, `find`, `affected`) has no design, and any `canon.py` edit must name all five designs in `Refs:` | R001-F1 | 2026-11-05 | L2 |
-| D002-K2 | minor | In a checkout Git cannot read, `audit` takes each failing `git` call for an empty result: coverage lists no source areas, every commit count reads 0, and `unchecked_commits` finds no commits, so the report looks clean instead of naming the failure | code review eb76e61 | 2026-11-05 | fix |
-| D002-K3 | minor | In a checkout Git reads, a HEAD lookup (`git rev-parse --verify -q HEAD`) that fails for another reason than an unborn branch reads as an unborn branch, so `new`, `adopt` and `renumber` can reuse an id ([R002: Open items from local records](../reviews/R002-local-records.md), F1) | as-built b2ee3fd | 2026-11-10 | fix |
-
 ## Decisions
 
 - D000 has a fixed id: every project, skill and `check` rule can name it, and it heads the index.

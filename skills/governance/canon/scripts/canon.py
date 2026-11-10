@@ -28,7 +28,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "28"
+CANON_VERSION = "29"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -270,12 +270,33 @@ def path_id(rel):
     return None
 
 
-def git(cwd, *args, env=None):
+def git_run(cwd, *args, env=None):
+    """The finished `git <args>` run in `cwd`; None when Git is not on PATH."""
     try:
-        result = subprocess.run(["git", *args], cwd=str(cwd), env=env, capture_output=True, text=True)
+        return subprocess.run(["git", *args], cwd=str(cwd), env=env, capture_output=True, text=True)
     except FileNotFoundError:
         return None
-    return result.stdout if result.returncode == 0 else None
+
+
+def git(cwd, *args, env=None):
+    result = git_run(cwd, *args, env=env)
+    return result.stdout if result is not None and result.returncode == 0 else None
+
+
+def git_failure(result, subcommand):
+    """Why a `git <subcommand>` call `git_run` finished as `result` failed."""
+    if result is None:
+        return "git is not on PATH"
+    return result.stderr.strip() or "git {} exited {}".format(subcommand, result.returncode)
+
+
+def git_checked(cwd, *args, ok=(0,)):
+    """The finished `git <args>` run in `cwd`, for a call whose failure must not read as an empty result: an exit
+    code outside `ok` ends the command with Git's reason."""
+    result = git_run(cwd, *args)
+    if result is None or result.returncode not in ok:
+        sys.exit("canon: git {} failed in {}: {}".format(args[0], cwd, git_failure(result, args[0])))
+    return result
 
 
 def unreadable_checkout(start):
@@ -284,12 +305,7 @@ def unreadable_checkout(start):
     start = start.resolve()
     for path in (start, *start.parents):
         if (path / ".git").exists():
-            try:
-                result = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=str(start),
-                                        capture_output=True, text=True)
-            except FileNotFoundError:
-                return path, "git is not on PATH"
-            return path, result.stderr.strip() or "git rev-parse exited {}".format(result.returncode)
+            return path, git_failure(git_run(start, "rev-parse", "--show-toplevel"), "rev-parse")
     return None
 
 
@@ -418,7 +434,11 @@ def glob_regex(pattern):
 
 
 def git_pathspec(project_rel, pattern):
+    """The Git pathspecs of a `paths` entry of a design in the project at `project_rel`; none for an absolute entry or
+    one outside the repository, which Git refuses."""
     p = entry_path(pattern)
+    if p.startswith("/") or posixpath.normpath(posixpath.join(project_rel, p)).split("/")[0] == "..":
+        return []
     if p.endswith("/"):
         p += "**"
 
@@ -574,7 +594,8 @@ class Repo:
         self.is_git = top is not None
         self.unreadable = None if self.is_git else unreadable_checkout(start)
         self.root = Path(os.path.realpath(top.strip() if top else str(start)))
-        self.has_head = self.is_git and git(self.root, "rev-parse", "--verify", "-q", "HEAD") is not None
+        self.has_head = self.is_git and git_checked(self.root, "rev-parse", "--verify", "-q", "HEAD",
+                                                    ok=(0, 1)).returncode == 0
         self.files = self._list_files()
         parents = [f.rsplit("/", 1)[0] if "/" in f else "" for f in self.files if f.rsplit("/", 1)[-1] == "AGENTS.md"]
         self.roots = [Root(self, rel) for rel in parents]
@@ -586,7 +607,7 @@ class Repo:
 
     def _list_files(self):
         if self.is_git:
-            out = git(self.root, "ls-files", "-z", "-co", "--exclude-standard") or ""
+            out = git_checked(self.root, "ls-files", "-z", "-co", "--exclude-standard").stdout
             return sorted({f for f in out.split("\0") if f and (self.root / f).is_file()})
         found = []
         for dirpath, dirnames, filenames in os.walk(str(self.root)):
@@ -594,6 +615,11 @@ class Repo:
             for name in filenames:
                 found.append(posix_rel(Path(dirpath) / name, self.root))
         return sorted(found)
+
+    def require_readable(self):
+        """End the command when Git finds no checkout around a directory that `.git` puts in one (`unreadable`)."""
+        if self.unreadable:
+            sys.exit("canon: cannot read the history of HEAD in {}: {}".format(*self.unreadable))
 
     def problem(self, level, rel, msg, line=None, fix=None):
         self.problems.append((level, rel, line, msg, fix))
@@ -705,8 +731,7 @@ class Repo:
         """Ids of the doc files in the history of HEAD, those since deleted or renamed away included.
         `--full-history` walks the side branches whose docs a merge discarded, and `-m` lists the docs that only a
         merge's resolution added."""
-        if self.unreadable:
-            sys.exit("canon: cannot read the history of HEAD in {}: {}".format(*self.unreadable))
+        self.require_readable()
         if not self.has_head:
             return set()
         out = git(self.root, "log", "-z", "--format=", "--name-only", "--no-renames", "--full-history", "-m",
@@ -743,8 +768,8 @@ class Repo:
     def changed_files(self, base=None):
         if not self.has_head:
             return list(self.files)
-        outs = [git(self.root, "diff", "-z", "--name-only", "HEAD"),
-                git(self.root, "ls-files", "-z", "-o", "--exclude-standard")]
+        outs = [git_checked(self.root, "diff", "-z", "--name-only", "HEAD").stdout,
+                git_checked(self.root, "ls-files", "-z", "-o", "--exclude-standard").stdout]
         if base:
             outs.append(git(self.root, "diff", "-z", "--name-only", base + "...HEAD"))
             if outs[-1] is None:
@@ -1067,7 +1092,7 @@ def check_doc(repo, doc, changed, strict=False):
     for name in info["sections"]:
         if name not in names:
             err("missing section `## {}`".format(name))
-    if GUIDANCE in doc.text:
+    if any(GUIDANCE in INLINE_CODE_RE.sub("", line) for _i, line in code_mask(doc.lines)):
         repo.problem(unfinished_level, rel, "template guidance `<!-- canon: ... -->` left in the doc")
     if len(doc.lines) > MAX_DOC_LINES:
         hint = "; split into sub-designs ({0}A, {0}B, ...)".format(doc.id) if doc.type == "D" else ""
@@ -1385,7 +1410,7 @@ def move_paths(repo, moves):
 
 
 def require_clean_merge(repo):
-    if repo.is_git and (git(repo.root, "ls-files", "-u") or "").strip():
+    if repo.is_git and git_checked(repo.root, "ls-files", "-u").stdout.strip():
         sys.exit("canon: resolve the merge conflicts first")
 
 
@@ -2064,6 +2089,9 @@ def cmd_show(repo, args):
                 print("{}#{}".format(doc.rel, anchor))
                 print("\n".join(doc.lines[h.line:end]).rstrip())
                 return 0
+        if doc.type == "D" and anchor == "known-issues":
+            print("{} has no known issues".format(doc.id))
+            return 0
         sys.exit("canon: {} has no section #{}".format(doc.id, anchor))
     print(doc.rel)
     print("\n".join(doc.lines[1:doc.fm_end]))
@@ -2145,7 +2173,7 @@ def unchecked_commits(repo, doc):
     files its `paths` govern whose `Refs:` trailers do not name it. A merge touches the files its resolution changed
     against every parent, or for a clean merge, which changed none, the files it changed against any parent."""
     base = None
-    for sha in (git(repo.root, "log", "--format=%H", "--", doc.rel) or "").split():
+    for sha in git_checked(repo.root, "log", "--format=%H", "--", doc.rel).stdout.split():
         old = git(repo.root, "show", "{}^:{}".format(sha, doc.rel))
         new = git(repo.root, "show", "{}:{}".format(sha, doc.rel))
         if old is None or new is None or not issue_rows_only(old, new):
@@ -2156,15 +2184,17 @@ def unchecked_commits(repo, doc):
     specs = []
     for pattern in doc.as_list("paths"):
         specs += git_pathspec(doc.root.rel, pattern)
-    out = git(repo.root, "log", "-z", "-c", "--name-only", "--no-renames", "--format=%x01%H %P%x00%B%x02",
-              base + "..HEAD", "--", *specs) or ""
+    if not specs:
+        return base, []
+    out = git_checked(repo.root, "log", "-z", "-c", "--name-only", "--no-renames", "--format=%x01%H %P%x00%B%x02",
+                      base + "..HEAD", "--", *specs).stdout
     commits = []
     for header, files in log_entries(out):
         shas, _, message = header.partition("\0")
         sha, _, parents = shas.partition(" ")
         if not files and len(parents.split()) > 1:
-            merged = git(repo.root, "diff-tree", "-z", "-r", "-m", "--no-commit-id", "--name-only", "--no-renames",
-                         sha, "--", *specs) or ""
+            merged = git_checked(repo.root, "diff-tree", "-z", "-r", "-m", "--no-commit-id", "--name-only",
+                                 "--no-renames", sha, "--", *specs).stdout
             files = [f for f in merged.split("\0") if f]
         if files and not any(doc.governs(f, repo.is_doc(f)) for f in files):
             continue
@@ -2209,7 +2239,7 @@ def coverage_report(repo, overview):
                      reverse=True)
     designs = [doc for doc in repo.docs if doc.type == "D" and not doc.archived and doc.as_list("paths")]
     uncovered, covered_dirs, files_directly_in = {}, set(), {}
-    tracked = (git(repo.root, "ls-files", "-z") if modules else None) or ""
+    tracked = git_checked(repo.root, "ls-files", "-z").stdout if modules else ""
     for rel in tracked.split("\0"):
         module = next((m for m in modules if not m or rel.startswith(m + "/")), None) if rel else None
         if module is None or repo.is_doc(rel):
@@ -2233,8 +2263,8 @@ def coverage_report(repo, overview):
         areas.setdefault(area, (module, []))[1].append(rel)
     commits = dict.fromkeys(areas, 0)
     if areas and repo.has_head:
-        out = git(repo.root, "log", "-z", "--since=90.days.ago", "--format=%x01%x02", "--name-only", "--no-renames",
-                  "HEAD") or ""
+        out = git_checked(repo.root, "log", "-z", "--since=90.days.ago", "--format=%x01%x02", "--name-only",
+                          "--no-renames", "HEAD").stdout
         for _header, files in log_entries(out):
             for area in {area_of[f] for f in files if f in area_of}:
                 commits[area] += 1
@@ -2270,6 +2300,7 @@ def unreached_designs(repo, overview):
 
 
 def cmd_audit(repo, args):
+    repo.require_readable()
     now = datetime.date.today()
     report = []
     stale = []
@@ -2311,7 +2342,7 @@ def cmd_audit(repo, args):
         commits = 0
         if repo.has_head:
             since = [] if last == datetime.date.min else ["--since=" + (last + datetime.timedelta(days=1)).isoformat()]
-            out = git(repo.root, "log", *since, "--format=%H", "--", *code_pathspec(repo, root)) or ""
+            out = git_checked(repo.root, "log", *since, "--format=%H", "--", *code_pathspec(repo, root)).stdout
             commits = len(set(out.split()))
         if len(done) >= args.review_after or commits >= args.review_commits:
             report.append("{}: {} plans finished and {} code commits since the last review; consider a review (R)"
