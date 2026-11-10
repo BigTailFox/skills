@@ -14,6 +14,7 @@
 ### Reviews
 
 - [R002: Open items from local retro and review records](reviews/R002-local-records.md) · open · Open findings from the retro notes, canon friction log and blind-review outputs kept only in .canon/, and what to restore when moving machines. · modules: canon
+- [R003: Canon friction in Silk's design phase](reviews/R003-silk-design-phase.md) · open · Canon friction in a docs-only bilingual project: review gates per doc, parallel sessions, archived experiments, translations, check gaps, tool drift. · modules: canon
 
 ### Concepts
 
