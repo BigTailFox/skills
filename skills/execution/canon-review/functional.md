@@ -12,7 +12,7 @@ For each specified interface:
 
 ## Gaps
 
-- Behavior the code has but no design specifies: a spec gap, or code to remove.
+- Behavior the code has but no design specifies: usually an as-built revision (the `canon` skill's `as-built.md`) records it before anything changes it; behavior no caller should rely on is code to remove.
 - Spec statements the code no longer honors: a defect or a stale spec; say which the evidence suggests.
 - Swallowed errors, unreachable branches, `TODO` and `FIXME` markers on specified behavior.
 
