@@ -11,7 +11,7 @@ paths: [skills/governance/canon/SKILL.md, skills/governance/canon/doc-types.md, 
 reviewed: 5
 reviewers: [claude-opus-5.5, gemini-4-argon-high]
 approved: 5
-implemented: 3
+implemented: 5
 ---
 
 # D006: Doc model and writing rules
@@ -124,8 +124,8 @@ canon.py archive ID STATUS
 canon.py status ID STATUS
 ```
 
-- `status` moves a doc forward along its type's non-terminal statuses: design `draft`, `accepted`, `active`; plan `draft`, `accepted`, `in-progress`; experiment `planned`, `running`; and concept `draft` to a live `adopted`. It may skip a status, as an as-built design goes from `draft` to `active`.
-- It changes no file and exits 1 with `canon: <message>` when an index start marker lacks its end marker ([D005§regeneration: regeneration](D005-docs-index.md#regeneration)), when no or several docs have ID, when the doc is archived (`canon: <id> is archived`), when STATUS is not a status of the doc's type (`canon: <status> is not a status of <id>; use one of <the statuses it moves along for the type>`), when it is terminal, a concept's `adopted` aside (``canon: <status> is terminal for <id>; use `canon.py archive` ``), when it does not come after the doc's status (`canon: <id> is <status>; status moves only forward`, followed by `, to <later statuses>` when there are any), and when the move's condition fails (`canon: <id> needs <condition> to become <status>`, `<condition>` worded as here): `accepted` and `in-progress` need `reviewed` equal to `revision`, and a design's `active` needs `implemented` not above `reviewed`; a move that skips `accepted` needs its condition too, checked first.
+- `status` moves a doc forward along its type's non-terminal statuses: design `draft`, `accepted`, `active`; plan `draft`, `accepted`, `in-progress`; experiment `planned`, `running`; and concept `draft` to a live `adopted`. It may skip a status, as an as-built design goes from `draft` to `active`. A current status outside these counts as before all of them. `status -h` lists each type's statuses in order.
+- It changes no file and exits 1 with `canon: <message>` at the first of these checks that fails, in this order, its lists comma-separated: when an index start marker lacks its end marker ([D005§regeneration: regeneration](D005-docs-index.md#regeneration)), when no or several docs have ID, when the doc is archived (`canon: <id> is archived`), when STATUS is not a status of the doc's type (`canon: <status> is not a status of <id>; use one of <the statuses it moves along for the type>`), when it is terminal, a concept's `adopted` aside (``canon: <status> is terminal for <id>; use `canon.py archive` ``), when it does not come after the doc's status (`canon: <id> is <status>; status moves only forward`, followed by `, to <later statuses>` when there are any), and when the move's condition fails (`canon: <id> needs <condition> to become <status>`, `<condition>` worded as here): `accepted` and `in-progress` need `reviewed` equal to `revision`, and a design's `active` needs `implemented` not above `reviewed`; a move that skips `accepted` needs its condition too, checked first. A missing or non-integer `reviewed` reads as 0, and the conditions hold only for a `reviewed` and an `implemented` of at least 1.
 - Otherwise it sets `status` to STATUS and `updated` to today, regenerates the indexes ([D005§regeneration: regeneration](D005-docs-index.md#regeneration)), prints `<id>: <old status> -> <new status>` and exits 0. It sets no other field; [Frontmatter](#frontmatter) states who sets `reviewed`, `reviewers`, `approved` and `implemented`.
 
 ### Frontmatter

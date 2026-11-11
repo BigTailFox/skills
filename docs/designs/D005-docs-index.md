@@ -11,7 +11,7 @@ paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py]
 reviewed: 2
 reviewers: [claude-opus-5.5, gemini-4-argon-high]
 approved: 2
-implemented: 1
+implemented: 2
 ---
 
 # D005: Docs index

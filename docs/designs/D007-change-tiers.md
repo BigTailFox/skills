@@ -11,7 +11,7 @@ paths: [skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, s
 reviewed: 5
 reviewers: [claude-opus-5.5, gemini-4-argon-high]
 approved: 5
-implemented: 3
+implemented: 5
 ---
 
 # D007: Change tiers and the review gate

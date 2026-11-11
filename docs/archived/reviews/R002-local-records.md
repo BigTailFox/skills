@@ -1,5 +1,5 @@
 ---
-status: open
+status: closed
 created: 2026-11-10
 updated: 2026-11-11
 revision: 1
@@ -19,7 +19,7 @@ refs: [C001, D000, D001, D002, D003, D004]
   - `canon-blind-review/`: the reviewer outputs of 23 blind reviews, the gates of D000 to D005, P001 and P002 and the code reviews from P001 through R001's fixes.
 - Modules and paths: canon (`skills/`, `tests/`) and `scripts/validate.py`.
 - Angles: functional, usability, architecture.
-- Each item was checked against the commit. Findings are the items whose cause is still present and that no other doc tracks. Left out are the items fixed since and the open items tracked in [D002§known-issues: known issues](../designs/D002-overview-and-as-built.md#known-issues), [D003: Subagents](../designs/D003-subagents.md), [D004§known-issues: known issues](../designs/D004-project-setup.md#known-issues) and [C001: Canon backlog](../concepts/C001-canon-backlog.md). Of `skills.jsonl`'s entries, only R002-F2 and R002-F3 are still open.
+- Each item was checked against the commit. Findings are the items whose cause is still present and that no other doc tracks. Left out are the items fixed since and the open items tracked in [D002§known-issues: known issues](../../designs/D002-overview-and-as-built.md#known-issues), [D003: Subagents](../../designs/D003-subagents.md), [D004§known-issues: known issues](../../designs/D004-project-setup.md#known-issues) and [C001: Canon backlog](../../concepts/C001-canon-backlog.md). Of `skills.jsonl`'s entries, only R002-F2 and R002-F3 are still open.
 
 ## Findings
 
@@ -27,7 +27,7 @@ refs: [C001, D000, D001, D002, D003, D004]
 |----|----------|---------|-------------|
 | R002-F1 | minor | functional: Three `git` calls besides `audit`'s (D002-K2) still read a failing Git as an empty result | fixed 8f4f34c |
 | R002-F2 | minor | functional: `check` takes canon's own comment markers, quoted in inline code or a fenced block, for leftover template guidance | fixed 8f4f34c |
-| R002-F3 | minor | usability: A gate's reviewer files are named by doc id and role, so the next revision's gate overwrites the previous one's | moved D001 |
+| R002-F3 | minor | usability: A gate's reviewer files are named by doc id and role, so the next revision's gate overwrites the previous one's | fixed f9b0449 |
 | R002-F4 | minor | functional: D002 omits the unreadable-checkout refusal of `new`, `adopt` and `renumber` | fixed e01ecd5 |
 | R002-F5 | minor | architecture: D000 revision 2 relaxed a Dependencies rule under a same-model gate, and whether it was L2 is unanswered | moved D007 |
 | R002-F6 | minor | functional: `validate.py` does not measure D001's 40-token call-site budget | fixed f4d5a01 |
@@ -56,28 +56,28 @@ refs: [C001, D000, D001, D002, D003, D004]
 
 ### R002-F3: The next gate overwrites a gate's reviewer files
 
-- Location: [D001§review-files: review files](../designs/D001-skill-telemetry.md#review-files) ("A gate's topic is its doc id") and `canon-blind-review/SKILL.md`, Reviewers, which also replaces `snapshot.txt`.
+- Location: [D001§review-files: review files](../../designs/D001-skill-telemetry.md#review-files) ("A gate's topic is its doc id") and `canon-blind-review/SKILL.md`, Reviewers, which also replaces `snapshot.txt`.
 - Problem: saving D001 revision 8's `same-model.md` overwrote revision 7's. Earlier rounds survived only where a session had moved them into `r1/` or `r6/` by hand, and D000's revision 1 round had to be moved before its revision 2 gate.
 - Suggestion: name a gate's topic by revision, such as `D001-r8`, or move the previous gate's files into `r<N>/` before a new first round. L1 revision of D001.
 - Source: `skills.jsonl`, 2026-11-05.
 
 ### R002-F4: Unreadable-checkout refusal missing from D002
 
-- Location: [D002§project-overview-d000: project overview](../designs/D002-overview-and-as-built.md#project-overview-d000) states only `canon: cannot read the history of HEAD`, for a failing history query with a HEAD commit; the code is `unreadable_checkout` and `Repo.history_ids`.
+- Location: [D002§project-overview-d000: project overview](../../designs/D002-overview-and-as-built.md#project-overview-d000) states only `canon: cannot read the history of HEAD`, for a failing history query with a HEAD commit; the code is `unreadable_checkout` and `Repo.history_ids`.
 - Problem: when a directory at or above the working directory holds `.git` but Git fails there (Git missing, dubious ownership, `GIT_CEILING_DIRECTORIES`), `new`, `adopt` and `renumber` exit with `canon: cannot read the history of HEAD in <dir>: <reason>`, on an unborn branch too. Callers see this behavior and no design states it.
 - Suggestion: record it in D002 as an as-built revision. L1.
 - Source: code review of f9226e2, spec F2 and standards F1 and F5.
 
 ### R002-F5: Tier of D000 revision 2
 
-- Location: [D000§dependencies: dependencies](../designs/D000-project-overview.md#dependencies) ("Nothing under `skills/` depends on it"); D000's `reviewers: [claude-opus-5.5]`.
+- Location: [D000§dependencies: dependencies](../../designs/D000-project-overview.md#dependencies) ("Nothing under `skills/` depends on it"); D000's `reviewers: [claude-opus-5.5]`.
 - Problem: revision 2 changed "Nothing in the module depends on it" to "Nothing under `skills/` depends on it". The change itself is the user's decision (R001-F31), but Dependencies are spec, and the `canon` skill makes a change to the architecture L2, which takes a cross-family reviewer. The gate ran one same-model reviewer, whose question on the tier got no answer.
 - Suggestion: the user settles the tier. If L2, run D000 revision 2's gate again with the cross-family reviewer.
 - Source: D000 revision 2 gate, the same-model reviewer's Questions.
 
 ### R002-F6: Call-site token budget unmeasured
 
-- Location: [D001§budgets: budgets](../designs/D001-skill-telemetry.md#budgets), at most 40 `cl100k_base` tokens per call site; `scripts/validate.py` measures none of D001's text budgets.
+- Location: [D001§budgets: budgets](../../designs/D001-skill-telemetry.md#budgets), at most 40 `cl100k_base` tokens per call site; `scripts/validate.py` measures none of D001's text budgets.
 - Problem: the Standards reviewer of D003 revision 2's implementation found `canon-implement`'s slice call site over 40 tokens. Counting took three attempts: tiktoken is not installed and `python3 -m pip` is missing; `uv run --no-project --with tiktoken python3` worked.
 - Suggestion: have `validate.py` check D001's text budgets when tiktoken can be imported and print the `uv run` command otherwise. L0.
 - Source: retro cause `call-site-budget-unchecked`.
@@ -98,7 +98,7 @@ refs: [C001, D000, D001, D002, D003, D004]
 
 ### R002-F9: Standards in kept project docs
 
-- Location: [D002§setup: setup](../designs/D002-overview-and-as-built.md#setup) and `canon-init`, steps 1, 5 and 7.
+- Location: [D002§setup: setup](../../designs/D002-overview-and-as-built.md#setup) and `canon-init`, steps 1, 5 and 7.
 - Problem: setup keeps docs by name such as `CONTRIBUTING.md` and `CLAUDE.md`, and step 7 removes only the `CLAUDE.md` instructions that conflict with canon. Coding standards stated there stay outside the designs that own their topics, where the Standards reviewer looks. The D002 revision 3 gate declined this only as a gap that setup had before that revision.
 - Suggestion: have setup move each such standard into the design that owns its topic and leave a link in its place. L1 revision of D002.
 - Source: D002 revision 3 gate, same-model F3.

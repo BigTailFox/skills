@@ -25,16 +25,16 @@ refs: [C001, D000, D001, D003, D005, R001, R002]
 
 | ID | Severity | Finding | Disposition |
 |----|----------|---------|-------------|
-| R003-F1 | major | usability: The review gate runs per doc revision, so one change across several designs takes a gate and reviewers per doc | moved D007 |
-| R003-F2 | major | usability: No rule covers edits after a gate passes, so sessions rerun whole gates or commit edits no reviewer saw | moved D007 |
+| R003-F1 | major | usability: The review gate runs per doc revision, so one change across several designs takes a gate and reviewers per doc | fixed 5050e04 |
+| R003-F2 | major | usability: No rule covers edits after a gate passes, so sessions rerun whole gates or commit edits no reviewer saw | fixed 564af98 |
 | R003-F3 | major | usability: Without a reviewer file every L2 gate rediscovers the cross-family reviewer, and a hung reviewer stalls the session | fixed 86c7087 |
 | R003-F4 | minor | usability: Reviewer reports live only in tool results and follow the user's reply language | fixed 0872d6d |
-| R003-F5 | minor | functional: Reviewers read the live work tree, which the author and other sessions change during the review | open |
-| R003-F6 | minor | usability: A revision that passed its gate but was not committed leaves the next gate no `Changes since` commit | moved D007 |
+| R003-F5 | minor | functional: Reviewers read the live work tree, which the author and other sessions change during the review | fixed f9b0449 |
+| R003-F6 | minor | usability: A revision that passed its gate but was not committed leaves the next gate no `Changes since` commit | fixed 5050e04 |
 | R003-F7 | minor | usability: The reviewer prompt assumes code exists, and nothing allows a qualitative target before a first measurement | fixed 0b25d98 |
 | R003-F8 | minor | usability: A session learns that trace is off only by calling `trace start` in each gate | declined a session learns it from the `trace start` call D001§budgets designs as the one call per skill invocation when tracing is off |
 | R003-F9 | minor | usability: `snapshot` prints a commit that is not the snapshot repository's HEAD | fixed 80b9688 |
-| R003-F10 | minor | usability: Gate directories have no layout for joint gates, later revisions or extra rounds | moved D001 |
+| R003-F10 | minor | usability: Gate directories have no layout for joint gates, later revisions or extra rounds | fixed f9b0449 |
 | R003-F11 | minor | usability: Reviewers cannot tell whether they may run `check` or read `.canon/canon/snapshots` | fixed 0872d6d |
 | R003-F12 | minor | usability: A late, repeated completion notice makes the session handle a reviewer twice | fixed 0872d6d |
 | R003-F13 | major | usability: A session cannot pass a request to another running session; handoff files go unnoticed or are read stale | fixed 18b7dcf |
@@ -45,10 +45,10 @@ refs: [C001, D000, D001, D003, D005, R001, R002]
 | R003-F18 | minor | usability: Nothing says whether a measurement added to a research experiment extends it or opens a new one | fixed 18b7dcf |
 | R003-F19 | major | usability: A concept absorbed piece by piece by several designs can be neither frozen nor archived | fixed 0b25d98 |
 | R003-F20 | minor | usability: Concepts have no review flow, and a review that restates a concept becomes a second spec | fixed 18b7dcf |
-| R003-F21 | minor | usability: The tier of changes to C, R and E docs alone, and how a D000 without code is planned and marked, are unstated | moved D007 |
+| R003-F21 | minor | usability: The tier of changes to C, R and E docs alone, and how a D000 without code is planned and marked, are unstated | fixed 564af98 |
 | R003-F22 | minor | usability: Nothing keeps a design from stating other designs' scope, and splitting a design has no checklist | fixed 18b7dcf |
 | R003-F23 | minor | usability: Design section rules get applied to concepts | fixed 18b7dcf |
-| R003-F24 | minor | usability: Revision and approval bookkeeping around a gate is left to guesswork | moved D007 |
+| R003-F24 | minor | usability: Revision and approval bookkeeping around a gate is left to guesswork | fixed 564af98 |
 | R003-F25 | minor | usability: `fixed <commit>` takes an extra commit for a fix made in docs | fixed 18b7dcf |
 | R003-F26 | minor | usability: Sessions guess ids for docs not yet created and mislead the user | fixed 18b7dcf |
 | R003-F27 | major | usability: Translations double every edit and still drift; canon has no translation convention | open |
@@ -60,7 +60,7 @@ refs: [C001, D000, D001, D003, D005, R001, R002]
 | R003-F33 | minor | functional: `check` skips links and anchors in attachment Markdown | open |
 | R003-F34 | minor | functional: `check` cannot validate a commit or the staged state | open |
 | R003-F35 | minor | usability: `show D00X#known-issues` fails when a design has no Known issues section | fixed 8f4f34c |
-| R003-F36 | minor | usability: No command changes a non-terminal status | moved D006 |
+| R003-F36 | minor | usability: No command changes a non-terminal status | fixed a26f057 |
 | R003-F37 | minor | functional: `rename` leaves the H1 title, link texts and attachments named after the slug | open |
 | R003-F38 | minor | usability: The 160-character `summary` limit shows only after the summary is written | fixed d733c74 |
 | R003-F39 | minor | usability: A stale index is an error, which blocks a subagent allowed to edit only its own files | open |
@@ -126,7 +126,7 @@ refs: [C001, D000, D001, D003, D005, R001, R002]
 ### R003-F10: Gate directory layout
 
 - Location: [D001§review-files: review files](../designs/D001-skill-telemetry.md#review-files); `canon-blind-review/SKILL.md`, Reviewers.
-- Problem: each session invented a layout for later revisions, joint gates and extra rounds: `r6a`, `post-gate`, `C001-r25`. [R002: Open items from local retro and review records](R002-local-records.md), F3, covers a revision's gate overwriting the previous one; joint gates (F1) and incremental rounds (F2) have no place either.
+- Problem: each session invented a layout for later revisions, joint gates and extra rounds: `r6a`, `post-gate`, `C001-r25`. [R002: Open items from local retro and review records](../archived/reviews/R002-local-records.md), F3, covers a revision's gate overwriting the previous one; joint gates (F1) and incremental rounds (F2) have no place either.
 - Suggestion: settle the layout with R002-F3: `<topic>/r<N>/` per revision, a joint gate under its main target, one subdirectory per extra round. L1 revision of D001.
 
 ### R003-F11: What reviewers may run and read

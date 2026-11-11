@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 created: 2026-11-11
 updated: 2026-11-11
 revision: 1
@@ -14,11 +14,11 @@ approved: 1
 
 # P003: Review gate redesign
 
-Implements [D007: Change tiers and the review gate](../designs/D007-change-tiers.md) r5 and the revisions its r4 gate made with it: [D001: Skill telemetry with canon trace](../designs/D001-skill-telemetry.md) r12, [D003: Subagents](../designs/D003-subagents.md) r7, [D005: Docs index](../designs/D005-docs-index.md) r2 and [D006: Doc model and writing rules](../designs/D006-doc-model.md) r5. Each design's `implemented` equals its revision at 7801614, so the work is each design's Spec diff from 7801614 to 1d127eb.
+Implements [D007: Change tiers and the review gate](../../designs/D007-change-tiers.md) r5 and the revisions its r4 gate made with it: [D001: Skill telemetry with canon trace](../../designs/D001-skill-telemetry.md) r12, [D003: Subagents](../../designs/D003-subagents.md) r7, [D005: Docs index](../../designs/D005-docs-index.md) r2 and [D006: Doc model and writing rules](../../designs/D006-doc-model.md) r5. Each design's `implemented` equals its revision at 7801614, so the work is each design's Spec diff from 7801614 to 1d127eb.
 
 ## Current state
 
-Next: the docs step from 904c18b.
+Done: every slice is done and the docs step has run.
 
 ## Slices
 
@@ -192,3 +192,4 @@ Test criteria; seam: the skill files, `scripts/validate.py`, `npx skills add . -
 - 2026-11-11, code review from 904c18b (spec, standards and cross-family reviewers, all approving with minor findings). Fixed: `status` let a doc with neither `revision` nor `reviewed` become `accepted`, and one with `implemented: 0` and no `reviewed` become `active` (`Doc.reviewed`, `CANON_VERSION` 37, two `StatusTest` cases); a follow-up round in the phase skills ran the gate's steps 6 and 7 twice, so it now stops at step 5; `README.md`'s tier, approval, follow-up, trace and snapshot lines and the Tool table's `snapshot` row; `doc-types.md`'s Status lines and `canon-design`'s approval step link Gate status instead of restating it; the template's `{reading line}` takes a whole sentence; "a joint gate" became "a gate with follow-on targets"; `canon-plan` approves the designs a new plan's `based_on` names, as D006 states, not a gate's follow-on targets; Notes gain three S1 details. Declined: moving the `.canon/` checks this Log cites into attachments, since their results are stated here; one table of the statuses that need a passed gate, and shared test helpers, refactors beyond this change. Put to the user: the concept's not-a-status message, and a draft becoming `active` past `accepted` while `reviewed` lags `revision` (D006).
 - 2026-11-11: The user chose to fix both D006 questions. D006 r5 lists the statuses `status` moves along in its not-a-status message, so a concept's names `adopted`, and makes a move that skips `accepted` meet `accepted`'s condition first. It passed a follow-up round of the D007 r4 gate (one minor wording finding, fixed); `based_on` moves to D006@r5, and the `canon.py` change follows once the user approves r5.
 - 2026-11-11: The user approved D006 r5. `status` lists a type's moves in its not-a-status message and checks `reviewed` equal to `revision` on any move that passes `accepted` or `in-progress` (`CANON_VERSION` 38); `StatusTest` gains a concept message case and a draft skipping `accepted`, and tests `implemented` from `accepted`.
+- 2026-11-11, docs step from 904c18b: `implemented` set to D007 5, D001 12, D003 7, D005 2 and D006 5; the Notes details written into D006 (`status`'s check order, lists, unknown current status, `status -h`, `reviewed` read as 0), D004 (the canon block's tier line) and D003 (the template's caller-filled reading line, the follow-up prompt); the listed findings set `fixed`, which leaves R002 with no open finding, so it is archived as `closed`.
