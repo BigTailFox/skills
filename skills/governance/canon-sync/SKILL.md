@@ -20,7 +20,7 @@ Run `canon.py check --fix --base <target>`. For an id collision, renumber the do
 
 1. Compare the project copy's `canon.py --version` with the `canon` skill's `scripts/canon.py --version`. If the project copy is older, upgrade it as the `canon-init` skill describes. If the versions match but the files differ, show the user the diff before replacing it: the project may have local edits.
 2. Run `canon.py audit`.
-3. For each design with unchecked commits, inspect `git log <since>..HEAD -- <paths>` (audit prints the commit it counts from) and reconcile it as the docs step reconciles a listed design. Commit the design, bumping only `updated` when nothing else changed, so audit counts from there.
+3. For each design with unchecked commits, inspect `git log <since>..HEAD -- <paths>` (audit prints the commit it counts from) and reconcile it as the docs step reconciles a listed design. Commit it as the `canon` skill's Maintenance says, so audit counts from there.
 4. For each known issue, check that it still holds against the design and the code. Delete the rows a change has already resolved, then run `canon.py check --fix` and commit.
 5. For each idle doc, finish it, archive it (`dropped`, `retired`, `abandoned`), or ask the user.
 6. For each design audit reports D000 does not reach, link a top-level design from D000's rows, as the `canon` skill's doc types define them, and a sub-design from its parent. Rows take no revision bump; run `canon.py check --fix` and commit.

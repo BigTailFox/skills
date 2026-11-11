@@ -24,7 +24,7 @@ Execute `canon.py`; do not read it. Use the project's copy at the path named in 
 | `find WORDS [--archived]` | Search ids, titles, summaries, owned topics, modules and headings. |
 | `which FILE...` | List the designs whose `paths` govern the files, `doc` for a [project doc](#layout) that no `paths` entry names exactly, and `no design` for any other file. |
 | `affected [FILE...] [--base REF]` | Designs and plans governing the given files, else the uncommitted changes plus, with `--base`, the branch's. |
-| `audit` | Designs with code commits since the design last changed that no `Refs:` trailer names, known issues oldest first, idle open docs other than concepts and active designs, due reviews, source areas under D000's module Paths that no design covers, ranked by commits in the last 90 days, and designs D000 does not reach by following `refs` from design to design. |
+| `audit` | Designs with code commits since the design last changed or was reconciled (a `Reconciled:` trailer) that no `Refs:` trailer names, known issues oldest first, idle open docs other than concepts and active designs, due reviews, source areas under D000's module Paths that no design covers, ranked by commits in the last 90 days, and designs D000 does not reach by following `refs` from design to design. |
 | `snapshot` | Record the work tree, untracked files included, and print the snapshot commit, for the diffs of a review's confirmation and follow-up rounds (the `canon-blind-review` skill). |
 | `init`, `adopt` | Project setup, upgrades and migration; the user runs them through the `canon-init` skill. |
 
@@ -104,7 +104,7 @@ based_on: [D003@r4]                  # P only
 - `refs`: ids of related docs; must include every doc linked from the body (`check --fix` adds missing ones).
 - `revision`: counts semantic changes. Bump it when a goal, spec, plan, or a concept's Ideas or Open questions change meaning, never for wording.
 - `owns`: topics this design is the single authority for, unique across non-archived designs.
-- `paths`: code globs relative to the project directory; they drive `which`, `affected` and `audit`.
+- `paths`: code globs relative to the project directory; they drive `which`, `affected` and `audit`. A design with no `implemented` may list code not yet written; a revision of one with `implemented` adds a file once it exists, in the docs step.
 - `reviewed`, `reviewers`: the revision that passed the review gate and who reviewed that revision (`manual:<model>` for a review the user ran), never accumulated across revisions.
 - `approved`: the latest revision the user approved, set as the workflow's [Gate status](workflow.md#gate-status) says.
 - `implemented`: the revision the code fully implements; required once a design is `active`. Below `revision`, the spec leads the code and the difference is an open plan's work, not a defect. A revision that needs no code change raises it as Gate status says.

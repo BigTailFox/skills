@@ -170,6 +170,13 @@ class CanonTest(unittest.TestCase):
             if not path.exists():
                 path.write_text("x\n")
 
+    def edit_commit(self, *names):
+        for name in names:
+            path = self.root / name
+            path.write_text(path.read_text() + "x\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "edit " + ", ".join(names))
+
     def section(self, out, heading):
         """The indented lines that follow `heading` in a report such as `audit`'s; None without the heading."""
         lines = out.splitlines()
@@ -671,6 +678,62 @@ class AuditTest(CanonTest):
         self.code_commit("fix: unchecked")
         self.assertNotIn("commits since", self.ok("audit"))
 
+    def test_a_reconciliation_restarts_the_count_and_a_trailer_naming_the_design_does_not(self):
+        self.design()
+        self.commit()
+        last = self.git("rev-parse", "HEAD").strip()
+        self.code_commit("fix: unchecked")
+        self.git("commit", "-q", "--allow-empty", "-m", "docs: checked\n\nRefs: D001")
+        self.git("commit", "-q", "--allow-empty", "-m", "docs: reconciled\n\nSee Reconciled: D001")
+        out = self.ok("audit")
+        self.assertIn("Designs with code commits since the design last changed or was reconciled that no `Refs:` "
+                      "trailer names (most first; review `git log <since>..HEAD` on its paths):", out)
+        self.assertRegex(out, r"  1 commits since {}  D001 ".format(last[:12]))
+        self.git("commit", "-q", "--allow-empty", "-m", "docs: reconciled\n\nreconciled: D002, D001")
+        reconciled = self.git("rev-parse", "HEAD").strip()
+        self.assertNotIn("commits since", self.ok("audit"))
+        self.code_commit("fix: later")
+        self.git("commit", "-q", "--allow-empty", "-m", "docs: reconciled\n\nReconciled: D002")
+        self.assertRegex(self.ok("audit"), r"  1 commits since {}  D001 ".format(reconciled[:12]))
+
+    def test_a_reconciliation_on_a_merged_branch_leaves_the_commits_it_does_not_descend_from_counted(self):
+        self.design()
+        self.create("src/a.py", "src/b.py")
+        self.commit()
+        self.git("checkout", "-qb", "side")
+        self.edit_commit("src/a.py")
+        self.git("commit", "-q", "--allow-empty", "-m", "docs: reconciled\n\nReconciled: D001")
+        reconciled = self.git("rev-parse", "HEAD").strip()
+        self.git("checkout", "-q", "main")
+        self.edit_commit("src/b.py")
+        self.git("merge", "-q", "--no-edit", "side")
+        self.assertRegex(self.ok("audit"), r"  2 commits since {}  D001 ".format(reconciled[:12]))
+
+    def test_a_clean_merge_counts_when_the_other_side_changed_nothing_under_the_paths(self):
+        self.design()
+        self.create("src/a.py", "other/w.txt")
+        self.commit()
+        self.git("checkout", "-qb", "side")
+        self.edit_commit("src/a.py")
+        self.git("commit", "-q", "--allow-empty", "-m", "docs: reconciled\n\nReconciled: D001")
+        reconciled = self.git("rev-parse", "HEAD").strip()
+        self.git("checkout", "-q", "main")
+        self.edit_commit("other/w.txt")
+        self.git("merge", "-q", "--no-edit", "side")
+        self.assertRegex(self.ok("audit"), r"  1 commits since {}  D001 ".format(reconciled[:12]))
+
+    def test_entries_with_brackets_wildcards_in_a_segment_or_globs_above_a_match_count_what_they_govern(self):
+        self.design(paths=["src/**.py", "lib/*", "a[1]/x.txt"])
+        self.design("config", paths=["*.cfg"])
+        names = ("src/deep/y.py", "lib/sub/z.txt", "a[1]/x.txt", "top.cfg", "a1/x.txt", "other/w.txt")
+        self.create(*names)
+        self.commit()
+        for name in names:
+            self.edit_commit(name)
+        out = self.ok("audit")
+        self.assertRegex(out, r"  3 commits since [0-9a-f]+  D001 ")
+        self.assertRegex(out, r"  1 commits since [0-9a-f]+  D002 ")
+
     def test_idle_docs_skip_concepts(self):
         self.doc("C", "backlog", created="2020-01-01", updated="2020-01-01")
         self.doc("I", "flaky", created="2020-01-01", updated="2020-01-01")
@@ -903,6 +966,12 @@ class DocRulesTest(CanonTest):
         self.commit()
         self.ok("archive", "D001", "retired")
         self.assertNotIn("matches no file", self.ok("check"))
+
+    def test_a_design_with_no_implemented_does_not_warn_about_unmatched_paths(self):
+        design = self.design(status="accepted", implemented=None, paths=["src/gone.py"])
+        self.assertNotIn("matches no file", self.ok("check", "--fix"))
+        self.set(design, status="active", implemented=1)
+        self.assertIn("`paths` entry `src/gone.py` matches no file", self.ok("check", "--fix"))
 
     def test_new_rejects_from_on_another_type_and_root_with_parent(self):
         self.design()
@@ -1606,13 +1675,6 @@ class ProjectDocsTest(CanonTest):
         self.assertRegex(self.ok("affected", "src/auth/README.md"),
                          r"^D001 active docs/designs/D001-area\.md - Fixture\n  src/auth/README\.md\n")
 
-    def edit_commit(self, *names):
-        for name in names:
-            path = self.root / name
-            path.write_text(path.read_text() + "x\n")
-        self.git("add", "-A")
-        self.git("commit", "-qm", "edit " + ", ".join(names))
-
     def test_a_commit_changing_only_docs_the_paths_do_not_list_is_no_unchecked_commit(self):
         self.design(paths=["src/auth/**"])
         self.create("src/auth/README.md", "src/auth/x.py")
@@ -1949,6 +2011,21 @@ class OverviewCheckTest(CanonTest):
         self.assertEqual([line for line in self.problems(self.ok("check")) if "Modules Path" in line],
                          ["WARN {}: Modules Path `{}` is not a directory of the project".format(self.OVERVIEW, entry)
                           for entry in ("lib/", "src/base.py", "..")])
+
+    def test_a_modules_path_does_not_warn_while_its_row_links_only_designs_with_no_implemented(self):
+        planned = self.design("planned", status="accepted", implemented=None, paths=["lib/**"])
+        self.design("built")
+        self.modules("lib/", design="[D001: Fixture](D001-planned.md)")
+        self.modules("app/", design="none")
+        self.modules("tools/", design="[D001: Fixture](D001-planned.md), [D002: Fixture](D002-built.md)")
+        self.modules("web/", design="![D001](D001-planned.md), [Docs](../README.md)")
+        path = self.root / self.OVERVIEW
+        path.write_text(path.read_text().replace("| Entry points | Design |\n", "| Entry points | DESIGN |\n", 1))
+        warning = "WARN {}: Modules Path `{{}}` is not a directory of the project".format(self.OVERVIEW)
+        self.assertEqual(sorted(line for line in self.problems(self.ok("check", "--fix")) if "Modules Path" in line),
+                         sorted(warning.format(entry) for entry in ("app/", "tools/", "web/")))
+        self.set(planned, status="active", implemented=1)
+        self.assertIn(warning.format("lib/"), self.problems(self.ok("check", "--fix")))
 
 
 class TraceCase(CanonTest):

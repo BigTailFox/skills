@@ -29,7 +29,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "39"
+CANON_VERSION = "40"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -248,7 +248,7 @@ OVERVIEW_TEMPLATE = """
 
 ## Spec
 
-<!-- canon: The four subsections below, in this order. Rows name modules, capabilities and standards, never single docs: designs reach their sub-topics through their own links, `docs/README.md` indexes every doc, and detail below the module level belongs to the module's designs. A Design cell links every top-level design that owns the capability or standard, or that governs the module's code, or reads `none`. The tables map the project, its planned modules included while D000 is its first L2 design. A change that adds or removes a module, capability or standard, or creates, moves or archives a top-level design, updates their rows in the same commit; rows change no meaning, so they take no revision bump and no gate. Goals, Dependencies and Glossary are spec. `paths` lists only files that embody the architecture, such as dependency-boundary configuration and module wiring, and is usually empty. -->
+<!-- canon: The four subsections below, in this order. Rows name modules, capabilities and standards, never single docs: designs reach their sub-topics through their own links, `docs/README.md` indexes every doc, and detail below the module level belongs to the module's designs. A Design cell links every top-level design that owns the capability or standard, or that governs the module's code, or reads `none`. The tables map the project, its planned modules included, each linking the designs that specify it; a module that a revision of a design with `implemented` specifies gets its row once its directory exists. A change that adds or removes a module, capability or standard, or creates, moves or archives a top-level design, updates their rows in the same commit; rows change no meaning, so they take no revision bump and no gate. Goals, Dependencies and Glossary are spec. `paths` lists only files that embody the architecture, such as dependency-boundary configuration and module wiring, and is usually empty. -->
 """ + "".join("\n### {}\n\n{}\n".format(name, body) for name, body in OVERVIEW_SPEC) + """
 ## Decisions
 
@@ -458,20 +458,17 @@ def glob_regex(pattern):
 
 
 def git_pathspec(project_rel, pattern):
-    """The Git pathspecs of a `paths` entry of a design in the project at `project_rel`; none for an absolute entry or
-    one outside the repository, which Git refuses."""
+    """A Git pathspec covering every file a `paths` entry of a design in the project at `project_rel` matches: the
+    directory before its first wildcard, or the entry itself, taken literally, since Git's globs read `[`, `**`
+    within a segment and `*` above a match otherwise than `glob_regex`; `governs` then decides. None for an absolute
+    entry or one outside the repository, which Git refuses."""
     p = entry_path(pattern)
     if p.startswith("/") or posixpath.normpath(posixpath.join(project_rel, p)).split("/")[0] == "..":
-        return []
-    if p.endswith("/"):
-        p += "**"
-
-    def spec(*parts):
-        return ":(glob)" + "/".join(x for x in parts if x)
-
-    if any(c in p for c in "*?["):
-        return [spec(project_rel, p)]
-    return [spec(project_rel, p), spec(project_rel, p, "**")]
+        return None
+    wildcard = next((i for i, c in enumerate(p) if c in "*?"), None)
+    if wildcard is not None:
+        p = p[:wildcard].rpartition("/")[0]
+    return ":(literal)" + ("/".join(x for x in (project_rel, p.rstrip("/")) if x) or ".")
 
 
 def code_pathspec(repo, root):
@@ -534,6 +531,11 @@ class Doc:
         value = self.get("reviewed")
         return value if isinstance(value, int) else 0
 
+    @property
+    def implemented(self):
+        value = self.get("implemented")
+        return value if isinstance(value, int) else 0
+
     def as_list(self, key):
         value = self.get(key, [])
         return value if isinstance(value, list) else []
@@ -557,10 +559,10 @@ class Doc:
         return [i for i in range(span[0] + 1, len(self.headings))
                 if self.headings[i].line < span[1] and self.headings[i].level == 3]
 
-    def module_entries(self):
-        """The entries of the Path cells of D000's Modules table, the first table under `### Modules` in `## Spec`,
-        its Path column found by its header: each cell split at commas, and each entry stripped of whitespace and
-        backticks."""
+    def module_rows(self):
+        """The rows of D000's Modules table, the first table under `### Modules` in `## Spec`, as (entries, design):
+        the Path cell split at commas, each entry stripped of whitespace and backticks, and the Design cell, each
+        column found by its header in any case."""
         heads = self.headings
         found = next((i for i in self.spec_subsections() if heads[i].text == "Modules"), None)
         if found is None:
@@ -572,16 +574,21 @@ class Doc:
                 rows.append([cell.strip() for cell in line.strip().strip("|").split("|")])
             elif rows:
                 break
-        column = next((i for i, cell in enumerate(rows[0] if rows else []) if cell.lower() == "path"), None)
-        entries = []
-        for row in rows[1:] if column is not None else []:
+        header = [cell.lower() for cell in rows[0]] if rows else []
+        path_col = header.index("path") if "path" in header else None
+        design_col = header.index("design") if "design" in header else None
+        out = []
+        for row in rows[1:] if path_col is not None else []:
             if all(set(cell) <= set("-: ") for cell in row):
                 continue
-            for entry in (row[column] if column < len(row) else "").split(","):
-                entry = entry.strip(" \t`")
-                if entry:
-                    entries.append(entry)
-        return entries
+            entries = [e.strip(" \t`") for e in (row[path_col] if path_col < len(row) else "").split(",")]
+            design_cell = row[design_col] if design_col is not None and design_col < len(row) else ""
+            out.append(([e for e in entries if e], design_cell))
+        return out
+
+    def module_entries(self):
+        """The entries of the Path cells of D000's Modules table."""
+        return [entry for entries, _design_cell in self.module_rows() for entry in entries]
 
     def governs(self, rel, doc_file=False):
         """Whether this design's `paths` match a repo-relative file; when `doc_file` says the file is a doc, only an
@@ -1221,7 +1228,7 @@ def check_doc(repo, doc, changed, strict=False):
             if not SLUG_RE.match(topic):
                 err("`owns` entry `{}` must be kebab-case".format(topic))
         files = None
-        for pattern in [] if doc.archived else doc.as_list("paths"):
+        for pattern in [] if doc.archived or not doc.implemented else doc.as_list("paths"):
             files = files if files is not None else repo.project_files(doc.root)
             rx = glob_regex(pattern)
             if not any(rx.match(f) for f in files):
@@ -1303,7 +1310,8 @@ def owned_architecture(repo, commit, rel):
 
 def check_overview(repo):
     """The rules for D000: the repo root's docs/ holds it, live, and no other docs root holds one; its Spec holds
-    the four subsections; its `paths` list only files; its Modules Paths are directories of the project."""
+    the four subsections; its `paths` list only files; its Modules Paths are directories of the project, unless their
+    row links designs and none of them has `implemented`."""
     overview = root_overview(repo)
     if overview is None:
         archived = root_overview(repo, archived=True)
@@ -1330,9 +1338,23 @@ def check_overview(repo):
             repo.problem("ERROR", overview.rel, "`paths` entry `{}` names a glob or directory; D000's `paths` list "
                          "only files, since a glob or directory makes every file under it look governed"
                          .format(pattern))
-    for entry in overview.module_entries():
-        if module_dir(overview, entry) is None:
-            repo.problem("WARN", overview.rel, "Modules Path `{}` is not a directory of the project".format(entry))
+    for entries, design_cell in overview.module_rows():
+        linked = linked_designs(repo, overview, design_cell)
+        if linked and not any(d.implemented for d in linked):
+            continue
+        for entry in entries:
+            if module_dir(overview, entry) is None:
+                repo.problem("WARN", overview.rel, "Modules Path `{}` is not a directory of the project".format(entry))
+
+
+def linked_designs(repo, doc, text):
+    """The designs that the links in `text`, a line of `doc`, point to; images and other targets count for none."""
+    found = []
+    for match, dest in link_targets(repo, doc.path, [text]):
+        target = None if match.group(1) else repo.by_path.get(dest)
+        if target and target.type == "D":
+            found.append(target)
+    return found
 
 
 def run_check(repo, base=None):
@@ -2175,14 +2197,18 @@ def renumbered_id(repo, doc, wanted, on_base):
     return doc.type + str(number).zfill(3)
 
 
+def link_targets(repo, path, lines, start=0):
+    """(match, path) for each link in `lines` of the file at `path` that points to a file; URLs and anchors within
+    the file aside."""
+    for _i, match in iter_links(lines, start):
+        resolved = repo.resolve(path.parent, match.group(3))
+        if resolved and resolved[0] != "self":
+            yield match, resolved[0]
+
+
 def doc_links(repo, doc):
     """Paths of the files a doc's body links to."""
-    paths = set()
-    for _i, match in iter_links(doc.lines, doc.fm_end + 1):
-        resolved = repo.resolve(doc.path.parent, match.group(3))
-        if resolved and resolved[0] != "self":
-            paths.add(resolved[0])
-    return paths
+    return {dest for _match, dest in link_targets(repo, doc.path, doc.lines, doc.fm_end + 1)}
 
 
 def id_entries(doc_type, text):
@@ -2328,26 +2354,37 @@ def cmd_affected(repo, args):
     return 0
 
 
+def trailer_ids(message, key):
+    """The doc ids named in the lines of a commit message that start with `<key>:`, in any case."""
+    named = set()
+    for line in message.splitlines():
+        if line.lower().startswith(key + ":"):
+            named |= set(re.findall(r"\b[CDPREI]\d{3,}[A-Z]?\b", line))
+    return named
+
+
 def unchecked_commits(repo, doc):
-    """The last commit that changed a design's file beyond its Known issues table, and the later commits touching
-    files its `paths` govern whose `Refs:` trailers do not name it. A merge touches the files its resolution changed
-    against every parent, or for a clean merge, which changed none, the files it changed against any parent."""
-    base = None
+    """The commit a design's count runs from, its newest reconciliation or else its last change beyond its Known
+    issues table, and the commits since its last change and every reconciliation after it that touch files its
+    `paths` govern and whose `Refs:` trailers do not name it. A merge touches the files its resolution changed against
+    every parent, or for a clean merge, which changed none, the files it changed against any parent."""
+    last = None
     for sha in git_checked(repo.root, "log", "--format=%H", "--", doc.rel).stdout.split():
         old = git(repo.root, "show", "{}^:{}".format(sha, doc.rel))
         new = git(repo.root, "show", "{}:{}".format(sha, doc.rel))
         if old is None or new is None or not issue_rows_only(old, new):
-            base = sha
+            last = sha
             break
-    if not base:
+    if not last:
         return None, []
-    specs = []
-    for pattern in doc.as_list("paths"):
-        specs += git_pathspec(doc.root.rel, pattern)
+    specs = [s for s in (git_pathspec(doc.root.rel, p) for p in doc.as_list("paths")) if s]
     if not specs:
-        return base, []
-    out = git_checked(repo.root, "log", "-z", "-c", "--name-only", "--no-renames", "--format=%x01%H %P%x00%B%x02",
-                      base + "..HEAD", "--", *specs).stdout
+        return last, []
+    out = git_checked(repo.root, "log", "-z", "--format=%x01%H%x00%B%x02", last + "..HEAD").stdout
+    reconciled = [header.partition("\0")[0] for header, _files in log_entries(out)
+                  if doc.id in trailer_ids(header.partition("\0")[2], "reconciled")]
+    out = git_checked(repo.root, "log", "-z", "-c", "--name-only", "--no-renames", "--full-history",
+                      "--format=%x01%H %P%x00%B%x02", "HEAD", "--not", last, *reconciled, "--", *specs).stdout
     commits = []
     for header, files in log_entries(out):
         shas, _, message = header.partition("\0")
@@ -2358,13 +2395,9 @@ def unchecked_commits(repo, doc):
             files = [f for f in merged.split("\0") if f]
         if files and not any(doc.governs(f, repo.is_doc(f)) for f in files):
             continue
-        named = set()
-        for line in message.splitlines():
-            if line.lower().startswith("refs:"):
-                named |= set(re.findall(r"\b[CDPREI]\d{3,}[A-Z]?\b", line))
-        if sha and doc.id not in named:
+        if sha and doc.id not in trailer_ids(message, "refs"):
             commits.append(sha)
-    return base, commits
+    return (reconciled[0] if reconciled else last), commits
 
 
 def log_entries(out):
@@ -2470,8 +2503,8 @@ def cmd_audit(repo, args):
             if commits:
                 stale.append((len(commits), base, doc))
     if stale:
-        report.append("Designs with code commits since the design last changed that no `Refs:` trailer names "
-                      "(most first; review `git log <since>..HEAD` on its paths):")
+        report.append("Designs with code commits since the design last changed or was reconciled that no `Refs:` "
+                      "trailer names (most first; review `git log <since>..HEAD` on its paths):")
         for count, base, doc in sorted(stale, key=lambda x: -x[0]):
             report.append("  {} commits since {}  {}".format(count, base[:12], doc_line(doc)))
     issues = []
