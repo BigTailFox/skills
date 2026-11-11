@@ -10,7 +10,7 @@ owns: [project-overview, as-built-design, design-coverage, unchecked-commits]
 paths: [skills/governance/canon/as-built.md, skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/governance/canon/doc-types.md, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-review/architecture.md, tests/test_canon.py]
 reviewed: 8
 reviewers: [claude-opus-5.5]
-implemented: 7
+implemented: 8
 ---
 
 # D002: Project overview and as-built designs
@@ -213,7 +213,7 @@ Scenarios, tested through the commands:
 | ID | Severity | Issue | Source | Since | Next |
 |----|----------|-------|--------|-------|------|
 | D002-K1 | major | A `paths` entry matches a whole file, so coverage counts all of `canon.py` as covered while parts of it (`rename`, `renumber`, `show`, `find`, `which`, `affected`) have no design, and any `canon.py` edit must name all six designs in `Refs:` | R001-F1 | 2026-11-05 | L2 |
-| D002-K3 | minor | `audit` finds a design's commits through Git `:(glob)` pathspecs built from its `paths` before it applies D006's matching, so an entry with `[` never counts a commit, Git reading `[` as a character class, and one with `**` inside a path segment, such as `src/**.py`, misses the files below that segment's directory, Git reading such a `**` as `*` | as-built 91a274a | 2026-11-11 | fix |
+
 ## Decisions
 
 - D000 has a fixed id: every project, skill and `check` rule can name it, and it heads the index.

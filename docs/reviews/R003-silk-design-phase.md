@@ -56,7 +56,7 @@ refs: [C001, D000, D001, D003, D005, R001, R002]
 | R003-F29 | minor | usability: The 500-line limit forces cuts in concepts, goes unenforced on reviews and is escaped by long lines | fixed 0b25d98 |
 | R003-F30 | minor | usability: Diagram sources, tools and readability have no rules | fixed 18b7dcf |
 | R003-F31 | minor | architecture: `canon.py` runs from a project copy that lags the installed skills, with project helpers beside it | open |
-| R003-F32 | minor | usability: Permanent `check` warnings for planned paths and modules bury new ones | open |
+| R003-F32 | minor | usability: Permanent `check` warnings for planned paths and modules bury new ones | fixed ac86361 (planned paths and modules; the user declined setting apart the warnings new since HEAD) |
 | R003-F33 | minor | functional: `check` skips links and anchors in attachment Markdown | fixed ecf822f |
 | R003-F34 | minor | functional: `check` cannot validate a commit or the staged state | open |
 | R003-F35 | minor | usability: `show D00X#known-issues` fails when a design has no Known issues section | fixed 8f4f34c |
