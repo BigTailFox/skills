@@ -25,7 +25,7 @@ Draft the whole plan yourself before asking anything:
 - **Notes**: risks, constraints, migration and rollout concerns the implementer must keep in mind, and the details the plan settles that the design leaves unstated, for the docs step to write into the design.
 - **Current state**: `Next: S1`.
 
-Then settle what the draft leaves open with the `canon-grill` skill: slice boundaries, order, seams and risk. Write each answer into the plan at once.
+Then settle what the draft leaves open with the `canon-grill` skill: slice boundaries, order, seams and risk.
 
 A slice that would alter or extend behavior no design states, as the `canon` skill's tiers define it, first gets that behavior recorded: write an as-built revision from HEAD (the `canon` skill's `as-built.md`), pass it through the review gate at L1 and commit it on its own; the slices it touches then wait as for a design problem.
 

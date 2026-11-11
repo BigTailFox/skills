@@ -15,7 +15,7 @@ Bring every doc this session touched up to date:
 
 - **Plan**: slice statuses; Current state with the current slice, next action and paused slices with reasons; Log entries for decisions, deviations and evidence since the last update.
 - **Investigation**: Reproduction, and Analysis with every hypothesis and probe result so far.
-- **Design or concept being written**: every settled decision in place. Unsettled ones go in the concept's Open questions, or in a temporary `## Open questions` section of a draft design that the author removes before the review gate.
+- **Design, plan or concept with open decisions**: every settled decision in place, and the open ones where the `canon-grill` skill's Record puts them.
 - **Experiment or review**: results and dispositions decided so far.
 
 Run `canon.py check --fix`. Commit only if the user asks; the handoff lists what is uncommitted.

@@ -13,7 +13,7 @@
 - [D006: Doc model and writing rules](designs/D006-doc-model.md) · active · 2 known issues · Doc types, ids, frontmatter, sections, statuses and archiving of canon docs, the templates of new, the doc rules check enforces and the writing rules. · owns: doc-model, doc-writing · modules: canon
 - [D007: Change tiers and the review gate](designs/D007-change-tiers.md) · active · 5 known issues · Change tiers L0, L1 and L2 and their flows, design problems, and the review gate's steps, reviewer prompt, merge rules, confirmation round and status. · owns: change-tiers, review-gate, design-problems · modules: canon
 - [D008: Prototypes and research](designs/D008-experiments.md) · active · 2 known issues · Prototypes and research (canon-prototype, canon-research): quick answers, the research brief, logic, UI and spike prototypes, verdicts in E docs. · owns: prototypes, research · modules: canon
-- [D009: Settling decisions](designs/D009-settling-decisions.md) · active · 3 known issues · Settling open decisions with the user (canon-grill): triage before asking, rounds over the design tree's frontier, and where answers are recorded. · owns: settling-decisions · modules: canon
+- [D009: Settling decisions](designs/D009-settling-decisions.md) · active · Settling open decisions with the user (canon-grill): triage before asking, open decisions kept in the doc, and small batches of related questions. · owns: settling-decisions · modules: canon
 
 ### Reviews
 

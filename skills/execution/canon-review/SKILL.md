@@ -40,7 +40,7 @@ Spawn one subagent per angle, in parallel, in the foreground. Each brief carries
 
 Sort the findings first. **Fixable now** means an L0 fix, or an L1 change inside one design, small enough for this session; write a short plan for each: the change, the files, the tier, and for L1 the spec change. L2 work and broad architecture changes are recorded for later.
 
-Take the findings to the user in rounds with the `canon-grill` skill. Present the fixable ones with their plans and ask which to fix now; every other finding, and each fixable one the user does not take, gets one of the other dispositions:
+Take the findings to the user with the `canon-grill` skill. Present the fixable ones with their plans and ask which to fix now; every other finding, and each fixable one the user does not take, gets one of the other dispositions:
 
 - **Fix now** (an approved plan): build it through its tier's flow, L0 with `canon-tdd` and `canon-code-review`, L1 by revising the design and passing the review gate (same-model reviewer) first. Run the docs step, commit each fix on its own, and set `fixed <commit>`.
 - **Needs a spec change**: record it as a known issue of the design that will carry it, source `R00X-F<n>` and next `L1` or `L2`, and set `moved D00X`; or set `moved P00X` when a plan covers it. Give the user the next phase's command (`/canon-design D00X` or `/canon-plan D00X`).

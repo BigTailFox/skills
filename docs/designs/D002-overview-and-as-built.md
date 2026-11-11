@@ -2,15 +2,15 @@
 status: active
 created: 2026-10-22
 updated: 2026-11-11
-revision: 5
+revision: 6
 modules: [canon]
 summary: D000 project overview in every project, as-built designs that record existing code, backfill before changing unspecified behavior, and design coverage in audit.
-refs: [D001, D007]
+refs: [D001, D007, D009]
 owns: [project-overview, as-built-design, design-coverage]
 paths: [skills/governance/canon/as-built.md, skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/governance/canon/doc-types.md, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-review/architecture.md]
-reviewed: 5
+reviewed: 6
 reviewers: [claude-opus-5.5]
-implemented: 5
+implemented: 6
 ---
 
 # D002: Project overview and as-built designs
@@ -94,7 +94,7 @@ It is written:
 2. **Scope**: the topic the change touches, as one whole interface or capability, neither the whole module nor only the lines to change. It goes into the design whose `owns` holds the topic, else into a new design. A new design's `owns` and `paths` cover exactly what it records, `paths` listing the files that implement it and their tests; a revision adds what it records to them.
 3. **Level**: what callers rely on, meaning what another module, a user or an external system can observe through an interface: results, errors, side effects, config keys and data formats, given as code. Private structure stays out.
 4. **Intent**: evidence, strongest first, is tests, user-facing docs, commit messages, pull requests and issues, then the code. Intent chooses what to write and at which level; what the revision states still holds for the code at the base.
-5. **Doubtful behavior**, behavior that looks unintended, goes to the user in rounds with the `canon-grill` skill, which looks every fact up itself. Intended behavior goes into the Spec. A defect puts the correct behavior in the Spec and adds a known issue with next `fix` stating what the code does instead; like a defect that code review defers, the issue does not lower `implemented`, and its fix is L0, since it restores specified behavior. Behavior the user cannot judge stays in the Spec as it is, with a known issue with next `decide`. Both issues have the source `as-built <base>`. What the change depends on is settled before the change's own revision.
+5. **Doubtful behavior**, behavior that looks unintended, is the user's to judge however plain it seems: it goes to the user with the `canon-grill` skill ([D009: Settling decisions](D009-settling-decisions.md)), which looks every fact up itself. Intended behavior goes into the Spec. A defect puts the correct behavior in the Spec and adds a known issue with next `fix` stating what the code does instead; like a defect that code review defers, the issue does not lower `implemented`, and its fix is L0, since it restores specified behavior. Behavior the user cannot judge stays in the Spec as it is, with a known issue with next `decide`. Both issues have the source `as-built <base>`. What the change depends on is settled before the change's own revision.
 6. **Decisions**: a choice that is hard to reverse and surprising without context gets a line with its source, or with `reason unknown, kept as found`.
 7. **No improvements**: an idea found while reading becomes a known issue with next `fix`, `L1` or `L2`, or an Idea in the module's backlog concept.
 
