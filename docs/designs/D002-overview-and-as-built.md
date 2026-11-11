@@ -194,6 +194,7 @@ Scenarios, tested through the commands:
 | ID | Severity | Issue | Source | Since | Next |
 |----|----------|-------|--------|-------|------|
 | D002-K1 | major | A `paths` entry matches a whole file, so coverage counts all of `canon.py` as covered while parts of it (`rename`, `renumber`, `show`, `find`, `which`, `affected`) have no design, and any `canon.py` edit must name all six designs in `Refs:` | R001-F1 | 2026-11-05 | L2 |
+| D002-K2 | minor | `audit`'s unchecked commits of a design restart only when the design changes, so a docs step that compared the design with the change leaves them counted, and the Maintenance rule's commit bumping only `updated` cannot restart them on a day the design was already updated; the user chose to settle it in one L1 revision with R003-F32 | code review 06c0510 | 2026-11-11 | L1 |
 ## Decisions
 
 - D000 has a fixed id: every project, skill and `check` rule can name it, and it heads the index.
