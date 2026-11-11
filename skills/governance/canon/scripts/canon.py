@@ -29,7 +29,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "33"
+CANON_VERSION = "34"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -56,9 +56,10 @@ EXTRA_DIRS = ("guides", "assets")
 
 COMMON_FIELDS = ("status", "created", "updated", "revision", "modules", "summary", "refs")
 TYPE_FIELDS = {"D": ("owns", "paths"), "P": ("based_on",)}
-OPTIONAL_FIELDS = {"D": ("reviewed", "reviewers", "implemented", "as_built"), "P": ("reviewed", "reviewers")}
+OPTIONAL_FIELDS = {"D": ("reviewed", "reviewers", "approved", "implemented", "as_built"),
+                   "P": ("reviewed", "reviewers", "approved")}
 LIST_FIELDS = {"modules", "refs", "owns", "paths", "based_on", "reviewers"}
-INT_FIELDS = {"revision", "reviewed", "implemented"}
+INT_FIELDS = {"revision", "reviewed", "approved", "implemented"}
 SEVERITIES = ("blocker", "major", "minor")
 DISPOSITIONS = ("open", "fixed", "moved", "declined")
 SLICE_STATUSES = ("todo", "in-progress", "done", "paused")
@@ -1177,6 +1178,10 @@ def check_doc(repo, doc, changed, strict=False):
     elif past_gate and reviewed != doc.revision:
         repo.problem("ERROR" if strict else "WARN", rel, "revision {} is not reviewed (reviewed: {}); pass the review "
                      "gate, then set `reviewed` and `reviewers`".format(doc.revision, "none" if reviewed is None else reviewed))
+    approved = fm.get("approved")
+    if approved is not None and "approved" in OPTIONAL_FIELDS.get(doc.type, ()):
+        if not isinstance(approved, int) or not 1 <= approved <= (reviewed if isinstance(reviewed, int) else 0):
+            err("`approved` must be an integer revision from 1 to `reviewed`")
 
     if doc.type == "D":
         implemented = fm.get("implemented")

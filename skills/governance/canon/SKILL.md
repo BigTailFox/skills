@@ -93,6 +93,7 @@ owns: [auth-token, session]          # D only
 paths: [src/auth/**, src/session/]   # D only
 reviewed: 4                          # D and P
 reviewers: [claude-opus-high, gpt-high]
+approved: 4                          # D and P
 implemented: 4                       # D only
 based_on: [D003@r4]                  # P only
 ---
@@ -104,8 +105,9 @@ based_on: [D003@r4]                  # P only
 - `revision`: counts semantic changes. Bump it when a goal, spec, plan, or a concept's Ideas or Open questions change meaning, never for wording.
 - `owns`: topics this design is the single authority for, unique across non-archived designs.
 - `paths`: code globs relative to the project directory; they drive `which`, `affected` and `audit`.
-- `reviewed`, `reviewers`: the revision that passed the review gate and who reviewed it (`manual:<model>` for a review the user ran).
-- `implemented`: the revision the code fully implements; required once a design is `active`. Below `revision`, the spec leads the code and the difference is an open plan's work, not a defect.
+- `reviewed`, `reviewers`: the revision that passed the review gate and who reviewed that revision (`manual:<model>` for a review the user ran), never accumulated across revisions.
+- `approved`: the latest revision the user approved, set as step 6 of the [review gate](workflow.md#review-gate) says.
+- `implemented`: the revision the code fully implements; required once a design is `active`. Below `revision`, the spec leads the code and the difference is an open plan's work, not a defect. A revision that needs no code change raises it as step 6 of the review gate says.
 - `as_built`: the commit an [as-built revision](as-built.md) records, only while the revision awaits its gate.
 - `based_on`: design revisions a plan was written against; `check` warns when a design moves past them.
 

@@ -10,6 +10,7 @@ owns: [subagents]
 paths: [skills/governance/canon/workflow.md, skills/execution/canon-blind-review/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/governance/canon-init/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-review/SKILL.md, skills/governance/canon/scripts/canon.py, tests/test_canon.py]
 reviewed: 7
 reviewers: [claude-opus-5.5, gemini-4-argon-high]
+approved: 7
 implemented: 6
 ---
 

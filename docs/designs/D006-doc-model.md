@@ -10,6 +10,7 @@ owns: [doc-model, doc-writing]
 paths: [skills/governance/canon/SKILL.md, skills/governance/canon/doc-types.md, skills/governance/canon/writing.md, skills/execution/canon-design/SKILL.md, skills/governance/canon/scripts/canon.py, tests/test_canon.py]
 reviewed: 4
 reviewers: [claude-opus-5.5, gemini-4-argon-high]
+approved: 4
 implemented: 3
 ---
 

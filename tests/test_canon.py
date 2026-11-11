@@ -248,6 +248,31 @@ class ImplementedTest(CanonTest):
         self.assertIn("[spec r2 leads code r1]", self.ok("which", "src/base.py"))
 
 
+class ApprovedTest(CanonTest):
+    def test_approved_up_to_reviewed_gives_no_error(self):
+        self.design(revision=3, reviewed=3, approved=3, implemented=3)
+        self.doc("P", "work", reviewed=1, reviewers=["fixture"], approved=1, refs=["D001"], based_on=["D001@r3"])
+        self.assertNotIn("`approved`", self.ok("check", "--fix"))
+
+    def test_approved_outside_one_to_reviewed_fails_and_fix_neither_sets_nor_deletes_it(self):
+        error = re.escape("`approved` must be an integer revision from 1 to `reviewed`")
+        design = self.design(revision=3, reviewed=3, implemented=3)
+        plan = self.doc("P", "work", approved=1, refs=["D001"], based_on=["D001@r3"])
+        self.assertRegex(self.fails("check", "--fix"), "ERROR docs/plans/P001-work.md: " + error)
+        self.assertIn("\napproved: 1\n", plan.read_text())
+        self.assertNotIn("\napproved:", design.read_text())
+        self.set(plan, approved=None)
+        for value in (4, 0, "x"):
+            self.set(design, approved=value)
+            self.assertRegex(self.fails("check"), "ERROR docs/designs/D001-area.md: " + error)
+
+    def test_approved_on_another_type_gets_only_the_unknown_field_error(self):
+        self.doc("C", "idea", approved=1)
+        out = self.fails("check")
+        self.assertIn("unknown frontmatter field `approved`", out)
+        self.assertNotIn("must be an integer revision", out)
+
+
 class RenumberTest(CanonTest):
     def test_renumber_normalizes_requested_id(self):
         design = self.design()

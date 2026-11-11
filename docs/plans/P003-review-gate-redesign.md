@@ -9,6 +9,7 @@ refs: [D007, D001, D003, D005, D006]
 based_on: [D007@r5, D001@r12, D003@r7, D005@r2, D006@r4]
 reviewed: 1
 reviewers: [claude-opus-5.5, gemini-4-argon-high]
+approved: 1
 ---
 
 # P003: Review gate redesign
@@ -17,7 +18,7 @@ Implements [D007: Change tiers and the review gate](../designs/D007-change-tiers
 
 ## Current state
 
-Next: S2.
+Next: S3.
 
 ## Slices
 
@@ -45,7 +46,7 @@ Test criteria; seam: the `status` command line, its output, exit code and the fi
 
 ### S2: The `approved` field
 
-Status: todo
+Status: done
 
 Builds on `D006#frontmatter` (`approved`, `reviewed`, `reviewers`, `implemented`).
 
@@ -183,3 +184,4 @@ Test criteria; seam: the skill files, `scripts/validate.py`, `npx skills add . -
 - 2026-11-11: The plan's gate found two design problems in D007 r4: it sent the revision after an as-built revision's gate to a follow-up round, whose reviewers keep the as-built criteria, and its "commit at once" conflicted with setup's single commit after all its gates (D004). The user chose a new gate for the former and a commit before any edit that changes the targets' meaning for the latter. D007 r5 (1d127eb) passed a follow-up round of the r4 gate; `based_on` moves to D007@r5, S5 carries step 7 and the Follow-up round's new gates, and S6 carries Frame step 5's new gate.
 - 2026-11-11: The user approved D007 r5 and this plan by starting `/canon-implement P003`; `approved` is recorded in S2's commit. Started at 904c18b.
 - 2026-11-11, S1 done: `status` and `status_moves` in `canon.py` (`CANON_VERSION` 33), `StatusTest` with 7 tests plus `status` cases in `IndexTest` and `HelpTest`; `validate.py` passed with D001's budgets measured. Deviation: `status -h` lists each type's statuses in order. Settled in the slice: a current status outside the type's moves counts as before all of them, and a `reviewed` that is not an integer reads as 0. Open: a concept's not-a-status message lists only `draft`, as D006 states, though `adopted` is its other valid target; put to the user.
+- 2026-11-11, S2 done: `approved` among the optional and integer fields of designs and plans, checked from 1 to `reviewed` (`CANON_VERSION` 34), `ApprovedTest` with 3 tests; `validate.py` passed with D001's budgets measured. The `SKILL.md` Frontmatter bullets link the review gate's step 6, which S5 rewrites; S5 keeps them pointing at Gate status. This commit sets `approved`: D001 12, D003 7, D005 2, D006 4, D007 5 and this plan 1.
