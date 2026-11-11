@@ -1,7 +1,7 @@
 ---
 status: open
 created: 2026-11-10
-updated: 2026-11-11
+updated: 2026-11-12
 revision: 1
 modules: [canon]
 summary: Canon friction in a docs-only bilingual project: review gates per doc, parallel sessions, archived experiments, translations, check gaps, tool drift.
@@ -41,7 +41,7 @@ refs: [C001, D000, D001, D003, D005, R001, R002, D002, D006]
 | R003-F14 | major | functional: Sessions sharing a checkout disturb each other: `check --fix` rewrites others' docs and staging one's own index lines takes hand-built blobs | open |
 | R003-F15 | major | usability: A background researcher writes only at the end, so an interrupted one loses its work | fixed 18b7dcf |
 | R003-F16 | minor | usability: Decisions grilled before any doc exists stay only in the chat | moved D009 |
-| R003-F17 | major | usability: Archiving concluded experiments hides the evidence live designs rest on | moved D008 |
+| R003-F17 | major | usability: Archiving concluded experiments hides the evidence live designs rest on | fixed D006@r8 |
 | R003-F18 | minor | usability: Nothing says whether a measurement added to a research experiment extends it or opens a new one | fixed 18b7dcf |
 | R003-F19 | major | usability: A concept absorbed piece by piece by several designs can be neither frozen nor archived | fixed 0b25d98 |
 | R003-F20 | minor | usability: Concepts have no review flow, and a review that restates a concept becomes a second spec | fixed 18b7dcf |

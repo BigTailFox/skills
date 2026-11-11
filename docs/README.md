@@ -12,7 +12,7 @@
 - [D005: Docs index](designs/D005-docs-index.md) · active · The generated doc index in each docs root's README.md and archived/README.md, its markers and format, the commands that regenerate it and check's index errors. · owns: docs-index · modules: canon
 - [D006: Doc model and writing rules](designs/D006-doc-model.md) · active · 1 known issue · Doc types, ids, frontmatter, sections, statuses and archiving of canon docs, the templates of new, the doc rules check enforces and the writing rules. · owns: doc-model, doc-writing · modules: canon
 - [D007: Change tiers and the review gate](designs/D007-change-tiers.md) · active · Change tiers and their flows, design problems, and the review gate of a change: steps, prompt, merge rules, confirmation and follow-up rounds, status. · owns: change-tiers, review-gate, design-problems · modules: canon
-- [D008: Prototypes and research](designs/D008-experiments.md) · active · 2 known issues · Prototypes and research (canon-prototype, canon-research): quick answers, the research brief, logic, UI and spike prototypes, verdicts in E docs. · owns: prototypes, research · modules: canon
+- [D008: Prototypes and research](designs/D008-experiments.md) · active · Prototypes and research (canon-prototype, canon-research): quick answers, the research brief, logic, UI and spike prototypes, verdicts in E docs. · owns: prototypes, research · modules: canon
 - [D009: Settling decisions](designs/D009-settling-decisions.md) · active · Settling open decisions with the user (canon-grill): triage before asking, open decisions kept in the doc, and small batches of related questions. · owns: settling-decisions · modules: canon
 
 ### Reviews

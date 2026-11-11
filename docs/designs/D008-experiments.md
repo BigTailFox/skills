@@ -1,15 +1,15 @@
 ---
 status: active
 created: 2026-11-10
-updated: 2026-11-11
-revision: 3
+updated: 2026-11-12
+revision: 4
 modules: [canon]
 summary: Prototypes and research (canon-prototype, canon-research): quick answers, the research brief, logic, UI and spike prototypes, verdicts in E docs.
 refs: [D000, D003, D006, R003, D007, D009]
 owns: [prototypes, research]
 paths: [skills/execution/canon-prototype/SKILL.md, skills/execution/canon-prototype/LOGIC.md, skills/execution/canon-prototype/UI.md, skills/execution/canon-research/SKILL.md]
-reviewed: 3
-reviewers: [claude-opus-5.5]
+reviewed: 4
+reviewers: [claude-opus-5.5, gemini-4-argon-medium]
 implemented: 3
 ---
 
@@ -44,10 +44,10 @@ A fact one or two primary sources settle, such as a signature, a default, a limi
 ### Recorded research
 
 1. **Frame**: the session writes the question, the answer that would settle it, and the doc that will absorb the answer, usually the design being written or revised.
-2. **Reserve**: in the main session, before any subagent starts, it looks for a live experiment on the same question with `canon.py find`. It extends one it finds, as [D006§doc-types: doc types](D006-doc-model.md#doc-types) states, setting `status: running`; otherwise it runs `canon.py new E <slug>`, fills Question and sets `status: running`.
+2. **Reserve**: in the main session, before any subagent starts, it looks for experiments on the same question with `canon.py find --archived`. It extends one it finds that is `planned` or `running`, or `answered` with no live design or plan linking it, as [D006§doc-types: doc types](D006-doc-model.md#doc-types) states, setting a `planned` or `answered` one `running` with `canon.py status`; otherwise it runs `canon.py new E <slug>`, fills Question, links each earlier experiment it found on the question, and sets it `running` with `canon.py status`.
 3. **Launch**: it starts a background subagent with the [research brief](#research-brief) where the host supports one, and otherwise does the research inline under the brief's rules. For a subagent it keeps the filled brief and the subagent's id in `.canon/canon-research/<E00X>/` as `brief.md` and `id.txt`; inline research keeps neither. It keeps working on what does not depend on the answer. The skill names no model.
 4. **Recover**, when the host reports that the researcher stopped before finishing: the launching session resumes it once by its id where the host allows, and otherwise reruns `brief.md` once in a new subagent; a second stop goes to the user. Another session finding an experiment still `running` reruns `brief.md` only once the user confirms that no other session is running it.
-5. **Absorb**, when the subagent finishes: the session opens the sources behind the findings its decision depends on and confirms they say what the experiment claims, then absorbs the conclusion as [Absorbing a conclusion](#absorbing-a-conclusion) states.
+5. **Absorb**, when the subagent finishes: the session opens the sources behind the findings its decision depends on and confirms they say what the experiment claims, sets the experiment `answered` with `canon.py status`, then absorbs the conclusion as [Absorbing a conclusion](#absorbing-a-conclusion) states.
 
 ### Research brief
 
@@ -58,6 +58,7 @@ The brief gives the subagent the experiment's path, the question, what answer wo
 - Setup: empty `Commit`, `Environment` and `Command` lines become `- Sources:` followed by one indented line per source, as a markdown link; filled ones, from an earlier run of the same question, stay, and `- Sources:` follows them.
 - Results: one finding per bullet, each linked to its source; inferences are marked as inferences, and conflicts between sources are reported.
 - Conclusion: the answer, the subagent's confidence and what remains open.
+- `summary`: one line that leads with the question's subject and states the answer.
 - The subagent writes each finding into the experiment as soon as it has its source, so a run that stops loses nothing; a rerun keeps the findings the doc already holds and researches only what they leave open.
 - Long excerpts worth keeping go in the attachment directory, linked from the doc. Each link and image target in an excerpt that is relative or starts with `/` is resolved against the source's URL into an absolute URL, so the excerpt's text stays verbatim while its links pass `check` ([D006§links-and-references: links and references](D006-doc-model.md#links-and-references)).
 - Every `<!-- canon: ... -->` comment is replaced, and the doc is written in the documentation language.
@@ -68,7 +69,7 @@ The brief gives the subagent the experiment's path, the question, what answer wo
 A prototype is throwaway code that answers one question; the question decides its kind.
 
 1. The session writes the question in one sentence, with the observation that would settle it.
-2. When the verdict will feed a design or plan, it creates the experiment at once with `canon.py new E <slug>`, fills Question and sets `status: running`, or extends a live experiment on the same question as research's Reserve step does. When the question is a detail inside the current task and the prototype is self-contained files, a logic prototype or a spike, it writes no doc: it builds in `.canon/canon-prototype/<topic>/`, records the verdict in the plan's Log or the commit message, and deletes the prototype. A UI prototype always gets an experiment, and so does a question with no design, plan or task in view, such as a state model the user wants to sanity-check, so a later design can cite its verdict.
+2. When the verdict will feed a design or plan, it creates the experiment at once with `canon.py new E <slug>`, fills Question and sets it `running` with `canon.py status`, or extends or links an earlier experiment on the same question as research's Reserve step does. When the question is a detail inside the current task and the prototype is self-contained files, a logic prototype or a spike, it writes no doc: it builds in `.canon/canon-prototype/<topic>/`, records the verdict in the plan's Log or the commit message, and deletes the prototype. A UI prototype always gets an experiment, and so does a question with no design, plan or task in view, such as a state model the user wants to sanity-check, so a later design can cite its verdict.
 3. It picks the kind by the question:
 
 | Question | Kind |
@@ -128,16 +129,17 @@ The smallest script that runs the approach against the real dependency and print
 
 Once a prototype has answered its question, the session:
 
-1. Fills the experiment. Setup: `Commit:` is the commit holding the prototype, on the prototype branch or the one that added `experiments/E00X/`, so the prototype is committed before Setup records it, with `Environment:` and the `Command:` that runs it; an extended experiment keeps the earlier run's lines above them. Results: what the runs or the user's walkthrough showed. Conclusion: the verdict, which for a UI prototype names the winning variant and why, and where it was absorbed.
+1. Fills the experiment. Setup: `Commit:` is the commit holding the prototype, on the prototype branch or the one that added `experiments/E00X/`, so the prototype is committed before Setup records it, with `Environment:` and the `Command:` that runs it; an extended experiment keeps the earlier run's lines above them. Results: what the runs or the user's walkthrough showed. Conclusion: the verdict, which for a UI prototype names the winning variant and why, and where it was absorbed. `summary`: as the [research brief](#research-brief) states. Then it sets the experiment `answered` with `canon.py status`.
 2. Writes the validated decision into the design or plan, as [Absorbing a conclusion](#absorbing-a-conclusion) states. The real code follows through the change's tier, in a plan slice or an L0 change, never at verdict time. There, a logic prototype's pure module lifts into the real module, and a winning UI variant is rewritten to the project's standards: into the existing page, or as a real route in place of the throwaway one.
 3. Keeps the decision, the experiment and its `experiments/E00X/` files on the main branch. Code wired into the product, such as the full set of UI variants, the switcher and a throwaway route, stays only on the prototype branch.
 
 ### Absorbing a conclusion
 
-- Research: the conclusion goes into the doc named when framing: a design as a Spec constraint, a Budget or a Decision linking the experiment, a plan in its Notes.
-- Prototype: while a design is being written, the session writes the decision straight into it; a detail a plan settles within its design goes into the plan's Notes ([D007§design-problems: design problems](D007-change-tiers.md#design-problems)).
+- Research: the conclusion goes into the doc named when framing, with a link to the experiment: a design as a Spec constraint, a Budget or a Decision, a plan in its Notes.
+- Prototype: while a design is being written, the session writes the decision straight into it, with a link to the experiment; a detail a plan settles within its design goes into the plan's Notes with the link ([D007§design-problems: design problems](D007-change-tiers.md#design-problems)).
 - An accepted or active design changes only through the change tiers ([D007§change-tiers: change tiers](D007-change-tiers.md#change-tiers)); a prototype's session takes the verdict to the user.
-- Once a design or plan has absorbed it, the docs step archives the experiment as [D006§doc-types: doc types](D006-doc-model.md#doc-types) states.
+- Once a design or plan links the experiment for its conclusion, the session that wrote the link sets the experiment `concluded` with `canon.py status`. Which other steps set it, and when and as what the experiment is archived, is [D006§doc-types: doc types](D006-doc-model.md#doc-types)'s.
+- When the experiment links an earlier one on its question that is still live and `concluded`, the session that sets it `concluded` archives the earlier one: when the earlier result still holds, it first moves to this experiment the links of live designs and plans that cite the earlier one, then archives it as `superseded` with this experiment in its `refs`; when this experiment shows the earlier result wrong, it archives it as `overturned` and handles the docs that link it as [D006§doc-types: doc types](D006-doc-model.md#doc-types) states.
 
 ## Decisions
 
@@ -151,10 +153,3 @@ Once a prototype has answered its question, the session:
 - A verdict's code reaches the product through the change's tier, never at verdict time, so no code lands ahead of the design gate and plan it depends on (the user's decision, 2026-11-10).
 - A UI prototype always gets an experiment: its variants render on a real route and its code lives on a branch named by the experiment's id (the user's decision, 2026-11-10).
 - Both skills are auto skills, the exception the repository's Skill rules allow to the manual default for a skill that must trigger from context (`README.md`, Skills tables; reason unknown, kept as found).
-
-## Known issues
-
-| ID | Severity | Issue | Source | Since | Next |
-|----|----------|-------|--------|-------|------|
-| D008-K4 | minor | Both skills, `workflow.md`'s docs step and `doc-types.md` archive an experiment only once a design absorbs it, so one a plan absorbs is never archived; the fix waits on D008-K7 | as-built 0872d6d | 2026-11-10 | fix |
-| D008-K7 | major | Archiving concluded experiments hides the evidence live designs rest on | R003-F17 | 2026-11-11 | L2 |
