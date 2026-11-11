@@ -55,7 +55,7 @@ Send them the file, or open it for them. They'll click through the walkthroughs 
 
 ### 5. Capture the answer and the prototype
 
-Once the prototype has answered its question, capture the answer and the prototype the way the [SKILL](SKILL.md) describes. The logic-specific mapping: the validated reducer / machine / function set lifts into the real module (the decision, absorbed); the HTML file stays in the experiment's attachment directory as the primary source, and being one self-contained file, it stays trivially re-runnable there.
+Once the prototype has answered its question, capture the answer and the prototype the way the [SKILL](SKILL.md) describes. The logic-specific mapping: when the change's tier reaches the real code, the validated reducer / machine / function set lifts into the real module; with an experiment, the HTML file stays in its attachment directory as the primary source, and being one self-contained file, it stays trivially re-runnable there.
 
 ## Anti-patterns
 

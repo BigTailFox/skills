@@ -756,6 +756,25 @@ class KnownIssuesTest(CanonTest):
         self.assertIn("known issue D001-K1 is still listed", self.fails("check"))
 
 
+class FindingDispositionTest(CanonTest):
+    def test_check_resolves_the_doc_a_finding_is_fixed_in_or_moved_to(self):
+        self.design()
+        rows = ("| R001-F1 | major | Fixed by a commit | fixed 3f9a1c2 |",
+                "| R001-F2 | major | Fixed in a doc | fixed D001@r1 |",
+                "| R001-F3 | minor | Fixed with a free-form note | fixed in the next release |",
+                "| R001-F4 | major | Fixed in a missing doc | fixed D009@r2 |",
+                "| R001-F5 | minor | Moved to a missing doc | moved C007 |",
+                "| R001-F6 | minor | Unknown disposition | later |",
+                "| R001-F7 | minor | Declined | declined out of scope |")
+        self.doc("R", "audit", body=FINDINGS.format("\n".join(rows)))
+        out = self.fails("check")
+        self.assertIn("R001-F4 fixed in unknown doc `D009`", out)
+        self.assertIn("R001-F5 moved to unknown doc `C007`", out)
+        self.assertIn("R001-F6 disposition must start with one of open, fixed, moved, declined", out)
+        for fid in ("R001-F1", "R001-F2", "R001-F3", "R001-F7"):
+            self.assertNotIn(fid, out)
+
+
 class IndexTest(CanonTest):
     BROKEN = "ERROR {}: index start marker with no end marker after it; fix the markers"
     REFUSED = "canon: {} has an index start marker with no end marker after it; fix the markers and rerun"

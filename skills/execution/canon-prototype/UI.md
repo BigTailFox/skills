@@ -97,12 +97,12 @@ Surface the URL (and the `?variant=` keys). The user will flip through whenever 
 
 ### 6. Capture the answer and clean up
 
-Once a variant has won, capture the answer (which variant and why) and the prototype the way the [SKILL](SKILL.md) describes. Fold the winner into the real code and keep the full set on the prototype branch, not on main:
+Once a variant has won, capture the answer (which variant and why) and the prototype the way the [SKILL](SKILL.md) describes. When the change's tier reaches the real code, rewrite the winner there, and keep only it on main:
 
-- **Sub-shape A**: fold the winner into the existing page; drop the losing variants and the switcher from main.
-- **Sub-shape B**: promote the winning variant to a real route; drop the throwaway route and the switcher from main.
+- **Sub-shape A**: rewrite the winner into the existing page; the losing variants and the switcher never reach main.
+- **Sub-shape B**: rewrite the winning variant as a real route; the throwaway route and the switcher never reach main.
 
-The full set of variants is the primary source, so it stays on the prototype branch, not the bin, since variant components and the switcher left in the main branch rot fast and confuse the next reader.
+The full set of variants is the primary source, so it stays on the prototype branch, kept and pushed as the [SKILL](SKILL.md) says, not the bin, since variant components and the switcher left in the main branch rot fast and confuse the next reader.
 
 ## Anti-patterns
 

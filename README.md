@@ -31,12 +31,12 @@ Canon keeps a project's knowledge in numbered docs under `docs/`: concepts (C), 
 | Tier | When | Flow |
 |---|---|---|
 | L0 | No spec changes: a bug fix that restores specified behavior, a refactor, a dependency bump, test or tooling work | implement → code review → docs step |
-| L1 | Specs change or grow inside one existing design, within one module | revise the design → review gate → plan if needed → implement → code review → docs step |
+| L1 | Specs change or grow inside one existing design, within one module | revise the design → review gate (when specs change) → plan → review gate (when needed) → implement → code review → docs step |
 | L2 | A new topic or module, a cross-module interface or architecture change, a rewrite of a design's goals, or whenever you ask | design → review gate → your approval → plan → review gate → your approval → implement → code review → docs step |
 
-Design, plan and implementation are separate phases, started with `/canon-design`, `/canon-plan` and `/canon-implement`. Each can run in a fresh session because the docs carry the state, and each ends by giving you the command for the next one; for L2, running it is your approval. Along the way:
+Design, plan and implementation are separate phases, started with `/canon-design`, `/canon-plan` and `/canon-implement`. Each can run in a fresh session because the docs carry the state, and each ends by giving you the command for the next one; for L2, running it is your approval. An L1 session that revises a design carries on to implementation itself. Along the way:
 
-- **Review gate.** A design or plan revision is accepted only after a blind review by fresh subagents that see a prompt naming files in the repository and nothing of the conversation. A same-model reviewer always reviews; L2 adds a cross-family reviewer, a model from another family.
+- **Review gate.** A design or plan revision is accepted only after a blind review by fresh subagents that see a prompt naming files in the repository and nothing of the conversation. A same-model reviewer always reviews; L2 adds a cross-family reviewer, a model from another family, and L1 adds one when you ask.
 - **Implementation.** Each plan slice goes to a fresh worker subagent that builds it test-first. The main session verifies the slice, updates the plan and commits; a slice whose worker gets stuck is paused for you to decide.
 - **Code review.** Every finished change, L0 included, gets a Spec reviewer (against its designs and plan) and a Standards reviewer (against the project's stated standards) as parallel subagents, so the session that wrote the code never reviews it. L2 adds the cross-family reviewer.
 - **Docs step.** Before the final commit, designs absorb the details the code settled, finished plans and reviews are archived, and the commit names the designs it was checked against in a `Refs:` trailer, which lets `canon.py audit` flag code commits nobody checked against their design.

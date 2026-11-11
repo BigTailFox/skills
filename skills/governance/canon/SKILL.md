@@ -100,7 +100,7 @@ based_on: [D003@r4]                  # P only
 - `modules`: modules the doc concerns; empty means the whole project of this `docs/`.
 - `summary`: one line of at most 160 characters; it feeds the index and `find`.
 - `refs`: ids of related docs; must include every doc linked from the body (`check --fix` adds missing ones).
-- `revision`: counts semantic changes. Bump it when a goal, spec or plan changes meaning, never for wording.
+- `revision`: counts semantic changes. Bump it when a goal, spec, plan, or a concept's Ideas or Open questions change meaning, never for wording.
 - `owns`: topics this design is the single authority for, unique across non-archived designs.
 - `paths`: code globs relative to the project directory; they drive `which`, `affected` and `audit`.
 - `reviewed`, `reviewers`: the revision that passed the review gate and who reviewed it (`manual:<model>` for a review the user ran).
@@ -123,8 +123,10 @@ based_on: [D003@r4]                  # P only
 Every change has a tier; state it when starting and pick the higher one when unsure.
 
 - **L0**: changes no spec in any design: bug fixes that restore specified behavior, refactors, dependency bumps, test and tooling changes. Implement, keep docs factually true, commit.
-- **L1**: changes or extends specs inside the owned topics of one existing design, within one module; or multi-step work under an existing design that needs a plan. Revise the design in place with the `canon-design` skill, pass the review gate (same-model reviewer), then implement. A [design problem](workflow.md#design-problems) is revised by the session that finds it.
-- **L2**: a new topic with no owning design, a new module, a change to a cross-module interface or the architecture, a revision that rewrites an existing design's goals or core approach, or the user asks for it. Design and plan each pass the review gate (same-model and cross-family reviewers) and need the user's approval, which starting the next phase gives.
+- **L1**: changes or extends specs inside the owned topics of one existing design, within one module; or multi-step work under an existing design that needs a plan. When the work changes a spec, revise the design in place, bumping `revision` once, in this session or in a `/canon-design` session the user starts, which you offer when the revision needs an interview of the user. The revision, and the plan when there is one, each pass the review gate (same-model reviewer; cross-family too when the user asks), then implement. A [design problem](workflow.md#design-problems) is revised by the session that finds it.
+- **L2**: a new topic with no owning design, a new module, a change to a cross-module interface or the architecture (adding, removing or merging a module, or changing which modules depend on which), a revision that rewrites an existing design's goals or core approach, or the user asks for it. Design and plan each pass the review gate (same-model and cross-family reviewers) and need the user's approval, which starting the next phase gives.
+
+Splitting a design into sub-designs is L1 when it only moves what [doc-types.md](doc-types.md#designs-d) moves with a topic; the parent's new revision and each sub-design still pass the review gate. A split that also changes spec takes that change's tier.
 
 Behavior no design states is unspecified. Look for a statement with `which` for its files, `find` for its topic and D000's rows; a file `which` maps to no design, or a row reading `none`, does not settle it alone.
 

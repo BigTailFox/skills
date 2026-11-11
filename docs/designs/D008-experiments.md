@@ -10,7 +10,7 @@ owns: [prototypes, research]
 paths: [skills/execution/canon-prototype/SKILL.md, skills/execution/canon-prototype/LOGIC.md, skills/execution/canon-prototype/UI.md, skills/execution/canon-research/SKILL.md]
 reviewed: 2
 reviewers: [claude-opus-5.5]
-implemented: 1
+implemented: 2
 ---
 
 # D008: Prototypes and research
@@ -156,11 +156,5 @@ Once a prototype has answered its question, the session:
 
 | ID | Severity | Issue | Source | Since | Next |
 |----|----------|-------|--------|-------|------|
-| D008-K1 | minor | `canon-prototype` lets any prototype for a detail inside the current task skip the experiment and live in `.canon/canon-prototype/<topic>/`, UI prototypes included, whose variants need a real route and a prototype branch named by an experiment id | as-built 0872d6d | 2026-11-10 | fix |
-| D008-K2 | minor | `canon-prototype` never sets `status: running`, so its experiments stay `planned` until archived | as-built 0872d6d | 2026-11-10 | fix |
-| D008-K3 | major | `canon-prototype` (capture, step 2), `LOGIC.md` and `UI.md` (step 6) fold a verdict into the real code at verdict time, outside the change's tier | as-built 0872d6d | 2026-11-10 | fix |
 | D008-K4 | minor | Both skills, `workflow.md`'s docs step and `doc-types.md` archive an experiment only once a design absorbs it, so one a plan absorbs is never archived; the fix waits on D008-K7 | as-built 0872d6d | 2026-11-10 | fix |
-| D008-K5 | minor | `canon-research` does not say that inline research follows the brief's rules | as-built 0872d6d | 2026-11-10 | fix |
 | D008-K7 | major | Archiving concluded experiments hides the evidence live designs rest on | R003-F17 | 2026-11-11 | L2 |
-| D008-K9 | minor | `canon-prototype` does not say that a question with no design, plan or task in view gets an experiment | as-built 0872d6d | 2026-11-11 | fix |
-| D008-K10 | minor | `canon-prototype` and `UI.md` do not say that the prototype branch is kept and pushed so `Commit:` stays reachable | as-built 0872d6d | 2026-11-11 | fix |

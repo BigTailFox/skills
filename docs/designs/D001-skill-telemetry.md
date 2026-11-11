@@ -1,11 +1,11 @@
 ---
 status: active
 created: 2026-10-15
-updated: 2026-11-10
+updated: 2026-11-11
 revision: 9
 modules: [canon]
 summary: Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions.
-refs: [D002, D003, D000]
+refs: [D002, D003, D000, D007]
 owns: [skill-telemetry]
 paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py, skills/governance/canon/trace.md, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/execution/canon-blind-review/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-handoff/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-investigate/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-retro/SKILL.md, skills/execution/canon-review/SKILL.md]
 reviewed: 9
@@ -322,3 +322,9 @@ Calls and latency are measured in the pilot; `canon.py` enforces the sizes, and 
 - Delivery is staged and, until step 3 lands, `implemented` counts step 1 alone: the analysis is tested on the pilot's real records, which do not exist before it, and a spec lead for code not yet due would show beside every file the design governs (the user's decision; R001-F32).
 - Data is kept until the user prunes or deletes it: a baseline at personal volume can take months.
 - Evidence feeds human-reviewed experiments, never automatic skill changes.
+
+## Known issues
+
+| ID | Severity | Issue | Source | Since | Next |
+|----|----------|-------|--------|-------|------|
+| D001-K1 | minor | A `canon-design` session whose L1 revision carries on to implementation, as [D007§phases: phases](D007-change-tiers.md#phases) allows, does so after its `design` unit ends, and no call site opens an `implement` unit for that work, so it goes untraced | code review e122546 | 2026-11-11 | L1 |

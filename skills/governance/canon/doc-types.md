@@ -6,7 +6,7 @@
 
 Sections: Motivation, Ideas, Open questions.
 
-Explore freely: ideas, trade-offs, brainstorming. A concept carries no spec and no plan. When an idea becomes work, create or revise a design that links the concept, then archive the concept as `adopted`. Archive rejected ideas as `dropped`.
+Explore freely: ideas, trade-offs, brainstorming. A concept carries no spec and no plan. It keeps its three sections and adds or orders others as its ideas need; the rules of a design's sections, such as measurable Goals, do not bind it. When an idea becomes work, create or revise a design that links the concept, then archive the concept as `adopted`. Archive rejected ideas as `dropped`.
 
 ## Designs (D)
 
@@ -27,7 +27,7 @@ Sections: Goals, Spec, Decisions; Budgets when there are quantitative targets; K
 
   Ids run `D003-K1`, `D003-K2`, ..., unique within the table. Severity is `blocker`, `major` or `minor`. Source is where it was found: a gate (`P007 gate`), a plan or one of its slices (`P007`, `P007 S3`), other work at the HEAD it ran on (`code review 3f9a1c2`, `docs step 3f9a1c2`, `L0 3f9a1c2`), an [as-built revision](as-built.md) of the commit it records (`as-built 3f9a1c2`), or a review finding (`R004-F2`). Since is the date it was recorded. Next is what it waits for: `decide` (the user's decision), `fix` (a code change), `L1` (a revision of this design) or `L2` (`/canon-design`). Rows are not spec: changing them bumps no `revision`, passes no gate and does not count as checking the design against its code. The change that resolves an issue deletes its row, or else the audit that finds it resolved. An issue the user declines is deleted too, with a Decision when the reason is lasting. Delete the section with its last row. A design cannot be archived while it lists any.
 - **Status**: `draft` until the review gate passes (and, in L2, the user approves), then `accepted`. Once an implementation has landed, set `active` and `implemented` to the revision the code matches. Revising an active design keeps it `active`; its spec leads the code until the next implementation lands and raises `implemented`. Archive as `superseded` (successor in `refs`) or `retired` (feature removed). An [as-built revision](as-built.md) takes its status from its gate ([workflow.md](workflow.md#review-gate), step 6).
-- **Split**: when a design outgrows one doc (`check` warns at 500 lines), run `new D <slug> --parent D00X` to create `D00XA`, `D00XB`, ... Move the sub-topic's spec, `owns` and `paths` into the sub-design; the parent keeps the overview and links to its children. Only one suffix level exists: a sub-design that outgrows itself becomes a new top-level design.
+- **Split**: when a design outgrows one doc (`check` warns at 500 lines), run `new D <slug> --parent D00X` to create `D00XA`, `D00XB`, ... Move the sub-topic's spec, `owns` and `paths` into the sub-design; the parent keeps the overview and links to its children. Only one suffix level exists: a sub-design that outgrows itself becomes a new top-level design. Whenever a topic moves to another design, by a split or otherwise, move together its spec, its `owns` entries, the `paths` entries no topic left behind governs, and its known issues, renumbered to the new design's ids with Source and Since kept and every citation of the old ids updated; turn each restatement left behind, in the old design or elsewhere, into a link.
 
 ### Project overview (D000)
 
@@ -82,15 +82,15 @@ Sections: Scope, Findings.
   | R003-F1 | major | Refresh races with logout | moved I012 |
   ```
 
-  Severity is `blocker`, `major` or `minor`. Disposition is `open`, `fixed <commit>`, `moved <ID>` (handed to the C, D, P or I that now tracks it; a design tracks it as a known issue) or `declined <reason>`.
+  Severity is `blocker`, `major` or `minor`. Disposition is `open`, `fixed <commit>` (`fixed <ID>@r<N>` for a fix made in a doc, e.g. `fixed C001@r22`), `moved <ID>` (handed to the C, D, P or I that now tracks it; a design tracks it as a known issue) or `declined <reason>`.
 - Archive as `closed` as soon as no finding is `open`; `check` blocks it before that.
-- R docs cover code, modules or the whole repo. A periodic review of modules or the repo produces one R doc per run, with its reports in `reviews/R00X/`. Code review of a change produces no R doc: its deferred findings become known issues ([workflow.md](workflow.md#code-review)). Design and plan reviews happen in the review gate and produce no R doc.
+- R docs cover code, modules, the whole repo or a concept. A periodic review or a concept review produces one R doc per run, with its reports in `reviews/R00X/`. A concept review runs the `canon-blind-review` skill's template for other artifacts; its Scope names the concept revision it read, and its findings link the doc that owns each spec instead of restating it. Code review of a change produces no R doc: its deferred findings become known issues ([workflow.md](workflow.md#code-review)). Design and plan reviews happen in the review gate and produce no R doc.
 
 ## Experiments (E)
 
 Sections: Question, Setup, Results, Conclusion.
 
-An experiment answers one question with evidence, either by running something (benchmark, prototype, measurement) or by researching primary sources (official docs, specs, source code).
+An experiment answers one question with evidence, either by running something (benchmark, prototype, measurement) or by researching primary sources (official docs, specs, source code). A later run that answers the same question, such as a measurement after research, extends the experiment's Setup and Results while it is live; once it is archived, the run gets a new experiment that links it. A new question is a new experiment.
 
 - **Setup** for a run lists `- Commit:`, `- Environment:` and `- Command:` so it can be rerun. Research lists `- Sources:` instead, one primary source per indented line.
 - **Results** link every measurement to its raw data and every finding to its source.

@@ -10,7 +10,7 @@ owns: [change-tiers, review-gate, design-problems]
 paths: [skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-implement/SKILL.md]
 reviewed: 2
 reviewers: [claude-opus-5.5]
-implemented: 1
+implemented: 2
 ---
 
 # D007: Change tiers and the review gate
@@ -165,8 +165,6 @@ End with one line: Verdict: approve | revise
 
 | ID | Severity | Issue | Source | Since | Next |
 |----|----------|-------|--------|-------|------|
-| D007-K1 | minor | The L1 tier of `SKILL.md` and the L1 flow of `workflow.md` always revise and gate the design first, which plan-only work under an unchanged design has nothing to do in | as-built 0872d6d | 2026-11-10 | fix |
-| D007-K2 | minor | `workflow.md` says the cross-family reviewer runs "in the first round only", while D003§resuming-and-replacing has it confirm the fixes of its findings | as-built 0872d6d | 2026-11-10 | fix |
 | D007-K4 | major | The gate runs per doc revision, so one change across several designs takes a gate and reviewers per doc | R003-F1 | 2026-11-10 | L2 |
 | D007-K5 | major | No rule covers edits after a gate passes, so sessions rerun whole gates or commit edits no reviewer saw | R003-F2 | 2026-11-10 | L2 |
 | D007-K6 | minor | Which commit fills `Changes since` for a revision other than the one after an as-built revision is unstated, and a revision that passed its gate but was not committed leaves none | R003-F6 | 2026-11-10 | L2 |

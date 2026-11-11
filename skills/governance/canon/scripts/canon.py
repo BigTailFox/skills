@@ -28,7 +28,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "29"
+CANON_VERSION = "30"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -77,6 +77,7 @@ FULL_ID_RE = re.compile(r"^([CDPREI])(\d{3,})([A-Z]?)$")
 REF_ARG_RE = re.compile(r"^([CDPREI]\d{3,}[A-Z]?)(?:[#§](.+))?$")
 REF_TEXT_RE = re.compile(r"^([CDPREI]\d{3,}[A-Z]?)(?:§([^:]+))?: \S")
 BASED_ON_RE = re.compile(r"^(D\d{3,}[A-Z]?)@r(\d+)$")
+FIXED_IN_DOC_RE = re.compile(r"^([CDPREI]\d{3,}[A-Z]?)@r\d+$")
 HEX_NAME_RE = re.compile(r"^[0-9a-f]{7,64}$")
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -176,7 +177,7 @@ TEMPLATES = {
 | ID | Severity | Finding | Disposition |
 |----|----------|---------|-------------|
 
-<!-- canon: One row per finding with IDs {id}-F1, {id}-F2, ... Severity: blocker, major, minor. Disposition: open, fixed <commit>, moved <doc ID>, declined <reason>. -->
+<!-- canon: One row per finding with IDs {id}-F1, {id}-F2, ... Severity: blocker, major, minor. Disposition: open, fixed <commit> (fixed <doc ID>@r<revision> for a fix made in a doc), moved <doc ID>, declined <reason>. -->
 """,
     "E": """
 ## Question
@@ -1195,6 +1196,10 @@ def check_doc(repo, doc, changed, strict=False):
                 err("{} disposition must start with one of {}".format(fid, ", ".join(DISPOSITIONS)))
             elif word == "moved" and arg.strip() not in repo.by_id:
                 err("{} moved to unknown doc `{}`".format(fid, arg.strip()))
+            elif word == "fixed":
+                match = FIXED_IN_DOC_RE.match(arg.strip())
+                if match and match.group(1) not in repo.by_id:
+                    err("{} fixed in unknown doc `{}`".format(fid, match.group(1)))
 
     if old_lines is not None and content_lines(old_lines) != content_lines(doc.lines) \
             and old_fm.get("updated") == fm.get("updated") != today():

@@ -10,7 +10,7 @@ owns: [doc-model, doc-writing]
 paths: [skills/governance/canon/SKILL.md, skills/governance/canon/doc-types.md, skills/governance/canon/writing.md, skills/governance/canon/scripts/canon.py, tests/test_canon.py]
 reviewed: 2
 reviewers: [claude-opus-5.5]
-implemented: 1
+implemented: 2
 ---
 
 # D006: Doc model and writing rules
@@ -307,3 +307,4 @@ Agents and people read docs, usually after reaching them through a pointer: an `
 | D006-K11 | minor | The line-limit hint tells a sub-design to split into `<id>A`, `<id>B`, ..., which one-level sub-designs forbid | as-built 0872d6d | 2026-11-11 | fix |
 | D006-K12 | minor | The unknown-entry message inside `archived/` also lists `archived/`, `guides/` and `assets/` as allowed | as-built 0872d6d | 2026-11-11 | fix |
 | D006-K13 | minor | With a HEAD commit, a REF that shares no history with HEAD gives `cannot diff against <REF>...HEAD`, since the deleted-doc diff fails first; `no merge base` shows only without a HEAD commit | as-built 0872d6d | 2026-11-11 | fix |
+| D006-K14 | minor | `renumber`, which has no design, and `init`'s move of a design to D000 rewrite `moved <id>` dispositions but not `fixed <id>@r<n>`, so after a conflict renumber one names the old id: it points unnoticed at the other branch's doc with that id, or else `check` reports it fixed in an unknown doc | code review e122546 | 2026-11-11 | decide |

@@ -13,10 +13,11 @@ Read the `canon` skill first. `canon.py` means the project copy named in `AGENTS
 1. Gather the facts yourself: `canon.py find <words>`, `which` for the code involved, D000 (its rows, dependency directions and glossary), and the designs that own neighbouring topics.
 2. Pick the target and state the tier:
    - The topic is in an existing design's `owns`, within one module: revise that design in place (L1; L2 when the revision rewrites its goals or core approach).
-   - A new topic, module, cross-module interface or architecture change: a new design (L2), or a sub-design with `--parent` when the parent has outgrown one doc.
+   - A new topic, module, cross-module interface or architecture change: a new design (L2).
+   - A parent that has outgrown one doc: a sub-design with `--parent`, L1 when the split only moves content, as the `canon` skill's tiers say.
    - The idea still has questions the user cannot settle yet: a concept (`canon.py new C <slug>`). Its Open questions become the frontier of a later design session.
    - The change alters or extends existing behavior that no design states, as the `canon` skill's tiers define it: the target is the design whose `owns` holds that behavior's topic, else a new design, and step 5 gives it an as-built revision before the change's revision. The same holds when the user asks for a design of existing code with no change in view.
-3. Confirm the target with the user, then create the doc (`canon.py new D <slug>`), or bump `revision` once when revising. The commit that adds a top-level design links it from D000's rows, as the `canon` skill's doc types define them.
+3. Confirm the target with the user, then create the doc (`canon.py new D <slug>`, with `--parent D00X` for a split, and bump the parent's `revision` once), or bump `revision` once when revising. The commit that adds a top-level design links it from D000's rows, as the `canon` skill's doc types define them.
 4. Run `canon.py trace start design <D or C id> --tier <tier> --skill <skill> --model <model>`.
 5. **Backfill.** When step 2 calls for an as-built revision, write this revision as one (the `canon` skill's `as-built.md`), whose steps take the place of the interview, pass it through [Gate](#3-gate) steps 1 to 3 at L1, and commit it as step 5 there says. Then bump `revision` again for the change and interview it; its gate runs at the change's tier, with the as-built commit as `Changes since`. With no change in view, end after that commit with Gate's steps 6 and 7, and give no next command.
 
@@ -44,4 +45,4 @@ The interview is done when the frontier is empty and every guidance comment is r
 6. Run the `canon-retro` skill's end check only if this work hit concrete friction in the development infrastructure or the agent workflow that could recur, such as a correction to how you worked, a finding a check could have caught, a command that would not run, a check that failed after you thought you were done, a search that took far too long, or a canon step that got in the way. Use only evidence already in context; do not search for reasons to run it.
 7. Run `canon.py trace end <id> <outcome>`.
 
-End with the command for the next phase: `/canon-plan D00X` when the change needs a plan (always in L2), otherwise `/canon-implement D00X`. In L2, the user starting it approves the design.
+End with the command for the next phase: `/canon-plan D00X` when the change needs a plan (always in L2); in L2, the user starting it approves the design. An L1 revision that needs no plan carries on in this session to implementation, code review and the docs step, as the `canon` skill's workflow says. A split that only moves content gives no next command.
