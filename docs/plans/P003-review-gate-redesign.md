@@ -18,7 +18,7 @@ Implements [D007: Change tiers and the review gate](../designs/D007-change-tiers
 
 ## Current state
 
-Next: S6.
+Next: code review from 904c18b, then the docs step.
 
 ## Slices
 
@@ -146,7 +146,7 @@ Test criteria; seam: the skill files, `canon.py init`, `scripts/validate.py`:
 
 ### S6: Approval and commits in the phase skills
 
-Status: todo
+Status: done
 
 Builds on `D007#gate-status`, `D007#follow-up-round`, `D007#phases`, `D002#backfill`, `D006#frontmatter` (`approved`) and `D006#doc-types` (Status).
 
@@ -188,3 +188,4 @@ Test criteria; seam: the skill files, `scripts/validate.py`, `npx skills add . -
 - 2026-11-11, S3 done: `follow-up` among the trace kinds, sharing the gate's roles (`GATE_ROLES`), `--dir` and `--input`, with the `--input` help and error naming it (`CANON_VERSION` 35); `FollowUpTest` with 3 tests, a `HelpTest` assertion and a follow-up case in the as-built snapshot test. The placeholder paragraph now has 110 of 110 tokens and `trace.md` 420 of 420: `trace.md`'s Roles bullet names the code review's roles and gives same-model and cross-family to the rest with "else".
 - 2026-11-11, S4 done: `canon-blind-review` holds the shared template, launching, review files, stopped runs, manual fallback, merge baseline, confirmation and the new follow-up round with its prompt; `workflow.md` keeps the gate's own lines and rules, the reviewer file and worker runs; `canon-code-review` fills the template with the reading line `Read the change and these sources: {paths}.`; `canon-review`'s angle reviewers report from the template's known-issue rule to its Verdict line, a title after each location. The gate prompt assembled for D007 r4 is at `.canon/canon-implement/P003-S4-gate-prompt.md` and equals D007§reviewer-prompt's text filled for that gate; checks in `.canon/canon-implement/P003/S4/`. The orchestrator also reworded two pointers left stale: `SKILL.md`'s line on `workflow.md` (how workers launch) and `doc-types.md`'s concept review.
 - 2026-11-11, S5 done: `workflow.md` gains the revision-bump rule, the gate per change, step 7, a Follow-up round section and a Gate status section that step 6 and `SKILL.md` link; `SKILL.md`'s Workflow states the docs-only exemption; the canon block's tier line in `canon.py` and `AGENTS.md` (`CANON_VERSION` 36), with an `InitTest` case. Trace call sites measure 39, 37, 33 and 39 of 40 tokens; the follow-up round's end names its unit `<round id>` to fit. The mapping of D007's Spec hunks is at `.canon/canon-implement/P003/S5/mapping.md`, with `check_mapping.py` beside it.
+- 2026-11-11, S6 done: `canon-design`, `canon-plan` and `canon-implement` say when they set `approved`, commit it and move statuses with `canon.py status`; `canon-design`'s Gate keeps its step numbers, and both phase skills send this session's later revisions to follow-up rounds, naming the workflow's list of revisions that pass a new gate; `doc-types.md`'s Status lines and D000 bullet follow Gate status. Deviations: `canon-plan`'s Gate step 2 passes the review gate's steps 1 to 5, as `canon-design`'s does, so steps 6 and 7 do not run twice; the start skills require a passed gate rather than `accepted`, since invoking them now sets a draft `accepted`. The orchestrator dropped the split bullet's "as step 5 does for a backfill", which read as a new gate after a split, named where `canon-plan` finds a gate's follow-on targets, and pointed `doc-types.md`'s as-built status at Gate status. The mapping is at `.canon/canon-implement/P003/S6/mapping.md`, with `check_s6.py` beside it. Left for the docs step: `README.md`'s line that starting the next phase is the L2 approval.

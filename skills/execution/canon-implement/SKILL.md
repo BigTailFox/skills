@@ -12,12 +12,12 @@ Read the `canon` skill first; its workflow governs tiers, deviations, code revie
 
 1. Identify the work: the plan or design the user named (`canon.py find <words>` when only a topic is given), or an L0 change. State the tier. Work without a plan is one slice built in this session.
 2. Check the work against the tier's flow in the `canon` skill's workflow:
-   - A plan must be `accepted` or `in-progress`, with `reviewed` equal to `revision`. An L2 plan still `draft` after its gate awaits the user's approval, and invoking this skill on it gives that approval: say so in one line and set it `accepted`.
+   - A plan must have passed its gate, with `reviewed` equal to `revision`. Invoking this skill on it approves it: set its `approved` to its revision where it is lower and a draft plan `accepted` with `canon.py status`, say so in one line, and commit them.
    - An L1 design revision that passed the gate and needs no plan: finish Start, then follow L1 without a plan below.
    - A change without a plan or revision that alters or extends behavior no design states, as the `canon` skill's tiers define it: at L1, after step 5 write an as-built revision from HEAD (the `canon` skill's `as-built.md`), pass it through the review gate at L1 and commit it on its own, then make the change's revision as the next bullet makes a missing L1 revision. At L2, stop and give the user `/canon-design`, which records the behavior first. [Backfill](#backfill) is for work that only turns out to alter such behavior.
    - When an earlier phase is missing: a missing L1 design revision is made here after step 5, as the `canon` skill's L1 says, and the work continues once it passes its gate; for a missing plan or L2 design, stop and give the user its command, e.g. `/canon-plan D00X` or `/canon-design D00X`.
 3. Read the plan's Current state, then the governing design sections (`show D00X#<section>`). If `check` warns that a design moved past the plan's `based_on`, compare the design's changes with the remaining slices first; a conflict is a plan or design problem under the workflow's deviation rules.
-4. When the plan is `accepted`: set it `in-progress` and append `Started at <commit>` to its Log. That commit is the code-review fixed point. A resumed plan already has it.
+4. When the plan is `accepted`: set it `in-progress` with `canon.py status` and append `Started at <commit>` to its Log. That commit is the code-review fixed point. A resumed plan already has it.
 5. Run `canon.py trace start implement [<P or D id>] --tier <tier> --base <start commit> --skill <skill> --model <model>`.
 
 ## 2. Each slice
