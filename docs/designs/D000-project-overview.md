@@ -5,7 +5,7 @@ updated: 2026-11-11
 revision: 3
 modules: []
 summary: Agent skills built around canon, a documentation system kept in the repository; one module, its capabilities and the designs that own them.
-refs: [D001, D002, D003, D004, D005, D006, D007, D008]
+refs: [D001, D002, D003, D004, D005, D006, D007, D008, D009]
 owns: [architecture]
 paths: []
 reviewed: 3
@@ -41,7 +41,7 @@ implemented: 3
 | Code review of a finished change (`canon-code-review`) | canon | none |
 | Codebase review from chosen angles (`canon-review`) | canon | none |
 | Test-driven development at a slice's seams (`canon-tdd`) | canon | none |
-| Settling open decisions (`canon-grill`) | canon | none |
+| Settling open decisions (`canon-grill`) | canon | [D009: Settling decisions](D009-settling-decisions.md) |
 | Throwaway prototypes (`canon-prototype`) and research from primary sources (`canon-research`), recorded as E docs | canon | [D008: Prototypes and research](D008-experiments.md) |
 | Diagnosis of hard bugs and performance regressions, recorded as I docs (`canon-investigate`) | canon | none |
 | Deep-module vocabulary and designing an interface twice (`canon-codebase-design`) | canon | none |
@@ -55,7 +55,7 @@ implemented: 3
 
 | Module | Path | Purpose | Entry points | Design |
 |---|---|---|---|---|
-| canon | skills/, tests/ | The skills: `skills/governance/` builds and maintains the documentation system, `skills/execution/` does development work through it, and `tests/` holds the regression tests of `canon.py` and of the repository tooling | `skills/governance/canon/SKILL.md`, `skills/governance/canon/scripts/canon.py`, each skill's `SKILL.md` | [D001: Skill telemetry with canon trace](D001-skill-telemetry.md), [D002: Project overview and as-built designs](D002-overview-and-as-built.md), [D003: Subagents](D003-subagents.md), [D004: Project setup](D004-project-setup.md), [D005: Docs index](D005-docs-index.md), [D006: Doc model and writing rules](D006-doc-model.md), [D007: Change tiers and the review gate](D007-change-tiers.md), [D008: Prototypes and research](D008-experiments.md) |
+| canon | skills/, tests/ | The skills: `skills/governance/` builds and maintains the documentation system, `skills/execution/` does development work through it, and `tests/` holds the regression tests of `canon.py` and of the repository tooling | `skills/governance/canon/SKILL.md`, `skills/governance/canon/scripts/canon.py`, each skill's `SKILL.md` | [D001: Skill telemetry with canon trace](D001-skill-telemetry.md), [D002: Project overview and as-built designs](D002-overview-and-as-built.md), [D003: Subagents](D003-subagents.md), [D004: Project setup](D004-project-setup.md), [D005: Docs index](D005-docs-index.md), [D006: Doc model and writing rules](D006-doc-model.md), [D007: Change tiers and the review gate](D007-change-tiers.md), [D008: Prototypes and research](D008-experiments.md), [D009: Settling decisions](D009-settling-decisions.md) |
 
 ### Dependencies
 

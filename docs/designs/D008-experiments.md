@@ -5,7 +5,7 @@ updated: 2026-11-11
 revision: 2
 modules: [canon]
 summary: Prototypes and research (canon-prototype, canon-research): quick answers, the research brief, logic, UI and spike prototypes, verdicts in E docs.
-refs: [D000, D003, D006, R003, D007]
+refs: [D000, D003, D006, R003, D007, D009]
 owns: [prototypes, research]
 paths: [skills/execution/canon-prototype/SKILL.md, skills/execution/canon-prototype/LOGIC.md, skills/execution/canon-prototype/UI.md, skills/execution/canon-research/SKILL.md]
 reviewed: 2
@@ -22,7 +22,7 @@ implemented: 2
 3. Recorded research runs beside the main work, every finding traces to a primary source, and a researcher that stops loses no finding it has made.
 4. Prototype code wired into the product stays off the main branch, which keeps the decision, the experiment and its self-contained files.
 
-Out of scope: the E doc type, its sections, statuses and archiving ([D006: Doc model](D006-doc-model.md)); the subagents of the canon workflow ([D003: Subagents](D003-subagents.md)); grill triage, which routes questions to these skills (`canon-grill`).
+Out of scope: the E doc type, its sections, statuses and archiving ([D006: Doc model](D006-doc-model.md)); the subagents of the canon workflow ([D003: Subagents](D003-subagents.md)); grill triage, which routes questions to these skills ([D009§triage: Triage](D009-settling-decisions.md#triage)).
 
 ## Spec
 
@@ -35,7 +35,7 @@ Both are auto skills ([D000§glossary: Glossary](D000-project-overview.md#glossa
 - `canon-research`: a design or decision depends on facts about an external library, service, protocol or standard; the user wants a topic researched or API facts gathered; grill triage routes a question here.
 - `canon-prototype`: a design decision or non-obvious logic question needs evidence that reading and reasoning cannot give; the user wants to sanity-check a state model or explore what a UI should look like; grill triage routes a decision here.
 
-Grill triage (`canon-grill`) and `canon-plan`, whose slice that depends on an unanswered design question starts with a `canon-prototype` experiment, send work here by their own rules.
+Grill triage ([D009§triage: Triage](D009-settling-decisions.md#triage)) and `canon-plan`, whose slice that depends on an unanswered design question starts with a `canon-prototype` experiment, send work here by their own rules.
 
 ### Quick answers
 

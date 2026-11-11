@@ -40,7 +40,7 @@ refs: [C001, D000, D001, D003, D005, R001, R002]
 | R003-F13 | major | usability: A session cannot pass a request to another running session; handoff files go unnoticed or are read stale | fixed 18b7dcf |
 | R003-F14 | major | functional: Sessions sharing a checkout disturb each other: `check --fix` rewrites others' docs and staging one's own index lines takes hand-built blobs | open |
 | R003-F15 | major | usability: A background researcher writes only at the end, so an interrupted one loses its work | fixed 18b7dcf |
-| R003-F16 | minor | usability: Decisions grilled before any doc exists stay only in the chat | open |
+| R003-F16 | minor | usability: Decisions grilled before any doc exists stay only in the chat | moved D009 |
 | R003-F17 | major | usability: Archiving concluded experiments hides the evidence live designs rest on | moved D008 |
 | R003-F18 | minor | usability: Nothing says whether a measurement added to a research experiment extends it or opens a new one | fixed 18b7dcf |
 | R003-F19 | major | usability: A concept absorbed piece by piece by several designs can be neither frozen nor archived | fixed 0b25d98 |
