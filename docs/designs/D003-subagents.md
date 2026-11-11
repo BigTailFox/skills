@@ -77,7 +77,7 @@ This design covers the subagents of the `canon` workflow, meaning the reviewers 
 
 | ID | Severity | Issue | Source | Since | Next |
 |----|----------|-------|--------|-------|------|
-| D003-K5 | major | The rules of running a blind review (the report contract, the known-issue rule, the merge rule, stopped runs) are restated in `workflow.md`, `canon-blind-review`, `canon-code-review` and `canon-review`, so one change edits three to six files | R001-F3 | 2026-11-05 | L1 |
+| D003-K5 | major | The rules of running a blind review (the report contract, the known-issue rule, the merge rule, stopped runs) are restated in `workflow.md`, `canon-blind-review`, `canon-code-review` and `canon-review`, so one change edits three to six files; R001-F3 suggests `canon-blind-review` as their one owner, settled with the gate redesign of D007-K4 and D007-K5, which rewrites the same text | R001-F3 | 2026-11-05 | L2 |
 
 ## Decisions
 
