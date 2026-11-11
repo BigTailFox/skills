@@ -5,7 +5,7 @@ updated: 2026-11-11
 revision: 1
 modules: [canon]
 summary: Canon friction in a docs-only bilingual project: review gates per doc, parallel sessions, archived experiments, translations, check gaps, tool drift.
-refs: [C001, D000, D001, D003, D005, R001, R002]
+refs: [C001, D000, D001, D003, D005, R001, R002, D002, D006]
 ---
 
 # R003: Canon friction in Silk's design phase
@@ -66,6 +66,7 @@ refs: [C001, D000, D001, D003, D005, R001, R002]
 | R003-F39 | minor | usability: A stale index is an error, which blocks a subagent allowed to edit only its own files | open |
 | R003-F40 | minor | usability: The `canon` skill sends L1 revisions to `canon-design`, which the agent cannot invoke | fixed 18b7dcf |
 | R003-F41 | minor | usability: Shell and tool pitfalls (zsh, the ignored `.canon/`, `/tmp`) reach no subagent prompt | fixed 80b9688 (the `.canon/` and `/tmp` pitfalls; the user declined the zsh rules) |
+| R003-F42 | minor | usability: No rule orders concepts and designs from the whole to the parts with each term defined before use, and D000 puts its Glossary last | open |
 
 ## Details
 
@@ -305,6 +306,12 @@ refs: [C001, D000, D001, D003, D005, R001, R002]
 
 - Problem: in 6 or more sessions, subagents included, zsh expanded `echo ===` as `=cmd`, kept unquoted variables as one word and aborted commands on unmatched globs. The fix so far is a personal Cursor rule on one machine. Cursor's Grep and Glob skip the git-ignored `.canon/`, and subagents often wrote scratch files to `/tmp`.
 - Suggestion: have every subagent brief (research, workers, reviewers) name its scratch directory under `.canon/` and say that `.canon/` is git-ignored, so search it with `rg --no-ignore` or read its paths directly. A project with a non-default shell states it in `AGENTS.md`. L0.
+
+### R003-F42: Section order in concepts and designs
+
+- Location: `canon/writing.md` and [D006§writing-rules: writing rules](../designs/D006-doc-model.md#writing-rules), which keep a topic under one heading but set no order between headings; `canon/doc-types.md`, Concepts ("adds or orders others as its ideas need") and Designs, which fix only Goals, Spec and Decisions; [D002§project-overview-d000: project overview](../designs/D002-overview-and-as-built.md#project-overview-d000) and the `new` template, which put D000's Glossary after Capabilities, Modules and Dependencies.
+- Problem: nothing tells a writer to lead with the overview or to define a term before the sections that use it, so a concept or design can open with details and use names a later section defines. Its reader meets details before the frame they belong to and names before their meaning, and has to read ahead to understand what came first. Canon's own D000 order breaks the rule: in this repository's [D000: Project overview](../designs/D000-project-overview.md), Capabilities, Modules and Dependencies use "skill" and "execution skills" before the Glossary defines skill and category.
+- Suggestion: add a rule to `writing.md`: order a concept's or design's sections, and the content within each, from the whole to the parts, the important to the minor and the core to the details, and put the section that defines a term or name before the first section that uses it, or link the doc that defines it. L1 revision of D006. Make Glossary D000's first Spec subsection in D002, `doc-types.md` and the template; `check` tests only that the subsections exist, so existing D000s stay valid. L1 revision of D002.
 
 ## Priorities
 
