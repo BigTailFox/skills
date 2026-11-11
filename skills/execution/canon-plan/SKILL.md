@@ -27,6 +27,8 @@ Draft the whole plan yourself before asking anything:
 
 Then settle what the draft leaves open with the `canon-grill` skill: slice boundaries, order, seams and risk. Write each answer into the plan at once.
 
+A slice that would alter or extend behavior no design states, as the `canon` skill's tiers define it, first gets that behavior recorded: write an as-built revision from HEAD (the `canon` skill's `as-built.md`), pass it through the review gate at L1 and commit it on its own; the slices it touches then wait as for a design problem.
+
 When drafting or the gate finds a design problem, as when a slice would have to change what the design states or depends on a known issue no slice fixes, follow the `canon` skill's workflow (Design problems); the slices it touches wait for the user's decision and any revision it brings.
 
 ## 3. Gate

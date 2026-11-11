@@ -298,6 +298,20 @@ class RenumberTest(CanonTest):
         self.ok("check", "--fix")
         self.assertIn("| D002-K1 |", (self.root / "docs/designs/D002-area.md").read_text())
 
+    def test_renumber_carries_links_to_the_headings_it_renames(self):
+        self.design(body="## Goals\n\nBack to [the top](#d001-fixture).\n\n## Spec\n\n### D001-K1 history\n\nX.\n\n"
+                         "## Decisions\n\nNone.\n")
+        plan = self.doc("P", "work", body="Implements [D001§d001-fixture: Fixture](../designs/D001-area.md#d001-fixture), "
+                                          "[D001§goals: goals](../designs/D001-area.md#goals) and [D001§d001-k1-history: "
+                                          "history](../designs/D001-area.md#d001-k1-history).\n\n" + PLAN.format("None."))
+        self.commit()
+        self.ok("renumber", "D001", "D005")
+        self.assertIn("Implements [D005§d005-fixture: Fixture](../designs/D005-area.md#d005-fixture), "
+                      "[D005§goals: goals](../designs/D005-area.md#goals) and [D005§d005-k1-history: "
+                      "history](../designs/D005-area.md#d005-k1-history).", plan.read_text())
+        self.assertIn("Back to [the top](#d005-fixture).", (self.root / "docs/designs/D005-area.md").read_text())
+        self.ok("check", "--fix")
+
     def test_renumber_after_a_collision_keeps_unlinked_references(self):
         ours = self.design()
         theirs = ours.with_name("D001-other.md")
@@ -821,6 +835,34 @@ class DocRulesTest(CanonTest):
         self.assertIn("D001A-part.md: 501 lines (max 500); make it a new top-level design", out)
         self.assertIn("AGENTS.md: 151 lines (max 150); move detail into docs", out)
 
+    def test_line_limits_hint_by_type_and_skip_archived_docs(self):
+        concept = self.doc("C", "idea")
+        plan = self.doc("P", "work")
+        self.pad(concept, 501)
+        self.pad(plan, 501)
+        out = self.ok("check", "--fix")
+        self.assertIn("C001-idea.md: 501 lines (max 500); split it into several concepts", out)
+        self.assertIn("P001-work.md: 501 lines (max 500); move detail into docs/plans/P001/", out)
+        self.commit()
+        self.ok("archive", "C001", "dropped")
+        self.assertNotIn("C001-idea.md: 501 lines", self.ok("check"))
+
+    def test_an_adopted_concept_stays_live_and_warns_until_a_design_links_it(self):
+        concept = self.doc("C", "idea", status="adopted")
+        out = self.ok("check", "--fix")
+        self.assertIn("WARN docs/concepts/C001-idea.md: adopted, but no design links it", out)
+        self.assertNotIn("requires the doc to be in archived/", out)
+        self.design(body="## Goals\n\nFrom [C001: Idea](../concepts/C001-idea.md).\n\n## Spec\n\nX.\n\n## Decisions\n\n"
+                         "None.\n")
+        self.ok("check", "--fix")
+        self.assertNotIn("no design links it", self.ok("check"))
+        self.set(concept, summary="")
+        self.assertIn("ERROR docs/concepts/C001-idea.md: `summary` is empty", self.fails("check"))
+        self.set(concept, summary="Fixture")
+        self.commit()
+        self.assertIn("docs/archived/concepts/C001-idea.md", self.ok("archive", "C001", "adopted"))
+        self.assertNotIn("C001", self.ok("check"))
+
     def test_a_live_status_inside_archived_names_the_terminal_statuses(self):
         self.design()
         self.commit()
@@ -1105,6 +1147,30 @@ class AdoptTest(CanonTest):
         self.assertIn("See [B](../../my%20notes/b.md) and [Draft](../../设计%20%281%29.md).",
                       (self.root / "docs/designs/D001-a.md").read_text())
 
+    def test_links_follow_the_h1_adopt_rewrites_and_a_prepended_h1_shifts_no_anchor(self):
+        (self.root / "notes.md").write_text("# Notes\n\n## Usage\n\nBack to [the top](#notes).\n")
+        (self.root / "plain.md").write_text("## Usage\n\nPlain.\n")
+        (self.root / "index.md").write_text("[N](notes.md#notes), [U](notes.md#usage), [P](plain.md#usage).\n")
+        self.ok("adopt", "notes.md", "design")
+        self.ok("adopt", "plain.md", "design")
+        self.assertEqual((self.root / "index.md").read_text(),
+                         "[D001§d001-notes: N](docs/designs/D001-notes.md#d001-notes), "
+                         "[D001§usage: U](docs/designs/D001-notes.md#usage), "
+                         "[D002§usage: P](docs/designs/D002-plain.md#usage).\n")
+        self.assertIn("Back to [the top](#d001-notes).", (self.root / "docs/designs/D001-notes.md").read_text())
+
+    def test_adopt_shifts_a_numbered_anchor_and_ignores_frontmatter_and_empty_anchors(self):
+        (self.root / "usage.md").write_text("---\n# generated\ntitle: Usage\n---\n# Usage\n\n## Usage\n\nText.\n")
+        (self.root / "star.md").write_text("# ★\n")
+        (self.root / "index.md").write_text("[Top](usage.md#usage), [Section](usage.md#usage-1), [All](usage.md), "
+                                            "[Star](star.md).\n")
+        self.ok("adopt", "usage.md", "design")
+        self.ok("adopt", "star.md", "design")
+        self.assertEqual((self.root / "index.md").read_text(),
+                         "[D001§d001-usage: Top](docs/designs/D001-usage.md#d001-usage), "
+                         "[D001§usage: Section](docs/designs/D001-usage.md#usage), "
+                         "[D001: All](docs/designs/D001-usage.md), [D002: Star](docs/designs/D002-star.md).\n")
+
 
 class ProjectOverviewTest(CanonTest):
     def test_init_creates_a_draft_d000_that_check_only_warns_about(self):
@@ -1209,6 +1275,18 @@ class OverviewMoveTest(CanonTest):
         self.assertIn("based_on: [D000@r2]", plan.read_text())
         self.assertIn("[D000: Fixture](../designs/D000-project-overview.md)", plan.read_text())
         self.assertIn("| moved D000 |", review.read_text())
+
+    def test_init_carries_links_to_the_h1_and_to_headings_whose_numbered_anchor_shifts(self):
+        self.project(body=self.ARCHITECTURE.replace("## Decisions", "## Glossary\n\nTerms.\n\n## Decisions"))
+        concept = self.doc("C", "links", body="## Motivation\n\nSee [D003§glossary: terms]"
+                                              "(../designs/D003-architecture.md#glossary) and [D003§d003-fixture: the "
+                                              "map](../designs/D003-architecture.md#d003-fixture).\n\n## Ideas\n\n"
+                                              "None.\n\n## Open questions\n\nNone.\n")
+        self.ok("init")
+        self.assertIn("See [D000§glossary-1: terms](../designs/D000-project-overview.md#glossary-1) and "
+                      "[D000§d000-project-overview: the map](../designs/D000-project-overview.md#d000-project-overview)",
+                      concept.read_text())
+        self.assertIn("### Glossary", (self.root / self.OVERVIEW).read_text())
 
     def test_init_appends_the_subsections_d000_lacks_at_the_end_of_its_spec(self):
         self.project()

@@ -6,7 +6,7 @@
 
 Sections: Motivation, Ideas, Open questions.
 
-Explore freely: ideas, trade-offs, brainstorming. A concept carries no spec and no plan. It keeps its three sections and adds or orders others as its ideas need; the rules of a design's sections, such as measurable Goals, do not bind it. When an idea becomes work, create or revise a design that links the concept, then archive the concept as `adopted`. Archive rejected ideas as `dropped`.
+Explore freely: ideas, trade-offs, brainstorming. A concept carries no spec and no plan. It keeps its three sections and adds or orders others as its ideas need; the rules of a design's sections, such as measurable Goals, do not bind it. When an idea becomes work, create or revise a design that links the concept. Once designs have absorbed all of it, set the concept `adopted`; one whose other Ideas still wait, such as a module's backlog, stays `draft`. Never revise a concept to follow the designs that absorb its Ideas: where they differ, the design holds. An adopted concept stays in `concepts/`, and `check` warns while no design links it; archive it as `adopted` only when the user judges it informs no work. Archive rejected ideas as `dropped`.
 
 ## Designs (D)
 
@@ -15,7 +15,7 @@ Sections: Goals, Spec, Decisions; Budgets when there are quantitative targets; K
 - One design per topic, maintained for the topic's whole life. Revise it in place.
 - **Goals**: what the design must achieve, measurable where possible.
 - **Spec**: the authoritative, precise specification of every topic in `owns`. Give interfaces as code: signatures, schemas, CLI usage, config keys. User-visible behavior (CLI, API, UI) is specified here.
-- **Budgets**: numeric targets such as latency, memory or size, each with how it is measured.
+- **Budgets**: numeric targets such as latency, memory or size, each with how it is measured. A target whose number needs a first measurement states what is measured and how, and takes its number from that measurement.
 - **Decisions**: one line per key decision with its reason.
 - **Known issues**: problems found in the design, or in the code it governs, that are neither fixed nor declined, one table row each:
 

@@ -2,15 +2,15 @@
 status: active
 created: 2026-10-22
 updated: 2026-11-11
-revision: 4
+revision: 5
 modules: [canon]
 summary: D000 project overview in every project, as-built designs that record existing code, backfill before changing unspecified behavior, and design coverage in audit.
 refs: [D001, D007]
 owns: [project-overview, as-built-design, design-coverage]
-paths: [skills/governance/canon/as-built.md, skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/governance/canon/doc-types.md, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-review/architecture.md]
-reviewed: 4
+paths: [skills/governance/canon/as-built.md, skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/governance/canon/doc-types.md, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-review/architecture.md]
+reviewed: 5
 reviewers: [claude-opus-5.5]
-implemented: 4
+implemented: 5
 ---
 
 # D002: Project overview and as-built designs
@@ -121,13 +121,15 @@ Gate and status:
 The tiers in the `canon` skill gain these rules:
 
 - Behavior is unspecified when no design states it. `which` for its files, `find` for its topic and D000's rows are where to look; a file `which` maps to no design, or a row reading `none`, does not settle it alone.
-- Before a change alters or extends existing behavior no design states, an as-built revision records that behavior; it is L1, also when it creates a design. From then on the change alters stated behavior and is tiered and handled like any such change: in a `canon-design` session it is the session's next revision, gated at its tier; anywhere else it is a design problem, as the `canon` workflow defines one, so the user decides on the revision, which passes its gate at its tier, and an L2 revision goes through `/canon-design`.
+- Before a change alters or extends existing behavior no design states, an as-built revision records that behavior; it is L1, also when it creates a design. From then on the change alters stated behavior and is tiered and handled like any such change ([D007: Change tiers and the review gate](D007-change-tiers.md)). When the session knows, as it takes the work, that the change alters such behavior, the change's revision is the session's next one, at the change's tier. When it finds out later, while drafting a plan, implementing or reviewing, as with an L0 change or a plan slice that turns out to alter the behavior, the change is a design problem ([D007§design-problems: design problems](D007-change-tiers.md#design-problems)), since the work was tiered or planned without it.
 - Where no design states the behavior, an L0 change alters nothing callers rely on: a refactor, a dependency bump, test or tooling work, or a fix for a defect no caller could rely on, such as a crash.
 - New behavior with nothing existing to record is tiered by the other rules: a new topic is L2.
 
 The skills apply them:
 
 - `canon-design`, in Frame, once step 4 has started the design unit: when the change alters unspecified behavior, the session writes the as-built revision, passes its L1 gate and commits it, then makes the change's revision and passes the gate at the change's tier, in one run. Started on existing code with no change in view, it ends after the as-built revision.
+- `canon-plan`: a slice that would alter behavior no design states gets an as-built revision from HEAD, which passes its L1 gate and is committed; the slices it touches then wait as for a design problem.
+- `canon-implement`, given an L1 change without a plan or revision that alters or extends unspecified behavior: after Start step 5, the session writes the as-built revision from HEAD, passes its L1 gate and commits it, then makes the change's revision as it makes a missing L1 revision. An L2 change stops at Start step 2 for `/canon-design`, whose Frame records the behavior.
 - `canon-implement`: an L0 change or a slice that turns out to alter unspecified behavior gets an as-built revision from the commit it started at, or the plan's `Started at`, which passes its L1 gate and is committed. The work then alters a spec: an L0 change continues as the L0 rule for such a change states, and a slice pauses as for a design problem.
 - `canon-code-review`: the Spec axis reports behavior callers rely on that the diff alters and no design states, whether or not a design governs the change. Its fix is an as-built revision from the review's merge base, after which the change needs a revision of that design: a design problem, as above.
 - The docs step: a changed file no design covers, in a change that altered nothing callers rely on, is named in the report with its directory; it needs no new design.
@@ -173,7 +175,7 @@ Source areas no design covers (commits in the last 90 days, most first):
 
 1. `canon.py`, with tests in `tests/test_canon.py` and a `CANON_VERSION` bump in every commit that changes it: D000's template and checks, the refusal to archive it, ids that history keeps taken, `init`'s D000 and its upgrade move, the deleted-doc exception, `as_built` and its checks, the `AGENTS.md` block, `which` for docs, and `audit`'s coverage and reach.
 2. The `canon` skill: `as-built.md`; the backfill rules in the tiers; `as_built` among the frontmatter fields; D000 in Layout, in Reading docs and in `doc-types.md`, in place of the architecture design, and the project's `README.md` in Layout; the `audit` row of the Tool table; in `workflow.md`, the reviewer prompt's as-built lines, the as-built status in the gate's status step and the docs step's rules for uncovered files, D000's rows and what docs state; the `as-built <commit>` source among the known issues' sources.
-3. `canon-init`, `canon-design`, `canon-implement`, `canon-code-review`, `canon-sync` and `canon-review` as this design states, `canon-review`'s `architecture.md` included. `canon-init`'s architecture step becomes D000's and drops its rule that `paths` cover the main source directories. Every mention of the architecture design in the skills names D000.
+3. `canon-init`, `canon-design`, `canon-plan`, `canon-implement`, `canon-code-review`, `canon-sync` and `canon-review` as this design states, `canon-review`'s `architecture.md` included. `canon-init`'s architecture step becomes D000's and drops its rule that `paths` cover the main source directories. Every mention of the architecture design in the skills names D000.
 4. `README.md`: the roadmap entry on as-built designs becomes part of How canon works, and the Skills table summaries of `canon-init` and `canon-design` follow their changes.
 5. This repository's own D000, no later than the commit that adds `check`'s D000 rule: `init --script skills/governance/canon/scripts/canon.py` run here adds the canon block to `AGENTS.md` and the `.gitattributes` rules and creates D000, which is filled as in setup. D001's `paths` are extended to the files it specifies, docs excepted.
 
@@ -192,7 +194,6 @@ Scenarios, tested through the commands:
 | ID | Severity | Issue | Source | Since | Next |
 |----|----------|-------|--------|-------|------|
 | D002-K1 | major | A `paths` entry matches a whole file, so coverage counts all of `canon.py` as covered while parts of it (`rename`, `renumber`, `show`, `find`, `which`, `affected`) have no design, and any `canon.py` edit must name all six designs in `Refs:` | R001-F1 | 2026-11-05 | L2 |
-| D002-K2 | minor | Backfill, second bullet, and the third bullet of `canon-implement`'s Start step 2, which sends such a change to `/canon-design`, make a change with unstated behavior the next revision only in a `canon-design` session and a design problem anywhere else, but L1 revisions now run in the current session ([D007§change-tiers: change tiers](D007-change-tiers.md#change-tiers)), so the user is asked again about the change they asked for; the split should be whether the session is making the change's own revision | D007 gate | 2026-11-11 | decide |
 ## Decisions
 
 - D000 has a fixed id: every project, skill and `check` rule can name it, and it heads the index.
@@ -211,3 +212,4 @@ Scenarios, tested through the commands:
 - Coverage counts only files under D000's module Paths: tooling, CI and configuration need no design, and the Modules table already says where the code lives. A module whose Path is `./` counts them too, so a project with tooling at its root gives its modules narrower Paths.
 - READMEs, `AGENTS.md` and the other project docs are docs, never code no design covers: they describe the project rather than implement it, and listing them in the `paths` of the designs they restate, or letting a glob there match them, would count every edit to them, such as a new row of a skills table, as an unchecked commit of each.
 - `as_built` lives only until the gate: the gate, a resumed session and a replay need the base, and once past its gate the revision is maintained like any other.
+- After a backfill, the change's revision is the session's next one only when the session knew of the behavior as it took the work; one found later is a design problem, since the work was tiered or planned without it (D007 gate; the user's decision, 2026-11-11).

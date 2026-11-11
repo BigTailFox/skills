@@ -66,7 +66,7 @@ A more specific `AGENTS.md` and its `docs/` govern their subtree and override br
 
 File names are `<id>-<kebab-slug>.md`, e.g. `designs/D003-auth.md`. The title is the H1 `# D003: Auth and sessions`.
 
-| Type | Purpose | Statuses (terminal ones live in `archived/`) |
+| Type | Purpose | Statuses (terminal ones live in `archived/`, except that an adopted concept may stay live) |
 |---|---|---|
 | C concepts | Ideas and brainstorming; the source of future work. No spec or plan. | draft → adopted, dropped |
 | D designs | Long-lived authoritative design and spec of one topic. | draft → accepted → active → superseded, retired |
@@ -115,7 +115,7 @@ based_on: [D003@r4]                  # P only
 - Reference a section as `[D003§token-refresh: refresh flow](../designs/D003-auth.md#token-refresh)` and a whole doc as `[D003: auth design](../designs/D003-auth.md)`. Never reference by line number.
 - Each standard lives only in the design that owns its topic; everywhere else links to it.
 - A design or plan revision must pass the review gate before it is accepted or implemented: `reviewed` equals `revision`. Once a design or plan has been accepted, `check` warns while a later revision is pending; `check --base` fails.
-- Replace every `<!-- canon: ... -->` guidance comment with content. While a doc is unfinished (a design or plan before its review gate, any other doc before archiving), `check` only warns about guidance and an empty `summary`; `check --base` fails.
+- Replace every `<!-- canon: ... -->` guidance comment with content. While a doc is unfinished (a design or plan before its review gate, a concept before it is adopted, any other doc before archiving), `check` only warns about guidance and an empty `summary`; `check --base` fails.
 - After a merge or rebase, run `check --fix`; generated indexes merge line by line and may need regenerating.
 
 ## Workflow
@@ -130,7 +130,7 @@ Splitting a design into sub-designs is L1 and only moves what [doc-types.md](doc
 
 Behavior no design states is unspecified. Look for a statement with `which` for its files, `find` for its topic and D000's rows; a file `which` maps to no design, or a row reading `none`, does not settle it alone.
 
-- **Backfill**: before a change alters or extends existing behavior no design states, an [as-built revision](as-built.md) records that behavior. It is L1, also when it creates a design or precedes an L2 change. The change then alters stated behavior and is tiered and handled like any such change: in a `canon-design` session it is the session's next revision, gated at its tier; anywhere else it is a [design problem](workflow.md#design-problems), so the user decides on the revision, which passes its gate at its tier, and an L2 revision goes through `/canon-design`.
+- **Backfill**: before a change alters or extends existing behavior no design states, an [as-built revision](as-built.md) records that behavior. It is L1, also when it creates a design or precedes an L2 change. The change then alters stated behavior and is tiered and handled like any such change. When the session knows, as it takes the work, that the change alters such behavior, the change's revision is its next one, at the change's tier; an L2 revision goes through `/canon-design`. When it finds out later, while drafting a plan, implementing or reviewing, the change is a [design problem](workflow.md#design-problems), since the work was tiered or planned without it.
 - Where no design states the behavior, an L0 change alters nothing callers rely on: a refactor, a dependency bump, test or tooling work, or a fix for a defect no caller could rely on, such as a crash.
 - New behavior with nothing existing to record is tiered by the rules above: a new topic is L2.
 

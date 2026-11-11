@@ -40,7 +40,7 @@ The interview is done when the frontier is empty and every guidance comment is r
 1. Run `canon.py check` and fix its errors.
 2. Pass the review gate from the `canon` skill's workflow.
 3. Set the status as the gate's last step describes.
-4. Archive a concept the design absorbed as `adopted`, linked from the design.
+4. Link a concept the design absorbed from the design, and set it `adopted` once designs have absorbed all of it; it stays in `concepts/`, as the `canon` skill's doc types say.
 5. Commit the docs (Conventional Commits, `docs` type, `Refs:` trailer).
 6. Run the `canon-retro` skill's end check only if this work hit concrete friction in the development infrastructure or the agent workflow that could recur, such as a correction to how you worked, a finding a check could have caught, a command that would not run, a check that failed after you thought you were done, a search that took far too long, or a canon step that got in the way. Use only evidence already in context; do not search for reasons to run it. An L1 revision that carries on to implementation runs this after the docs step's commit instead, with the workflow's `implement` unit as `<parent>`.
 7. Run `canon.py trace end <id> <outcome>`.

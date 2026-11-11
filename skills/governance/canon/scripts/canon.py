@@ -7,6 +7,7 @@ Single file, Python 3.8+ standard library only. Run `canon.py -h` for commands.
 import argparse
 import contextlib
 import datetime
+import difflib
 import errno
 import hashlib
 import json
@@ -28,7 +29,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "31"
+CANON_VERSION = "32"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -401,6 +402,26 @@ def scan_headings(lines, start=0):
     return headings
 
 
+def heading_anchors(old_text, new_text, own=None):
+    """{old anchor: new anchor} for each heading whose anchor a command changes when it rewrites a doc from `old_text`
+    to `new_text`. Headings pair in order, the H1 with the H1 and a heading whose finding ids `own` = (old id, new id)
+    renames with its rewritten text; a heading the command adds pairs with none."""
+    def keyed(text, rename):
+        lines = text.split("\n")
+        headings = scan_headings(lines, parse_frontmatter(lines)[1] + 1)
+        h1 = next((h for h in headings if h.level == 1), None)
+        return headings, [(0, "") if h is h1 else (h.level, rename(h.text)) for h in headings]
+
+    old, old_keys = keyed(old_text, lambda text: rename_finding_ids(text, *own) if own else text)
+    new, new_keys = keyed(new_text, lambda text: text)
+    anchors = {}
+    for a, b, size in difflib.SequenceMatcher(None, old_keys, new_keys, autojunk=False).get_matching_blocks():
+        for k in range(size):
+            if old[a + k].slug != new[b + k].slug:
+                anchors[old[a + k].slug] = new[b + k].slug
+    return anchors
+
+
 def iter_links(lines, start=0):
     for i, line in code_mask(lines, start):
         masked = INLINE_CODE_RE.sub(lambda m: " " * len(m.group(0)), line)
@@ -604,7 +625,7 @@ class Repo:
         self.docs, self.problems, self.attachments = [], [], []
         self.index_files, self.scope_md = [], []
         self.by_id, self.by_path = {}, {}
-        self._slug_cache = {}
+        self._slug_cache, self._design_linked = {}, None
         self._scan()
 
     def _list_files(self):
@@ -702,6 +723,12 @@ class Repo:
             lines = path.read_text(encoding="utf-8").split("\n")
             self._slug_cache[path] = {h.slug for h in scan_headings(lines)}
         return self._slug_cache[path]
+
+    def design_linked(self):
+        """Paths of the files the body of a design, live or archived, links to."""
+        if self._design_linked is None:
+            self._design_linked = set().union(*(doc_links(self, d) for d in self.docs if d.type == "D"))
+        return self._design_linked
 
     def resolve(self, src_dir, target):
         if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", target) or target.startswith("//"):
@@ -1088,7 +1115,10 @@ def check_doc(repo, doc, changed, strict=False):
     elif status not in info["active"] + info["terminal"]:
         err("status `{}` invalid; use one of {}".format(status, ", ".join(info["active"] + info["terminal"])))
     elif status in info["terminal"] and not doc.archived:
-        err("status `{}` requires the doc to be in archived/; use `canon.py archive`".format(status))
+        if (doc.type, status) != ("C", "adopted"):
+            err("status `{}` requires the doc to be in archived/; use `canon.py archive`".format(status))
+        elif doc.path not in repo.design_linked():
+            repo.problem("WARN", rel, "adopted, but no design links it")
     elif status not in info["terminal"] and doc.archived:
         err("status `{}` requires the doc to be outside archived/; set one of {}".format(
             status, ", ".join(info["terminal"])))
@@ -1117,9 +1147,14 @@ def check_doc(repo, doc, changed, strict=False):
     for name in info["sections"]:
         if name not in names:
             err("missing section `## {}`".format(name))
-    if line_count(doc.lines) > MAX_DOC_LINES:
-        hint = "" if doc.type != "D" else "; make it a new top-level design" if doc.suffix \
-            else "; split into sub-designs ({0}A, {0}B, ...)".format(doc.id)
+    if not doc.archived and line_count(doc.lines) > MAX_DOC_LINES:
+        if doc.type == "D":
+            hint = "; make it a new top-level design" if doc.suffix \
+                else "; split into sub-designs ({0}A, {0}B, ...)".format(doc.id)
+        elif doc.type == "C":
+            hint = "; split it into several concepts"
+        else:
+            hint = "; move detail into {}/".format(posix_rel(doc.path.parent / doc.id, repo.root))
         repo.problem("WARN", rel, "{} lines (max {}){}".format(line_count(doc.lines), MAX_DOC_LINES, hint))
 
     refs = doc.as_list("refs")
@@ -1380,13 +1415,15 @@ def print_problems(repo):
 
 # ---------------------------------------------------------------- moves
 
-def rewrite_for_moves(repo, moves, renamed=None, adopted=None):
+def rewrite_for_moves(repo, moves, renamed=None, adopted=None, anchors=None):
     """Rewrite relative links in every markdown file so they survive `moves` (old path -> new path).
 
     `renamed` maps a moved doc's old path to (old id, new id); link texts naming it are rewritten too.
     `adopted` maps a file becoming a canon doc to its id; link texts to it get the reference format.
+    `anchors` maps a doc's old path to {old anchor: new anchor} for the headings the command changes; links into the
+    doc, its own `#<anchor>` links included, and a reference's `§<anchor>` follow.
     """
-    renamed, adopted = renamed or {}, adopted or {}
+    renamed, adopted, anchors = renamed or {}, adopted or {}, anchors or {}
 
     def mapped(p):
         for src, dst in moves.items():
@@ -1408,23 +1445,32 @@ def rewrite_for_moves(repo, moves, renamed=None, adopted=None):
         for i, match in iter_links(lines):
             target = match.group(3)
             resolved = repo.resolve(path.parent, target)
-            if resolved is None or resolved[0] == "self":
+            if resolved is None:
                 continue
             dest, anchor = resolved
+            is_self = dest == "self"
+            dest = path if is_self else dest
+            new_anchor = anchors.get(dest, {}).get(anchor, anchor) if anchor else anchor
             ids = renamed.get(dest)
             ref = REF_TEXT_RE.match(match.group(2))
             if ids and ref and ref.group(1) == ids[0]:
                 edits.setdefault(i, []).append((match.start(2), match.start(2) + len(ids[0]), ids[1]))
-            if dest in adopted and not ref and not match.group(1):
-                label = adopted[dest] + ("§" + anchor if anchor else "") + ": " + (match.group(2) or adopted[dest])
+            if ref and anchor and ref.group(2) == anchor and new_anchor != anchor:
+                start = match.start(2) + ref.start(2)
+                edits.setdefault(i, []).append((start, start + len(anchor), new_anchor))
+            if dest in adopted and not is_self and not ref and not match.group(1):
+                label = adopted[dest] + ("§" + new_anchor if new_anchor else "") + ": " \
+                    + (match.group(2) or adopted[dest])
                 edits.setdefault(i, []).append((match.start(2), match.end(2), label))
             new_dest = mapped(dest)
-            if new_dest == dest and new_dir == path.parent:
-                continue
-            new_target = "/" + posix_rel(new_dest, repo.root) if target.startswith("/") else posix_rel(new_dest, new_dir)
-            new_target = LINK_UNSAFE_RE.sub(lambda m: urllib.parse.quote(m.group(0), safe=""), new_target)
-            if anchor:
-                new_target += "#" + anchor
+            if is_self or (new_dest == dest and new_dir == path.parent):
+                new_target = target if new_anchor == anchor else target.partition("#")[0] + "#" + new_anchor
+            else:
+                new_target = "/" + posix_rel(new_dest, repo.root) if target.startswith("/") \
+                    else posix_rel(new_dest, new_dir)
+                new_target = LINK_UNSAFE_RE.sub(lambda m: urllib.parse.quote(m.group(0), safe=""), new_target)
+                if anchor:
+                    new_target += "#" + new_anchor
             if new_target != target:
                 edits.setdefault(i, []).append((match.start(3), match.end(3), new_target))
         if edits:
@@ -1778,6 +1824,9 @@ def cmd_init(repo, args):
             path = moves[source.path]
             overview = Doc(source.root, path, posix_rel(path, repo.root), FILE_RE.match(path.name), False)
             added = add_overview_sections(overview)
+            shifted = heading_anchors(overview.text, path.read_text(encoding="utf-8"))
+            if shifted:
+                rewrite_for_moves(Repo(), {}, anchors={path: shifted})
             if added:
                 actions.append("added {} to {}".format(", ".join(added), overview.rel))
         else:
@@ -1885,15 +1934,27 @@ def adopt_doc(repo, args):
         sys.exit("canon: slug must be kebab-case")
     doc_id = next_id(repo, letter)
     dest = root.docs / TYPES[letter]["dir"] / "{}-{}.md".format(doc_id, slug)
-    rewrite_for_moves(repo, {src: dest}, adopted={src: doc_id})
+    old = src.read_text(encoding="utf-8")
+    rewrite_for_moves(repo, {src: dest}, adopted={src: doc_id},
+                      anchors={src: heading_anchors(old, adopted_text(old, letter, doc_id, slug, args.title)[0])})
+    text, dropped = adopted_text(src.read_text(encoding="utf-8"), letter, doc_id, slug, args.title)
+    if dropped:
+        print("dropped frontmatter fields: " + ", ".join(dropped))
+    src.write_text(text, encoding="utf-8")
+    move_paths(repo, {src: dest})
+    write_indexes(Repo())
+    print("{} -> {}".format(posix_rel(src, repo.root), posix_rel(dest, repo.root)))
+    return 0
 
-    lines = src.read_text(encoding="utf-8").split("\n")
+
+def adopted_text(text, letter, doc_id, slug, title=None):
+    """The text `adopt` gives a file becoming doc `doc_id`, and the frontmatter fields it drops: canon's frontmatter,
+    the H1 read as `# <id>: <title>` and the type's missing sections."""
+    lines = text.split("\n")
     fm, end, _bad = parse_frontmatter(lines)
     body = lines[end + 1:] if fm is not None else lines
-    if fm:
-        print("dropped frontmatter fields: " + ", ".join(fm))
     h1 = next((h for h in scan_headings(body) if h.level == 1), None)
-    title = args.title or (h1.text if h1 else slug.replace("-", " ").capitalize())
+    title = title or (h1.text if h1 else slug.replace("-", " ").capitalize())
     if h1:
         body[h1.line] = "# {}: {}".format(doc_id, title)
     else:
@@ -1903,11 +1964,7 @@ def adopt_doc(repo, args):
     for name in TYPES[letter]["sections"]:
         if name not in names:
             text += "\n## {}\n\n<!-- canon: Move the matching adopted content here. -->\n".format(name)
-    src.write_text(render_frontmatter(default_fields(letter)) + "\n" + text, encoding="utf-8")
-    move_paths(repo, {src: dest})
-    write_indexes(Repo())
-    print("{} -> {}".format(posix_rel(src, repo.root), posix_rel(dest, repo.root)))
-    return 0
+    return render_frontmatter(default_fields(letter)) + "\n" + text, list(fm or ())
 
 
 def cmd_renumber(repo, args):
@@ -2001,7 +2058,17 @@ def move_doc(repo, doc, new_id, base=None, on_base=None, slug=None, title=None, 
             notes.append("kept {}: it also holds attachments of another {}; move this doc's files to {} and fix "
                          "their links".format(posix_rel(attachment, repo.root), d.id,
                                               posix_rel(d.path.parent / new, repo.root)))
-    rewrite_for_moves(repo, moves, renamed)
+
+    def retitle(text):
+        return re.sub(r"(?m)^# {}:.*$".format(re.escape(new_id)), lambda m: "# {}: {}".format(new_id, title), text,
+                      count=1) if title else text
+
+    anchors = {}
+    for d in group:
+        text = d.path.read_text(encoding="utf-8")
+        after = remap_ids(d, text, lambda *_: None, renamed[d.path])
+        anchors[d.path] = heading_anchors(text, retitle(after) if d is doc else after, renamed[d.path])
+    rewrite_for_moves(repo, moves, renamed, anchors=anchors)
 
     id_map = dict(renamed.values())
     holder = {old: repo.by_path[path] for path, (old, _new) in renamed.items()}
@@ -2023,9 +2090,8 @@ def move_doc(repo, doc, new_id, base=None, on_base=None, slug=None, title=None, 
 
         text = d.path.read_text(encoding="utf-8")
         new_text = remap_ids(d, text, pick, renamed.get(d.path))
-        if d is doc and title:
-            new_text = re.sub(r"(?m)^# {}:.*$".format(re.escape(new_id)), lambda m: "# {}: {}".format(new_id, title),
-                              new_text, count=1)
+        if d is doc:
+            new_text = retitle(new_text)
         if new_text != text:
             d.path.write_text(new_text, encoding="utf-8")
     move_paths(repo, moves)
@@ -2106,8 +2172,13 @@ def remap_ids(doc, text, pick, own=None):
     if own:
         old, new = own
         text = re.sub(r"^# {}:".format(re.escape(old)), "# {}:".format(new), text, count=1, flags=re.M)
-        text = re.sub(r"\b{}-([FK])(\d+)\b".format(re.escape(old)), new + r"-\1\2", text)
+        text = rename_finding_ids(text, old, new)
     return text
+
+
+def rename_finding_ids(text, old, new):
+    """`text` with doc `old`'s finding and known-issue ids (`<old>-F<n>`, `<old>-K<n>`) renamed to doc `new`'s."""
+    return re.sub(r"\b{}-([FK])(\d+)\b".format(re.escape(old)), new + r"-\1\2", text)
 
 
 def cmd_index(repo, args):
