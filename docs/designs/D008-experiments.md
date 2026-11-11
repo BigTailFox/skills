@@ -2,13 +2,13 @@
 status: active
 created: 2026-11-10
 updated: 2026-11-11
-revision: 2
+revision: 3
 modules: [canon]
 summary: Prototypes and research (canon-prototype, canon-research): quick answers, the research brief, logic, UI and spike prototypes, verdicts in E docs.
 refs: [D000, D003, D006, R003, D007, D009]
 owns: [prototypes, research]
 paths: [skills/execution/canon-prototype/SKILL.md, skills/execution/canon-prototype/LOGIC.md, skills/execution/canon-prototype/UI.md, skills/execution/canon-research/SKILL.md]
-reviewed: 2
+reviewed: 3
 reviewers: [claude-opus-5.5]
 implemented: 2
 ---
@@ -59,7 +59,7 @@ The brief gives the subagent the experiment's path, the question, what answer wo
 - Results: one finding per bullet, each linked to its source; inferences are marked as inferences, and conflicts between sources are reported.
 - Conclusion: the answer, the subagent's confidence and what remains open.
 - The subagent writes each finding into the experiment as soon as it has its source, so a run that stops loses nothing; a rerun keeps the findings the doc already holds and researches only what they leave open.
-- Long excerpts worth keeping go in the attachment directory, linked from the doc.
+- Long excerpts worth keeping go in the attachment directory, linked from the doc. Each link and image target in an excerpt that is relative or starts with `/` becomes the source's absolute URL, so the excerpt's text stays verbatim while its links pass `check` ([D006§links-and-references: links and references](D006-doc-model.md#links-and-references)).
 - Every `<!-- canon: ... -->` comment is replaced, and the doc is written in the documentation language.
 - The subagent modifies nothing but the experiment and its attachment directory, and keeps scratch files in `.canon/canon-research/<E00X>/scratch/`, never in the OS temp directory, reading paths there directly, since search tools that honor `.gitignore` skip `.canon/`.
 
