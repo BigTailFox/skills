@@ -5,7 +5,7 @@ updated: 2026-11-11
 revision: 4
 modules: [canon]
 summary: D000 project overview in every project, as-built designs that record existing code, backfill before changing unspecified behavior, and design coverage in audit.
-refs: [D001]
+refs: [D001, D007]
 owns: [project-overview, as-built-design, design-coverage]
 paths: [skills/governance/canon/as-built.md, skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/governance/canon/doc-types.md, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-review/architecture.md]
 reviewed: 4
@@ -192,6 +192,7 @@ Scenarios, tested through the commands:
 | ID | Severity | Issue | Source | Since | Next |
 |----|----------|-------|--------|-------|------|
 | D002-K1 | major | A `paths` entry matches a whole file, so coverage counts all of `canon.py` as covered while parts of it (`rename`, `renumber`, `show`, `find`, `which`, `affected`) have no design, and any `canon.py` edit must name all six designs in `Refs:` | R001-F1 | 2026-11-05 | L2 |
+| D002-K2 | minor | Backfill, second bullet, makes a change with unstated behavior the next revision only in a `canon-design` session and a design problem anywhere else, but L1 revisions now run in the current session ([D007§change-tiers: change tiers](D007-change-tiers.md#change-tiers)), so the user is asked again about the change they asked for; the split should be whether the session is making the change's own revision | D007 gate | 2026-11-11 | decide |
 ## Decisions
 
 - D000 has a fixed id: every project, skill and `check` rule can name it, and it heads the index.

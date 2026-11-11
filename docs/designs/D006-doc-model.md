@@ -2,13 +2,13 @@
 status: active
 created: 2026-11-10
 updated: 2026-11-11
-revision: 1
+revision: 2
 modules: [canon]
 summary: Doc types, ids, frontmatter, sections, statuses and archiving of canon docs, the templates of new, the doc rules check enforces and the writing rules.
 refs: [D000, D001, D002, D003, D004, D005, D007, D008]
 owns: [doc-model, doc-writing]
 paths: [skills/governance/canon/SKILL.md, skills/governance/canon/doc-types.md, skills/governance/canon/writing.md, skills/governance/canon/scripts/canon.py, tests/test_canon.py]
-reviewed: 1
+reviewed: 2
 reviewers: [claude-opus-5.5]
 implemented: 1
 ---
@@ -22,7 +22,7 @@ implemented: 1
 3. `canon.py new` creates each doc from its type's template with the next free id; `canon.py archive` moves a doc and its attachments to `archived/` and rewrites every link to them, and refuses while the type's terminal conditions fail.
 4. Docs state each fact once, in the doc that owns it, for a reader who arrives through a pointer.
 
-Out of scope: the generated index ([D005: Docs index](D005-docs-index.md)); D000, as-built revisions and `as_built`, ids that Git history keeps taken, docs by their name such as READMEs, and coverage in `audit` ([D002: Project overview and as-built designs](D002-overview-and-as-built.md)); trace and review files ([D001: Skill telemetry with canon trace](D001-skill-telemetry.md)); subagents and review snapshots ([D003: Subagents](D003-subagents.md)); `init`, `adopt` and the `AGENTS.md` block ([D004: Project setup](D004-project-setup.md)); change tiers, the review gate and design problems ([D007: Change tiers and the review gate](D007-change-tiers.md)); `rename`, `renumber`, `show`, `find`, `which`, `affected` and the rest of `audit`, which no design covers.
+Out of scope: the generated index ([D005: Docs index](D005-docs-index.md)); D000, as-built revisions and `as_built`, ids that Git history keeps taken, docs by their name such as READMEs, and coverage in `audit` ([D002: Project overview and as-built designs](D002-overview-and-as-built.md)); `init`, `adopt` and the `AGENTS.md` block ([D004: Project setup](D004-project-setup.md)); change tiers, the review gate and design problems ([D007: Change tiers and the review gate](D007-change-tiers.md)); `rename`, `renumber`, `show`, `find`, `which`, `affected` and the rest of `audit`, which no design covers.
 
 ## Spec
 
@@ -84,18 +84,18 @@ The agent-facing text of this spec is the `canon` skill: `SKILL.md` (Layout, Doc
 
 A doc may add other sections. `check` errors with ``missing section `## <name>` `` for each required `## ` heading, matched by its exact text in any order, and with ``body must have exactly one H1 reading `# <id>: <title>` `` unless the body outside code fences has one H1 and its text is `<id>: ` and a title.
 
-- **Concepts**: ideas, trade-offs and brainstorming, with no spec and no plan. When an idea becomes work, a design that links the concept is created or revised and the concept archived as `adopted`; a rejected idea is archived as `dropped`.
+- **Concepts**: ideas, trade-offs and brainstorming, with no spec and no plan. A concept keeps Motivation, Ideas and Open questions and adds or orders other sections as its ideas need; the rules of the design sections below (Goals, Spec, Budgets, Decisions, Known issues) do not bind it. When an idea becomes work, a design that links the concept is created or revised and the concept archived as `adopted`; a rejected idea is archived as `dropped`.
 - **Designs**: one per topic, revised in place for the topic's whole life, and the source of truth: where a plan disagrees, the design wins.
   - Goals: what the design must achieve, measurable where possible. Spec: the authoritative, precise specification of every topic in `owns`, interfaces given as code (signatures, schemas, CLI usage, config keys); user-visible behavior is specified here. Budgets, only when there are quantitative targets: each target with how it is measured. Decisions: one line per key decision with its reason. Known issues: [below](#known-issues-findings-and-slices).
   - Status: `draft` until the review gate makes it `accepted` ([D007§gate-status: gate status](D007-change-tiers.md#gate-status)); `active` with `implemented` once an implementation has landed, and still `active` while a revision's spec leads the code. Archived as `superseded`, with the successor in `refs`, or `retired` when the feature is removed. An as-built revision's status: [D002§as-built-revisions: as-built](D002-overview-and-as-built.md#as-built-revisions).
-  - Split: a design that outgrows one doc gets sub-designs with `new D <slug> --parent D012`; the sub-topic's spec, `owns` and `paths` move into the sub-design, and the parent keeps the overview and links its children. A sub-design that outgrows itself becomes a new top-level design.
+  - Split: a design that outgrows one doc gets sub-designs with `new D <slug> --parent D012`; the sub-topic's spec, `owns` and `paths` move into the sub-design, and the parent keeps the overview and links its children. A sub-design that outgrows itself becomes a new top-level design. Whenever a topic moves to another design, by a split or otherwise, these move together: its spec, its `owns` entries, the `paths` entries no topic left behind governs, and its known issues, renumbered to the new design's ids with Source and Since kept and every citation of the old ids updated. Each restatement left behind, in the old design or elsewhere, becomes a link.
 - **Plans**: the implementation plan and log of one change, created only from an accepted or active design, with `new P <slug> --from D012`; `new` does not enforce this and creates a plan without `--from` too.
   - Current state, at the top: the current slice, the next action and paused slices with their reasons, updated at the end of every slice; a new session resumes from it.
   - Slices: ordered `### S1: <name>` subsections. Each starts with a `Status:` line, then a `Risk:` line naming the kinds when the slice involves complex logic, concurrency, performance, security or data migration (`Risk: concurrency, data migration`), then lists its changes and the test criteria that prove it done. Each criterion names its seam, the public interface the design's Spec defines where the test observes behavior; an accepted plan's seams are agreed with the user, and tests go only there.
   - Notes: risks and constraints for the implementer, findings about the plan the user left for later, and details the plan settled that its design leaves unstated, which the docs step writes into the design. Log: decisions, results, evidence and deviations, appended as they happen.
   - Status: `accepted` after the review gate ([D007§gate-status: gate status](D007-change-tiers.md#gate-status)), `in-progress` while implementing. Archived as `done` once every slice is `done`, in the commit that completes the implementation, or as `abandoned`.
-- **Reviews**: findings of a review of code, modules or the whole repo. Scope states what was reviewed, at which commit and from which angles (function, performance, security, architecture, usability). A periodic review produces one R doc per run, its reports in `reviews/<id>/`. Code review of a change and the review gate produce no R doc. Archived as `closed` as soon as no finding is `open`.
-- **Experiments**: one question answered with evidence, by a run (benchmark, prototype, measurement) or by research of primary sources (official docs, specs, source code). Setup lists `- Commit:`, `- Environment:` and `- Command:` for a run, so it can be rerun, and `- Sources:` for research, one primary source per indented line. Results link every measurement to its raw data and every finding to its source. Prototype code, raw data and source excerpts go where [D008§prototype-files: prototype files](D008-experiments.md#prototype-files) puts them. The conclusion is absorbed as [D008§absorbing-a-conclusion: absorbing a conclusion](D008-experiments.md#absorbing-a-conclusion) states, then the experiment is archived as `concluded`.
+- **Reviews**: findings of a review of code, modules, the whole repo or a concept. Scope states what was reviewed, at which commit and from which angles (function, performance, security, architecture, usability). A periodic review or a concept review produces one R doc per run, its reports in `reviews/<id>/`. A concept review runs the `canon-blind-review` skill with its template for artifacts outside the review gate; its Scope names the concept revision it read, and its findings link the doc that owns each spec instead of restating it. Code review of a change and the review gate produce no R doc. Archived as `closed` as soon as no finding is `open`.
+- **Experiments**: one question answered with evidence, by a run (benchmark, prototype, measurement) or by research of primary sources (official docs, specs, source code). A later run that answers the same question, such as a measurement after research, extends the experiment's Setup and Results while it is live; once the experiment is archived, the run gets a new experiment that links it. A new question is a new experiment. Setup lists `- Commit:`, `- Environment:` and `- Command:` for a run, so it can be rerun, and `- Sources:` for research, one primary source per indented line. Results link every measurement to its raw data and every finding to its source. Prototype code, raw data and source excerpts go where [D008§prototype-files: prototype files](D008-experiments.md#prototype-files) puts them. The conclusion is absorbed as [D008§absorbing-a-conclusion: absorbing a conclusion](D008-experiments.md#absorbing-a-conclusion) states, then the experiment is archived as `concluded`.
 - **Investigations**: debugging and profiling. Reproduction lists `- Commit:`, `- Environment:` and `- Command:`; repro scripts and captured logs or traces go in `investigations/<id>/`, secrets replaced by `<REDACTED>`. Resolution lists `- Root cause:`, `- Fix:` and `- Verification:`, all filled before archiving. Archived as `resolved` as soon as the defect is fixed or verified not to be one; a root cause that exposes a spec gap gets the design fixed too.
 
 ### Statuses and archiving
@@ -142,7 +142,7 @@ implemented: 4
 
 - Every type requires `status`, `created`, `updated`, `revision`, `modules`, `summary` and `refs`; designs also `owns` and `paths`, plans `based_on`. Designs may add `reviewed`, `reviewers`, `implemented` and `as_built`, plans `reviewed` and `reviewers`. `check` errors with ``missing frontmatter field `<key>` ``, ``unknown frontmatter field `<key>` `` for any other field, and ``` `<key>` must be a list like [a, b] ``` for a list field (`modules`, `refs`, `owns`, `paths`, `based_on`, `reviewers`) that is no list.
 - `created`, `updated`: dates, ``` `<key>` must be YYYY-MM-DD ``` otherwise, and ``` `updated` is earlier than `created` ```. `updated` is the date of the doc's last content change ([check](#check)).
-- `revision`: a positive integer (``` `revision` must be a positive integer ```) counting semantic changes: bumped when a goal, spec or plan changes meaning, never for wording.
+- `revision`: a positive integer (``` `revision` must be a positive integer ```) counting semantic changes: bumped when a goal, spec, plan, or a concept's Ideas or Open questions change meaning, never for wording.
 - `modules`: the modules the doc concerns; empty means the whole project of its docs root.
 - `summary`: one line, which feeds the index and `find`. Empty: ``` `summary` is empty ```, at the unfinished level ([check](#check)). Over 160 characters once trimmed: `WARN` ``` `summary` is <n> chars (max 160) ```.
 - `refs`: ids of related docs, each an existing doc's (``` `refs` entry <id> does not exist ```), including every doc the body links to ([Links and references](#links-and-references)).
@@ -175,14 +175,14 @@ A review lists its findings in `## Findings`, one row each:
 | R003-F1 | major | Refresh races with logout | moved I012 |
 ```
 
-Ids run `<review id>-F1`, `-F2`, …; Severity as above. Disposition is `open`, `fixed <commit>`, `moved <id>` (handed to the C, D, P or I that now tracks it, a design as a known issue) or `declined <reason>`.
+Ids run `<review id>-F1`, `-F2`, …; Severity as above. Disposition is `open`, `fixed <commit>` or, for a fix made in a doc, `fixed <id>@r<revision>` (`fixed C001@r22`), `moved <id>` (handed to the C, D, P or I that now tracks it, a design as a known issue) or `declined <reason>`.
 
 `check` reads as rows the lines of the section outside code fences that start with `|`, apart from a header row whose first cell reads `ID` in any case and separator rows of `-`, `:` and spaces; cells past the table's columns are ignored. It errors with:
 
 - `known issue row must be | <id>-K<n> | severity | issue | source | since | next |`, or `finding row must be | <id>-F<n> | severity | finding | disposition |`, for a row whose first cell is not the doc's id, `-K` or `-F` and digits, or that has fewer cells than the columns;
 - `duplicate known issue id <id>`, `duplicate finding id <id>`, and `<id> severity must be one of blocker, major, minor`;
 - for a known issue: `<id> needs the issue and its source`, `<id> since must be the date it was recorded, YYYY-MM-DD`, `<id> since <date> is later than today` and `<id> next must be one of decide, fix, L1, L2`;
-- for a finding: `<id> disposition must start with one of open, fixed, moved, declined`, and ``<id> moved to unknown doc `<id>` `` when no doc has the id after `moved`; what follows `fixed` or `declined` goes unchecked.
+- for a finding: `<id> disposition must start with one of open, fixed, moved, declined`, ``<id> moved to unknown doc `<id>` `` when no doc has the id after `moved`, and ``<id> fixed in unknown doc `<id>` `` when what follows `fixed` has the form `<id>@r<n>` and no doc has the id; otherwise what follows `fixed` or `declined` goes unchecked.
 
 A `## Known issues` section with no row, well-formed or not, gives `WARN` ``` `## Known issues` lists no issue; delete the section ```.
 
@@ -260,11 +260,13 @@ canon.py check [--fix] [--base REF]
 
 Agents and people read docs, usually after reaching them through a pointer: an `AGENTS.md` line, a link, a `find` hit on a summary or heading. `writing.md` applies to every doc:
 
-- Say each thing once, in the doc that owns it, and link to it everywhere else.
+- Say each thing once, in the doc that owns it, and link to it everywhere else. A design other than D000 states what it owns, and what it leaves out only where a reader would likely assume otherwise; it never states what other designs own.
+- Name a doc that does not exist yet by its topic, never by a guessed id: `new` assigns ids.
 - Use the fewest plain words that state the exact meaning; a reader new to the project understands the doc without the conversation that produced it.
 - Record only the final state: no discussion history, superseded drafts or "X rather than Y" contrasts with an earlier proposal. A rejected alternative stays only as a one-line Decision when it is likely to be proposed again.
 - State the correct approach. A counter-example is added only for a typical, likely misuse, and a prohibition only as a hard guardrail, paired with the behavior to follow instead.
 - Prefer numbers to adjectives, code (signatures, schemas, commands) to prose for interfaces, and lists to tables unless the facts are short and tabular.
+- Keep a diagram's source with it: Mermaid in the doc, or the generating script in the attachments beside the image it renders, with how to install its dependencies. Its labels stay text a reviewer can read, never outlines or a raster image, and it changes in the commit that changes what it shows.
 - Write `summary` lines, titles and headings as pointers that lead with the words a reader would search for.
 - Keep a topic's definition, rules and caveats under one heading.
 - Record what the repository cannot tell (reasons, unwritten conventions, gotchas), and name the command or file for facts the environment already states.
@@ -301,7 +303,7 @@ Agents and people read docs, usually after reaching them through a pointer: an `
 | D006-K7 | minor | An archived design warns for each `paths` entry that matches no file | as-built 0872d6d | 2026-11-10 | fix |
 | D006-K8 | minor | `archive` accepts leftover guidance or an empty `summary`, which `check` then reports on the archived doc, and neither catches a `done` plan with no slices or a Conclusion holding only template guidance | as-built 0872d6d | 2026-11-10 | fix |
 | D006-K9 | minor | `archive` archives a design and leaves its sub-designs live | as-built 0872d6d | 2026-11-10 | fix |
-| D006-K10 | minor | No command changes a non-terminal status | R003-F36 | 2026-11-10 | decide |
+| D006-K10 | minor | No command changes a non-terminal status; the user wants one designed with the gate bookkeeping of D007-K8 | R003-F36 | 2026-11-10 | L2 |
 | D006-K11 | minor | The line-limit hint tells a sub-design to split into `<id>A`, `<id>B`, ..., which one-level sub-designs forbid | as-built 0872d6d | 2026-11-11 | fix |
 | D006-K12 | minor | The unknown-entry message inside `archived/` also lists `archived/`, `guides/` and `assets/` as allowed | as-built 0872d6d | 2026-11-11 | fix |
 | D006-K13 | minor | With a HEAD commit, a REF that shares no history with HEAD gives `cannot diff against <REF>...HEAD`, since the deleted-doc diff fails first; `no merge base` shows only without a HEAD commit | as-built 0872d6d | 2026-11-11 | fix |

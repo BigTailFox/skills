@@ -2,13 +2,13 @@
 status: active
 created: 2026-11-10
 updated: 2026-11-11
-revision: 1
+revision: 2
 modules: [canon]
 summary: Prototypes and research (canon-prototype, canon-research): quick answers, the research brief, logic, UI and spike prototypes, verdicts in E docs.
 refs: [D000, D003, D006, R003, D007]
 owns: [prototypes, research]
 paths: [skills/execution/canon-prototype/SKILL.md, skills/execution/canon-prototype/LOGIC.md, skills/execution/canon-prototype/UI.md, skills/execution/canon-research/SKILL.md]
-reviewed: 1
+reviewed: 2
 reviewers: [claude-opus-5.5]
 implemented: 1
 ---
@@ -19,7 +19,7 @@ implemented: 1
 
 1. A question a design or decision depends on gets evidence that reading and reasoning cannot give: a throwaway prototype (`canon-prototype`) or primary sources (`canon-research`), recorded with its verdict in an E doc a design can cite.
 2. A fact one or two sources settle, or a detail inside the current task that a logic prototype or spike answers, costs no doc.
-3. Recorded research runs beside the main work, and every finding traces to a primary source.
+3. Recorded research runs beside the main work, every finding traces to a primary source, and a researcher that stops loses no finding it has made.
 4. Prototype code wired into the product stays off the main branch, which keeps the decision, the experiment and its self-contained files.
 
 Out of scope: the E doc type, its sections, statuses and archiving ([D006: Doc model](D006-doc-model.md)); the subagents of the canon workflow ([D003: Subagents](D003-subagents.md)); grill triage, which routes questions to these skills (`canon-grill`).
@@ -44,9 +44,10 @@ A fact one or two primary sources settle, such as a signature, a default, a limi
 ### Recorded research
 
 1. **Frame**: the session writes the question, the answer that would settle it, and the doc that will absorb the answer, usually the design being written or revised.
-2. **Reserve**: in the main session, before any subagent starts, it runs `canon.py new E <slug>`, fills Question and sets `status: running`.
-3. **Launch**: it starts a background subagent with the [research brief](#research-brief) where the host supports one, and otherwise does the research inline under the brief's rules. It keeps working on what does not depend on the answer. The skill names no model, no record of the subagent's id and no recovery for a run that stops (D008-K6); D003 covers only the workflow's own subagents.
-4. **Absorb**, when the subagent finishes: the session opens the sources behind the findings its decision depends on and confirms they say what the experiment claims, then absorbs the conclusion as [Absorbing a conclusion](#absorbing-a-conclusion) states.
+2. **Reserve**: in the main session, before any subagent starts, it looks for a live experiment on the same question with `canon.py find`. It extends one it finds, as [D006§doc-types: doc types](D006-doc-model.md#doc-types) states, setting `status: running`; otherwise it runs `canon.py new E <slug>`, fills Question and sets `status: running`.
+3. **Launch**: it starts a background subagent with the [research brief](#research-brief) where the host supports one, and otherwise does the research inline under the brief's rules. For a subagent it keeps the filled brief and the subagent's id in `.canon/canon-research/<E00X>/` as `brief.md` and `id.txt`; inline research keeps neither. It keeps working on what does not depend on the answer. The skill names no model.
+4. **Recover**, when the host reports that the researcher stopped before finishing: the launching session resumes it once by its id where the host allows, and otherwise reruns `brief.md` once in a new subagent; a second stop goes to the user. Another session finding an experiment still `running` reruns `brief.md` only once the user confirms that no other session is running it.
+5. **Absorb**, when the subagent finishes: the session opens the sources behind the findings its decision depends on and confirms they say what the experiment claims, then absorbs the conclusion as [Absorbing a conclusion](#absorbing-a-conclusion) states.
 
 ### Research brief
 
@@ -54,19 +55,20 @@ The brief gives the subagent the experiment's path, the question, what answer wo
 
 - Evidence comes from primary sources only: official documentation, specifications, source code and first-party APIs. Every claim traces to the source that owns it; a secondary write-up is a lead, never evidence, and the subagent's memory is never evidence.
 - The version or date each source describes is noted.
-- Setup: the `Commit`, `Environment` and `Command` lines become `- Sources:` followed by one indented line per source, as a markdown link.
+- Setup: empty `Commit`, `Environment` and `Command` lines become `- Sources:` followed by one indented line per source, as a markdown link; filled ones, from an earlier run of the same question, stay, and `- Sources:` follows them.
 - Results: one finding per bullet, each linked to its source; inferences are marked as inferences, and conflicts between sources are reported.
 - Conclusion: the answer, the subagent's confidence and what remains open.
+- The subagent writes each finding into the experiment as soon as it has its source, so a run that stops loses nothing; a rerun keeps the findings the doc already holds and researches only what they leave open.
 - Long excerpts worth keeping go in the attachment directory, linked from the doc.
 - Every `<!-- canon: ... -->` comment is replaced, and the doc is written in the documentation language.
-- The subagent modifies nothing but the experiment and its attachment directory, and keeps scratch files in `.canon/canon-research/<E00X>/`, never in the OS temp directory, reading paths there directly, since search tools that honor `.gitignore` skip `.canon/`.
+- The subagent modifies nothing but the experiment and its attachment directory, and keeps scratch files in `.canon/canon-research/<E00X>/scratch/`, never in the OS temp directory, reading paths there directly, since search tools that honor `.gitignore` skip `.canon/`.
 
 ### Prototype framing
 
 A prototype is throwaway code that answers one question; the question decides its kind.
 
 1. The session writes the question in one sentence, with the observation that would settle it.
-2. When the verdict will feed a design or plan, it creates the experiment at once with `canon.py new E <slug>`, fills Question and sets `status: running`. When the question is a detail inside the current task and the prototype is self-contained files, a logic prototype or a spike, it writes no doc: it builds in `.canon/canon-prototype/<topic>/`, records the verdict in the plan's Log or the commit message, and deletes the prototype. A UI prototype always gets an experiment, and so does a question with no design, plan or task in view, such as a state model the user wants to sanity-check, so a later design can cite its verdict.
+2. When the verdict will feed a design or plan, it creates the experiment at once with `canon.py new E <slug>`, fills Question and sets `status: running`, or extends a live experiment on the same question as research's Reserve step does. When the question is a detail inside the current task and the prototype is self-contained files, a logic prototype or a spike, it writes no doc: it builds in `.canon/canon-prototype/<topic>/`, records the verdict in the plan's Log or the commit message, and deletes the prototype. A UI prototype always gets an experiment, and so does a question with no design, plan or task in view, such as a state model the user wants to sanity-check, so a later design can cite its verdict.
 3. It picks the kind by the question:
 
 | Question | Kind |
@@ -126,7 +128,7 @@ The smallest script that runs the approach against the real dependency and print
 
 Once a prototype has answered its question, the session:
 
-1. Fills the experiment. Setup: `Commit:` is the commit holding the prototype, on the prototype branch or the one that added `experiments/E00X/`, with `Environment:` and the `Command:` that runs it. Results: what the runs or the user's walkthrough showed. Conclusion: the verdict, which for a UI prototype names the winning variant and why, and where it was absorbed.
+1. Fills the experiment. Setup: `Commit:` is the commit holding the prototype, on the prototype branch or the one that added `experiments/E00X/`, so the prototype is committed before Setup records it, with `Environment:` and the `Command:` that runs it; an extended experiment keeps the earlier run's lines above them. Results: what the runs or the user's walkthrough showed. Conclusion: the verdict, which for a UI prototype names the winning variant and why, and where it was absorbed.
 2. Writes the validated decision into the design or plan, as [Absorbing a conclusion](#absorbing-a-conclusion) states. The real code follows through the change's tier, in a plan slice or an L0 change, never at verdict time. There, a logic prototype's pure module lifts into the real module, and a winning UI variant is rewritten to the project's standards: into the existing page, or as a real route in place of the throwaway one.
 3. Keeps the decision, the experiment and its `experiments/E00X/` files on the main branch. Code wired into the product, such as the full set of UI variants, the switcher and a throwaway route, stays only on the prototype branch.
 
@@ -141,6 +143,7 @@ Once a prototype has answered its question, the session:
 
 - Recorded research runs in a background subagent so the main work continues while it reads (a06989b, the skill's first description).
 - The main session reserves the experiment's id before the subagent starts, which keeps ids unique while both sessions write docs (`canon-research`, step 2).
+- The researcher writes each finding as soon as it has its source, and the launching session keeps the brief and the subagent's id, so a stopped run loses nothing and can be resumed or rerun: a researcher that wrote only at the end lost its work when it stopped, and a resume from another session failed (R003-F15; the user's decision, 2026-11-11).
 - The research brief keeps the subagent's scratch files in `.canon/canon-research/<E00X>/` and says that search tools honoring `.gitignore` skip `.canon/`: subagents wrote scratch files to `/tmp`, and Cursor's Grep and Glob skipped the ignored `.canon/` ([R003: Silk design phase](../reviews/R003-silk-design-phase.md), F41; 80b9688).
 - A logic prototype is one self-contained file so a non-developer can open it with nothing to install, and its logic is a pure module so it lifts into the real codebase once validated (LOGIC.md).
 - A UI prototype goes on an existing page whenever one could host it: on an empty route every variant looks fine, hiding problems a populated page exposes. More than 5 variants stop being radically different (UI.md).
@@ -158,8 +161,6 @@ Once a prototype has answered its question, the session:
 | D008-K3 | major | `canon-prototype` (capture, step 2), `LOGIC.md` and `UI.md` (step 6) fold a verdict into the real code at verdict time, outside the change's tier | as-built 0872d6d | 2026-11-10 | fix |
 | D008-K4 | minor | Both skills, `workflow.md`'s docs step and `doc-types.md` archive an experiment only once a design absorbs it, so one a plan absorbs is never archived; the fix waits on D008-K7 | as-built 0872d6d | 2026-11-10 | fix |
 | D008-K5 | minor | `canon-research` does not say that inline research follows the brief's rules | as-built 0872d6d | 2026-11-10 | fix |
-| D008-K6 | major | A background researcher writes only at the end, and nothing keeps its id or resumes it, so an interrupted one loses its work | R003-F15 | 2026-11-11 | decide |
-| D008-K7 | major | Archiving concluded experiments hides the evidence live designs rest on | R003-F17 | 2026-11-11 | decide |
-| D008-K8 | minor | Nothing says whether a measurement added to a research experiment extends it or opens a new one | R003-F18 | 2026-11-11 | decide |
+| D008-K7 | major | Archiving concluded experiments hides the evidence live designs rest on | R003-F17 | 2026-11-11 | L2 |
 | D008-K9 | minor | `canon-prototype` does not say that a question with no design, plan or task in view gets an experiment | as-built 0872d6d | 2026-11-11 | fix |
 | D008-K10 | minor | `canon-prototype` and `UI.md` do not say that the prototype branch is kept and pushed so `Commit:` stays reachable | as-built 0872d6d | 2026-11-11 | fix |
