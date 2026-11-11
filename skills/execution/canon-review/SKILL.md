@@ -27,8 +27,8 @@ Spawn one subagent per angle, in parallel, in the foreground. Each brief carries
 
 - The scope: commit, module paths, the source areas `audit` lists in them that no design covers, and the governing designs (`which`, `show`), D000 and the relevant `AGENTS.md` files to read.
 - The angle's reference pasted in full: [architecture.md](architecture.md), [performance.md](performance.md), [security.md](security.md), [functional.md](functional.md), [usability.md](usability.md).
-- The rules: modify no file. Skip anything a design's Decision line already rejected unless the friction is severe enough to reopen it, and then name the Decision. Report a problem a design lists as a known issue only when it is worse than the entry says, naming the entry. Replace secrets with `<REDACTED>`.
-- The output: every blocker and major finding and at most 10 minor ones, most severe first. Each has a title, location (files, design sections), problem, evidence, suggestion, and severity `blocker`, `major` or `minor`. Keep each finding as short as it can be while a reader can understand and verify it without redoing the review.
+- The rules: modify no file. Skip anything a design's Decision line already rejected unless the friction is severe enough to reopen it, and then name the Decision. Replace secrets with `<REDACTED>`.
+- The output: the report the `canon-blind-review` skill's prompt template asks for, pasted from its known-issue rule to its Verdict line, with each finding's location (files, design sections) followed by the title its Findings row takes, e.g. `### F1 [major] src/orders/intake.py: Order intake is shallow`.
 
 ## 4. Report
 

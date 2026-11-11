@@ -18,7 +18,7 @@ Implements [D007: Change tiers and the review gate](../designs/D007-change-tiers
 
 ## Current state
 
-Next: S4.
+Next: S5.
 
 ## Slices
 
@@ -92,7 +92,7 @@ Test criteria; seam: `canon.py trace start` and `trace end`, and the lines in `.
 
 ### S4: One home for the shared blind-review rules
 
-Status: todo
+Status: done
 
 Builds on `D003#launch`, `D003#input-and-reports`, `D003#resuming-and-replacing`, `D003#review-snapshots`, `D001#review-files` and `D007#reviewer-prompt`.
 
@@ -186,3 +186,4 @@ Test criteria; seam: the skill files, `scripts/validate.py`, `npx skills add . -
 - 2026-11-11, S1 done: `status` and `status_moves` in `canon.py` (`CANON_VERSION` 33), `StatusTest` with 7 tests plus `status` cases in `IndexTest` and `HelpTest`; `validate.py` passed with D001's budgets measured. Deviation: `status -h` lists each type's statuses in order. Settled in the slice: a current status outside the type's moves counts as before all of them, and a `reviewed` that is not an integer reads as 0. Open: a concept's not-a-status message lists only `draft`, as D006 states, though `adopted` is its other valid target; put to the user.
 - 2026-11-11, S2 done: `approved` among the optional and integer fields of designs and plans, checked from 1 to `reviewed` (`CANON_VERSION` 34), `ApprovedTest` with 3 tests; `validate.py` passed with D001's budgets measured. The `SKILL.md` Frontmatter bullets link the review gate's step 6, which S5 rewrites; S5 keeps them pointing at Gate status. This commit sets `approved`: D001 12, D003 7, D005 2, D006 4, D007 5 and this plan 1.
 - 2026-11-11, S3 done: `follow-up` among the trace kinds, sharing the gate's roles (`GATE_ROLES`), `--dir` and `--input`, with the `--input` help and error naming it (`CANON_VERSION` 35); `FollowUpTest` with 3 tests, a `HelpTest` assertion and a follow-up case in the as-built snapshot test. The placeholder paragraph now has 110 of 110 tokens and `trace.md` 420 of 420: `trace.md`'s Roles bullet names the code review's roles and gives same-model and cross-family to the rest with "else".
+- 2026-11-11, S4 done: `canon-blind-review` holds the shared template, launching, review files, stopped runs, manual fallback, merge baseline, confirmation and the new follow-up round with its prompt; `workflow.md` keeps the gate's own lines and rules, the reviewer file and worker runs; `canon-code-review` fills the template with the reading line `Read the change and these sources: {paths}.`; `canon-review`'s angle reviewers report from the template's known-issue rule to its Verdict line, a title after each location. The gate prompt assembled for D007 r4 is at `.canon/canon-implement/P003-S4-gate-prompt.md` and equals D007§reviewer-prompt's text filled for that gate; checks in `.canon/canon-implement/P003/S4/`. The orchestrator also reworded two pointers left stale: `SKILL.md`'s line on `workflow.md` (how workers launch) and `doc-types.md`'s concept review.

@@ -141,7 +141,7 @@ A commit that touches a design's `paths`, in any tier, names the designs it was 
 
 The canon skills write each command they have you give the user in the form `/canon-plan D012`; give it in the host's form, such as `$canon-plan D012` in Codex.
 
-Flows, the blind-review gate with its reviewer prompt, code review, how subagents launch (and the cross-family reviewer's local file), and the docs step before committing: [workflow.md](workflow.md).
+Flows, the blind-review gate with its reviewer prompt, code review, how workers launch (and the cross-family reviewer's local file), and the docs step before committing: [workflow.md](workflow.md).
 
 ## Writing
 

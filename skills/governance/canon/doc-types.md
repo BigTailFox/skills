@@ -84,7 +84,7 @@ Sections: Scope, Findings.
 
   Severity is `blocker`, `major` or `minor`. Disposition is `open`, `fixed <commit>` (`fixed <ID>@r<N>` for a fix made in a doc, e.g. `fixed C001@r22`), `moved <ID>` (handed to the C, D, P or I that now tracks it; a design tracks it as a known issue) or `declined <reason>`.
 - Archive as `closed` as soon as no finding is `open`; `check` blocks it before that.
-- R docs cover code, modules, the whole repo or a concept. A periodic review or a concept review produces one R doc per run, with its reports in `reviews/R00X/`. A concept review runs the `canon-blind-review` skill's template for other artifacts; its Scope names the concept revision it read, and its findings link the doc that owns each spec instead of restating it. Code review of a change produces no R doc: its deferred findings become known issues ([workflow.md](workflow.md#code-review)). Design and plan reviews happen in the review gate and produce no R doc.
+- R docs cover code, modules, the whole repo or a concept. A periodic review or a concept review produces one R doc per run, with its reports in `reviews/R00X/`. A concept review fills the `canon-blind-review` skill's template as for any other review; its Scope names the concept revision it read, and its findings link the doc that owns each spec instead of restating it. Code review of a change produces no R doc: its deferred findings become known issues ([workflow.md](workflow.md#code-review)). Design and plan reviews happen in the review gate and produce no R doc.
 
 ## Experiments (E)
 
