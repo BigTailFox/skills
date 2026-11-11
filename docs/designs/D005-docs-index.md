@@ -1,15 +1,15 @@
 ---
 status: active
 created: 2026-10-30
-updated: 2026-10-30
-revision: 1
+updated: 2026-11-11
+revision: 2
 modules: [canon]
 summary: The generated doc index in each docs root's README.md and archived/README.md, its markers and format, the commands that regenerate it and check's index errors.
 refs: [D004]
 owns: [docs-index]
 paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py]
-reviewed: 1
-reviewers: [claude-opus-5.5]
+reviewed: 2
+reviewers: [claude-opus-5.5, gemini-4-argon-high]
 implemented: 1
 ---
 
@@ -18,7 +18,7 @@ implemented: 1
 ## Goals
 
 1. Each docs root lists every numbered doc it holds, with its id, title, status, known issue count, summary, owned topics and modules, in a generated index that the `AGENTS.md` block points agents to.
-2. Nobody edits an index by hand: the commands that create, move or archive docs regenerate it, `check` fails while it is out of date and `check --fix` regenerates it. The hand-written text around the index in `docs/README.md` stays as it is.
+2. Nobody edits an index by hand: the commands that create, move or archive docs or set their status regenerate it, `check` fails while it is out of date and `check --fix` regenerates it. The hand-written text around the index in `docs/README.md` stays as it is.
 
 Out of scope: what `init` writes into a new `docs/README.md` and the union-merge lines it adds to `.gitattributes` ([D004§init: init](D004-project-setup.md#init)); the frontmatter and Known issues tables the entries read (the `canon` skill).
 
@@ -52,12 +52,12 @@ An index is the start marker, a blank line, its groups, a blank line and the end
 
 ### Regeneration
 
-- `index`, `new`, `adopt`, `archive`, `rename`, `renumber` and `init` regenerate the index files of every docs root after their other changes, and write only the files whose text changes. `index` prints `wrote <path>` for each file it writes, `<path>` being relative to the repo root; `init` lists them as [D004§init: init](D004-project-setup.md#init) states; the others print nothing for them. `check --fix` regenerates them after its other fixes when it applied a fix or found an index out of date, printing `fixed wrote <path>` for each.
+- `index`, `new`, `adopt`, `archive`, `status`, `rename`, `renumber` and `init` regenerate the index files of every docs root after their other changes, and write only the files whose text changes. `index` prints `wrote <path>` for each file it writes, `<path>` being relative to the repo root; `init` lists them as [D004§init: init](D004-project-setup.md#init) states; the others print nothing for them. `check --fix` regenerates them after its other fixes when it applied a fix or found an index out of date, printing `fixed wrote <path>` for each.
 - `docs/README.md` is regenerated thus:
   - A missing file becomes `# Docs`, a blank line, the index and a newline.
   - The index spans from the first start marker through the first end marker after it; regeneration replaces that span and keeps the text around it as it is.
   - Without a start marker, the index is appended: the text without its trailing newlines, a blank line, the index and a newline.
-  - When the first start marker in the `docs/README.md` of any docs root, or of the project `init` sets up, has no end marker after it, `check --fix`, `index`, `new`, `adopt`, `archive`, `rename`, `renumber` and `init` change no file and exit with `canon: <path> has an index start marker with no end marker after it; fix the markers and rerun`, `<path>` being relative to the repo root.
+  - When the first start marker in the `docs/README.md` of any docs root, or of the project `init` sets up, has no end marker after it, `check --fix`, `index`, `new`, `adopt`, `archive`, `status`, `rename`, `renumber` and `init` change no file and exit with `canon: <path> has an index start marker with no end marker after it; fix the markers and rerun`, `<path>` being relative to the repo root.
 - `docs/archived/README.md` is rewritten whole.
 
 ### Check

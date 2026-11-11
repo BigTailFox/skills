@@ -2,14 +2,14 @@
 status: active
 created: 2026-10-15
 updated: 2026-11-11
-revision: 11
+revision: 12
 modules: [canon]
 summary: Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions.
-refs: [D002, D003, D000, D007]
+refs: [D002, D003, D000, D007, R002, R003]
 owns: [skill-telemetry]
 paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py, skills/governance/canon/trace.md, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/execution/canon-blind-review/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-handoff/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-investigate/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-retro/SKILL.md, skills/execution/canon-review/SKILL.md]
-reviewed: 11
-reviewers: [claude-opus-5.5]
+reviewed: 12
+reviewers: [claude-opus-5.5, gemini-4-argon-high]
 implemented: 11
 ---
 
@@ -59,10 +59,11 @@ A unit is one traced span of work, named by the id its `start` prints. A child u
 | `design`, `plan`, `implement`, `investigate`, `canon-review`, `retro` | the skill of that name; an `implement` unit also the `canon` workflow, for L1 work carried on after its gate | `end` | none |
 | `code-review` | `canon-code-review` | `end` | the enclosing unit, if one is open |
 | `gate` | the review gate | `end` | the enclosing unit, if one is open |
+| `follow-up` | a gate's [D007§follow-up-round: follow-up round](D007-change-tiers.md#follow-up-round) | `end` | the enclosing unit, if one is open |
 | `slice` | `canon-implement`, before a worker runs on a slice with no open unit | the first of its commit, the next `start` under its `implement` unit, and that unit's end | `implement` |
 | `end-check` | `canon-retro`'s end check | `end` | the unit it closes, if still open |
 
-`retro` is a requested retro. A slice's commit is the one that changes its `Status:`; workers run one at a time, so the next start under the same unit also ends a slice. A top-level unit has no parent: a unit of the first row, or a code review, gate or end check with no open unit to name, such as `canon-init`'s gates, `canon-handoff`'s end check and the review of a fix a retro applies. A slice built in the implementing session itself (an L0 change, an L1 revision without a plan) is part of its `implement` unit. An L0 change made outside `canon-implement` opens no unit and leaves only its code review, until a design revision turns it into L1 work, which opens one as [Call sites](#call-sites) states.
+A `follow-up` unit is traced as a gate is: what this design says of a gate's `<skill>`, `end`, dispositions and review files holds for it. It is not replayed, since its reviewers resume with what they read in the gate, which no snapshot holds. `retro` is a requested retro. A slice's commit is the one that changes its `Status:`; workers run one at a time, so the next start under the same unit also ends a slice. A top-level unit has no parent: a unit of the first row, or a code review, gate or end check with no open unit to name, such as `canon-init`'s gates, `canon-handoff`'s end check and the review of a fix a retro applies. A slice built in the implementing session itself (an L0 change, an L1 revision without a plan) is part of its `implement` unit. An L0 change made outside `canon-implement` opens no unit and leaves only its code review, until a design revision turns it into L1 work, which opens one as [Call sites](#call-sites) states.
 
 Outcomes, given to `end`. Every kind that ends allows `delivered`, `blocked`, `handoff` and `cancelled`; `implement` also allows `partial` and `escalated`, and `end-check` allows only `quiet` and `raised`.
 
@@ -83,7 +84,7 @@ Each call runs the project's `canon.py`. `<skill>` is the directory of the `SKIL
 - `canon-implement`, after Start step 4: `trace start implement [<P or D id>] --tier <tier> --base <start commit> --skill <skill> --model <model>`. Before a worker runs on a slice that has no open unit, its first worker or one that takes the slice up again after its unit ended: `trace start slice <P id> --slice S<n> --parent <id>`; a worker resumed or replaced while the slice's unit is open stays in it ([D003§resuming-and-replacing: resuming and replacing](D003-subagents.md#resuming-and-replacing)). After Finish step 3, or when stopping on a wrong tier: `trace end <id> <outcome> [--to L1|L2|plan]`.
 - `canon-code-review`, after Pin the fixed point: `trace start code-review [<P id>] --base <fixed point> --tier <tier> --skill <skill> --model <model> [--parent <parent>]`. After Dispose, its end check included: `trace end <id> <outcome> --dir .canon/canon-blind-review/<topic> --input -`, with the dispositions on stdin.
 - L1 work in the `canon` workflow that the session revising the design carries on to implementation ([D007§phases: phases](D007-change-tiers.md#phases)), unless `canon-implement` runs it, once the revision has passed its gate: `trace start implement <D id> --tier L1 --skill <skill> --model <model>`. After the docs step's commit and any end check, or when it stops for a plan or an L2 fix: `trace end <implement id> <outcome> [--to plan|L2]`, where `<implement id>` is what that `start` printed.
-- The review gate in the `canon` workflow, at step 2: `trace start gate <doc id> --tier <tier> --skill <skill> --model <model> [--parent <parent>] [--base <Changes since commit>]`. At the end of step 5, after an L2 gate has the user's answers on its escalated findings: `trace end <gate id> <outcome> --dir .canon/canon-blind-review/<doc id> --input -`, where `<gate id>` is what the gate's `start` printed.
+- The review gate in the `canon` workflow, at step 2: `trace start gate <ids> --tier <tier> --skill <skill> --model <model> [--parent <parent>] [--base <Changes since commit>]`, `<ids>` being its target's id followed by its follow-on targets'. At the end of step 5, after an L2 gate has the user's answers on its escalated findings: `trace end <gate id> <outcome> --dir .canon/canon-blind-review/<topic> --input -`, where `<gate id>` is what the gate's `start` printed. A follow-up round starts the same way with `trace start follow-up`, `<ids>` naming the targets it revises, and without `--base`, since HEAD holds their previous revisions; it ends the same way when its step 5 ends, with `--dir .canon/canon-blind-review/<topic>/followup-<k>`.
 - `canon-investigate`, when opening the investigation: `trace start investigate <I id> --skill <skill> --model <model>`. After Phase 6: `trace end <id> <outcome>`.
 - `canon-review`, after Create the doc: `trace start canon-review <R id> --skill <skill> --model <model>`. After Close: `trace end <id> <outcome>`.
 - `canon-retro`: the end check opens with `trace start end-check --skill <skill> --model <model> [--parent <parent>]` and closes with `trace end <id> quiet|raised`; a requested retro opens with `trace start retro --skill <skill> --model <model>` and closes with `trace end <id> <outcome>`.
@@ -118,7 +119,7 @@ canon.py trace off [--here]
 canon.py trace prune --days N
 ```
 
-- `start` prints `trace <id>`, or `trace off` without touching Git or writing anything when tracing is off. It resolves each `DOC`, which must be shaped like a doc id such as `D001`, to `<doc>@r<revision>` from the doc's frontmatter, keeping a doc it cannot find as given; checks that `--model` is one line of at most 200 characters, like a reviewer's `model`; checks that `--parent` names an open unit that is neither a slice nor an end check, and an `implement` unit for a slice, and that a kind of the first row of [Units](#units) has none; resolves `--base` to the merge base of that commit and HEAD, which is the commit itself when HEAD descends from it, and treats a `--base` without a merge base, or on an unborn branch, as absent; for a `gate` whose doc's frontmatter has an `as_built` that names a commit ([D002§as-built-revisions: as-built revisions](D002-overview-and-as-built.md#as-built-revisions)), keeps that commit itself, never its merge base with HEAD, for the snapshot's second parent, which a snapshot without a first parent does not get; takes a [snapshot](#snapshots); computes the [manifest](#skill-digests); and appends one line.
+- `start` prints `trace <id>`, or `trace off` without touching Git or writing anything when tracing is off. It resolves each `DOC`, which must be shaped like a doc id such as `D001`, to `<doc>@r<revision>` from the doc's frontmatter, keeping a doc it cannot find as given; checks that `--model` is one line of at most 200 characters, like a reviewer's `model`; checks that `--parent` names an open unit that is neither a slice nor an end check, and an `implement` unit for a slice, and that a kind of the first row of [Units](#units) has none; resolves `--base` to the merge base of that commit and HEAD, which is the commit itself when HEAD descends from it, and treats a `--base` without a merge base, or on an unborn branch, as absent; for a `gate` whose first `DOC`, its target, has an `as_built` that names a commit ([D002§as-built-revisions: as-built revisions](D002-overview-and-as-built.md#as-built-revisions)), keeps that commit itself, never its merge base with HEAD, for the snapshot's second parent, which a snapshot without a first parent does not get; takes a [snapshot](#snapshots); computes the [manifest](#skill-digests); and appends one line.
 - `end` closes the open unit `UNIT` and prints `trace <id> ended`, or, like `start`, `trace off` when tracing is off; `OUTCOME` must be one the unit's kind allows, and `--to` comes with `escalated` only. `--dir`, taken from the directory holding `.canon/` when relative, must lie under `.canon/`. It copies the regular files directly in it that changed since the unit started into `.canon/canon/trace/<id>/` when they total at most 2 MiB, and otherwise copies nothing; no such file records `none`, and a missing directory `copy: ENOENT`, the unit ending either way. It copies only once the final check under `events.lock` passes, so a call that fails that check archives nothing. `--input` reads the [dispositions](#review-dispositions).
 - `status` prints whether tracing is on and why; the open units started in the last 24 hours, newest first, with their ids, kinds, docs and start times, marking those of this conversation when the host names it; the number of snapshots, and of skipped ones by reason; and the snapshot repository's disk size.
 - `on` and `off` create and delete the machine switch; with `--here` they delete and create this checkout's `off` file.
@@ -183,7 +184,7 @@ After merging the findings, any confirmation round and the user's answers that t
 
 ### Review files
 
-`canon-blind-review`, and `canon-code-review` for its axis reviewers, keep each reviewer's files in `.canon/canon-blind-review/<topic>/` under its role: `<role>-prompt.md`, `<role>.md` with its findings and `<role>-id.txt` with the one id of the run whose report the session merged, then `<role>-confirm-prompt.md` and `<role>-confirm.md` for the confirmation round. A confirmation never overwrites the first round's findings, so each `by` id resolves in the archive. A gate's topic is its doc id; a code review's is `<P id>-code-review`, else a slug of the change, so it never shares its plan gate's directory.
+`canon-blind-review`, and `canon-code-review` for its axis reviewers, keep each reviewer's files in `.canon/canon-blind-review/<topic>/` under its role: `<role>-prompt.md`, `<role>.md` with its findings and `<role>-id.txt` with the one id of the run whose report the session merged, then `<role>-confirm-prompt.md` and `<role>-confirm.md` for the confirmation round. A confirmation never overwrites the first round's findings, so each `by` id resolves in the archive. A gate's topic is its target's id and the revision it reviews, `<id>-r<N>` such as `D007-r4`, a joint gate's too, so a later gate never overwrites it; each [D007§follow-up-round: follow-up round](D007-change-tiers.md#follow-up-round) keeps its files, named the same way, in `<topic>/followup-<k>/`, numbered from 1. A code review's topic is `<P id>-code-review`, else a slug of the change, so it never shares its plan gate's directory.
 
 ### Skill digests
 
@@ -323,9 +324,5 @@ Calls and latency are measured in the pilot; `canon.py` enforces the sizes, and 
 - Delivery is staged and, until step 3 lands, `implemented` counts step 1 alone: the analysis is tested on the pilot's real records, which do not exist before it, and a spec lead for code not yet due would show beside every file the design governs (the user's decision; R001-F32).
 - Data is kept until the user prunes or deletes it: a baseline at personal volume can take months.
 - Evidence feeds human-reviewed experiments, never automatic skill changes.
-
-## Known issues
-
-| ID | Severity | Issue | Source | Since | Next |
-|----|----------|-------|--------|-------|------|
-| D001-K2 | minor | A gate's review files go in a directory named by its doc id, so the next revision's gate overwrites them, and joint gates and extra rounds have no place in the layout; it is settled with the gate bookkeeping of D007-K4 and D007-K5 | R002-F3, R003-F10 | 2026-11-10 | L2 |
+- A gate's review files go in a directory named by its target and revision, with each follow-up round in a subdirectory: saving D001 revision 8's reports overwrote revision 7's, and sessions invented layouts for joint gates and extra rounds ([R002: Open items from local retro and review records](../reviews/R002-local-records.md), F3; [R003§r003-f10-gate-directory-layout: R003-F10](../reviews/R003-silk-design-phase.md#r003-f10-gate-directory-layout)).
+- A follow-up round is a kind of its own, not a gate: its reviewers read only a diff after resuming, so counting it as a gate would skew the gate questions and replay its findings against a full review.

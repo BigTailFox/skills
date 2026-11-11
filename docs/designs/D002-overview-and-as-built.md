@@ -57,7 +57,7 @@ Every repository that follows canon has `designs/D000-project-overview.md` in th
 - The tables map the project, its planned modules included while D000 is its first L2 design. The change that adds or removes a module, capability or standard, or creates, moves or archives a top-level design, updates their rows in the same commit: the docs step checks this for code changes, `canon-design` for the designs it creates, and `canon-sync` points rows at the designs `audit` reports as unreached. Rows change no meaning: no revision bump and no gate. Goals, Dependencies and Glossary are spec. Adding a module, changing the dependency directions or changing a cross-module interface is L2, as the `canon` skill's tiers state.
 - `owns` includes `architecture`. `paths` lists only files that embody the architecture, such as dependency-boundary configuration and module wiring, and is usually empty.
 - Only the repo root has a D000, and only `init` at the repo root creates one. In a monorepo, D000's Modules rows link each module's designs.
-- In a project with code, D000 is written as an [as-built](#as-built-revisions) design. In a project without code, it is the project's first L2 design, written with the `canon-design` skill.
+- In a project with code, D000 is written as an [as-built](#as-built-revisions) design. In a project without code, it is the project's first L2 design, written with the `canon-design` skill; it needs no plan, as [D007§gate-status: gate status](D007-change-tiers.md#gate-status) states for a revision that needs no code change.
 - The `AGENTS.md` block that `init` writes names D000 as the place to start and `docs/README.md` as the index.
 
 `canon.py`:
