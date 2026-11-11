@@ -31,7 +31,7 @@ refs: [C001, D000, D001, D003, D005, R001, R002]
 | R003-F4 | minor | usability: Reviewer reports live only in tool results and follow the user's reply language | fixed 0872d6d |
 | R003-F5 | minor | functional: Reviewers read the live work tree, which the author and other sessions change during the review | open |
 | R003-F6 | minor | usability: A revision that passed its gate but was not committed leaves the next gate no `Changes since` commit | moved D007 |
-| R003-F7 | minor | usability: The reviewer prompt assumes code exists, and nothing allows a qualitative target before a first measurement | open |
+| R003-F7 | minor | usability: The reviewer prompt assumes code exists, and nothing allows a qualitative target before a first measurement | fixed 0b25d98 |
 | R003-F8 | minor | usability: A session learns that trace is off only by calling `trace start` in each gate | declined a session learns it from the `trace start` call D001§budgets designs as the one call per skill invocation when tracing is off |
 | R003-F9 | minor | usability: `snapshot` prints a commit that is not the snapshot repository's HEAD | fixed 80b9688 |
 | R003-F10 | minor | usability: Gate directories have no layout for joint gates, later revisions or extra rounds | moved D001 |
@@ -43,7 +43,7 @@ refs: [C001, D000, D001, D003, D005, R001, R002]
 | R003-F16 | minor | usability: Decisions grilled before any doc exists stay only in the chat | open |
 | R003-F17 | major | usability: Archiving concluded experiments hides the evidence live designs rest on | moved D008 |
 | R003-F18 | minor | usability: Nothing says whether a measurement added to a research experiment extends it or opens a new one | fixed 18b7dcf |
-| R003-F19 | major | usability: A concept absorbed piece by piece by several designs can be neither frozen nor archived | open |
+| R003-F19 | major | usability: A concept absorbed piece by piece by several designs can be neither frozen nor archived | fixed 0b25d98 |
 | R003-F20 | minor | usability: Concepts have no review flow, and a review that restates a concept becomes a second spec | fixed 18b7dcf |
 | R003-F21 | minor | usability: The tier of changes to C, R and E docs alone, and how a D000 without code is planned and marked, are unstated | moved D007 |
 | R003-F22 | minor | usability: Nothing keeps a design from stating other designs' scope, and splitting a design has no checklist | fixed 18b7dcf |
@@ -53,7 +53,7 @@ refs: [C001, D000, D001, D003, D005, R001, R002]
 | R003-F26 | minor | usability: Sessions guess ids for docs not yet created and mislead the user | fixed 18b7dcf |
 | R003-F27 | major | usability: Translations double every edit and still drift; canon has no translation convention | open |
 | R003-F28 | minor | usability: Code shown in docs is kept twice by hand, so the project built its own `embed.py` | open |
-| R003-F29 | minor | usability: The 500-line limit forces cuts in concepts, goes unenforced on reviews and is escaped by long lines | open |
+| R003-F29 | minor | usability: The 500-line limit forces cuts in concepts, goes unenforced on reviews and is escaped by long lines | fixed 0b25d98 |
 | R003-F30 | minor | usability: Diagram sources, tools and readability have no rules | fixed 18b7dcf |
 | R003-F31 | minor | architecture: `canon.py` runs from a project copy that lags the installed skills, with project helpers beside it | open |
 | R003-F32 | minor | usability: Permanent `check` warnings for planned paths and modules bury new ones | open |

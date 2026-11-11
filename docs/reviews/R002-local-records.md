@@ -33,10 +33,10 @@ refs: [C001, D000, D001, D002, D003, D004]
 | R002-F6 | minor | functional: `validate.py` does not measure D001's 40-token call-site budget | fixed f4d5a01 |
 | R002-F7 | minor | functional: `OutsideCheckoutTest` finds the outside-Git tests by matching their source text | fixed 8f4f34c |
 | R002-F8 | minor | functional: Test repositories sit directly in the OS temp directory, so a stray `../` write lands in the shared `/tmp` | fixed 8f4f34c |
-| R002-F9 | minor | usability: Standards in a project's kept `CONTRIBUTING.md` or `CLAUDE.md` stay outside the designs after setup | open |
+| R002-F9 | minor | usability: Standards in a project's kept `CONTRIBUTING.md` or `CLAUDE.md` stay outside the designs after setup | declined coding standards stay in the project's own CONTRIBUTING, CLAUDE and AGENTS files, which canon does not govern |
 | R002-F10 | minor | usability: `canon-review/functional.md` calls unspecified behavior a spec gap or code to remove, without as-built revisions | fixed 80b9688 |
 | R002-F11 | minor | usability: `canon-blind-review`'s manual fallback names `/canon-init` in slash form | fixed 80b9688 |
-| R002-F12 | minor | usability: In Cursor, an interrupted reviewer command reran three times, and auto-review blocked a reviewer's `canon.py` calls | open |
+| R002-F12 | minor | usability: In Cursor, an interrupted reviewer command reran three times, and auto-review blocked a reviewer's `canon.py` calls | declined a per-machine Cursor setting; `canon-retro` handles it if it recurs |
 
 ## Details
 
