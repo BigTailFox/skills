@@ -27,7 +27,7 @@ refs: [C001, D000, D001, D003, D005, R001, R002]
 |----|----------|---------|-------------|
 | R003-F1 | major | usability: The review gate runs per doc revision, so one change across several designs takes a gate and reviewers per doc | moved D007 |
 | R003-F2 | major | usability: No rule covers edits after a gate passes, so sessions rerun whole gates or commit edits no reviewer saw | moved D007 |
-| R003-F3 | major | usability: Without a reviewer file every L2 gate rediscovers the cross-family reviewer, and a hung reviewer stalls the session | open |
+| R003-F3 | major | usability: Without a reviewer file every L2 gate rediscovers the cross-family reviewer, and a hung reviewer stalls the session | fixed 86c7087 |
 | R003-F4 | minor | usability: Reviewer reports live only in tool results and follow the user's reply language | fixed 0872d6d |
 | R003-F5 | minor | functional: Reviewers read the live work tree, which the author and other sessions change during the review | open |
 | R003-F6 | minor | usability: A revision that passed its gate but was not committed leaves the next gate no `Changes since` commit | moved D007 |
