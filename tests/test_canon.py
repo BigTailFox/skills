@@ -1222,6 +1222,13 @@ class InitTest(CanonTest):
         self.assertIn("without it, ask the user to install the skills with `npx skills add BigTailFox/skills -g -s '*'`",
                       (self.root / "AGENTS.md").read_text())
 
+    def test_the_canon_block_exempts_docs_only_changes_that_bump_no_revision_from_a_tier(self):
+        self.repository_without_docs()
+        self.ok("init")
+        self.assertIn("\n- State each change's tier (L0, L1, L2) before starting, unless it touches only docs that no "
+                      "design's `paths` names and bumps no revision. Designs and plans pass the review gate defined by "
+                      "the `canon` skill.\n", (self.root / "AGENTS.md").read_text())
+
     def test_init_warns_of_a_move_only_from_a_copy_inside_the_repository(self):
         agents = self.root / "AGENTS.md"
         for old in ("old/canon.py", "../shared/canon.py"):

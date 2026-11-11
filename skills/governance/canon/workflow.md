@@ -4,9 +4,11 @@
 
 The tiers are defined in [SKILL.md](SKILL.md#workflow).
 
-- **L2**: (concept) → design draft → review gate → user approval, `accepted` → plan draft → review gate → user approval, `accepted` → implement → code review → docs step → commit.
-- **L1**: [revise the design in place (revision +1) → review gate] → [plan → review gate] → implement → code review → docs step → commit. At least one bracketed part runs: the revision when the work changes a spec, the plan when it needs one.
+- **L2**: (concept) → design draft → review gate → commit → user approval, `accepted` → plan draft → review gate → commit → user approval, `accepted` → implement → code review → docs step → commit.
+- **L1**: [revise the design in place (revision +1) → review gate → commit] → [plan → review gate → commit] → implement → code review → docs step → commit. At least one bracketed part runs: the revision when the work changes a spec, the plan when it needs one.
 - **L0**: implement → code review → docs step → commit.
+
+A design revision that needs no code change ends once its gate has passed and, in L2, the user has approved it ([Gate status](#gate-status)).
 
 Design, plan and implementation are separate phases, and each can start in a fresh session because the docs carry the state. A phase ends by giving the user the command that starts the next one, e.g. `/canon-plan D012`; the user runs it in this session or a new one. L1 work is the exception: the session that revises the design, including one given L1 work through `canon-implement`, carries on to implementation after the gate, or gives `/canon-plan D012` when the work needs a plan. So does a [design problem](#design-problems) found while planning or implementing, unless its fix is L2. Carried-on L1 implementation outside `canon-implement` runs `canon.py trace start implement <D id> --tier L1 --skill <skill> --model <model>`. It runs `canon.py trace end <implement id> <outcome> [--to plan|L2]` after the docs step's commit and any end check, or when it stops.
 
@@ -16,7 +18,7 @@ A design problem is a flaw found in an accepted or active design while working f
 
 1. Confirm it against the design and the code; a finding the reviewed target can fix within the design is an ordinary finding. Work that depends on the flawed part waits for the user's decision and any fix it brings, and the rest carries on, its gate and commit included. When unsure whether the work depends on it, treat it as dependent.
 2. Tell the user, with the fix you would propose and its tier. In a review gate or code review, finish the review first and report it with the review's other findings: a code review in its report, a gate when it merges its findings, before any confirmation round. Never change the design's intent yourself, even when it is plainly wrong.
-3. Once the user decides on a change, revise the design in place in the current session, without the `canon-design` skill: bump `revision` and pass the review gate at L1. A design another session is revising gets a [known issue](doc-types.md#designs-d) instead, with the work as Source and Next `L1`, so the request is in the design, never only in a handoff file or a message. A fix the tiers put at L2, such as a rewrite of the design's goals or core approach, goes through `/canon-design D00X`: give the user the command and pause the work that depends on it.
+3. Once the user decides on a change, revise the design in place in the current session, without the `canon-design` skill: bump `revision` and pass the review gate at L1, or a [follow-up round](#follow-up-round) when this session's gate passed the design's previous revision. A design another session is revising gets a [known issue](doc-types.md#designs-d) instead, with the work as Source and Next `L1`, so the request is in the design, never only in a handoff file or a message. A fix the tiers put at L2, such as a rewrite of the design's goals or core approach, goes through `/canon-design D00X`: give the user the command and pause the work that depends on it.
 4. When a plan builds on the design, check its slices against the design's diff, move its `based_on` to the new revision and log why. In a plan's review gate, do this before the confirmation round, so the reviewers confirm against the revised design.
 5. A problem this session does not fix, because the user deferred it, its fix is L2 or the user has not decided, becomes a [known issue](doc-types.md#designs-d) of the design. One the user rejects leaves no row, only a Decision when the reason is lasting.
 
@@ -36,16 +38,19 @@ When the implementation cannot follow the plan or the design:
 
 ## Review gate
 
-Every design or plan revision passes this gate before it is accepted, and every revision of an active design passes it before implementation. The gate runs at the revision's tier, even within work of a lower tier, such as an L1 revision made while implementing an L0 change.
+Every design or plan revision passes this gate before it is accepted, and every revision of an active design passes it before implementation. Bump a doc's `revision` once, at the revision's first edit; every edit up to its gate's commit joins that revision, and a later edit makes a new one.
 
-1. Run `canon.py check` and fix its errors, so reviewers spend no effort on formatting. For a revision of an accepted or active design, or of an accepted or in-progress plan, it warns that the revision is not reviewed until step 5.
-2. Run `canon.py trace start gate <doc id> --tier <tier> --skill <skill> --model <model> [--parent <parent>] [--base <Changes since commit>]`. Launch the first-round reviewers with the `canon-blind-review` skill, passing only the reviewer prompt below:
+A gate covers the revisions one change makes together: its target, the design or plan the change is about, and, for a design, its follow-on targets, the other designs the change revises to match it, D000's glossary included. It runs at the highest tier among them, even within work of a lower tier, such as an L1 revision made while implementing an L0 change, with one set of reviewers, one reviewer prompt naming every target and one `Changes since` commit. A plan's revision passes a gate of its own, after the gate of the designs it builds on, as do an [as-built revision](as-built.md), whose prompt differs, and a revision that a design problem found later in the change brings, unless it takes a [follow-up round](#follow-up-round). A follow-on edit that changes no meaning, such as a restatement replaced with a link or a name a rename changed, bumps no `revision` and needs no gate.
+
+1. When the user shaped the revision, as in a `canon-design` interview, show them what it changes and ask whether their content feedback is finished. Run `canon.py check` and fix its errors, so reviewers spend no effort on formatting. For a revision of an accepted or active design, or of an accepted or in-progress plan, it warns that the revision is not reviewed until step 5.
+2. Run `canon.py trace start gate <ids> --tier <tier> --skill <skill> --model <model> [--parent <parent>] [--base <Changes since commit>]`. `<ids>` is the target's id followed by the follow-on targets'. Launch the first-round reviewers with the `canon-blind-review` skill, passing only the reviewer prompt below:
    - **Same-model reviewer**: in every gate.
-   - **Cross-family reviewer**: in the first round; in the confirmation round it confirms the fixes of the findings it raised. Required for L2; in L1, only when the user asks for it.
-3. Merge the findings as the `canon-blind-review` skill says. A finding the user leaves for later becomes a [known issue](doc-types.md#designs-d) of a target design, or a line in a target plan's Notes. A finding about a design other than the target, such as a plan finding about its design, follows [Design problems](#design-problems). Declined findings stay out of the doc; record a Decision, in the design that owns the topic, only when its rationale has lasting value.
+   - **Cross-family reviewer**: in the first round; in the confirmation round it confirms the fixes of the findings it raised, and in a follow-up round it reviews the new revisions. Required for L2; in L1, only when the user asks for it.
+3. Merge the findings as the `canon-blind-review` skill says. A finding the user leaves for later becomes a [known issue](doc-types.md#designs-d) of a target design, or a line in a target plan's Notes. A finding about a design other than the gate's targets, such as a plan finding about its design, follows [Design problems](#design-problems). Declined findings stay out of the doc; record a Decision, in the design that owns the topic, only when its rationale has lasting value. Until step 7, edit the targets only to fix findings; any other edit waits for a [follow-up round](#follow-up-round).
 4. When accepted blocker or major findings were fixed, run the `canon-blind-review` skill's confirmation round.
-5. Set `reviewed: <revision>` and `reviewers: [<model ids>]`, using `manual:<model>` for user-run reviews, and delete the `as_built` line of an [as-built revision](as-built.md). In L2, report the accepted, declined and escalated findings and the reviewer models, including any fallback, and get the user's answer on each escalated finding. Then run `canon.py trace end <gate id> <outcome> --dir .canon/canon-blind-review/<doc id> --input -`, the dispositions on stdin.
-6. Status. L1: a draft becomes `accepted`. L2: the user approves, here or by starting the next phase on the doc; a draft becomes `accepted` at that point and until then stays a `draft` whose `reviewed` equals `revision`. A revised active design stays `active`, and a revised plan in progress stays `in-progress`, in both tiers. After an as-built revision's gate, in place of `accepted`, a new design becomes `active` with `implemented` equal to its revision; a revised design keeps its status, and its `implemented` rises to the new revision only when it equaled the previous one. After a split's gate, the sub-design takes its parent's status, except that it is `accepted` when the parent is `active` but its `implemented` does not cover all the spec the sub-design receives; an `active` sub-design gets `implemented: 1`. The parent's `implemented` rises to its new revision when it equaled the previous one.
+5. Set each target's `reviewed: <revision>` and `reviewers: [<model ids>]`, using `manual:<model>` for user-run reviews, and delete the `as_built` line of an [as-built revision](as-built.md). In L2, report the accepted, declined and escalated findings and the reviewer models, including any fallback, and get the user's answer on each escalated finding. Then run `canon.py trace end <gate id> <outcome> --dir .canon/canon-blind-review/<topic> --input -`, the dispositions on stdin.
+6. Set each target's status as [Gate status](#gate-status) says.
+7. Commit the targets before any further edit that changes their meaning, so a later edit is a new revision ([Follow-up round](#follow-up-round)). The commit may hold other work, such as the other gates of a setup (the `canon-init` skill).
 
 ### Reviewer prompt
 
@@ -68,6 +73,23 @@ Assess:
 - As-built revisions only: what the revision adds holds for the code it records, apart from behavior that a known issue with source `as-built` and next `fix` names as a defect; it omits no behavior callers rely on within the topic it records; it fixes no private structure; each Decision gives a source or says its reason is unknown.
 Formatting, frontmatter and wording style are out of scope.
 ```
+
+### Follow-up round
+
+Once a gate has committed its targets, the session that ran it passes a follow-up round instead of a new gate for each later revision it makes of a target: the user's feedback on the gate's report, an afterthought, the fix of a design problem the work found. A design first revised to match such a revision joins the round as a follow-on target. A new gate is passed instead by a revision made in another session, by an as-built revision and the revision after an as-built revision's gate, whose prompts differ from the gate's, and by one that would raise the gate's tier, such as a rewrite of a goal or the core approach of an L1 revision. An edit that changes no meaning bumps no `revision` and needs no round.
+
+Run `canon.py trace start follow-up <ids> --tier <tier> --skill <skill> --model <model> [--parent <parent>]`. `<ids>` names the targets the round revises and `<tier>` is the gate's; HEAD holds their previous revisions, so it takes no `--base`. The gate's reviewers review the new revisions as the `canon-blind-review` skill's follow-up round says. Merge their findings as step 3 says, run the confirmation round as step 4 does, then steps 5 to 7 for the new revisions, `reviewers` naming the gate's reviewers; an L2 revision needs the user's approval again. Step 5 runs `canon.py trace end <round id> <outcome> --dir .canon/canon-blind-review/<topic>/followup-<k> --input -`.
+
+### Gate status
+
+Move a status with `canon.py status`, after setting any `implemented` the move needs.
+
+- L1: a draft becomes `accepted`.
+- L2: the user approves the gate's targets by saying yes to the approval the gate's report asks for, which names the command of the next phase, or by starting that phase on them; nothing else counts, such as a request to go on given to another question. The session that receives the approval sets each target's `approved` to its revision and commits it, and a draft becomes `accepted` at that point; until then it stays a `draft` whose `reviewed` equals `revision`.
+- A revised design that is `accepted` or `active`, and a revised plan that is `accepted` or `in-progress`, keeps its status, in both tiers.
+- A design revision that needs no code change, such as D000 written before the project has code, or a rule relaxed that the code already meets, needs no plan or implementation. When it passes its gate, or in L2 once the user approves it, since no next phase starts, its `implemented` rises to it if it equaled the previous revision, and a new design becomes `active` with `implemented` equal to its revision.
+- After a split's gate, the sub-design takes its parent's status, except that it is `accepted` when the parent is `active` but its `implemented` does not cover all the spec the sub-design receives; an `active` sub-design gets `implemented: 1`. The parent's `implemented` rises to its new revision when it equaled the previous one.
+- After an [as-built revision](as-built.md)'s gate, in place of `accepted`, a new design becomes `active` with `implemented` equal to its revision; a revised design keeps its status, and its `implemented` rises to the new revision only when it equaled the previous one.
 
 ## Code review
 
