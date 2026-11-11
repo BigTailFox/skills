@@ -2,13 +2,13 @@
 status: active
 created: 2026-11-10
 updated: 2026-11-11
-revision: 4
+revision: 5
 modules: [canon]
 summary: Change tiers and their flows, design problems, and the review gate of a change: steps, prompt, merge rules, confirmation and follow-up rounds, status.
-refs: [D001, D002, D003, D006, R003]
+refs: [D001, D002, D003, D006, R003, D004]
 owns: [change-tiers, review-gate, design-problems]
 paths: [skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-implement/SKILL.md]
-reviewed: 4
+reviewed: 5
 reviewers: [claude-opus-5.5, gemini-4-argon-high]
 implemented: 3
 ---
@@ -94,7 +94,7 @@ The steps, which `as-built.md`, `doc-types.md` and [D001§call-sites: call sites
 4. Run the [confirmation round](#confirmation-round) when it is due.
 5. Set each target's `reviewed: <revision>` and `reviewers: [<model ids>]`, using `manual:<model>` for a review the user ran, and delete an as-built revision's `as_built` line ([D002§as-built-revisions: as-built revisions](D002-overview-and-as-built.md#as-built-revisions)). In L2, report the accepted, declined and escalated findings and the reviewer models, including any fallback, and get the user's answer on each escalated finding. Then end the gate's trace unit.
 6. Set the status as [Gate status](#gate-status) states.
-7. Commit the targets at once, so a later edit is a new revision ([Follow-up round](#follow-up-round)).
+7. Commit the targets before any further edit that changes their meaning, so a later edit is a new revision ([Follow-up round](#follow-up-round)); the commit may hold other work, such as the other gates of a setup ([D004§the-canon-init-skill: the canon-init skill](D004-project-setup.md#the-canon-init-skill)).
 
 ### Reviewer prompt
 
@@ -152,7 +152,7 @@ End with one line: Verdict: approve | revise
 
 ### Follow-up round
 
-- Once a gate has committed its targets, the session that ran it passes a follow-up round instead of a new gate for each later revision it makes of a target: the user's feedback on the gate's report, an afterthought, the fix of a design problem the work found. A design first revised to match such a revision joins the round as a follow-on target. A revision made in another session, and one that would raise the gate's tier, such as a rewrite of a goal or the core approach of an L1 revision, passes a new gate.
+- Once a gate has committed its targets, the session that ran it passes a follow-up round instead of a new gate for each later revision it makes of a target: the user's feedback on the gate's report, an afterthought, the fix of a design problem the work found. A design first revised to match such a revision joins the round as a follow-on target. A revision made in another session, an as-built revision and the revision after an as-built revision's gate, whose prompts differ from the gate's ([D002§as-built-revisions: as-built revisions](D002-overview-and-as-built.md#as-built-revisions)), and one that would raise the gate's tier, such as a rewrite of a goal or the core approach of an L1 revision, pass a new gate.
 - The gate's reviewers review the new revisions at the gate's tier, as [D003§resuming-and-replacing: resuming and replacing](D003-subagents.md#resuming-and-replacing) states, each reading only what changed since the last review snapshot of the gate or its previous round. Their findings are merged as [Merging findings](#merging-findings) states, the fixes of accepted blocker and major findings pass one [confirmation round](#confirmation-round), and steps 5 to 7 then run for the new revisions, `reviewers` naming the gate's reviewers; an L2 revision needs the user's approval again.
 - An edit that changes no meaning bumps no `revision` and needs no round.
 
@@ -171,7 +171,7 @@ End with one line: Verdict: approve | revise
 - A revision that rewrites a design's goals or core approach is L2, even inside one design's owned topics (6fc017c; reason unknown, kept as found).
 - A change to the architecture adds, removes or merges a module, or changes which modules depend on which; relaxing a dependency rule inside one module, as D000 revision 2 did, is L1 (R002-F5; the user's decision, 2026-11-11).
 - A gate covers the design revisions of one change together, at the highest tier among them, instead of one gate per doc revision: a change made mainly in one design, with follow-on edits to two others, was set up as 3 gates with 6 reviewers, and gates joined by hand left their records scattered ([R003§r003-f1-one-review-gate-per-doc-revision: R003-F1](../reviews/R003-silk-design-phase.md#r003-f1-one-review-gate-per-doc-revision); the user's decision, 2026-11-11).
-- A gate commits its targets at once, a later edit in the same session is a new revision that goes to the gate's reviewers as a follow-up round on what changed, and the gate asks first whether the user's content feedback is finished: one design passed 5 gates in a day, edits made after confirmation rounds reached no reviewer, and committing at once gives each content its own revision ([R003§r003-f2-edits-after-a-gate-passes: R003-F2](../reviews/R003-silk-design-phase.md#r003-f2-edits-after-a-gate-passes); the user's decision, 2026-11-11).
+- A gate commits its targets before any further edit that changes their meaning, a later edit in the same session is a new revision that goes to the gate's reviewers as a follow-up round on what changed, and the gate asks first whether the user's content feedback is finished: one design passed 5 gates in a day, edits made after confirmation rounds reached no reviewer, and committing each revision gives each content its own revision ([R003§r003-f2-edits-after-a-gate-passes: R003-F2](../reviews/R003-silk-design-phase.md#r003-f2-edits-after-a-gate-passes); the user's decision, 2026-11-11). The commit need not follow the gate at once, so setup keeps its single commit after all its gates unless a later gate revises an earlier target, and a revision whose prompt differs from the gate's passes a new gate, since resumed reviewers keep the gate's criteria (P003's gate; the user's decision, 2026-11-11).
 - A change to docs alone that bumps no revision takes no tier, and a design revision that needs no code change needs no plan: as L0 work, a concept edit would take a code review of no code, sessions disagreed whether such edits were L0 or L1, and an L2 D000 written before any code needed a plan with no slice to build ([R003§r003-f21-tiers-for-docs-only-work: R003-F21](../reviews/R003-silk-design-phase.md#r003-f21-tiers-for-docs-only-work); the user's decision, 2026-11-11).
 - L2 approval is an answer to the gate's request or the start of the next phase, recorded in `approved`: sessions guessed whether "please continue" approved a doc, and the approval of a revised active design, whose status does not change, left no record. Only the user starts the next phase's skills, which are manual, so nothing marks an approval still pending ([R003§r003-f24-revision-and-approval-bookkeeping: R003-F24](../reviews/R003-silk-design-phase.md#r003-f24-revision-and-approval-bookkeeping); the user's decision, 2026-11-11).
 - L2 gates require a cross-family reviewer, and an L1 gate runs one only when the user asks (2c3bc26; the user's decision, 2026-11-11). In one project's gates, each family caught majors the other passed ([R003§works-well: works well](../reviews/R003-silk-design-phase.md#works-well)).
