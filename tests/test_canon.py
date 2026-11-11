@@ -932,6 +932,78 @@ class DocRulesTest(CanonTest):
         self.assertIn("canon: cannot diff against nope...HEAD", self.fails("check", "--base", "nope"))
 
 
+class StatusTest(CanonTest):
+    def frontmatter(self, path):
+        return path.read_text().split("\n---\n", 1)[0].splitlines()
+
+    def index_line(self, doc_id):
+        return next(line for line in (self.root / "docs/README.md").read_text().splitlines()
+                    if line.startswith("- [{}:".format(doc_id)))
+
+    def test_status_moves_a_reviewed_draft_design_to_accepted_and_regenerates_the_index(self):
+        design = self.design(status="draft", implemented=None, updated="2026-01-01")
+        self.commit(check=False)
+        self.assertIn(" · draft · ", self.index_line("D001"))
+        before = self.frontmatter(design)
+        self.assertEqual(self.ok("status", "D001", "accepted"), "D001: draft -> accepted\n")
+        changed = {"status: draft": "status: accepted",
+                   "updated: 2026-01-01": "updated: " + datetime.date.today().isoformat()}
+        self.assertEqual(self.frontmatter(design), [changed.get(line, line) for line in before])
+        self.assertIn(" · accepted · ", self.index_line("D001"))
+
+    def test_status_may_skip_a_status_and_sets_a_live_concept_adopted(self):
+        self.design(status="draft")
+        concept = self.doc("C", "idea")
+        self.doc("P", "work", reviewed=1, reviewers=["fixture"], refs=["D001"], based_on=["D001@r1"])
+        self.commit(check=False)
+        self.assertEqual(self.ok("status", "D001", "active"), "D001: draft -> active\n")
+        self.assertEqual(self.ok("status", "C001", "adopted"), "C001: draft -> adopted\n")
+        self.assertIn("status: adopted", concept.read_text())
+        self.assertEqual(self.ok("status", "P001", "in-progress"), "P001: draft -> in-progress\n")
+
+    def refused(self, message, *args):
+        """`status args` exits 1 with `canon: message` and changes no file."""
+        self.assertEqual(self.fails("status", *args), "canon: {}\n".format(message))
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_status_refuses_an_unknown_or_archived_doc(self):
+        self.design()
+        self.commit()
+        self.refused("unknown document D009", "D009", "active")
+        self.ok("archive", "D001", "retired")
+        self.commit()
+        self.refused("D001 is archived", "D001", "active")
+
+    def test_status_takes_only_the_types_statuses_and_leaves_terminal_ones_to_archive(self):
+        self.design(status="draft")
+        self.commit(check=False)
+        self.refused("done is not a status of D001; use one of draft, accepted, active", "D001", "done")
+        self.refused("retired is terminal for D001; use `canon.py archive`", "D001", "retired")
+
+    def test_status_moves_only_forward_and_lists_the_later_statuses(self):
+        design = self.design(status="accepted", implemented=None)
+        self.commit(check=False)
+        self.refused("D001 is accepted; status moves only forward, to active", "D001", "accepted")
+        self.set(design, status="active", implemented=1)
+        self.commit(check=False)
+        self.refused("D001 is active; status moves only forward", "D001", "accepted")
+
+    def test_accepted_and_in_progress_need_the_revision_reviewed(self):
+        self.design(status="draft", revision=2, reviewed=1, implemented=None)
+        self.doc("P", "work", refs=["D001"], based_on=["D001@r1"])
+        self.commit(check=False)
+        self.refused("D001 needs `reviewed` equal to `revision` to become accepted", "D001", "accepted")
+        self.refused("P001 needs `reviewed` equal to `revision` to become in-progress", "P001", "in-progress")
+
+    def test_active_needs_implemented_not_above_reviewed(self):
+        design = self.design(status="draft", implemented=None)
+        message = "D001 needs `implemented` not above `reviewed` to become active"
+        for fields in ({}, dict(revision=2, implemented=2), dict(revision=1, reviewed=None, implemented=1)):
+            self.set(design, **fields)
+            self.commit(check=False)
+            self.refused(message, "D001", "active")
+
+
 class IndexTest(CanonTest):
     BROKEN = "ERROR {}: index start marker with no end marker after it; fix the markers"
     REFUSED = "canon: {} has an index start marker with no end marker after it; fix the markers and rerun"
@@ -941,7 +1013,7 @@ class IndexTest(CanonTest):
         self.git("commit", "-qam", "index markers")
 
     def test_commands_refuse_an_index_start_marker_with_no_end_marker_after_it(self):
-        self.design()
+        self.design(status="draft", implemented=None)
         (self.root / "notes.md").write_text("# Notes\n")
         self.commit()
         readme = self.root / "docs/README.md"
@@ -953,8 +1025,8 @@ class IndexTest(CanonTest):
             self.assertIn(self.BROKEN.format("docs/README.md"), out)
             self.assertNotIn("index out of date", out)
             for args in (("check", "--fix"), ("index",), ("new", "C", "idea"), ("adopt", "notes.md", "C"),
-                         ("archive", "D001", "retired"), ("rename", "D001", "zone"), ("renumber", "D001"),
-                         ("init",)):
+                         ("archive", "D001", "retired"), ("status", "D001", "accepted"), ("rename", "D001", "zone"),
+                         ("renumber", "D001"), ("init",)):
                 self.assertIn(self.REFUSED.format("docs/README.md"), self.fails(*args), args)
                 self.assertEqual(self.git("status", "--porcelain"), "", args)
 
@@ -1417,6 +1489,9 @@ class HelpTest(CanonTest):
         archive = self.help("archive")
         for letter, info in canon.TYPES.items():
             self.assertIn("{}: {}".format(letter, ", ".join(info["terminal"])), archive)
+        self.assertIn("status move a doc's status forward and check the move", self.help())
+        self.assertIn("C: draft, adopted; D: draft, accepted, active; P: draft, accepted, in-progress; R: open; "
+                      "E: planned, running; I: open", self.help("status"))
         end = self.help("trace", "end")
         for kinds, outcomes in [("other kinds", canon.OUTCOMES)] + list(canon.KIND_OUTCOMES.items()):
             self.assertIn("{}: {}".format(kinds, ", ".join(outcomes)), end)

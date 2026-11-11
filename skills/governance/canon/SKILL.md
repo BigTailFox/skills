@@ -15,6 +15,7 @@ Execute `canon.py`; do not read it. Use the project's copy at the path named in 
 |---|---|
 | `check [--fix] [--base REF]` | Validate all docs. `--fix` applies mechanical fixes (`refs`, `updated`, indexes, `implemented` of an active design never revised, and deleting an `as_built` left on a reviewed revision). `--base origin/main` also checks the branch against that ref: deleted docs, id collisions, revisions pending review and unfinished docs fail. |
 | `new TYPE SLUG [--title T] [--from D00X] [--parent D00X] [--root DIR]` | Create a doc from its template with the next free id. `--from` links a plan to its design; `--parent` creates a sub-design. |
+| `status ID STATUS` | Move a doc's status forward and check the move; a concept may move to a live `adopted`. |
 | `archive ID STATUS` | Set a terminal status, move the doc to `archived/`, rewrite every link to it. Refuses D000. |
 | `rename ID SLUG` | Change a doc's file slug and rewrite every link to it. |
 | `renumber ID\|PATH [NEW] [--base REF]` | Give a doc a new id, NEW or the next free one, which its sub-designs follow, or a sub-design a new letter, and rewrite the links and references to them. Only when `check` asks for it: for an id collision, with REF the branch merged or rebased onto, or for a D000 in a module's docs. |

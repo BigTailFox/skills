@@ -1,6 +1,6 @@
 # Doc types
 
-`canon.py new` creates each type with its required sections; `check` enforces them. Other sections may be added freely.
+`canon.py new` creates each type with its required sections; `check` enforces them. Other sections may be added freely. Set a non-terminal status, and a live concept's `adopted`, with `canon.py status` or by editing the field; `canon.py archive` sets every other terminal status.
 
 ## Concepts (C)
 

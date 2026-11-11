@@ -29,7 +29,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "32"
+CANON_VERSION = "33"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -1682,6 +1682,43 @@ def cmd_archive(repo, args):
     move_paths(repo, moves)
     write_indexes(Repo())
     print("{} -> {}".format(doc.rel, posix_rel(moves[doc.path], repo.root)))
+    return 0
+
+
+def status_moves(letter):
+    """The statuses `status` moves a doc of type `letter` along, in order: the non-terminal ones, then a concept's live
+    `adopted`."""
+    return TYPES[letter]["active"] + (("adopted",) if letter == "C" else ())
+
+
+def cmd_status(repo, args):
+    require_intact_indexes(repo)
+    doc = repo.get(args.id)
+    if doc.archived:
+        sys.exit("canon: {} is archived".format(doc.id))
+    info, moves = TYPES[doc.type], status_moves(doc.type)
+    if args.status not in info["active"] + info["terminal"]:
+        sys.exit("canon: {} is not a status of {}; use one of {}".format(
+            args.status, doc.id, ", ".join(info["active"])))
+    if args.status not in moves:
+        sys.exit("canon: {} is terminal for {}; use `canon.py archive`".format(args.status, doc.id))
+    later = moves[moves.index(doc.status) + 1:] if doc.status in moves else moves
+    if args.status not in later:
+        sys.exit("canon: {} is {}; status moves only forward{}".format(
+            doc.id, doc.status, ", to " + ", ".join(later) if later else ""))
+    reviewed, implemented = doc.get("reviewed"), doc.get("implemented")
+    reviewed = reviewed if isinstance(reviewed, int) else 0
+    condition = None
+    if args.status in ("accepted", "in-progress") and reviewed != doc.revision:
+        condition = "`reviewed` equal to `revision`"
+    elif args.status == "active" and not (isinstance(implemented, int) and implemented <= reviewed):
+        condition = "`implemented` not above `reviewed`"
+    if condition:
+        sys.exit("canon: {} needs {} to become {}".format(doc.id, condition, args.status))
+    text = set_field(set_field(doc.text, "status", args.status), "updated", today())
+    doc.path.write_text(text, encoding="utf-8")
+    write_indexes(Repo())
+    print("{}: {} -> {}".format(doc.id, doc.status, args.status))
     return 0
 
 
@@ -3478,6 +3515,12 @@ def main(argv=None):
     p.add_argument("status", help="; ".join("{}: {}".format(letter, ", ".join(info["terminal"]))
                                             for letter, info in TYPES.items()))
     p.set_defaults(func=cmd_archive)
+
+    p = command(sub, "status", help="move a doc's status forward and check the move")
+    p.add_argument("id")
+    p.add_argument("status", help="; ".join("{}: {}".format(letter, ", ".join(status_moves(letter)))
+                                            for letter in TYPES))
+    p.set_defaults(func=cmd_status)
 
     p = command(sub, "init", help="set up canon in a repo or module (idempotent; also upgrades the script copy)")
     p.add_argument("--root", help="module directory to set up (default: repo root)")

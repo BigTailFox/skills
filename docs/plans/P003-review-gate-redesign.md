@@ -1,5 +1,5 @@
 ---
-status: draft
+status: in-progress
 created: 2026-11-11
 updated: 2026-11-11
 revision: 1
@@ -17,13 +17,13 @@ Implements [D007: Change tiers and the review gate](../designs/D007-change-tiers
 
 ## Current state
 
-Next: S1.
+Next: S2.
 
 ## Slices
 
 ### S1: `canon.py status`
 
-Status: todo
+Status: done
 
 Builds on `D006#statuses-and-archiving` (the `canon.py status` block) and `D005#regeneration`.
 
@@ -181,3 +181,5 @@ Test criteria; seam: the skill files, `scripts/validate.py`, `npx skills add . -
 ## Log
 
 - 2026-11-11: The plan's gate found two design problems in D007 r4: it sent the revision after an as-built revision's gate to a follow-up round, whose reviewers keep the as-built criteria, and its "commit at once" conflicted with setup's single commit after all its gates (D004). The user chose a new gate for the former and a commit before any edit that changes the targets' meaning for the latter. D007 r5 (1d127eb) passed a follow-up round of the r4 gate; `based_on` moves to D007@r5, S5 carries step 7 and the Follow-up round's new gates, and S6 carries Frame step 5's new gate.
+- 2026-11-11: The user approved D007 r5 and this plan by starting `/canon-implement P003`; `approved` is recorded in S2's commit. Started at 904c18b.
+- 2026-11-11, S1 done: `status` and `status_moves` in `canon.py` (`CANON_VERSION` 33), `StatusTest` with 7 tests plus `status` cases in `IndexTest` and `HelpTest`; `validate.py` passed with D001's budgets measured. Deviation: `status -h` lists each type's statuses in order. Settled in the slice: a current status outside the type's moves counts as before all of them, and a `reviewed` that is not an integer reads as 0. Open: a concept's not-a-status message lists only `draft`, as D006 states, though `adopted` is its other valid target; put to the user.

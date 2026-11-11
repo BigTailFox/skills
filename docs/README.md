@@ -17,7 +17,7 @@
 
 ### Plans
 
-- [P003: Review gate redesign](plans/P003-review-gate-redesign.md) · draft · canon.py status, approved and follow-up trace units; blind-review rules in one skill; joint gates, follow-up rounds and approval in the skill texts. · modules: canon
+- [P003: Review gate redesign](plans/P003-review-gate-redesign.md) · in-progress · canon.py status, approved and follow-up trace units; blind-review rules in one skill; joint gates, follow-up rounds and approval in the skill texts. · modules: canon
 
 ### Reviews
 
