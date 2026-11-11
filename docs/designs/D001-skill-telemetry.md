@@ -2,15 +2,15 @@
 status: active
 created: 2026-10-15
 updated: 2026-11-11
-revision: 10
+revision: 11
 modules: [canon]
 summary: Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions.
 refs: [D002, D003, D000, D007]
 owns: [skill-telemetry]
 paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py, skills/governance/canon/trace.md, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/execution/canon-blind-review/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-handoff/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-investigate/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-retro/SKILL.md, skills/execution/canon-review/SKILL.md]
-reviewed: 10
+reviewed: 11
 reviewers: [claude-opus-5.5]
-implemented: 10
+implemented: 11
 ---
 
 # D001: Skill telemetry with canon trace
@@ -176,14 +176,14 @@ After merging the findings, any confirmation round and the user's answers that t
 ```
 
 - `role`: `same-model` or `cross-family` in a gate; `spec`, `standards` or `cross-family` in a code review.
-- `model`: the reviewer's model id, as a gate writes it to the doc's `reviewers`; a run the user made has `manual:` before it. `id`: the agent id kept for the confirmation round, or the session id a command run reports, such as `codex exec`'s; null for a manual run. `model` and a non-null `id` are each one line of at most 200 characters.
+- `model`: the reviewer's model id, as a gate writes it to the doc's `reviewers`; a run the user made has `manual:` before it. `id`: the agent id kept for the confirmation round, or the session id a command run reports, such as `codex exec`'s, as `<role>-id.txt` holds it; null for a manual run or an empty id file ([D003§reviewers: reviewers](D003-subagents.md#reviewers)). `model` and a non-null `id` are each one line of at most 200 characters.
 - One entry per merged finding. `by` lists every reviewer finding merged into it as `<role>:<F-id>`; `severity` is the highest among them; in a code review, `axis` is `spec` or `standards`.
 - `disposition`: `accepted` (fixed in this work, including by a design revision the user decided on), `declined`, `escalated` (still awaiting the user at `end`, as is any finding not yet disposed when a handoff ends the review) or `deferred` (left for later by the user's decision, and tracked as the `canon` workflow's review gate and code review say), in a gate as in a code review.
 - `confirmed`: `resolved` or `not-resolved` for a finding sent to the confirmation round, absent otherwise. `new_blockers`: the blockers that round reported as new, 0 without a round.
 
 ### Review files
 
-`canon-blind-review`, and `canon-code-review` for its axis reviewers, keep each reviewer's files in `.canon/canon-blind-review/<topic>/` under its role: `<role>-prompt.md`, `<role>.md` with its findings and `<role>-id.txt`, then `<role>-confirm-prompt.md` and `<role>-confirm.md` for the confirmation round. A confirmation never overwrites the first round's findings, so each `by` id resolves in the archive. A gate's topic is its doc id; a code review's is `<P id>-code-review`, else a slug of the change, so it never shares its plan gate's directory.
+`canon-blind-review`, and `canon-code-review` for its axis reviewers, keep each reviewer's files in `.canon/canon-blind-review/<topic>/` under its role: `<role>-prompt.md`, `<role>.md` with its findings and `<role>-id.txt` with the one id of the run whose report the session merged, then `<role>-confirm-prompt.md` and `<role>-confirm.md` for the confirmation round. A confirmation never overwrites the first round's findings, so each `by` id resolves in the archive. A gate's topic is its doc id; a code review's is `<P id>-code-review`, else a slug of the change, so it never shares its plan gate's directory.
 
 ### Skill digests
 
@@ -214,7 +214,7 @@ Units link to host records this way:
 
 Each question is computed from:
 
-1. Findings whose `by` names only the cross-family reviewer, by severity and disposition, over reviews that had one; that reviewer's tokens and the duration of its rollout.
+1. Findings whose `by` names only the cross-family reviewer, by severity and disposition, over reviews that had one; that reviewer's tokens and the duration of the rollout its `id` names, `unknown` when that `id` is null.
 2. `not-resolved` over confirmed findings; `new_blockers` per confirmation round.
 3. Valid findings per axis over code reviews, by tier.
 4. Slice outcomes from the plan at the slice's commit, or the Log and stash of a paused slice, and the worker reports in the host record, over slices started, each counted once however many units it spans, with and without a `Risk:` line.

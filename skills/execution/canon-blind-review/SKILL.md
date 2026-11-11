@@ -41,7 +41,7 @@ End with one line: Verdict: approve | revise
 ## Reviewers
 
 - **Same-model reviewer**: a new subagent from the host's own tool, launched without a model or effort so it runs on the session's (the `canon` skill's workflow, Subagents). In Claude Code use a `general-purpose` or custom subagent; the built-in Explore and Plan agents cannot be resumed.
-- **Cross-family reviewer**: the first reviewer in `.canon/canon-blind-review/reviewer.md` whose model is of another family than yours, run as the file says (the same workflow section). For a command, write the filled prompt to its prompt file, substitute `<prompt>` and `<out>` with the paths of its prompt and findings files (below), run it in the background from the repo root, and read `<out>` when it finishes. For a host subagent, launch it like the same-model reviewer with the named model.
+- **Cross-family reviewer**: the first reviewer the reviewer file lists for your model family that your host can run, run as the file says. The same workflow section says where the file is, which reviewer takes over when one stops, how to set the file up, which you do before the review when it gives your family neither such a reviewer nor a `none` that covers your host, and where to find a command's session id. For a command, write the filled prompt to its prompt file, substitute `<prompt>` and `<out>` with the paths of its prompt and findings files (below), run it in the background from the repo root, read `<out>` when it finishes, and write its session id to its id file. For a host subagent, launch it like the same-model reviewer with the named model.
 
 The review gate and code review say when the cross-family reviewer runs; other reviews run the same-model reviewer, plus the cross-family reviewer when the user asks for another family.
 
@@ -49,7 +49,7 @@ Launch all first-round reviewers in parallel, in the foreground or background as
 
 ## Manual fallback
 
-When the reviewer file is missing or names no reviewer of another family than yours, or when the cross-family reviewer's first-round run stops twice (the `canon` skill's workflow, Subagents), tell the user why in one line (the `canon-init` skill sets up a missing reviewer), give them the filled prompt in one code block and say that any tool able to read the repository can run it. Wait for the pasted result. Record the reviewer as `manual:<model>`, and keep its prompt and result as the `cross-family` reviewer's files, without an id.
+When the reviewer file gives your family a `none` that covers your host or a setup cannot write it, or when the first-round runs of every reviewer it lists for your family that your host can run stop twice (the `canon` skill's workflow, Subagents), tell the user why in one line (for `none`, the `canon-init` skill's reviewer setup, run by name, replaces it), give them the filled prompt in one code block and say that any tool able to read the repository can run it. Wait for the pasted result. Record the reviewer as `manual:<model>`, and keep its prompt and result as the `cross-family` reviewer's files, without an id.
 
 ## Merge
 

@@ -13,7 +13,7 @@ A gate's or code review's `end`, at a handoff too, takes its `--dir` and, with `
 ```
 
 - Roles: same-model and cross-family in a gate; spec, standards and cross-family in a code review, whose findings add `axis`, spec or standards.
-- `model` as in `reviewers`, `id` from `<role>-id.txt`; a user-run review has `manual:<model>` and a null `id`.
+- `model` as in `reviewers`; `id` from `<role>-id.txt`, null when it is empty or missing; a user-run review has `manual:<model>`.
 - A finding merges reviewer findings: `by` lists them all, `severity` is the highest.
 - `disposition`: accepted (fixed), declined, escalated (awaiting the user, or undecided at a handoff), or deferred (by the user, tracked for later).
 - `confirmed`: resolved or not-resolved, only on findings sent to confirmation. `new_blockers`: new blockers it reported, else 0.

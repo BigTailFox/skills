@@ -13,7 +13,7 @@ Read the `canon` skill first; it defines the system. Until the project has its o
 Run the flow the user names; resume a setup or upgrade that stopped before its end only then. Otherwise, when the repo root's `AGENTS.md` has no canon block, set up the project. In a project set up, run each of these that applies, in order, and when neither does, ask the user which flow to run:
 
 1. **Upgrade** when `<copy>` is missing, or `python3 <copy> --version` prints a lower version than `python3 <canon>/scripts/canon.py --version`.
-2. **Set up the cross-family reviewer** when that section's first line says to run it alone.
+2. **Set up the cross-family reviewer** when that section says to run it alone.
 
 ## Set up a project
 
@@ -37,14 +37,7 @@ Run the flow the user names; resume a setup or upgrade that stopped before its e
 
 ## Set up the cross-family reviewer
 
-Run this alone when the project is set up but this machine has no `.canon/canon-blind-review/reviewer.md`, e.g. after a fresh clone, or when sessions start running on a model family the file has no reviewer of another family for.
-
-1. Ask the user which model families their sessions run on. Each needs a reviewer of another family, so sessions on both Claude and GPT need a GPT reviewer and a Claude reviewer.
-2. For each reviewer, ask which tool runs it: an agent CLI such as codex, claude, gemini or Cursor's agent, which works from every host, or a subagent of their host with a named model. Ask for its model, suggesting the family's flagship (a smaller model of another family adds little), and its reasoning effort.
-3. Build each command from the tool's `--help`: a new read-only session at that model and effort, the prompt read from `<prompt>`, the final message left in `<out>`. Run it once on a one-line prompt and fix it until it works, noting what the host needed, such as running outside its sandbox.
-4. Write the reviewer file as the `canon` skill's workflow describes (Subagents), the user's preferred reviewer first.
-
-Without another family, skip this; reviews then use the manual fallback.
+Follow the reviewer setup in the `canon` skill's workflow (Subagents), covering every model family the user's sessions run on, after copying an earlier setup's reviewer file as that section says. Run it, as setup step 8 or alone, only when the reviewer file gives this session's family neither a reviewer this host can run nor a `none` that covers this host, e.g. on a new machine; run it alone whenever the user names this flow.
 
 ## Upgrade
 
