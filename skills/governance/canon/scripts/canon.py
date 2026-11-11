@@ -28,7 +28,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "30"
+CANON_VERSION = "31"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -90,6 +90,7 @@ STATUS_LINE_RE = re.compile(r"^\s*(?:-\s+)?Status:\s*(.*?)\s*$")
 MOVED_RE = re.compile(r"(?m)^(\s*\|\s*)([^|\s]+)(\s*\|.*\|\s*moved\s+)([CDPREI]\d{3,}[A-Z]?)(\s*\|\s*)$")
 LABEL_RE = re.compile(r"^\s*(?:-\s+)?([A-Za-z ]+?):\s*(.*?)\s*$")
 GUIDANCE = "<!-- canon:"
+GUIDANCE_RE = re.compile(re.escape(GUIDANCE) + r".*?-->", re.S)
 INDEX_START = "<!-- canon:index:start -->"
 INDEX_END = "<!-- canon:index:end -->"
 AGENTS_START = "<!-- canon:agents:start -->"
@@ -659,7 +660,8 @@ class Repo:
                     if key not in reported:
                         reported.add(key)
                         where = root.docs_rel + ("/archived/" if archived else "/") + parts[0]
-                        self.problem("ERROR", where, "unknown entry; allowed: README.md, archived/, guides/, assets/, "
+                        self.problem("ERROR", where, "unknown entry; allowed: README.md, "
+                                     + ("" if archived else "archived/, guides/, assets/, ")
                                      + ", ".join(i["dir"] + "/" for i in TYPES.values()))
                     continue
                 id_match = FULL_ID_RE.match(parts[1]) if len(parts) >= 3 else None
@@ -934,8 +936,11 @@ def terminal_problems(doc, status=None):
     """Conditions a doc must meet before it may take a terminal status."""
     out = []
     if doc.type == "P" and (status or doc.status) == "done":
+        slices = plan_slices(doc)
+        if not slices:
+            out.append("plan has no slices")
         out += ["slice `{}` is {}, not done".format(name, state or "without status")
-                for name, state in plan_slices(doc) if state != "done"]
+                for name, state in slices if state != "done"]
     if doc.type == "R":
         for fid, _sev, disp in review_findings(doc)[0]:
             if disp.split(" ", 1)[0] == "open":
@@ -954,7 +959,7 @@ def terminal_problems(doc, status=None):
     if doc.type == "I":
         labels = doc.labels("Resolution")
         out += ["Resolution: `{}` is empty".format(k) for k in RESOLUTION_LABELS if not labels.get(k)]
-    if doc.type == "E" and not "".join(doc.section("Conclusion") or []).strip():
+    if doc.type == "E" and not GUIDANCE_RE.sub("", "\n".join(doc.section("Conclusion") or [])).strip():
         out.append("Conclusion is empty")
     return out
 
@@ -964,7 +969,7 @@ def id_table(doc, section, name, letter, columns):
     `columns`, each as its list of cells; cells beyond those are ignored. Also an error for each row that does not
     fit."""
     rows, errors = [], []
-    for line in doc.section(section) or []:
+    for _i, line in code_mask(doc.section(section) or []):
         if not line.strip().startswith("|"):
             continue
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
@@ -1034,6 +1039,21 @@ def content_lines(lines):
     return [line for line in lines if not line.startswith(("implemented:", "as_built:"))]
 
 
+def line_count(lines):
+    """How many lines a text split at newlines holds: as `wc -l` counts them, plus a last line without a newline."""
+    return len(lines) - 1 if lines and lines[-1] == "" else len(lines)
+
+
+def unfinished_problems(doc):
+    """An empty `summary` and leftover template guidance, which only an unfinished doc may have."""
+    out = []
+    if not str(doc.get("summary", "")).strip():
+        out.append("`summary` is empty")
+    if any(GUIDANCE in INLINE_CODE_RE.sub("", line) for _i, line in code_mask(doc.lines)):
+        out.append("template guidance `<!-- canon: ... -->` left in the doc")
+    return out
+
+
 def check_doc(repo, doc, changed, strict=False):
     rel, fm, info = doc.rel, doc.fm, TYPES[doc.type]
 
@@ -1063,11 +1083,15 @@ def check_doc(repo, doc, changed, strict=False):
     past_gate = (doc.type == "D" and status in ("accepted", "active")) or \
         (doc.type == "P" and status in ("accepted", "in-progress"))
     unfinished_level = "WARN" if not strict and status in info["active"] and not past_gate else "ERROR"
-    if status not in info["active"] + info["terminal"]:
+    if status is None:
+        pass
+    elif status not in info["active"] + info["terminal"]:
         err("status `{}` invalid; use one of {}".format(status, ", ".join(info["active"] + info["terminal"])))
-    elif (status in info["terminal"]) != doc.archived:
-        err("status `{}` requires the doc to be {}; use `canon.py archive`".format(
-            status, "in archived/" if status in info["terminal"] else "outside archived/"))
+    elif status in info["terminal"] and not doc.archived:
+        err("status `{}` requires the doc to be in archived/; use `canon.py archive`".format(status))
+    elif status not in info["terminal"] and doc.archived:
+        err("status `{}` requires the doc to be outside archived/; set one of {}".format(
+            status, ", ".join(info["terminal"])))
     elif status in info["terminal"]:
         for msg in terminal_problems(doc):
             err(msg)
@@ -1080,10 +1104,10 @@ def check_doc(repo, doc, changed, strict=False):
         err("`updated` is earlier than `created`")
     if not isinstance(fm.get("revision"), int) or fm["revision"] < 1:
         err("`revision` must be a positive integer")
+    for msg in unfinished_problems(doc):
+        repo.problem(unfinished_level, rel, msg)
     summary = str(fm.get("summary", "")).strip()
-    if not summary:
-        repo.problem(unfinished_level, rel, "`summary` is empty")
-    elif len(summary) > MAX_SUMMARY:
+    if len(summary) > MAX_SUMMARY:
         repo.problem("WARN", rel, "`summary` is {} chars (max {})".format(len(summary), MAX_SUMMARY))
 
     h1 = [h for h in doc.headings if h.level == 1]
@@ -1093,11 +1117,10 @@ def check_doc(repo, doc, changed, strict=False):
     for name in info["sections"]:
         if name not in names:
             err("missing section `## {}`".format(name))
-    if any(GUIDANCE in INLINE_CODE_RE.sub("", line) for _i, line in code_mask(doc.lines)):
-        repo.problem(unfinished_level, rel, "template guidance `<!-- canon: ... -->` left in the doc")
-    if len(doc.lines) > MAX_DOC_LINES:
-        hint = "; split into sub-designs ({0}A, {0}B, ...)".format(doc.id) if doc.type == "D" else ""
-        repo.problem("WARN", rel, "{} lines (max {}){}".format(len(doc.lines), MAX_DOC_LINES, hint))
+    if line_count(doc.lines) > MAX_DOC_LINES:
+        hint = "" if doc.type != "D" else "; make it a new top-level design" if doc.suffix \
+            else "; split into sub-designs ({0}A, {0}B, ...)".format(doc.id)
+        repo.problem("WARN", rel, "{} lines (max {}){}".format(line_count(doc.lines), MAX_DOC_LINES, hint))
 
     refs = doc.as_list("refs")
     for ref in refs:
@@ -1109,7 +1132,7 @@ def check_doc(repo, doc, changed, strict=False):
         err("linked docs missing from `refs`: " + ", ".join(missing), fix=(doc, "refs", refs + missing))
 
     reviewed = fm.get("reviewed")
-    if reviewed is not None:
+    if reviewed is not None and "reviewed" in OPTIONAL_FIELDS.get(doc.type, ()):
         if not isinstance(reviewed, int) or reviewed > doc.revision:
             err("`reviewed` must be an integer revision not above `revision`")
         if not doc.as_list("reviewers"):
@@ -1118,7 +1141,7 @@ def check_doc(repo, doc, changed, strict=False):
         err("plan in progress without `reviewed`")
     elif past_gate and reviewed != doc.revision:
         repo.problem("ERROR" if strict else "WARN", rel, "revision {} is not reviewed (reviewed: {}); pass the review "
-                     "gate, then set `reviewed` and `reviewers`".format(doc.revision, reviewed))
+                     "gate, then set `reviewed` and `reviewers`".format(doc.revision, "none" if reviewed is None else reviewed))
 
     if doc.type == "D":
         implemented = fm.get("implemented")
@@ -1151,7 +1174,7 @@ def check_doc(repo, doc, changed, strict=False):
             if not SLUG_RE.match(topic):
                 err("`owns` entry `{}` must be kebab-case".format(topic))
         files = None
-        for pattern in doc.as_list("paths"):
+        for pattern in [] if doc.archived else doc.as_list("paths"):
             files = files if files is not None else repo.project_files(doc.root)
             rx = glob_regex(pattern)
             if not any(rx.match(f) for f in files):
@@ -1266,6 +1289,15 @@ def check_overview(repo):
 
 
 def run_check(repo, base=None):
+    fork = None
+    if base:
+        result = git_run(repo.root, "merge-base", "HEAD", base)
+        if result is not None and result.returncode == 0:
+            fork = result.stdout.strip()
+        elif not repo.has_head or (result is not None and result.returncode == 1):
+            sys.exit("canon: no merge base with " + base)
+        else:
+            sys.exit("canon: cannot diff against {}...HEAD".format(base))
     changed = set(repo.changed_files()) if repo.has_head else set()
     for doc in repo.docs:
         check_doc(repo, doc, changed, strict=bool(base))
@@ -1288,9 +1320,9 @@ def run_check(repo, base=None):
             continue
         lines = path.read_text(encoding="utf-8").split("\n")
         check_links(repo, path, lines, 0)
-        if path.name == "AGENTS.md" and len(lines) > MAX_AGENTS_LINES:
+        if path.name == "AGENTS.md" and line_count(lines) > MAX_AGENTS_LINES:
             repo.problem("WARN", posix_rel(path, repo.root), "{} lines (max {}); move detail into docs".format(
-                len(lines), MAX_AGENTS_LINES))
+                line_count(lines), MAX_AGENTS_LINES))
 
     for path in broken_indexes(repo):
         repo.problem("ERROR", posix_rel(path, repo.root),
@@ -1312,10 +1344,7 @@ def run_check(repo, base=None):
             repo.problem("ERROR", rel, "{} was deleted; restore it and archive it instead".format(doc_id))
 
     if base:
-        fork = git(repo.root, "merge-base", "HEAD", base)
-        if fork is None:
-            sys.exit("canon: no merge base with " + base)
-        at_fork, theirs = repo.tree_ids(fork.strip()), repo.tree_ids(base)
+        at_fork, theirs = repo.tree_ids(fork), repo.tree_ids(base)
         for doc in repo.docs:
             other = theirs.get(doc.id)
             if other and doc.id not in at_fork:
@@ -1544,10 +1573,13 @@ def new_doc(repo, args):
     letter = parse_type(args.type)
     if not SLUG_RE.match(args.slug):
         sys.exit("canon: slug must be kebab-case")
-    root = find_root(repo, args.root)
+    if args.design and letter != "P":
+        sys.exit("canon: --from only applies to plans")
     if args.parent:
-        parent = repo.get(args.parent)
-        if letter != "D" or parent.type != "D" or parent.suffix:
+        if args.root:
+            sys.exit("canon: --parent puts the sub-design beside its parent; drop --root")
+        parent = repo.get(args.parent) if letter == "D" else None
+        if parent is None or parent.type != "D" or parent.suffix:
             sys.exit("canon: --parent takes a top-level design and only applies to designs")
         taken = repo.taken_ids()
         letters = [c for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if parent.id + c not in taken]
@@ -1555,11 +1587,12 @@ def new_doc(repo, args):
             sys.exit("canon: {} has no free sub-design letter; create a new top-level design".format(parent.id))
         doc_id, root = parent.id + letters[0], parent.root
     else:
+        root = find_root(repo, args.root)
         doc_id = next_id(repo, letter)
     title = args.title or args.slug.replace("-", " ").capitalize()
     fields = default_fields(letter)
     implements = ""
-    if letter == "P" and args.design:
+    if args.design:
         design = repo.get(args.design)
         if design.type != "D" or design.status not in ("accepted", "active"):
             sys.exit("canon: --from takes an accepted or active design")
@@ -1585,7 +1618,10 @@ def cmd_archive(repo, args):
         sys.exit("canon: {} is already archived".format(doc.id))
     if args.status not in info["terminal"]:
         sys.exit("canon: {} can be archived as {}".format(doc.id, " or ".join(info["terminal"])))
-    problems = terminal_problems(doc, args.status)
+    live = [d.id for d in repo.docs if d.type == "D" and d.suffix and "D" + d.digits == doc.id and not d.archived]
+    if live:
+        sys.exit("canon: {} has live sub-designs {}; archive them first".format(doc.id, ", ".join(live)))
+    problems = unfinished_problems(doc) + terminal_problems(doc, args.status)
     if problems:
         print("\n".join("ERROR {}: {}".format(doc.rel, p) for p in problems))
         return 1

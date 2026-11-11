@@ -201,6 +201,10 @@ class ReviewGateTest(CanonTest):
         self.assertRegex(self.ok("check"), r"WARN .*revision 2 is not reviewed")
         self.assertRegex(self.fails("check", "--base", "HEAD"), r"ERROR .*revision 2 is not reviewed")
 
+    def test_a_pending_review_without_reviewed_reads_none(self):
+        self.design(status="accepted", reviewed=None, reviewers=None, implemented=None)
+        self.assertIn("revision 1 is not reviewed (reviewed: none)", self.ok("check", "--fix"))
+
 
 class ImplementedTest(CanonTest):
     def test_fix_fills_implemented_for_a_design_never_revised(self):
@@ -561,6 +565,19 @@ class FrontmatterTest(CanonTest):
         self.ok("check", "--fix")
         self.assertIn(" - [a, b]", self.ok("find", "C001"))
 
+    def test_a_missing_status_gives_only_the_missing_field_error(self):
+        self.set(self.design(), status=None)
+        out = self.fails("check")
+        self.assertIn("missing frontmatter field `status`", out)
+        self.assertNotIn("status `None`", out)
+
+    def test_reviewed_on_another_type_gets_only_the_unknown_field_error(self):
+        self.doc("C", "idea", reviewed=2)
+        out = self.fails("check")
+        self.assertIn("unknown frontmatter field `reviewed`", out)
+        self.assertNotIn("`reviewers` must list", out)
+        self.assertNotIn("must be an integer revision", out)
+
 
 class AuditTest(CanonTest):
     def code_commit(self, message):
@@ -755,6 +772,14 @@ class KnownIssuesTest(CanonTest):
         self.issues(archived, self.K1)
         self.assertIn("known issue D001-K1 is still listed", self.fails("check"))
 
+    def test_rows_inside_code_fences_are_no_rows(self):
+        fenced = "```markdown\n| Example | row |\n```\n"
+        design = self.design()
+        self.issues(design, "| D001-K1 | minor | A gap | P001 gate | 2020-10-01 | fix |")
+        design.write_text(design.read_text() + "\n" + fenced)
+        self.doc("R", "audit", body=FINDINGS.format("| R001-F1 | minor | A finding | open |\n\n" + fenced))
+        self.assertNotIn("row must be", self.ok("check", "--fix"))
+
 
 class FindingDispositionTest(CanonTest):
     def test_check_resolves_the_doc_a_finding_is_fixed_in_or_moved_to(self):
@@ -773,6 +798,96 @@ class FindingDispositionTest(CanonTest):
         self.assertIn("R001-F6 disposition must start with one of open, fixed, moved, declined", out)
         for fid in ("R001-F1", "R001-F2", "R001-F3", "R001-F7"):
             self.assertNotIn(fid, out)
+
+
+class DocRulesTest(CanonTest):
+    def pad(self, path, lines):
+        """Append filler lines until `path` holds `lines` lines, the last one ending in a newline."""
+        text = path.read_text()
+        text = text if text.endswith("\n") else text + "\n"
+        path.write_text(text + "Filler.\n" * (lines - text.count("\n")))
+
+    def test_line_limits_count_lines_as_wc_does_and_hint_by_design_level(self):
+        design = self.design()
+        part = self.design("part", parent="D001")
+        agents = self.root / "AGENTS.md"
+        for path, limit in ((design, 500), (part, 500), (agents, 150)):
+            self.pad(path, limit)
+        self.assertNotIn("lines (max", self.ok("check", "--fix"))
+        for path, limit in ((design, 501), (part, 501), (agents, 151)):
+            self.pad(path, limit)
+        out = self.ok("check")
+        self.assertIn("D001-area.md: 501 lines (max 500); split into sub-designs (D001A, D001B, ...)", out)
+        self.assertIn("D001A-part.md: 501 lines (max 500); make it a new top-level design", out)
+        self.assertIn("AGENTS.md: 151 lines (max 150); move detail into docs", out)
+
+    def test_a_live_status_inside_archived_names_the_terminal_statuses(self):
+        self.design()
+        self.commit()
+        self.ok("archive", "D001", "retired")
+        archived = self.root / "docs/archived/designs/D001-area.md"
+        self.set(archived, status="active")
+        self.assertIn("status `active` requires the doc to be outside archived/; set one of superseded, retired",
+                      self.fails("check"))
+
+    def test_an_archived_design_does_not_warn_about_unmatched_paths(self):
+        self.design(paths=["src/gone.py"])
+        self.assertIn("`paths` entry `src/gone.py` matches no file", self.ok("check", "--fix"))
+        self.commit()
+        self.ok("archive", "D001", "retired")
+        self.assertNotIn("matches no file", self.ok("check"))
+
+    def test_new_rejects_from_on_another_type_and_root_with_parent(self):
+        self.design()
+        self.assertIn("canon: --from only applies to plans", self.fails("new", "D", "other", "--from", "D001"))
+        self.assertIn("canon: --parent puts the sub-design beside its parent; drop --root",
+                      self.fails("new", "D", "part", "--parent", "D001", "--root", "."))
+        self.assertEqual(sorted(p.name for p in (self.root / "docs/designs").iterdir()),
+                         ["D000-project-overview.md", "D001-area.md"])
+
+    def test_new_with_parent_needs_no_agents_md_above_the_working_directory(self):
+        self.init_module("mod")
+        self.ok("new", "D", "area", "--root", "mod")
+        (self.root / "AGENTS.md").unlink()
+        self.ok("new", "D", "part", "--parent", "D001")
+        self.assertTrue((self.root / "mod/docs/designs/D001A-part.md").is_file())
+
+    def test_archive_checks_every_terminal_condition(self):
+        self.ok("new", "C", "idea")
+        self.doc("P", "work", body="## Current state\n\nDone.\n\n## Slices\n\nNone.\n\n## Notes\n\nNone.\n\n"
+                                   "## Log\n\nDone.\n")
+        self.doc("E", "bench", body="## Question\n\nFast?\n\n## Setup\n\n- Commit: 3f9a1c2\n- Environment: x\n"
+                                    "- Command: y\n\n## Results\n\nFast.\n\n## Conclusion\n\n<!-- canon: z -->\n")
+        self.commit(check=False)
+        out = self.fails("archive", "C001", "dropped")
+        self.assertIn("ERROR docs/concepts/C001-idea.md: `summary` is empty", out)
+        self.assertIn("ERROR docs/concepts/C001-idea.md: template guidance `<!-- canon: ... -->` left in the doc", out)
+        self.assertIn("ERROR docs/plans/P001-work.md: plan has no slices", self.fails("archive", "P001", "done"))
+        self.assertIn("Conclusion is empty", self.fails("archive", "E001", "concluded"))
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_archive_refuses_a_design_with_live_sub_designs(self):
+        self.design()
+        self.design("part", parent="D001")
+        self.commit()
+        self.assertIn("canon: D001 has live sub-designs D001A; archive them first",
+                      self.fails("archive", "D001", "retired"))
+        self.ok("archive", "D001A", "retired")
+        self.ok("archive", "D001", "retired")
+
+    def test_an_unknown_entry_inside_archived_lists_only_what_archived_allows(self):
+        self.create("docs/archived/guides/howto.md")
+        out = self.fails("check")
+        self.assertIn("ERROR docs/archived/guides: unknown entry; allowed: README.md, concepts/, designs/, plans/, "
+                      "reviews/, experiments/, investigations/", out)
+
+    def test_base_without_shared_history_ends_with_no_merge_base(self):
+        self.assertIn("canon: no merge base with main", self.fails("check", "--base", "main"))
+        self.commit()
+        tree = self.git("hash-object", "-t", "tree", "/dev/null")
+        orphan = self.git("commit-tree", tree, "-m", "unrelated")
+        self.assertIn("canon: no merge base with " + orphan, self.fails("check", "--base", orphan))
+        self.assertIn("canon: cannot diff against nope...HEAD", self.fails("check", "--base", "nope"))
 
 
 class IndexTest(CanonTest):

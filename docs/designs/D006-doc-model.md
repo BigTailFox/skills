@@ -294,17 +294,5 @@ Agents and people read docs, usually after reaching them through a pointer: an `
 
 | ID | Severity | Issue | Source | Since | Next |
 |----|----------|-------|--------|-------|------|
-| D006-K1 | minor | `check` counts the parts a file splits into at newlines, so 500 lines ending in a newline warn as 501, and `AGENTS.md` alike at 150 | as-built 0872d6d | 2026-11-10 | fix |
-| D006-K2 | minor | A missing `status` also gives ``status `None` invalid``, and the pending-review warning reads `(reviewed: None)` | as-built 0872d6d | 2026-11-10 | fix |
-| D006-K3 | minor | `reviewed` on a C, R, E or I doc also gets the `reviewed` and `reviewers` checks besides the unknown-field error | as-built 0872d6d | 2026-11-10 | fix |
-| D006-K4 | minor | Known-issue and finding rows are read inside code fences too, so a fenced example row gives a row error | as-built 0872d6d | 2026-11-10 | fix |
-| D006-K5 | minor | A live status inside `archived/` gives ``use `canon.py archive` ``, which refuses an archived doc | as-built 0872d6d | 2026-11-10 | fix |
-| D006-K6 | minor | `new` ignores `--from` for a type other than P, and runs the `--root` lookup with `--parent`, then ignores it | as-built 0872d6d | 2026-11-10 | fix |
-| D006-K7 | minor | An archived design warns for each `paths` entry that matches no file | as-built 0872d6d | 2026-11-10 | fix |
-| D006-K8 | minor | `archive` accepts leftover guidance or an empty `summary`, which `check` then reports on the archived doc, and neither catches a `done` plan with no slices or a Conclusion holding only template guidance | as-built 0872d6d | 2026-11-10 | fix |
-| D006-K9 | minor | `archive` archives a design and leaves its sub-designs live | as-built 0872d6d | 2026-11-10 | fix |
 | D006-K10 | minor | No command changes a non-terminal status; the user wants one designed with the gate bookkeeping of D007-K8 | R003-F36 | 2026-11-10 | L2 |
-| D006-K11 | minor | The line-limit hint tells a sub-design to split into `<id>A`, `<id>B`, ..., which one-level sub-designs forbid | as-built 0872d6d | 2026-11-11 | fix |
-| D006-K12 | minor | The unknown-entry message inside `archived/` also lists `archived/`, `guides/` and `assets/` as allowed | as-built 0872d6d | 2026-11-11 | fix |
-| D006-K13 | minor | With a HEAD commit, a REF that shares no history with HEAD gives `cannot diff against <REF>...HEAD`, since the deleted-doc diff fails first; `no merge base` shows only without a HEAD commit | as-built 0872d6d | 2026-11-11 | fix |
 | D006-K14 | minor | `renumber`, which has no design, and `init`'s move of a design to D000 rewrite `moved <id>` dispositions but not `fixed <id>@r<n>`, so after a conflict renumber one names the old id: it points unnoticed at the other branch's doc with that id, or else `check` reports it fixed in an unknown doc | code review e122546 | 2026-11-11 | decide |
