@@ -35,7 +35,7 @@ This session orchestrates, and a fresh worker builds each slice, so every slice 
 
    To pause a slice, set `Status: paused`, stash the worker's changes, new files included but not the plan, under a message naming the slice, log the problem and the stash for whoever resumes it, and continue with slices that do not depend on it.
 4. When the slice is done by the `canon-tdd` skill's definition, set `Status: done`, point Current state at the next action, and append results, decisions and deviations to the Log.
-5. Run `canon.py check --fix`, then commit the slice: code plus plan, Conventional Commits, `Refs: <design>, <plan>` trailer.
+5. Run `canon.py check --fix`, then commit the slice: code plus plan, Conventional Commits, and a `Refs:` trailer naming the plan and the designs the slice was checked against, as the `canon` skill says.
 
 ### Worker prompt
 
