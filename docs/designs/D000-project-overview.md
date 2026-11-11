@@ -1,11 +1,11 @@
 ---
 status: active
 created: 2026-10-23
-updated: 2026-11-10
+updated: 2026-11-11
 revision: 3
 modules: []
 summary: Agent skills built around canon, a documentation system kept in the repository; one module, its capabilities and the designs that own them.
-refs: [D001, D002, D003, D004, D005]
+refs: [D001, D002, D003, D004, D005, D006, D007, D008]
 owns: [architecture]
 paths: []
 reviewed: 3
@@ -27,12 +27,14 @@ implemented: 3
 
 | Capability | Modules | Design |
 |---|---|---|
-| Docs that live in the repository: numbered docs with frontmatter, references, a lifecycle and archiving, created, checked, queried and archived with `canon.py` | canon | none |
+| Docs that live in the repository: numbered docs with frontmatter, references, a lifecycle and archiving, created, checked and archived with `canon.py`, and the rules for writing them | canon | [D006: Doc model and writing rules](D006-doc-model.md) |
+| Queries of the docs and the code they govern (`canon.py show`, `find`, `which`, `affected`), and renaming and renumbering docs (`rename`, `renumber`) | canon | none |
 | The generated index of each docs root's docs in `docs/README.md` and `docs/archived/README.md` (`canon.py index`) | canon | [D005: Docs index](D005-docs-index.md) |
-| Change tiers and the flow each sets: design, review gate, plan, implementation, code review and docs step (`canon-design`, `canon-plan`, `canon-implement`) | canon | none |
+| Change tiers and the flow each sets, the review gate, and design problems found while working from a design | canon | [D007: Change tiers and the review gate](D007-change-tiers.md) |
+| Writing designs and plans, and implementing plans slice by slice (`canon-design`, `canon-plan`, `canon-implement`) | canon | none |
 | The project overview, D000, with the designs `audit` finds D000 does not reach and the source areas it finds no design covers | canon | [D002: Project overview and as-built designs](D002-overview-and-as-built.md) |
 | As-built designs, and the backfill before a change to behavior no design states | canon | [D002: Project overview and as-built designs](D002-overview-and-as-built.md) |
-| Blind reviews by fresh subagents, a cross-family reviewer included, for the review gate, code review or any request (`canon-blind-review`), and a fresh worker for each plan slice | canon | [D003: Subagents](D003-subagents.md) |
+| Blind reviews by fresh subagents, a cross-family reviewer included, for the review gate, code review or any request (`canon-blind-review`), and a fresh worker for each plan slice | canon | [D003: Subagents](D003-subagents.md), [D007: Change tiers and the review gate](D007-change-tiers.md) |
 | Opt-in tracing of workflow runs for replay and analysis (`canon.py trace`) | canon | [D001: Skill telemetry with canon trace](D001-skill-telemetry.md) |
 | Project setup: `docs/`, the `AGENTS.md` block, migration of existing docs and upgrades of a project's `canon.py` (`canon-init`) | canon | [D004: Project setup](D004-project-setup.md) |
 | Docs kept in step with the code: the docs step, repair after a merge or rebase, and the doc health audit (`canon-sync`) | canon | none |
@@ -40,7 +42,7 @@ implemented: 3
 | Codebase review from chosen angles (`canon-review`) | canon | none |
 | Test-driven development at a slice's seams (`canon-tdd`) | canon | none |
 | Settling open decisions (`canon-grill`) | canon | none |
-| Throwaway prototypes (`canon-prototype`) and research from primary sources (`canon-research`), recorded as E docs | canon | none |
+| Throwaway prototypes (`canon-prototype`) and research from primary sources (`canon-research`), recorded as E docs | canon | [D008: Prototypes and research](D008-experiments.md) |
 | Diagnosis of hard bugs and performance regressions, recorded as I docs (`canon-investigate`) | canon | none |
 | Deep-module vocabulary and designing an interface twice (`canon-codebase-design`) | canon | none |
 | Handoff to a fresh agent (`canon-handoff`) | canon | none |
@@ -53,7 +55,7 @@ implemented: 3
 
 | Module | Path | Purpose | Entry points | Design |
 |---|---|---|---|---|
-| canon | skills/, tests/ | The skills: `skills/governance/` builds and maintains the documentation system, `skills/execution/` does development work through it, and `tests/` holds the regression tests of `canon.py` and of the repository tooling | `skills/governance/canon/SKILL.md`, `skills/governance/canon/scripts/canon.py`, each skill's `SKILL.md` | [D001: Skill telemetry with canon trace](D001-skill-telemetry.md), [D002: Project overview and as-built designs](D002-overview-and-as-built.md), [D003: Subagents](D003-subagents.md), [D004: Project setup](D004-project-setup.md), [D005: Docs index](D005-docs-index.md) |
+| canon | skills/, tests/ | The skills: `skills/governance/` builds and maintains the documentation system, `skills/execution/` does development work through it, and `tests/` holds the regression tests of `canon.py` and of the repository tooling | `skills/governance/canon/SKILL.md`, `skills/governance/canon/scripts/canon.py`, each skill's `SKILL.md` | [D001: Skill telemetry with canon trace](D001-skill-telemetry.md), [D002: Project overview and as-built designs](D002-overview-and-as-built.md), [D003: Subagents](D003-subagents.md), [D004: Project setup](D004-project-setup.md), [D005: Docs index](D005-docs-index.md), [D006: Doc model and writing rules](D006-doc-model.md), [D007: Change tiers and the review gate](D007-change-tiers.md), [D008: Prototypes and research](D008-experiments.md) |
 
 ### Dependencies
 

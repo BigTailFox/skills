@@ -1,7 +1,7 @@
 ---
 status: open
 created: 2026-11-10
-updated: 2026-11-10
+updated: 2026-11-11
 revision: 1
 modules: [canon]
 summary: Open findings from the retro notes, canon friction log and blind-review outputs kept only in .canon/, and what to restore when moving machines.
@@ -29,7 +29,7 @@ refs: [C001, D000, D001, D002, D003, D004]
 | R002-F2 | minor | functional: `check` takes canon's own comment markers, quoted in inline code or a fenced block, for leftover template guidance | fixed 8f4f34c |
 | R002-F3 | minor | usability: A gate's reviewer files are named by doc id and role, so the next revision's gate overwrites the previous one's | open |
 | R002-F4 | minor | functional: D002 omits the unreadable-checkout refusal of `new`, `adopt` and `renumber` | fixed e01ecd5 |
-| R002-F5 | minor | architecture: D000 revision 2 relaxed a Dependencies rule under a same-model gate, and whether it was L2 is unanswered | open |
+| R002-F5 | minor | architecture: D000 revision 2 relaxed a Dependencies rule under a same-model gate, and whether it was L2 is unanswered | moved D007 |
 | R002-F6 | minor | functional: `validate.py` does not measure D001's 40-token call-site budget | fixed f4d5a01 |
 | R002-F7 | minor | functional: `OutsideCheckoutTest` finds the outside-Git tests by matching their source text | fixed 8f4f34c |
 | R002-F8 | minor | functional: Test repositories sit directly in the OS temp directory, so a stray `../` write lands in the shared `/tmp` | fixed 8f4f34c |

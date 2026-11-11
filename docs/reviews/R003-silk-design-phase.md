@@ -1,7 +1,7 @@
 ---
 status: open
 created: 2026-11-10
-updated: 2026-11-10
+updated: 2026-11-11
 revision: 1
 modules: [canon]
 summary: Canon friction in a docs-only bilingual project: review gates per doc, parallel sessions, archived experiments, translations, check gaps, tool drift.
@@ -25,12 +25,12 @@ refs: [C001, D000, D001, D003, D005, R001, R002]
 
 | ID | Severity | Finding | Disposition |
 |----|----------|---------|-------------|
-| R003-F1 | major | usability: The review gate runs per doc revision, so one change across several designs takes a gate and reviewers per doc | open |
-| R003-F2 | major | usability: No rule covers edits after a gate passes, so sessions rerun whole gates or commit edits no reviewer saw | open |
+| R003-F1 | major | usability: The review gate runs per doc revision, so one change across several designs takes a gate and reviewers per doc | moved D007 |
+| R003-F2 | major | usability: No rule covers edits after a gate passes, so sessions rerun whole gates or commit edits no reviewer saw | moved D007 |
 | R003-F3 | major | usability: Without a reviewer file every L2 gate rediscovers the cross-family reviewer, and a hung reviewer stalls the session | open |
 | R003-F4 | minor | usability: Reviewer reports live only in tool results and follow the user's reply language | fixed 0872d6d |
 | R003-F5 | minor | functional: Reviewers read the live work tree, which the author and other sessions change during the review | open |
-| R003-F6 | minor | usability: A revision that passed its gate but was not committed leaves the next gate no `Changes since` commit | open |
+| R003-F6 | minor | usability: A revision that passed its gate but was not committed leaves the next gate no `Changes since` commit | moved D007 |
 | R003-F7 | minor | usability: The reviewer prompt assumes code exists, and nothing allows a qualitative target before a first measurement | open |
 | R003-F8 | minor | usability: A session learns that trace is off only by calling `trace start` in each gate | declined a session learns it from the `trace start` call D001§budgets designs as the one call per skill invocation when tracing is off |
 | R003-F9 | minor | usability: `snapshot` prints a commit that is not the snapshot repository's HEAD | fixed 80b9688 |
@@ -39,16 +39,16 @@ refs: [C001, D000, D001, D003, D005, R001, R002]
 | R003-F12 | minor | usability: A late, repeated completion notice makes the session handle a reviewer twice | fixed 0872d6d |
 | R003-F13 | major | usability: A session cannot pass a request to another running session; handoff files go unnoticed or are read stale | open |
 | R003-F14 | major | functional: Sessions sharing a checkout disturb each other: `check --fix` rewrites others' docs and staging one's own index lines takes hand-built blobs | open |
-| R003-F15 | major | usability: A background researcher writes only at the end, so an interrupted one loses its work | open |
+| R003-F15 | major | usability: A background researcher writes only at the end, so an interrupted one loses its work | moved D008 |
 | R003-F16 | minor | usability: Decisions grilled before any doc exists stay only in the chat | open |
-| R003-F17 | major | usability: Archiving concluded experiments hides the evidence live designs rest on | open |
-| R003-F18 | minor | usability: Nothing says whether a measurement added to a research experiment extends it or opens a new one | open |
+| R003-F17 | major | usability: Archiving concluded experiments hides the evidence live designs rest on | moved D008 |
+| R003-F18 | minor | usability: Nothing says whether a measurement added to a research experiment extends it or opens a new one | moved D008 |
 | R003-F19 | major | usability: A concept absorbed piece by piece by several designs can be neither frozen nor archived | open |
 | R003-F20 | minor | usability: Concepts have no review flow, and a review that restates a concept becomes a second spec | open |
-| R003-F21 | minor | usability: The tier of changes to C, R and E docs alone, and how a D000 without code is planned and marked, are unstated | open |
+| R003-F21 | minor | usability: The tier of changes to C, R and E docs alone, and how a D000 without code is planned and marked, are unstated | moved D007 |
 | R003-F22 | minor | usability: Nothing keeps a design from stating other designs' scope, and splitting a design has no checklist | open |
 | R003-F23 | minor | usability: Design section rules get applied to concepts | open |
-| R003-F24 | minor | usability: Revision and approval bookkeeping around a gate is left to guesswork | open |
+| R003-F24 | minor | usability: Revision and approval bookkeeping around a gate is left to guesswork | moved D007 |
 | R003-F25 | minor | usability: `fixed <commit>` takes an extra commit for a fix made in docs | open |
 | R003-F26 | minor | usability: Sessions guess ids for docs not yet created and mislead the user | open |
 | R003-F27 | major | usability: Translations double every edit and still drift; canon has no translation convention | open |
@@ -60,7 +60,7 @@ refs: [C001, D000, D001, D003, D005, R001, R002]
 | R003-F33 | minor | functional: `check` skips links and anchors in attachment Markdown | open |
 | R003-F34 | minor | functional: `check` cannot validate a commit or the staged state | open |
 | R003-F35 | minor | usability: `show D00X#known-issues` fails when a design has no Known issues section | fixed 8f4f34c |
-| R003-F36 | minor | usability: No command changes a non-terminal status | open |
+| R003-F36 | minor | usability: No command changes a non-terminal status | moved D006 |
 | R003-F37 | minor | functional: `rename` leaves the H1 title, link texts and attachments named after the slug | open |
 | R003-F38 | minor | usability: The 160-character `summary` limit shows only after the summary is written | open |
 | R003-F39 | minor | usability: A stale index is an error, which blocks a subagent allowed to edit only its own files | open |

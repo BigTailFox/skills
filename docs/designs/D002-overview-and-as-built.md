@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-10-22
-updated: 2026-11-10
+updated: 2026-11-11
 revision: 4
 modules: [canon]
 summary: D000 project overview in every project, as-built designs that record existing code, backfill before changing unspecified behavior, and design coverage in audit.
@@ -191,7 +191,7 @@ Scenarios, tested through the commands:
 
 | ID | Severity | Issue | Source | Since | Next |
 |----|----------|-------|--------|-------|------|
-| D002-K1 | major | A `paths` entry matches a whole file, so coverage counts all of `canon.py` as covered while about half of it (the doc model, `check`, archive, rename, `show`, `find`, `affected`) has no design, and any `canon.py` edit must name all five designs in `Refs:` | R001-F1 | 2026-11-05 | L2 |
+| D002-K1 | major | A `paths` entry matches a whole file, so coverage counts all of `canon.py` as covered while parts of it (`rename`, `renumber`, `show`, `find`, `which`, `affected`) have no design, and any `canon.py` edit must name all six designs in `Refs:` | R001-F1 | 2026-11-05 | L2 |
 ## Decisions
 
 - D000 has a fixed id: every project, skill and `check` rule can name it, and it heads the index.

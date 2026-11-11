@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-10-29
-updated: 2026-11-05
+updated: 2026-11-11
 revision: 4
 modules: [canon]
 summary: Project setup and upgrades with canon.py init, migration of existing docs with adopt, and the canon-init flows for setup, upgrade and new modules.
@@ -94,6 +94,7 @@ canon.py adopt FILE TYPE [--slug SLUG] [--title TITLE] [--root DIR]
 |----|----------|-------|--------|-------|------|
 | D004-K1 | major | Nothing checks that a project's `canon.py` copy is new enough for the installed skills, so an older copy's errors contradict them; a version 18 copy reports the `as_built` field as unknown | R001-F2 | 2026-11-05 | L2 |
 | D004-K2 | minor | `adopt` rewrites the H1, which changes its anchor, and leaves links to the old anchor broken until `check` fails on them | R001-F29 | 2026-11-05 | L1 |
+| D004-K3 | minor | D004§adopt restates the link-rewriting rule, and D004§decisions says the commands sharing it have no design, while D006§statuses-and-archiving now owns it with `archive` | D006 gate | 2026-11-11 | L1 |
 
 ## Decisions
 
