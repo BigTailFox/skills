@@ -28,7 +28,7 @@ Execute `canon.py`; do not read it. Use the project's copy at the path named in 
 | `snapshot` | Record the work tree, untracked files included, and print the snapshot commit, for a review's confirmation diff (the `canon-blind-review` skill). |
 | `init`, `adopt` | Project setup, upgrades and migration; the user runs them through the `canon-init` skill. |
 
-In `trace` calls, `<skill>` is the path of the followed `SKILL.md`'s directory (a gate's is `canon-blind-review`'s, else `canon`'s), `<model>` your model id as the host names it, and `<parent>` the invoking workflow's open unit id, if any. Unless a skill's first `start` prints `trace <id>`, skip its other trace calls; else follow [trace.md](trace.md), using that `<id>`.
+In `trace` calls, `<skill>` is the path of the followed `SKILL.md`'s directory (`canon-blind-review`'s for a gate or follow-up round, else `canon`'s), `<model>` your model id as the host names it, and `<parent>` the invoking workflow's open unit id, if any. Unless a skill's first `start` prints `trace <id>`, skip its other trace calls; else follow [trace.md](trace.md), using that `<id>`.
 
 ## Reading docs
 

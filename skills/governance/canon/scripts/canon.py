@@ -29,7 +29,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "34"
+CANON_VERSION = "35"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -2517,12 +2517,13 @@ def cmd_audit(repo, args):
 TRACE_DIR = LOCAL_DIR + "canon/trace"
 REVIEW_SNAPSHOT_DIR = LOCAL_DIR + "canon/snapshots"
 REVIEW_SNAPSHOT_DAYS = 30
-TRACE_KINDS = ("design", "plan", "implement", "investigate", "canon-review", "retro", "code-review", "gate", "slice",
-               "end-check")
+TRACE_KINDS = ("design", "plan", "implement", "investigate", "canon-review", "retro", "code-review", "gate",
+               "follow-up", "slice", "end-check")
 TOP_LEVEL_KINDS = TRACE_KINDS[:6]
 OUTCOMES = ("delivered", "blocked", "handoff", "cancelled")
 KIND_OUTCOMES = {"implement": OUTCOMES + ("partial", "escalated"), "end-check": ("quiet", "raised")}
-REVIEW_ROLES = {"gate": ("same-model", "cross-family"), "code-review": ("spec", "standards", "cross-family")}
+GATE_ROLES = ("same-model", "cross-family")
+REVIEW_ROLES = {"gate": GATE_ROLES, "follow-up": GATE_ROLES, "code-review": ("spec", "standards", "cross-family")}
 REVIEW_DISPOSITIONS = ("accepted", "declined", "escalated", "deferred")
 FINDING_ID_RE = re.compile(r"F[1-9][0-9]*")
 UNIT_RE = re.compile(r"^\d{8}T\d{6}Z-[0-9a-f]{6}$")
@@ -3170,7 +3171,7 @@ def read_dispositions(kind, source):
     """The dispositions `--input` reads, from file `source` or from stdin for `-`, once checked against
     D001#review-dispositions for a `kind` unit."""
     if kind not in REVIEW_ROLES:
-        raise TraceError("--input comes with gate and code-review units only")
+        raise TraceError("--input comes with gate, follow-up and code-review units only")
     try:
         data = sys.stdin.buffer.read() if source == "-" else Path(source).read_bytes()
     except OSError as error:
@@ -3609,8 +3610,8 @@ def main(argv=None):
     t.add_argument("--to", choices=("L1", "L2", "plan"), help="the tier or plan an escalated unit needs")
     t.add_argument("--dir", metavar="DIR", help="directory under .canon/ whose files changed since the unit started "
                                                 "are archived with it")
-    t.add_argument("--input", metavar="FILE|-", help="a gate's or code review's dispositions as JSON, from FILE or "
-                                                     "from stdin for -")
+    t.add_argument("--input", metavar="FILE|-", help="a gate's, follow-up's or code review's dispositions as JSON, "
+                                                     "from FILE or from stdin for -")
     t.set_defaults(func=trace_end)
     t = command(actions, "status", help="say whether tracing is on and why, and list the open units")
     t.set_defaults(func=trace_status)

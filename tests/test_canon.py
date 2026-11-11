@@ -1520,6 +1520,7 @@ class HelpTest(CanonTest):
         end = self.help("trace", "end")
         for kinds, outcomes in [("other kinds", canon.OUTCOMES)] + list(canon.KIND_OUTCOMES.items()):
             self.assertIn("{}: {}".format(kinds, ", ".join(outcomes)), end)
+        self.assertIn("--input FILE|- a gate's, follow-up's or code review's dispositions", end)
         self.assertIn("`no design` for other files", self.help("which"))
         self.assertIn("only when `check` asks for it", self.help("renumber"))
 
@@ -2383,8 +2384,9 @@ class SnapshotTest(TraceCase):
         snapshot = self.start_line("gate", "D001", "--tier", "L1")["snapshot"]
         self.assertEqual([self.snap("rev-parse", snapshot + rev) for rev in ("^1^{tree}", "^2^{tree}")],
                          [self.git("rev-parse", "HEAD^{tree}")] * 2)
-        snapshot = self.start_line("code-review", "D001", "--base", "HEAD")["snapshot"]
-        self.assertEqual(len(self.snap("rev-list", "--parents", "-n", "1", snapshot).split()), 2)
+        for args in (["code-review", "D001", "--base", "HEAD"], ["follow-up", "D001", "--tier", "L1"]):
+            snapshot = self.start_line(*args)["snapshot"]
+            self.assertEqual(len(self.snap("rev-list", "--parents", "-n", "1", snapshot).split()), 2, args)
         self.git("branch", "deadbee", moved_past)
         for value in ("worktree", "0123456", "deadbee"):
             self.set(design, as_built=value)
@@ -2899,6 +2901,53 @@ class ArchiveTest(TraceCase):
         self.assertEqual([line["type"] for line in self.lines()], ["start", "end"])
         self.assertEqual(sorted(path.name for path in (self.root / ".canon/canon/trace" / unit).iterdir()),
                          names[closed])
+
+
+class FollowUpTest(TraceCase):
+    def setUp(self):
+        super().setUp()
+        self.trace("on")
+
+    def test_a_follow_up_records_the_targets_it_revises_and_its_parent_and_is_top_level_without_one(self):
+        self.design(revision=5, reviewed=4)
+        design = self.start("design", "D001")
+        line = self.start_line("follow-up", "D001", "--tier", "L2", "--skill", "skills/canon-blind-review",
+                               "--model", "m", "--parent", design)
+        self.assertEqual([line[k] for k in ("kind", "docs", "parent", "tier", "model")],
+                         ["follow-up", ["D001@r5"], design, "L2", "m"])
+        self.assertIsNone(self.start_line("follow-up", "D001", "--tier", "L2")["parent"])
+
+    def test_a_follow_ups_end_takes_a_gates_dispositions_and_archives_the_rounds_files(self):
+        unit = self.start("follow-up", "D001", "--tier", "L2")
+        path = ".canon/canon-blind-review/D001-r4/followup-1"
+        reports = {"same-model.md": b"### F1 [major] D001\n", "cross-family.md": b"### F1 [minor] D001\n"}
+        (self.root / path).mkdir(parents=True)
+        started = self.started(unit).timestamp()
+        for name, data in reports.items():
+            (self.root / path / name).write_bytes(data)
+            os.utime(str(self.root / path / name), (started, started))
+        spec = json.loads(json.dumps(DispositionsTest.GATE))
+        spec["reviewers"][0]["role"] = "spec"
+        self.rejects("end", unit, "delivered", "--dir", path, "--input", "-", stdin=json.dumps(spec))
+        self.assertFalse((self.root / ".canon/canon/trace" / unit).exists())
+        out = self.trace("end", unit, "delivered", "--dir", path, "--input", "-",
+                         stdin=json.dumps(DispositionsTest.GATE))
+        self.assertEqual(out, "trace {} ended\n".format(unit))
+        line = self.lines()[-1]
+        self.assertEqual([line["kind"], line["dispositions"], line["archive"]],
+                         ["follow-up", DispositionsTest.GATE, "ok"])
+        self.assertEqual({p.name: p.read_bytes() for p in (self.root / ".canon/canon/trace" / unit).iterdir()},
+                         reports)
+
+    def test_a_slice_or_end_check_cannot_parent_a_follow_up_and_input_comes_with_review_units_only(self):
+        implement = self.start("implement", "P001")
+        for parent in (self.start("slice", "P001", "--slice", "S1", "--parent", implement), self.start("end-check")):
+            self.rejects("start", "follow-up", "D001", "--parent", parent)
+        design = self.start("design", "D001")
+        before = self.events.read_bytes()
+        out = self.trace("end", design, "delivered", "--input", "-", stdin=json.dumps(DispositionsTest.GATE))
+        self.assertEqual(out, "trace error: --input comes with gate, follow-up and code-review units only\n")
+        self.assertEqual(self.events.read_bytes(), before)
 
 
 class SkillDigestTest(TraceCase):

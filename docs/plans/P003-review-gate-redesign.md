@@ -18,7 +18,7 @@ Implements [D007: Change tiers and the review gate](../designs/D007-change-tiers
 
 ## Current state
 
-Next: S3.
+Next: S4.
 
 ## Slices
 
@@ -67,7 +67,7 @@ Test criteria; seam: `canon.py check` output:
 
 ### S3: Follow-up trace units
 
-Status: todo
+Status: done
 
 Builds on `D001#units`, `D001#call-sites` and `D001#review-dispositions`.
 
@@ -185,3 +185,4 @@ Test criteria; seam: the skill files, `scripts/validate.py`, `npx skills add . -
 - 2026-11-11: The user approved D007 r5 and this plan by starting `/canon-implement P003`; `approved` is recorded in S2's commit. Started at 904c18b.
 - 2026-11-11, S1 done: `status` and `status_moves` in `canon.py` (`CANON_VERSION` 33), `StatusTest` with 7 tests plus `status` cases in `IndexTest` and `HelpTest`; `validate.py` passed with D001's budgets measured. Deviation: `status -h` lists each type's statuses in order. Settled in the slice: a current status outside the type's moves counts as before all of them, and a `reviewed` that is not an integer reads as 0. Open: a concept's not-a-status message lists only `draft`, as D006 states, though `adopted` is its other valid target; put to the user.
 - 2026-11-11, S2 done: `approved` among the optional and integer fields of designs and plans, checked from 1 to `reviewed` (`CANON_VERSION` 34), `ApprovedTest` with 3 tests; `validate.py` passed with D001's budgets measured. The `SKILL.md` Frontmatter bullets link the review gate's step 6, which S5 rewrites; S5 keeps them pointing at Gate status. This commit sets `approved`: D001 12, D003 7, D005 2, D006 4, D007 5 and this plan 1.
+- 2026-11-11, S3 done: `follow-up` among the trace kinds, sharing the gate's roles (`GATE_ROLES`), `--dir` and `--input`, with the `--input` help and error naming it (`CANON_VERSION` 35); `FollowUpTest` with 3 tests, a `HelpTest` assertion and a follow-up case in the as-built snapshot test. The placeholder paragraph now has 110 of 110 tokens and `trace.md` 420 of 420: `trace.md`'s Roles bullet names the code review's roles and gives same-model and cross-family to the rest with "else".
