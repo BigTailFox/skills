@@ -37,24 +37,24 @@ refs: [C001, D000, D001, D003, D005, R001, R002]
 | R003-F10 | minor | usability: Gate directories have no layout for joint gates, later revisions or extra rounds | open |
 | R003-F11 | minor | usability: Reviewers cannot tell whether they may run `check` or read `.canon/canon/snapshots` | fixed 0872d6d |
 | R003-F12 | minor | usability: A late, repeated completion notice makes the session handle a reviewer twice | fixed 0872d6d |
-| R003-F13 | major | usability: A session cannot pass a request to another running session; handoff files go unnoticed or are read stale | open |
+| R003-F13 | major | usability: A session cannot pass a request to another running session; handoff files go unnoticed or are read stale | fixed 18b7dcf |
 | R003-F14 | major | functional: Sessions sharing a checkout disturb each other: `check --fix` rewrites others' docs and staging one's own index lines takes hand-built blobs | open |
-| R003-F15 | major | usability: A background researcher writes only at the end, so an interrupted one loses its work | moved D008 |
+| R003-F15 | major | usability: A background researcher writes only at the end, so an interrupted one loses its work | fixed 18b7dcf |
 | R003-F16 | minor | usability: Decisions grilled before any doc exists stay only in the chat | open |
 | R003-F17 | major | usability: Archiving concluded experiments hides the evidence live designs rest on | moved D008 |
-| R003-F18 | minor | usability: Nothing says whether a measurement added to a research experiment extends it or opens a new one | moved D008 |
+| R003-F18 | minor | usability: Nothing says whether a measurement added to a research experiment extends it or opens a new one | fixed 18b7dcf |
 | R003-F19 | major | usability: A concept absorbed piece by piece by several designs can be neither frozen nor archived | open |
-| R003-F20 | minor | usability: Concepts have no review flow, and a review that restates a concept becomes a second spec | open |
+| R003-F20 | minor | usability: Concepts have no review flow, and a review that restates a concept becomes a second spec | fixed 18b7dcf |
 | R003-F21 | minor | usability: The tier of changes to C, R and E docs alone, and how a D000 without code is planned and marked, are unstated | moved D007 |
-| R003-F22 | minor | usability: Nothing keeps a design from stating other designs' scope, and splitting a design has no checklist | open |
-| R003-F23 | minor | usability: Design section rules get applied to concepts | open |
+| R003-F22 | minor | usability: Nothing keeps a design from stating other designs' scope, and splitting a design has no checklist | fixed 18b7dcf |
+| R003-F23 | minor | usability: Design section rules get applied to concepts | fixed 18b7dcf |
 | R003-F24 | minor | usability: Revision and approval bookkeeping around a gate is left to guesswork | moved D007 |
-| R003-F25 | minor | usability: `fixed <commit>` takes an extra commit for a fix made in docs | open |
-| R003-F26 | minor | usability: Sessions guess ids for docs not yet created and mislead the user | open |
+| R003-F25 | minor | usability: `fixed <commit>` takes an extra commit for a fix made in docs | fixed 18b7dcf |
+| R003-F26 | minor | usability: Sessions guess ids for docs not yet created and mislead the user | fixed 18b7dcf |
 | R003-F27 | major | usability: Translations double every edit and still drift; canon has no translation convention | open |
 | R003-F28 | minor | usability: Code shown in docs is kept twice by hand, so the project built its own `embed.py` | open |
 | R003-F29 | minor | usability: The 500-line limit forces cuts in concepts, goes unenforced on reviews and is escaped by long lines | open |
-| R003-F30 | minor | usability: Diagram sources, tools and readability have no rules | open |
+| R003-F30 | minor | usability: Diagram sources, tools and readability have no rules | fixed 18b7dcf |
 | R003-F31 | minor | architecture: `canon.py` runs from a project copy that lags the installed skills, with project helpers beside it | open |
 | R003-F32 | minor | usability: Permanent `check` warnings for planned paths and modules bury new ones | open |
 | R003-F33 | minor | functional: `check` skips links and anchors in attachment Markdown | open |
@@ -64,8 +64,8 @@ refs: [C001, D000, D001, D003, D005, R001, R002]
 | R003-F37 | minor | functional: `rename` leaves the H1 title, link texts and attachments named after the slug | open |
 | R003-F38 | minor | usability: The 160-character `summary` limit shows only after the summary is written | fixed d733c74 |
 | R003-F39 | minor | usability: A stale index is an error, which blocks a subagent allowed to edit only its own files | open |
-| R003-F40 | minor | usability: The `canon` skill sends L1 revisions to `canon-design`, which the agent cannot invoke | open |
-| R003-F41 | minor | usability: Shell and tool pitfalls (zsh, the ignored `.canon/`, `/tmp`) reach no subagent prompt | open |
+| R003-F40 | minor | usability: The `canon` skill sends L1 revisions to `canon-design`, which the agent cannot invoke | fixed 18b7dcf |
+| R003-F41 | minor | usability: Shell and tool pitfalls (zsh, the ignored `.canon/`, `/tmp`) reach no subagent prompt | fixed 80b9688 (the `.canon/` and `/tmp` pitfalls; the user declined the zsh rules) |
 
 ## Details
 
