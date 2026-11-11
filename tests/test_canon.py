@@ -1001,8 +1001,10 @@ class StatusTest(CanonTest):
 
     def test_status_takes_only_the_types_statuses_and_leaves_terminal_ones_to_archive(self):
         self.design(status="draft")
+        self.doc("C", "idea")
         self.commit(check=False)
         self.refused("done is not a status of D001; use one of draft, accepted, active", "D001", "done")
+        self.refused("done is not a status of C001; use one of draft, adopted", "C001", "done")
         self.refused("retired is terminal for D001; use `canon.py archive`", "D001", "retired")
 
     def test_status_moves_only_forward_and_lists_the_later_statuses(self):
@@ -1026,8 +1028,17 @@ class StatusTest(CanonTest):
         self.commit(check=False)
         self.refused("D001 needs `reviewed` equal to `revision` to become accepted", "D001", "accepted")
 
+    def test_a_draft_skipping_accepted_needs_the_revision_reviewed_first(self):
+        design = self.design(status="draft", revision=2, reviewed=1, implemented=1)
+        self.commit(check=False)
+        message = "D001 needs `reviewed` equal to `revision` to become active"
+        self.refused(message, "D001", "active")
+        self.set(design, implemented=2)
+        self.commit(check=False)
+        self.refused(message, "D001", "active")
+
     def test_active_needs_implemented_not_above_reviewed(self):
-        design = self.design(status="draft", implemented=None)
+        design = self.design(status="accepted", implemented=None)
         message = "D001 needs `implemented` not above `reviewed` to become active"
         for fields in ({}, dict(revision=2, implemented=2), dict(revision=1, reviewed=None, implemented=1),
                        dict(implemented=0)):

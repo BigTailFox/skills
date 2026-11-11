@@ -29,7 +29,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "37"
+CANON_VERSION = "38"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -1708,17 +1708,17 @@ def cmd_status(repo, args):
         sys.exit("canon: {} is archived".format(doc.id))
     info, moves = TYPES[doc.type], status_moves(doc.type)
     if args.status not in info["active"] + info["terminal"]:
-        sys.exit("canon: {} is not a status of {}; use one of {}".format(
-            args.status, doc.id, ", ".join(info["active"])))
+        sys.exit("canon: {} is not a status of {}; use one of {}".format(args.status, doc.id, ", ".join(moves)))
     if args.status not in moves:
         sys.exit("canon: {} is terminal for {}; use `canon.py archive`".format(args.status, doc.id))
     later = moves[moves.index(doc.status) + 1:] if doc.status in moves else moves
     if args.status not in later:
         sys.exit("canon: {} is {}; status moves only forward{}".format(
             doc.id, doc.status, ", to " + ", ".join(later) if later else ""))
+    passed = later[:later.index(args.status) + 1]
     implemented = doc.get("implemented")
     condition = None
-    if args.status in ("accepted", "in-progress") and not 1 <= doc.reviewed == doc.revision:
+    if {"accepted", "in-progress"} & set(passed) and not 1 <= doc.reviewed == doc.revision:
         condition = "`reviewed` equal to `revision`"
     elif args.status == "active" and not (isinstance(implemented, int) and 1 <= implemented <= doc.reviewed):
         condition = "`implemented` not above `reviewed`"
