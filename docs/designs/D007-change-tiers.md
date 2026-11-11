@@ -50,7 +50,7 @@ L0: implement → code review → docs step → commit
 - When a change may alter behavior or standards a design specifies, the agent first runs `canon.py which <file>` and reads the governing sections with `canon.py show D00X#slug`.
 - Behavior no design states, and the tier of a change to it, follow [D002§backfill: backfill](D002-overview-and-as-built.md#backfill).
 - Splitting a design into sub-designs is L1 and only moves what [D006§doc-types: doc types](D006-doc-model.md#doc-types) moves with a topic, without changing what it states; a spec change it would carry is a revision of its own, before or after the split, at that change's tier. Though the split changes no spec, the parent's new revision and the sub-design pass one review gate at L1, the parent as its target, so reviewers confirm nothing was lost, and take their status as [Gate status](#gate-status) states.
-- A commit that touches a design's `paths`, in any tier, names the designs it was checked against in a `Refs:` trailer (`affected` lists them); `audit` treats commits without one as unchecked.
+- A commit that touches a design's `paths`, in any tier, names the designs it was checked against in a `Refs:` trailer (`affected` lists them); `audit` treats commits without one as unchecked ([D002§unchecked-commits-in-audit: unchecked commits](D002-overview-and-as-built.md#unchecked-commits-in-audit)).
 
 ### Phases
 

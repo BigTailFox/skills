@@ -23,7 +23,7 @@ implemented: 6
 3. `canon.py new` creates each doc from its type's template with the next free id; `canon.py archive` moves a doc and its attachments to `archived/` and rewrites every link to them, and refuses while the type's terminal conditions fail.
 4. Docs state each fact once, in the doc that owns it, for a reader who arrives through a pointer.
 
-Out of scope: the generated index ([D005: Docs index](D005-docs-index.md)); D000, as-built revisions and `as_built`, ids that Git history keeps taken, docs by their name such as READMEs, and coverage in `audit` ([D002: Project overview and as-built designs](D002-overview-and-as-built.md)); `init`, `adopt` and the `AGENTS.md` block ([D004: Project setup](D004-project-setup.md)); change tiers, the review gate and design problems ([D007: Change tiers and the review gate](D007-change-tiers.md)); `rename`, `renumber`, `show`, `find`, `which`, `affected` and the rest of `audit`, which no design covers.
+Out of scope: the generated index ([D005: Docs index](D005-docs-index.md)); D000, as-built revisions and `as_built`, ids that Git history keeps taken, docs by their name such as READMEs, and unchecked commits and coverage in `audit` ([D002: Project overview and as-built designs](D002-overview-and-as-built.md)); `init`, `adopt` and the `AGENTS.md` block ([D004: Project setup](D004-project-setup.md)); change tiers, the review gate and design problems ([D007: Change tiers and the review gate](D007-change-tiers.md)); `rename`, `renumber`, `show`, `find`, `which`, `affected` and the rest of `audit`, which no design covers.
 
 ## Spec
 

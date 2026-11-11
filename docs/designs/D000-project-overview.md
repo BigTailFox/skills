@@ -32,7 +32,7 @@ implemented: 3
 | The generated index of each docs root's docs in `docs/README.md` and `docs/archived/README.md` (`canon.py index`) | canon | [D005: Docs index](D005-docs-index.md) |
 | Change tiers and the flow each sets, the review gate, and design problems found while working from a design | canon | [D007: Change tiers and the review gate](D007-change-tiers.md) |
 | Writing designs and plans, and implementing plans slice by slice (`canon-design`, `canon-plan`, `canon-implement`) | canon | none |
-| The project overview, D000, with the designs `audit` finds D000 does not reach and the source areas it finds no design covers | canon | [D002: Project overview and as-built designs](D002-overview-and-as-built.md) |
+| The project overview, D000, with the designs `audit` finds D000 does not reach, the source areas it finds no design covers and the designs whose code changed in commits that do not name them | canon | [D002: Project overview and as-built designs](D002-overview-and-as-built.md) |
 | As-built designs, and the backfill before a change to behavior no design states | canon | [D002: Project overview and as-built designs](D002-overview-and-as-built.md) |
 | Blind reviews by fresh subagents, a cross-family reviewer included, for the review gate, code review or any request (`canon-blind-review`), and a fresh worker for each plan slice | canon | [D003: Subagents](D003-subagents.md), [D007: Change tiers and the review gate](D007-change-tiers.md) |
 | Opt-in tracing of workflow runs for replay and analysis (`canon.py trace`) | canon | [D001: Skill telemetry with canon trace](D001-skill-telemetry.md) |
