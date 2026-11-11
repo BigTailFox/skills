@@ -11,7 +11,7 @@ paths: [skills/governance/canon/SKILL.md, skills/governance/canon/doc-types.md, 
 reviewed: 6
 reviewers: [claude-opus-5.5]
 approved: 5
-implemented: 5
+implemented: 6
 ---
 
 # D006: Doc model and writing rules

@@ -10,7 +10,7 @@ owns: [prototypes, research]
 paths: [skills/execution/canon-prototype/SKILL.md, skills/execution/canon-prototype/LOGIC.md, skills/execution/canon-prototype/UI.md, skills/execution/canon-research/SKILL.md]
 reviewed: 3
 reviewers: [claude-opus-5.5]
-implemented: 2
+implemented: 3
 ---
 
 # D008: Prototypes and research
