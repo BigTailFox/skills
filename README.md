@@ -26,7 +26,7 @@ Then run `/canon-init` in a project. It sets up `docs/`, migrates the project's 
 
 ## How canon works
 
-Canon keeps a project's knowledge in numbered docs under `docs/`: concepts (C), designs (D), plans (P), reviews (R), experiments (E) and investigations (I). Designs are the long-lived authority on their topics and name the code they govern; a plan carries one change. Every change gets a tier, and the tier sets the flow:
+Canon keeps a project's knowledge in numbered docs under `docs/`: concepts (C), designs (D), plans (P), reviews (R), experiments (E) and investigations (I). Designs are the long-lived authority on their topics and name the code they govern; a plan carries one change. Every change gets a tier, which sets its flow, except a docs-only edit that bumps no revision and touches no file a design governs:
 
 | Tier | When | Flow |
 |---|---|---|
@@ -34,9 +34,9 @@ Canon keeps a project's knowledge in numbered docs under `docs/`: concepts (C), 
 | L1 | Specs change or grow inside one existing design, within one module | revise the design → review gate (when specs change) → plan → review gate (when needed) → implement → code review → docs step |
 | L2 | A new topic or module, a cross-module interface or architecture change, a rewrite of a design's goals, or whenever you ask | design → review gate → your approval → plan → review gate → your approval → implement → code review → docs step |
 
-Design, plan and implementation are separate phases, started with `/canon-design`, `/canon-plan` and `/canon-implement`. Each can run in a fresh session because the docs carry the state, and each ends by giving you the command for the next one; for L2, running it is your approval. An L1 session that revises a design carries on to implementation itself. Along the way:
+Design, plan and implementation are separate phases, started with `/canon-design`, `/canon-plan` and `/canon-implement`. Each can run in a fresh session because the docs carry the state, and each ends by giving you the command for the next one; for L2, it asks for your approval, which you give with a yes or by running that command. An L1 session that revises a design carries on to implementation itself. Along the way:
 
-- **Review gate.** A design or plan revision is accepted only after a blind review by fresh subagents that see a prompt naming files in the repository and nothing of the conversation. A same-model reviewer always reviews; L2 adds a cross-family reviewer, a model from another family, and L1 adds one when you ask.
+- **Review gate.** A design or plan revision is accepted only after a blind review by fresh subagents that see a prompt naming files in the repository and nothing of the conversation. A same-model reviewer always reviews; L2 adds a cross-family reviewer, a model from another family, and L1 adds one when you ask. A later revision the same session makes goes back to the same reviewers in a follow-up round.
 - **Implementation.** Each plan slice goes to a fresh worker subagent that builds it test-first. The main session verifies the slice, updates the plan and commits; a slice whose worker gets stuck is paused for you to decide.
 - **Code review.** Every finished change, L0 included, gets a Spec reviewer (against its designs and plan) and a Standards reviewer (against the project's stated standards) as parallel subagents, so the session that wrote the code never reviews it. L2 adds the cross-family reviewer.
 - **Docs step.** Before the final commit, designs absorb the details the code settled, finished plans and reviews are archived, and the commit names the designs it was checked against in a `Refs:` trailer, which lets `canon.py audit` flag code commits nobody checked against their design.
@@ -46,7 +46,7 @@ Design, plan and implementation are separate phases, started with `/canon-design
 
 Workers and reviewers inherit the session's model and reasoning effort, so the session you start sets both; start a risky implementation at high effort. The exception is the cross-family reviewer. `/canon-init` lists your reviewers on this machine, with their tools, models and efforts, in `~/.config/canon/reviewer.md` after a test run of each, under each model family your sessions run on, so sessions on both Claude and GPT need a reviewer of each. A review uses the first one listed for its session's family, and the next when one fails; a review that finds nothing for its family asks you once and writes your answer there, `none` included. Without a reviewer, the review falls back to a prompt you run in another tool.
 
-Reviewers who confirm fixes read only what the fixes changed: `canon.py snapshot` records the work tree before a review and again before its confirmation, tracing on or off, in the checkout's `.canon/canon/snapshots/`, where each snapshot stays for 30 days. Like trace's snapshots, they hold untracked files that are not ignored, so packaging that does not read `.gitignore` must exclude `.canon/`, as [Tracing](#tracing) says.
+Reviewers who confirm fixes or review a later revision read only what changed: `canon.py snapshot` records the work tree before each review round and again before its confirmation, tracing on or off, in the checkout's `.canon/canon/snapshots/`, where each snapshot stays for 30 days. Like trace's snapshots, they hold untracked files that are not ignored, so packaging that does not read `.gitignore` must exclude `.canon/`, as [Tracing](#tracing) says.
 
 ## Tracing
 
@@ -61,11 +61,11 @@ python3 scripts/canon.py trace status      # whether tracing is on and why, open
 
 `trace on` creates the machine switch, `~/.config/canon/trace` (under `$XDG_CONFIG_HOME` when that is set). It lies outside the project, so run it yourself: a sandboxed agent cannot write there. Installing the skills and running `/canon-init` never turn tracing on, and a project whose `canon.py` predates tracing stays untraced until `/canon-init` upgrades it.
 
-With tracing on, the session you talk to calls `canon.py trace` at the boundaries of each unit of work: a design, plan, implementation and each of its slices, review gate, code review, investigation, codebase review or retro. Everything lands in the checkout's `.canon/canon/trace/`:
+With tracing on, the session you talk to calls `canon.py trace` at the boundaries of each unit of work: a design, plan, implementation and each of its slices, review gate and each of its follow-up rounds, code review, investigation, codebase review or retro. Everything lands in the checkout's `.canon/canon/trace/`:
 
 - `events.jsonl`: one line per call, with ids, kinds, outcomes, the severities and dispositions of review findings, commit ids, times, doc ids, host and model names, the skill's path and digests of the skill files in use; never prompts, outputs, source code or free text.
 - Snapshots, kept in a Git repository of their own at `.canon/canon/trace/.git`: one per unit start, holding what `git add -A` would commit, untracked files that are not ignored included, so that a review or slice can be replayed later. The skill versions in use are stored there too. The first snapshot copies the whole tree, later ones only what changed.
-- `<unit id>/`: the reviewer files of each review gate and code review, copied when it ends, and a failed snapshot's Git message.
+- `<unit id>/`: the reviewer files of each review gate, follow-up round and code review, copied when it ends, and a failed snapshot's Git message.
 
 `trace status` shows whether tracing is on and why, the units opened in the last 24 hours that have not ended, marking those of the current conversation, the number of snapshots, the starts that skipped one and why, and the snapshot repository's size on disk.
 

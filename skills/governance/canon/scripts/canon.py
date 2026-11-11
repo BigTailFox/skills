@@ -29,7 +29,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "36"
+CANON_VERSION = "37"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -527,6 +527,11 @@ class Doc:
     @property
     def revision(self):
         value = self.get("revision")
+        return value if isinstance(value, int) else 0
+
+    @property
+    def reviewed(self):
+        value = self.get("reviewed")
         return value if isinstance(value, int) else 0
 
     def as_list(self, key):
@@ -1180,7 +1185,7 @@ def check_doc(repo, doc, changed, strict=False):
                      "gate, then set `reviewed` and `reviewers`".format(doc.revision, "none" if reviewed is None else reviewed))
     approved = fm.get("approved")
     if approved is not None and "approved" in OPTIONAL_FIELDS.get(doc.type, ()):
-        if not isinstance(approved, int) or not 1 <= approved <= (reviewed if isinstance(reviewed, int) else 0):
+        if not isinstance(approved, int) or not 1 <= approved <= doc.reviewed:
             err("`approved` must be an integer revision from 1 to `reviewed`")
 
     if doc.type == "D":
@@ -1711,12 +1716,11 @@ def cmd_status(repo, args):
     if args.status not in later:
         sys.exit("canon: {} is {}; status moves only forward{}".format(
             doc.id, doc.status, ", to " + ", ".join(later) if later else ""))
-    reviewed, implemented = doc.get("reviewed"), doc.get("implemented")
-    reviewed = reviewed if isinstance(reviewed, int) else 0
+    implemented = doc.get("implemented")
     condition = None
-    if args.status in ("accepted", "in-progress") and reviewed != doc.revision:
+    if args.status in ("accepted", "in-progress") and not 1 <= doc.reviewed == doc.revision:
         condition = "`reviewed` equal to `revision`"
-    elif args.status == "active" and not (isinstance(implemented, int) and implemented <= reviewed):
+    elif args.status == "active" and not (isinstance(implemented, int) and 1 <= implemented <= doc.reviewed):
         condition = "`implemented` not above `reviewed`"
     if condition:
         sys.exit("canon: {} needs {} to become {}".format(doc.id, condition, args.status))

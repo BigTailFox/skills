@@ -1020,10 +1020,17 @@ class StatusTest(CanonTest):
         self.refused("D001 needs `reviewed` equal to `revision` to become accepted", "D001", "accepted")
         self.refused("P001 needs `reviewed` equal to `revision` to become in-progress", "P001", "in-progress")
 
+    def test_a_doc_with_neither_revision_nor_reviewed_is_not_reviewed(self):
+        design = self.design(status="draft", implemented=None)
+        design.write_text(re.sub(r"^(revision|reviewed): \d+\n", "", design.read_text(), flags=re.M))
+        self.commit(check=False)
+        self.refused("D001 needs `reviewed` equal to `revision` to become accepted", "D001", "accepted")
+
     def test_active_needs_implemented_not_above_reviewed(self):
         design = self.design(status="draft", implemented=None)
         message = "D001 needs `implemented` not above `reviewed` to become active"
-        for fields in ({}, dict(revision=2, implemented=2), dict(revision=1, reviewed=None, implemented=1)):
+        for fields in ({}, dict(revision=2, implemented=2), dict(revision=1, reviewed=None, implemented=1),
+                       dict(implemented=0)):
             self.set(design, **fields)
             self.commit(check=False)
             self.refused(message, "D001", "active")

@@ -10,7 +10,7 @@ Read the `canon` skill first. `canon.py` means the project copy named in `AGENTS
 
 ## 1. Start
 
-1. The design must have passed the review gate (`reviewed` equals `revision`); otherwise stop and give the user `/canon-design D00X` to finish it. Invoking this skill on a design approves it and the follow-on targets its gate passed with it, the other designs that gate's commit revised: before `new P --from`, set `approved` on each to its revision where it is lower and a draft `accepted` with `canon.py status`, say so in one line naming the gate's reviewers, and commit them.
+1. The design must have passed the review gate (`reviewed` equals `revision`); otherwise stop and give the user `/canon-design D00X` to finish it. Invoking this skill on a design approves it: before `new P --from`, set its `approved` to its revision where it is lower and a draft `accepted` with `canon.py status`, say so in one line naming the gate's reviewers, and commit them. A new plan also approves each other design you add to its `based_on`: set it likewise, committed with the plan.
 2. New plan: `canon.py new P <slug> --from D00X`. Revising a plan: edit it in place and bump `revision`.
 3. Run `canon.py trace start plan <P id> <D id> --tier <tier> --skill <skill> --model <model>`.
 4. Read the whole design, the code its `paths` govern, the existing tests and the commands that run them.
@@ -40,6 +40,6 @@ When drafting or the gate finds a design problem, as when a slice would have to 
 5. Run the `canon-retro` skill's end check only if this work hit concrete friction in the development infrastructure or the agent workflow that could recur, such as a correction to how you worked, a finding a check could have caught, a command that would not run, a check that failed after you thought you were done, a search that took far too long, or a canon step that got in the way. Use only evidence already in context; do not search for reasons to run it.
 6. Run `canon.py trace end <id> <outcome>`.
 
-A revision this session makes after step 4's commit runs steps 1 to 4 again, step 2 passing a follow-up round, so an L2 revision asks for approval again; the `canon` skill's workflow (Follow-up round) names the revisions that pass a new gate instead.
+A revision this session makes after step 4's commit runs steps 1 to 4 again, step 2 passing a follow-up round through the gate's step 5, so an L2 revision asks for approval again; the `canon` skill's workflow (Follow-up round) names the revisions that pass a new gate instead.
 
 End with the command for the next phase, `/canon-implement P00X`. When slices carry a `Risk:` line, name them beside the command and suggest high reasoning effort for the implementation session, since every worker runs at the session's effort.

@@ -25,7 +25,7 @@ Execute `canon.py`; do not read it. Use the project's copy at the path named in 
 | `which FILE...` | List the designs whose `paths` govern the files, `doc` for a [project doc](#layout) that no `paths` entry names exactly, and `no design` for any other file. |
 | `affected [FILE...] [--base REF]` | Designs and plans governing the given files, else the uncommitted changes plus, with `--base`, the branch's. |
 | `audit` | Designs with code commits since the design last changed that no `Refs:` trailer names, known issues oldest first, idle open docs other than concepts and active designs, due reviews, source areas under D000's module Paths that no design covers, ranked by commits in the last 90 days, and designs D000 does not reach by following `refs` from design to design. |
-| `snapshot` | Record the work tree, untracked files included, and print the snapshot commit, for a review's confirmation diff (the `canon-blind-review` skill). |
+| `snapshot` | Record the work tree, untracked files included, and print the snapshot commit, for the diffs of a review's confirmation and follow-up rounds (the `canon-blind-review` skill). |
 | `init`, `adopt` | Project setup, upgrades and migration; the user runs them through the `canon-init` skill. |
 
 In `trace` calls, `<skill>` is the path of the followed `SKILL.md`'s directory (`canon-blind-review`'s for a gate or follow-up round, else `canon`'s), `<model>` your model id as the host names it, and `<parent>` the invoking workflow's open unit id, if any. Unless a skill's first `start` prints `trace <id>`, skip its other trace calls; else follow [trace.md](trace.md), using that `<id>`.

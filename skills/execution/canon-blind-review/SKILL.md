@@ -9,7 +9,7 @@ A reviewer is **blind** when its only input is the prompt. It never sees the con
 
 ## Prompt
 
-Every first-round prompt is this template. The caller fills `{artifact}`, the Target lines, the reading line and the Assess items, and passes nothing else, never context about why the review was requested:
+Every first-round prompt is this template. The caller fills `{artifact}`, the Target lines, the reading line, a whole sentence in place of `{reading line}`, and the Assess items, and passes nothing else, never context about why the review was requested:
 
 - **Review gate**: `a design` or `a plan`, and the lines in the `canon` skill's workflow (Reviewer prompt).
 - **Code review**: as the `canon-code-review` skill says, with its briefs.
@@ -22,7 +22,7 @@ You are reviewing {artifact} in this repository with no prior context. Judge it 
 
 {Target lines}
 
-Read {what to read}. Do not read `.canon/`. Do not modify any file or write scratch files; read long command output in parts instead. You may run the canon.py that `AGENTS.md` names with `show`, `find`, `which`, `affected`, or `check` without `--fix`, which only read; when the host blocks one, read the files instead.
+{reading line} Do not read `.canon/`. Do not modify any file or write scratch files; read long command output in parts instead. You may run the canon.py that `AGENTS.md` names with `show`, `find`, `which`, `affected`, or `check` without `--fix`, which only read; when the host blocks one, read the files instead.
 
 Assess:
 - {item}
@@ -59,7 +59,7 @@ The review gate and code review say when the cross-family reviewer runs; other r
 
 ## Review files
 
-Keep each reviewer's files in `.canon/canon-blind-review/<topic>/`. A gate's topic is its target's id and the revision it reviews, `<id>-r<N>` such as `D007-r4`, a joint gate's too, so a later gate never overwrites it; a code review's is the one the `canon-code-review` skill names; any other review's is a slug of what it reviews. Each [follow-up round](#follow-up-round) of a gate keeps its files, named the same way, in `<topic>/followup-<k>/`, numbered from 1.
+Keep each reviewer's files in `.canon/canon-blind-review/<topic>/`. A gate's topic is its target's id and the revision it reviews, `<id>-r<N>` such as `D007-r4`, a gate with follow-on targets too, so a later gate never overwrites it; a code review's is the one the `canon-code-review` skill names; any other review's is a slug of what it reviews. Each [follow-up round](#follow-up-round) of a gate keeps its files, named the same way, in `<topic>/followup-<k>/`, numbered from 1.
 
 Name each file by the reviewer's role, `same-model` or `cross-family` unless the caller names others: its prompt in `<role>-prompt.md`, written before its run starts; its findings in `<role>.md`; and the agent or session id of the run whose report you merged in `<role>-id.txt`. A confirmation adds `<role>-confirm-prompt.md` and `<role>-confirm.md`; the round's other files stay as they were.
 
