@@ -2,15 +2,15 @@
 status: active
 created: 2026-11-10
 updated: 2026-11-11
-revision: 2
+revision: 3
 modules: [canon]
 summary: Change tiers L0, L1 and L2 and their flows, design problems, and the review gate's steps, reviewer prompt, merge rules, confirmation round and status.
 refs: [D001, D002, D003, D006, R003]
 owns: [change-tiers, review-gate, design-problems]
 paths: [skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-implement/SKILL.md]
-reviewed: 2
+reviewed: 3
 reviewers: [claude-opus-5.5]
-implemented: 2
+implemented: 3
 ---
 
 # D007: Change tiers and the review gate
@@ -46,7 +46,7 @@ L0: implement → code review → docs step → commit
 - The agent states the tier when starting a change and picks the higher one when unsure.
 - When a change may alter behavior or standards a design specifies, the agent first runs `canon.py which <file>` and reads the governing sections with `canon.py show D00X#slug`.
 - Behavior no design states, and the tier of a change to it, follow [D002§backfill: backfill](D002-overview-and-as-built.md#backfill).
-- Splitting a design into sub-designs is L1 when the split only moves what [D006§doc-types: doc types](D006-doc-model.md#doc-types) moves with a topic, without changing what it states. Though it changes no spec, the parent's new revision and the sub-design each pass the review gate at L1, so reviewers confirm nothing was lost, and take their status as [Gate status](#gate-status) states. A split that also changes spec takes the tier of that change.
+- Splitting a design into sub-designs is L1 and only moves what [D006§doc-types: doc types](D006-doc-model.md#doc-types) moves with a topic, without changing what it states; a spec change it would carry is a revision of its own, before or after the split, at that change's tier. Though the split changes no spec, the parent's new revision and the sub-design each pass the review gate at L1, so reviewers confirm nothing was lost, and take their status as [Gate status](#gate-status) states.
 - A commit that touches a design's `paths`, in any tier, names the designs it was checked against in a `Refs:` trailer (`affected` lists them); `audit` treats commits without one as unchecked.
 
 ### Phases
@@ -126,7 +126,9 @@ End with one line: Verdict: approve | revise
 ```
 
 - The `Changes since` line is only for revisions of an existing doc.
-- In Correctness and Completeness, a revision other than an as-built one takes the first choice. For an as-built revision, the prompt gains an `As-built:` line after `Changes since` and an Assess item after `Plans only`, and takes the second choices ([D002§as-built-revisions: as-built revisions](D002-overview-and-as-built.md#as-built-revisions)).
+- In Correctness and Completeness, a revision other than an as-built one takes the first choice. For an as-built revision, the prompt gains an `As-built:` line after `Changes since` and a last Assess item, and takes the second choices ([D002§as-built-revisions: as-built revisions](D002-overview-and-as-built.md#as-built-revisions)).
+- When the project, or the module the target concerns, has no code yet, Correctness replaces `the current code` with `the experiments and designs it rests on`.
+- A design's prompt drops the `Plans only` item.
 - `{documentation language}` is the language the project's docs are written in.
 - The report the prompt asks for is the one [D003§input-and-reports: input and reports](D003-subagents.md#input-and-reports) states for every gate and blind review.
 
@@ -147,7 +149,7 @@ End with one line: Verdict: approve | revise
 - L1: a draft becomes `accepted`.
 - L2: the user approves, at this step or by starting the next phase on the doc; a draft becomes `accepted` at that point, and until then stays a `draft` whose `reviewed` equals `revision`.
 - A revised design that is `accepted` or `active`, and a revised plan that is `accepted` or `in-progress`, keeps its status, in both tiers.
-- After a split's gate, the sub-design takes its parent's status; when the parent is `active`, the sub-design gets `implemented: 1`, and the parent's `implemented` rises to its new revision when it equaled the previous one.
+- After a split's gate, the sub-design takes its parent's status, except that it is `accepted` when the parent is `active` but its `implemented` does not cover all the spec the sub-design receives; an `active` sub-design gets `implemented: 1`. The parent's `implemented` rises to its new revision when it equaled the previous one.
 - An as-built revision takes its status after the gate as [D002§as-built-revisions: as-built revisions](D002-overview-and-as-built.md#as-built-revisions) states.
 
 ## Decisions
@@ -170,5 +172,3 @@ End with one line: Verdict: approve | revise
 | D007-K6 | minor | Which commit fills `Changes since` for a revision other than the one after an as-built revision is unstated, and a revision that passed its gate but was not committed leaves none | R003-F6 | 2026-11-10 | L2 |
 | D007-K7 | minor | The tier of changes to C, R and E docs alone, and how a D000 without code is planned and marked, are unstated | R003-F21 | 2026-11-10 | L2 |
 | D007-K8 | minor | Revision and approval bookkeeping around a gate, such as the L2 approval of a revised active design, leaves no record; the user wants it designed with D006-K10 | R003-F24 | 2026-11-10 | L2 |
-| D007-K12 | minor | Whether a gate drops the prompt's Assess items for other targets, `Plans only` for a design and `As-built revisions only` for another revision, is unstated | D007 gate | 2026-11-10 | L1 |
-| D007-K13 | minor | After a split from an active parent whose `implemented` lags its previous revision, Gate status still gives the sub-design `implemented: 1`, though the moved spec may lead the code | D007 gate | 2026-11-11 | L1 |

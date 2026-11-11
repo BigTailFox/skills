@@ -2,15 +2,15 @@
 status: active
 created: 2026-10-15
 updated: 2026-11-11
-revision: 9
+revision: 10
 modules: [canon]
 summary: Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions.
 refs: [D002, D003, D000, D007]
 owns: [skill-telemetry]
 paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py, skills/governance/canon/trace.md, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/execution/canon-blind-review/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-handoff/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-investigate/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-retro/SKILL.md, skills/execution/canon-review/SKILL.md]
-reviewed: 9
+reviewed: 10
 reviewers: [claude-opus-5.5]
-implemented: 9
+implemented: 10
 ---
 
 # D001: Skill telemetry with canon trace
@@ -56,13 +56,13 @@ A unit is one traced span of work, named by the id its `start` prints. A child u
 
 | Kind | Started by | Ends | Parent |
 |---|---|---|---|
-| `design`, `plan`, `implement`, `investigate`, `canon-review`, `retro` | the skill of that name | `end` | none |
+| `design`, `plan`, `implement`, `investigate`, `canon-review`, `retro` | the skill of that name; an `implement` unit also the `canon` workflow, for L1 work carried on after its gate | `end` | none |
 | `code-review` | `canon-code-review` | `end` | the enclosing unit, if one is open |
 | `gate` | the review gate | `end` | the enclosing unit, if one is open |
 | `slice` | `canon-implement`, before a worker runs on a slice with no open unit | the first of its commit, the next `start` under its `implement` unit, and that unit's end | `implement` |
 | `end-check` | `canon-retro`'s end check | `end` | the unit it closes, if still open |
 
-`retro` is a requested retro. A slice's commit is the one that changes its `Status:`; workers run one at a time, so the next start under the same unit also ends a slice. A top-level unit has no parent: a unit of the first row, or a code review, gate or end check with no open unit to name, such as `canon-init`'s gates, `canon-handoff`'s end check and the review of a fix a retro applies. A slice built in the implementing session itself (an L0 change, an L1 revision without a plan) is part of its `implement` unit.
+`retro` is a requested retro. A slice's commit is the one that changes its `Status:`; workers run one at a time, so the next start under the same unit also ends a slice. A top-level unit has no parent: a unit of the first row, or a code review, gate or end check with no open unit to name, such as `canon-init`'s gates, `canon-handoff`'s end check and the review of a fix a retro applies. A slice built in the implementing session itself (an L0 change, an L1 revision without a plan) is part of its `implement` unit. An L0 change made outside `canon-implement` opens no unit and leaves only its code review, until a design revision turns it into L1 work, which opens one as [Call sites](#call-sites) states.
 
 Outcomes, given to `end`. Every kind that ends allows `delivered`, `blocked`, `handoff` and `cancelled`; `implement` also allows `partial` and `escalated`, and `end-check` allows only `quiet` and `raised`.
 
@@ -78,10 +78,11 @@ Outcomes, given to `end`. Every kind that ends allows `delivered`, `blocked`, `h
 
 Each call runs the project's `canon.py`. `<skill>` is the directory of the `SKILL.md` being followed, for a gate `canon-blind-review`'s or else `canon`'s; `<model>` is the session's model id as the host's model setting names it; `<tier>` is the tier the work runs at, for a gate the tier of its review, which can be above the enclosing unit's; `<id>` is the id printed by this skill's own `start`, and `<parent>` the id of the open unit of the workflow that invoked the skill, left out with `--parent` when there is none. A skill's first `start` decides: unless it prints `trace <id>`, the skill skips its other trace calls, which also covers a project copy of `canon.py` too old to have `trace`. When it does print an id, the agent follows the `canon` skill's `trace.md`, which states the outcomes and the dispositions format for agents. The placeholders other than `<tier>` and the first-start rule are stated in a paragraph of the `canon` skill itself, after its command table, since the first call needs them before tracing is known to be on; the review gate states the tier it runs at. An agent that lost an id finds it with `trace status`.
 
-- `canon-design`, after Frame step 3: `trace start design <D or C id> --tier <tier> --skill <skill> --model <model>`. Before the closing command: `trace end <id> <outcome>`.
+- `canon-design`, after Frame step 3: `trace start design <D or C id> --tier <tier> --skill <skill> --model <model>`. Before the closing command: `trace end <id> <outcome>`. An L1 revision that carries on to implementation runs its end check after the docs step's commit instead, under the `implement` unit the workflow opens (below).
 - `canon-plan`, after Start step 2: `trace start plan <P id> <D id> --tier <tier> --skill <skill> --model <model>`. Before the closing command: `trace end <id> <outcome>`.
 - `canon-implement`, after Start step 4: `trace start implement [<P or D id>] --tier <tier> --base <start commit> --skill <skill> --model <model>`. Before a worker runs on a slice that has no open unit, its first worker or one that takes the slice up again after its unit ended: `trace start slice <P id> --slice S<n> --parent <id>`; a worker resumed or replaced while the slice's unit is open stays in it ([D003§resuming-and-replacing: resuming and replacing](D003-subagents.md#resuming-and-replacing)). After Finish step 3, or when stopping on a wrong tier: `trace end <id> <outcome> [--to L1|L2|plan]`.
 - `canon-code-review`, after Pin the fixed point: `trace start code-review [<P id>] --base <fixed point> --tier <tier> --skill <skill> --model <model> [--parent <parent>]`. After Dispose, its end check included: `trace end <id> <outcome> --dir .canon/canon-blind-review/<topic> --input -`, with the dispositions on stdin.
+- L1 work in the `canon` workflow that the session revising the design carries on to implementation ([D007§phases: phases](D007-change-tiers.md#phases)), unless `canon-implement` runs it, once the revision has passed its gate: `trace start implement <D id> --tier L1 --skill <skill> --model <model>`. After the docs step's commit and any end check, or when it stops for a plan or an L2 fix: `trace end <implement id> <outcome> [--to plan|L2]`, where `<implement id>` is what that `start` printed.
 - The review gate in the `canon` workflow, at step 2: `trace start gate <doc id> --tier <tier> --skill <skill> --model <model> [--parent <parent>] [--base <Changes since commit>]`. At the end of step 5, after an L2 gate has the user's answers on its escalated findings: `trace end <gate id> <outcome> --dir .canon/canon-blind-review/<doc id> --input -`, where `<gate id>` is what the gate's `start` printed.
 - `canon-investigate`, when opening the investigation: `trace start investigate <I id> --skill <skill> --model <model>`. After Phase 6: `trace end <id> <outcome>`.
 - `canon-review`, after Create the doc: `trace start canon-review <R id> --skill <skill> --model <model>`. After Close: `trace end <id> <outcome>`.
@@ -327,4 +328,4 @@ Calls and latency are measured in the pilot; `canon.py` enforces the sizes, and 
 
 | ID | Severity | Issue | Source | Since | Next |
 |----|----------|-------|--------|-------|------|
-| D001-K1 | minor | A `canon-design` session whose L1 revision carries on to implementation, as [D007§phases: phases](D007-change-tiers.md#phases) allows, does so after its `design` unit ends, and no call site opens an `implement` unit for that work, so it goes untraced | code review e122546 | 2026-11-11 | L1 |
+| D001-K2 | minor | A gate's review files go in a directory named by its doc id, so the next revision's gate overwrites them, and joint gates and extra rounds have no place in the layout; it is settled with the gate bookkeeping of D007-K4 and D007-K5 | R002-F3, R003-F10 | 2026-11-10 | L2 |

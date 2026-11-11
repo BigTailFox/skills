@@ -286,7 +286,7 @@ Agents and people read docs, usually after reaching them through a pointer: an `
 - `check --fix` gives `implemented: 1` only to an active design never revised and named by no open plan: a design becomes active once its code lands, so one never revised implements r1, while for a revised design only the code and the history can tell (`check_doc` in `canon.py`; `ImplementedTest`; 6fc017c).
 - An empty `summary` and template guidance only warn until a design or plan passes its gate or a doc is archived, and fail under `--base` (0b2c737; reason unknown, kept as found).
 - Code review and the review gate produce no R doc; what the user leaves for later becomes a known issue of a design or a line in a plan's Notes ([D007§merging-findings: merging findings](D007-change-tiers.md#merging-findings)) (1c7c1f0; reason unknown, kept as found).
-- `archive`, `adopt`, `rename`, `renumber` and `init`'s move of a design to D000 share one link rewriting, so all encode targets alike, and the design that takes on the moving commands owns its rule: D006, with `archive` ([D004§decisions: decisions](D004-project-setup.md#decisions); the user's decision).
+- `archive`, `adopt`, `rename`, `renumber` and `init`'s move of a design to D000 share one link rewriting, so all encode targets alike, and the design that takes on the moving commands owns its rule: D006, with `archive` (the user's decision).
 - The line limit warns and never fails, on every type, with a split hint for designs only (`check_doc` in `canon.py`; reason unknown, kept as found).
 - Sub-designs have one level: a sub-design that outgrows itself becomes a new top-level design (`doc-types.md`; reason unknown, kept as found).
 
@@ -296,3 +296,4 @@ Agents and people read docs, usually after reaching them through a pointer: an `
 |----|----------|-------|--------|-------|------|
 | D006-K10 | minor | No command changes a non-terminal status; the user wants one designed with the gate bookkeeping of D007-K8 | R003-F36 | 2026-11-10 | L2 |
 | D006-K14 | minor | `renumber`, which has no design, and `init`'s move of a design to D000 rewrite `moved <id>` dispositions but not `fixed <id>@r<n>`, so after a conflict renumber one names the old id: it points unnoticed at the other branch's doc with that id, or else `check` reports it fixed in an unknown doc | code review e122546 | 2026-11-11 | decide |
+| D006-K15 | minor | `adopt`, `renumber` and `init`'s move of a design to D000 change the moved doc's H1, and so its anchor, but links to the old anchor, and the `§<anchor>` of link texts, keep it, broken until `check` fails on them | R001-F29 | 2026-11-05 | L1 |

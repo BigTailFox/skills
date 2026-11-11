@@ -5,7 +5,7 @@ updated: 2026-11-11
 revision: 4
 modules: [canon]
 summary: Project setup and upgrades with canon.py init, migration of existing docs with adopt, and the canon-init flows for setup, upgrade and new modules.
-refs: [D000, D001, D002, D003, D005]
+refs: [D000, D001, D002, D003, D005, D006]
 owns: [project-setup]
 paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md]
 reviewed: 4
@@ -62,7 +62,7 @@ canon.py adopt FILE TYPE [--slug SLUG] [--title TITLE] [--root DIR]
 
 - TYPE is a letter of C, D, P, R, E and I in either case, or a type's directory name, plural or singular, such as `designs` or `design`.
 - The project is `--root`, a project directory or its `docs/`, else the nearest directory above FILE that holds an `AGENTS.md`, up to the repo root. The doc gets the next free id of its type, which history keeps taken as [D002§project-overview-d000: D000](D002-overview-and-as-built.md#project-overview-d000) states, allocated under the lock `.canon/id.lock`, and moves to `<project>/docs/<type directory>/<id>-<slug>.md`. SLUG defaults to FILE's name without `.md`, lowercased, each run of characters other than `a-z` and `0-9` replaced by one `-`, trimmed of `-`, and `doc` when nothing is left.
-- Every relative inline link, `[text](target)` outside code, that points at FILE, or into it with an anchor, follows the move, in each `.md` file Git tracks or would add, or outside Git in each `.md` file outside directories named `node_modules`, `venv` or starting with `.`, and FILE's own inline links are rewritten for its new directory; a root-absolute link (`/path`) stays root-absolute. A rewritten target percent-encodes whitespace, `%`, `#`, `?`, `(` and `)` in its path, such as a space as `%20`, and keeps every other character as it is, so it stays a link. Reference-style definitions, HTML links and other file extensions are not rewritten; `check` reads only these inline links too. A link to FILE, not an image, whose text is not a reference gets the text `<id>: <text>`, or `<id>§<anchor>: <text>` when it has an anchor, the text defaulting to the id when empty.
+- Links to FILE, or into it with an anchor, follow the move, and FILE's own links are rewritten for its new directory, by the rule of [D006§statuses-and-archiving: statuses and archiving](D006-doc-model.md#statuses-and-archiving), except that a link to FILE, not an image, whose text is not a reference gets the text `<id>: <text>`, or `<id>§<anchor>: <text>` when it has an anchor, the text defaulting to the id when empty.
 - FILE's frontmatter is dropped, printing `dropped frontmatter fields: <names>`, and replaced with a new doc's frontmatter for the type: its first status, `created` and `updated` today, `revision: 1`, empty `modules`, `summary` and `refs`, and empty `owns` and `paths` for a design or `based_on` for a plan. FILE's first H1 becomes `# <id>: <title>`, where TITLE defaults to that H1's text, else to the slug with each `-` replaced by a space and the first letter capitalized; without an H1, that line is prepended. Each section the type requires that FILE lacks is appended as `## <name>` with a guidance comment asking for the matching adopted content.
 - In a Git checkout the move is a `git mv`, so history follows the file; outside Git, or when Git refuses the move, as for an untracked FILE, it is a plain rename. `adopt` then regenerates the indexes ([D005§regeneration: regeneration](D005-docs-index.md#regeneration)) and prints `<old path> -> <new path>`.
 - `adopt` exits without changing a file when FILE is not an existing `.md` file (`canon: <file> is not a markdown file`) or is already a canon doc (`canon: <file> is already a canon doc`), when SLUG is not kebab-case (`canon: slug must be kebab-case`), TYPE is unknown (`canon: unknown type <type>; use one of C D P R E I`) or the project has no `AGENTS.md` (``canon: no AGENTS.md at <absolute path>; set the project up with `canon.py init` first``), when the Git index has unmerged entries, and when another command holds the id lock for 60 s.
@@ -93,8 +93,6 @@ canon.py adopt FILE TYPE [--slug SLUG] [--title TITLE] [--root DIR]
 | ID | Severity | Issue | Source | Since | Next |
 |----|----------|-------|--------|-------|------|
 | D004-K1 | major | Nothing checks that a project's `canon.py` copy is new enough for the installed skills, so an older copy's errors contradict them; a version 18 copy reports the `as_built` field as unknown | R001-F2 | 2026-11-05 | L2 |
-| D004-K2 | minor | `adopt` rewrites the H1, which changes its anchor, and leaves links to the old anchor broken until `check` fails on them | R001-F29 | 2026-11-05 | L1 |
-| D004-K3 | minor | D004§adopt restates the link-rewriting rule, and D004§decisions says the commands sharing it have no design, while D006§statuses-and-archiving now owns it with `archive` | D006 gate | 2026-11-11 | L1 |
 
 ## Decisions
 
@@ -102,5 +100,4 @@ canon.py adopt FILE TYPE [--slug SLUG] [--title TITLE] [--root DIR]
 - `init` without `--script` keeps the copy where the root canon block names it, and refuses rather than move it, so a project set up with `--script` keeps its copy through upgrades and new modules (the user's decision). Add a module still passes `--script <copy>`, since a copy older than `CANON_VERSION` 23 ignores the block.
 - Setup installs the pre-commit hook last: the hook's `check` fails on every file step 5 has yet to restructure, so it would reject step 4's commit, which comes first to keep Git's rename pairing (R001-F14).
 - Upgrade commits `init`'s move of the design owning `architecture` on its own, with `--no-verify` under a hook running `check`, so Git keeps the rename (the user's decision; f767510, P002's Log).
-- `adopt` shares its link rewriting with `archive`, `rename`, `renumber` and `init`'s move of a design to D000, so they encode targets alike; those commands have no design ([D000§capabilities: Capabilities](D000-project-overview.md#capabilities)), and the design that takes them on will own the rule (the user's decision).
 - `adopt` replaces FILE's frontmatter instead of merging it, printing the fields it dropped (`adopt_doc` in `canon.py`; reason unknown, kept as found).

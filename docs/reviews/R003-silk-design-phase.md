@@ -34,7 +34,7 @@ refs: [C001, D000, D001, D003, D005, R001, R002]
 | R003-F7 | minor | usability: The reviewer prompt assumes code exists, and nothing allows a qualitative target before a first measurement | open |
 | R003-F8 | minor | usability: A session learns that trace is off only by calling `trace start` in each gate | declined a session learns it from the `trace start` call D001§budgets designs as the one call per skill invocation when tracing is off |
 | R003-F9 | minor | usability: `snapshot` prints a commit that is not the snapshot repository's HEAD | fixed 80b9688 |
-| R003-F10 | minor | usability: Gate directories have no layout for joint gates, later revisions or extra rounds | open |
+| R003-F10 | minor | usability: Gate directories have no layout for joint gates, later revisions or extra rounds | moved D001 |
 | R003-F11 | minor | usability: Reviewers cannot tell whether they may run `check` or read `.canon/canon/snapshots` | fixed 0872d6d |
 | R003-F12 | minor | usability: A late, repeated completion notice makes the session handle a reviewer twice | fixed 0872d6d |
 | R003-F13 | major | usability: A session cannot pass a request to another running session; handoff files go unnoticed or are read stale | fixed 18b7dcf |
