@@ -98,7 +98,7 @@ based_on: [D003@r4]                  # P only
 ```
 
 - `modules`: modules the doc concerns; empty means the whole project of this `docs/`.
-- `summary`: one line; it feeds the index and `find`.
+- `summary`: one line of at most 160 characters; it feeds the index and `find`.
 - `refs`: ids of related docs; must include every doc linked from the body (`check --fix` adds missing ones).
 - `revision`: counts semantic changes. Bump it when a goal, spec or plan changes meaning, never for wording.
 - `owns`: topics this design is the single authority for, unique across non-archived designs.
