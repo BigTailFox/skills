@@ -2,6 +2,27 @@
 
 Notable changes in each release. Versions follow [Semantic Versioning](https://semver.org); while the major version is 0, a minor release may change how skills behave.
 
+## 0.4.0 - 2026-11-11
+
+One review gate per change, with follow-up rounds and recorded approval, a command that moves a doc's status, a reviewer file per user, and an `audit` that counts from the last time a design was reconciled with its code.
+
+- One gate per change: a review gate covers every revision one change makes together, its target and the docs revised to match it, at the highest tier among them, with one set of reviewers. It asks first whether your content feedback is finished and commits its targets at once; a later revision in the same session goes to a follow-up round, in which the gate's reviewers read only what changed. A change to docs alone that bumps no revision takes no tier, and a design revision that needs no code change needs no plan.
+- Approval: designs and plans record the latest revision you approved in a new `approved` field. For L2, a yes to the gate's request or the start of the next phase is the approval, and `canon-design`, `canon-plan` and `canon-implement` set it and commit it.
+- `canon.py status ID STATUS` moves a doc forward along its type's statuses, refuses a move past the gate whose revision is not reviewed and an `active` design without `implemented`, and regenerates the indexes. The phase skills use it instead of editing `status` by hand.
+- `canon-blind-review` holds the rules every blind review shares: one prompt template, review files per round, stopped runs, merging and confirmation. The session leaves the work tree alone while reviewers read. Reviewers may run the read-only `canon.py` commands and report in the docs' language, and the session saves each report verbatim.
+- The cross-family reviewer file moves to `~/.config/canon/reviewer.md`, one per user on the machine; an earlier checkout's file is copied there. It lists each session family's reviewers in fallback order, a review asks only about a family with no reviewer it can run, and when a reviewer's runs stop twice the next one takes over before the manual route.
+- `audit` counts a design's unchecked commits from its last change or from a later commit with a `Reconciled: D00X` trailer, which the Maintenance step and `canon-sync` write once they have compared the design with its code, as an empty commit when nothing needed changing. It now also counts the commits governed by `paths` entries holding `[`, `**` inside a path segment or `*` above a matching directory, and clean merges that Git's history simplification used to hide.
+- `check` no longer warns about code not yet written: a design with no `implemented` gets no warning for `paths` that match no file, and a D000 Modules row that links only such designs gets none for its Path. Once a design has `implemented`, its revisions add a file to `paths` when the file exists, in the docs step.
+- `canon-grill` asks in batches of at most three related questions, the one most others depend on first, and writes every open decision into the doc before asking it.
+- An L1 revision runs in the current session and carries on to implementation, and a split that only moves content is L1. After a backfill, the session that took the change makes its revision; behavior found later is a design problem.
+- An adopted concept stays in `concepts/`, and `check` warns while no design links it. `adopt`, `renumber` and `init`'s move to D000 carry links and anchors to the headings they rename. A finding fixed in a doc reads `fixed <id>@r<n>`, which `check` resolves.
+- `canon-research` reuses a live experiment, keeps the brief and the researcher's id, recovers a stopped run once, and has the researcher write each finding as it goes; saved excerpts keep their text verbatim, with relative links turned into the source's absolute URLs. `canon-prototype` opens an experiment for every UI prototype and unattached question and keeps the prototype branch.
+- `check` reads the links and anchors of Markdown files in attachment directories, counts lines as `wc` does, skips table rows in code fences and canon's markers quoted in code, and ends with `no merge base` for a ref that shares no history with HEAD. `archive` refuses a doc with leftover guidance or an empty summary, and a design with live sub-designs.
+- A failing Git query, or a checkout Git cannot read, now ends the command with Git's reason instead of reading as an empty result, so `new`, `adopt` and `renumber` no longer reuse an id that history keeps taken, and `audit` no longer reports a clean tree.
+- `canon-implement` names in each slice's `Refs:` trailer every design the slice was checked against, as `affected` lists them, not just its own.
+- `init --hook` that cannot write the pre-commit hook finishes every other step and prints the command to run, setup installs the hook last, and `/canon-init` picks its flow when you name none.
+- `canon.py` is now canon version 40: run `/canon-init` in an existing project to upgrade its copy.
+
 ## 0.3.1 - 2026-10-30
 
 Fixes for projects whose `canon.py` copy is not at `scripts/canon.py`, and for docs files that `canon.py` used to overwrite or cut.
