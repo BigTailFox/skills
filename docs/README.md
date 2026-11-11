@@ -15,6 +15,10 @@
 - [D008: Prototypes and research](designs/D008-experiments.md) · active · 2 known issues · Prototypes and research (canon-prototype, canon-research): quick answers, the research brief, logic, UI and spike prototypes, verdicts in E docs. · owns: prototypes, research · modules: canon
 - [D009: Settling decisions](designs/D009-settling-decisions.md) · active · Settling open decisions with the user (canon-grill): triage before asking, open decisions kept in the doc, and small batches of related questions. · owns: settling-decisions · modules: canon
 
+### Plans
+
+- [P003: Review gate redesign](plans/P003-review-gate-redesign.md) · draft · canon.py status, approved and follow-up trace units; blind-review rules in one skill; joint gates, follow-up rounds and approval in the skill texts. · modules: canon
+
 ### Reviews
 
 - [R002: Open items from local retro and review records](reviews/R002-local-records.md) · open · Open findings from the retro notes, canon friction log and blind-review outputs kept only in .canon/, and what to restore when moving machines. · modules: canon
