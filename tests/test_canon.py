@@ -942,6 +942,28 @@ class DocRulesTest(CanonTest):
         self.ok("archive", "D001A", "retired")
         self.ok("archive", "D001", "retired")
 
+    def test_links_in_attachment_markdown_are_checked_live_and_archived_and_need_no_refs(self):
+        self.design()
+        self.design("other")
+        self.commit()
+        notes = self.root / "docs/designs/D001/notes.md"
+        notes.parent.mkdir()
+        notes.write_text("# Notes\n\n[D002: Other](../D002-other.md) and [Notes](#notes).\n")
+        self.assertNotIn("D001/notes.md", self.ok("check"))
+        self.commit()
+        notes.write_text(notes.read_text() + "[gone](missing.md), [here](#nowhere) and [other](../D002-other.md).\n")
+        out = self.fails("check")
+        for problem in ("broken link missing.md", "missing anchor #nowhere", "link to D002 must read"):
+            self.assertIn("ERROR docs/designs/D001/notes.md:4: " + problem, out)
+        self.assertNotIn("missing from `refs`", out)
+        self.git("checkout", "--", "docs/designs/D001/notes.md")
+        self.ok("archive", "D001", "retired")
+        archived = self.root / "docs/archived/designs/D001/notes.md"
+        self.assertIn("[D002: Other](../../../designs/D002-other.md)", archived.read_text())
+        self.commit()
+        archived.write_text(archived.read_text() + "[gone](missing.md)\n")
+        self.assertIn("ERROR docs/archived/designs/D001/notes.md:4: broken link missing.md", self.fails("check"))
+
     def test_an_unknown_entry_inside_archived_lists_only_what_archived_allows(self):
         self.create("docs/archived/guides/howto.md")
         out = self.fails("check")

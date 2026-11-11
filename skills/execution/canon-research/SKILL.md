@@ -32,7 +32,7 @@ Rules:
 - Write each finding into the doc as soon as you have its source, so a run that stops loses nothing. Keep the findings the doc already holds and research only what they leave open.
 - Results: one finding per bullet, each linked to its source. Mark inferences as inferences. Report conflicts between sources.
 - Conclusion: the answer, your confidence, and what remains open.
-- Put long excerpts worth keeping in {E00X attachment dir}/ and link them.
+- Put long excerpts worth keeping in {E00X attachment dir}/ and link them. Copy each verbatim except its link and image targets: resolve each relative or `/`-rooted one against the source's URL, since `check` checks the links there.
 - Replace every `<!-- canon: ... -->` comment. Write in {documentation language}.
 - Modify nothing except that doc and its attachment directory; keep scratch files in .canon/canon-research/{E00X}/scratch/, never in the OS temp directory. Search tools that honor .gitignore skip .canon/: read its paths directly.
 ```

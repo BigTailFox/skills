@@ -29,7 +29,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "38"
+CANON_VERSION = "39"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -694,6 +694,8 @@ class Repo:
                 id_match = FULL_ID_RE.match(parts[1]) if len(parts) >= 3 else None
                 if id_match and id_match.group(1) == letter:
                     self.attachments.append((root, archived, parts[1], rel))
+                    if rel.endswith(".md"):
+                        self.scope_md.append(path)
                     continue
                 match = FILE_RE.match(parts[-1]) if len(parts) == 2 else None
                 if not match or match.group(1) != letter or (match.group(3) and letter != "D") \
