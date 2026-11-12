@@ -2,13 +2,13 @@
 status: active
 created: 2026-11-10
 updated: 2026-11-12
-revision: 4
+revision: 5
 modules: [canon]
 summary: Prototypes and research (canon-prototype, canon-research): quick answers, the research brief, logic, UI and spike prototypes, verdicts in E docs.
 refs: [D000, D003, D006, R003, D007, D009]
 owns: [prototypes, research]
 paths: [skills/execution/canon-prototype/SKILL.md, skills/execution/canon-prototype/LOGIC.md, skills/execution/canon-prototype/UI.md, skills/execution/canon-research/SKILL.md]
-reviewed: 4
+reviewed: 5
 reviewers: [claude-opus-5.5, gemini-4-argon-medium]
 implemented: 3
 ---
@@ -129,7 +129,7 @@ The smallest script that runs the approach against the real dependency and print
 
 Once a prototype has answered its question, the session:
 
-1. Fills the experiment. Setup: `Commit:` is the commit holding the prototype, on the prototype branch or the one that added `experiments/E00X/`, so the prototype is committed before Setup records it, with `Environment:` and the `Command:` that runs it; an extended experiment keeps the earlier run's lines above them. Results: what the runs or the user's walkthrough showed. Conclusion: the verdict, which for a UI prototype names the winning variant and why, and where it was absorbed. `summary`: as the [research brief](#research-brief) states. Then it sets the experiment `answered` with `canon.py status`.
+1. Fills the experiment. Setup: `Commit:` is the commit holding the prototype, on the prototype branch or the one that added `experiments/E00X/`, so the prototype is committed before Setup records it, with `Environment:` and the `Command:` that runs it; an extended experiment keeps the earlier run's lines above them. Results: what the runs or the user's walkthrough showed. Conclusion: the verdict, which for a UI prototype names the winning variant and why. `summary`: as the [research brief](#research-brief) states. Then it sets the experiment `answered` with `canon.py status`.
 2. Writes the validated decision into the design or plan, as [Absorbing a conclusion](#absorbing-a-conclusion) states. The real code follows through the change's tier, in a plan slice or an L0 change, never at verdict time. There, a logic prototype's pure module lifts into the real module, and a winning UI variant is rewritten to the project's standards: into the existing page, or as a real route in place of the throwaway one.
 3. Keeps the decision, the experiment and its `experiments/E00X/` files on the main branch. Code wired into the product, such as the full set of UI variants, the switcher and a throwaway route, stays only on the prototype branch.
 
@@ -138,8 +138,7 @@ Once a prototype has answered its question, the session:
 - Research: the conclusion goes into the doc named when framing, with a link to the experiment: a design as a Spec constraint, a Budget or a Decision, a plan in its Notes.
 - Prototype: while a design is being written, the session writes the decision straight into it, with a link to the experiment; a detail a plan settles within its design goes into the plan's Notes with the link ([D007§design-problems: design problems](D007-change-tiers.md#design-problems)).
 - An accepted or active design changes only through the change tiers ([D007§change-tiers: change tiers](D007-change-tiers.md#change-tiers)); a prototype's session takes the verdict to the user.
-- Once a design or plan links the experiment for its conclusion, the session that wrote the link sets the experiment `concluded` with `canon.py status`. Which other steps set it, and when and as what the experiment is archived, is [D006§doc-types: doc types](D006-doc-model.md#doc-types)'s.
-- When the experiment links an earlier one on its question that is still live and `concluded`, the session that sets it `concluded` archives the earlier one: when the earlier result still holds, it first moves to this experiment the links of live designs and plans that cite the earlier one, then archives it as `superseded` with this experiment in its `refs`; when this experiment shows the earlier result wrong, it archives it as `overturned` and handles the docs that link it as [D006§doc-types: doc types](D006-doc-model.md#doc-types) states.
+- Once a design or plan links the experiment for its conclusion, the session that wrote the link sets the experiment `concluded` with `canon.py status`. Which other steps set it, what the step that does so archives of earlier experiments on the question, and when and as what an experiment is archived, is [D006§doc-types: doc types](D006-doc-model.md#doc-types)'s.
 
 ## Decisions
 
