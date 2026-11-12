@@ -73,7 +73,7 @@ File names are `<id>-<kebab-slug>.md`, e.g. `designs/D003-auth.md`. The title is
 | D designs | Long-lived authoritative design and spec of one topic. | draft → accepted → active → superseded, retired |
 | P plans | Implementation plan and log of one change. | draft → accepted → in-progress → done, abandoned |
 | R reviews | Findings of a functional, performance, security, architecture or usability review. | open → closed |
-| E experiments | A question answered with evidence: a run (benchmark, prototype) or research of primary sources. | planned → running → concluded |
+| E experiments | A question answered with evidence: a run (benchmark, prototype) or research of primary sources. | planned → running → answered → concluded |
 | I investigations | Debugging and profiling. | open → resolved |
 
 Sections and per-type rules: [doc-types.md](doc-types.md).
@@ -118,7 +118,7 @@ based_on: [D003@r4]                  # P only
 - Reference a section as `[D003§token-refresh: refresh flow](../designs/D003-auth.md#token-refresh)` and a whole doc as `[D003: auth design](../designs/D003-auth.md)`. Never reference by line number.
 - Each standard lives only in the design that owns its topic; everywhere else links to it.
 - A design or plan revision must pass the review gate before it is accepted or implemented: `reviewed` equals `revision`. Once a design or plan has been accepted, `check` warns while a later revision is pending; `check --base` fails.
-- Replace every `<!-- canon: ... -->` guidance comment with content. While a doc is unfinished (a design or plan before its review gate, a concept before it is adopted, any other doc before archiving), `check` only warns about guidance and an empty `summary`; `check --base` fails.
+- Replace every `<!-- canon: ... -->` guidance comment with content. While a doc is unfinished (a design or plan before its review gate, a concept before it is adopted, an experiment before it is answered, any other doc before archiving), `check` only warns about guidance and an empty `summary`; `check --base` fails.
 - After a merge or rebase, run `check --fix`; generated indexes merge line by line and may need regenerating.
 
 ## Workflow

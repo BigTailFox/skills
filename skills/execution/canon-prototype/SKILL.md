@@ -35,7 +35,10 @@ If the question is ambiguous and the user is unavailable, pick the branch matchi
 1. Fill the experiment:
    - **Setup**: `Commit:` is the commit holding the prototype, either on the prototype branch or the one that added `experiments/E00X/`, so commit the prototype first. Also fill `Environment:` and the `Command:` that runs it. An extended experiment keeps the earlier run's lines above them.
    - **Results**: what the runs or the user's walkthrough showed.
-   - **Conclusion**: the verdict and where it was absorbed.
+   - **Conclusion**: the verdict.
+   - `summary`: one line that leads with the question's subject and states the answer.
+
+   Then set the experiment `answered` with `canon.py status`.
 2. Write the validated decision into the design or plan. While a design is being written, write it straight in; a detail a plan settles within its design goes into the plan's Notes. An accepted or active design changes only through the tier flow in the `canon` skill, so take the verdict to the user. The real code follows through the change's tier, in a plan slice or an L0 change, never now.
 3. Main keeps the decision, the experiment and its `experiments/E00X/` files. Code wired into the product stays only on the prototype branch.
 4. The docs step archives the experiment as `concluded` once a design absorbs it.

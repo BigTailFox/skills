@@ -17,7 +17,7 @@
 
 ### Plans
 
-- [P004: Live concluded experiments](plans/P004-live-experiments.md) · accepted · Experiment statuses answered, live concluded, superseded, overturned and dropped in canon.py, its tests and the skill texts that set and archive them. · modules: canon
+- [P004: Live concluded experiments](plans/P004-live-experiments.md) · in-progress · Experiment statuses answered, live concluded, superseded, overturned and dropped in canon.py, its tests and the skill texts that set and archive them. · modules: canon
 
 ### Reviews
 

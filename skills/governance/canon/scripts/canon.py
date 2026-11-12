@@ -29,7 +29,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "40"
+CANON_VERSION = "41"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -40,7 +40,7 @@ TYPES = {
           "sections": ("Current state", "Slices", "Notes", "Log")},
     "R": {"dir": "reviews", "active": ("open",), "terminal": ("closed",),
           "sections": ("Scope", "Findings")},
-    "E": {"dir": "experiments", "active": ("planned", "running"), "terminal": ("concluded",),
+    "E": {"dir": "experiments", "active": ("planned", "running", "answered"), "terminal": ("concluded",),
           "sections": ("Question", "Setup", "Results", "Conclusion")},
     "I": {"dir": "investigations", "active": ("open",), "terminal": ("resolved",),
           "sections": ("Symptom", "Reproduction", "Analysis", "Resolution")},
@@ -1124,7 +1124,8 @@ def check_doc(repo, doc, changed, strict=False):
     status = fm.get("status")
     past_gate = (doc.type == "D" and status in ("accepted", "active")) or \
         (doc.type == "P" and status in ("accepted", "in-progress"))
-    unfinished_level = "WARN" if not strict and status in info["active"] and not past_gate else "ERROR"
+    answered = doc.type == "E" and status == "answered"
+    unfinished_level = "WARN" if not (strict or past_gate or answered) and status in info["active"] else "ERROR"
     if status is None:
         pass
     elif status not in info["active"] + info["terminal"]:
@@ -1139,6 +1140,9 @@ def check_doc(repo, doc, changed, strict=False):
             status, ", ".join(info["terminal"])))
     elif status in info["terminal"]:
         for msg in terminal_problems(doc):
+            err(msg)
+    elif answered:
+        for msg in terminal_problems(doc, "concluded"):
             err(msg)
 
     created, updated = parse_date(fm.get("created")), parse_date(fm.get("updated"))
@@ -1686,6 +1690,14 @@ def new_doc(repo, args):
     return 0
 
 
+def unmet_terminal(doc, status):
+    """Print `ERROR <path>: <problem>` for each terminal condition of `status` that `doc` fails; whether any did."""
+    problems = unfinished_problems(doc) + terminal_problems(doc, status)
+    if problems:
+        print("\n".join("ERROR {}: {}".format(doc.rel, p) for p in problems))
+    return bool(problems)
+
+
 def cmd_archive(repo, args):
     require_clean_merge(repo)
     require_intact_indexes(repo)
@@ -1701,9 +1713,7 @@ def cmd_archive(repo, args):
     live = [d.id for d in repo.docs if d.type == "D" and d.suffix and "D" + d.digits == doc.id and not d.archived]
     if live:
         sys.exit("canon: {} has live sub-designs {}; archive them first".format(doc.id, ", ".join(live)))
-    problems = unfinished_problems(doc) + terminal_problems(doc, args.status)
-    if problems:
-        print("\n".join("ERROR {}: {}".format(doc.rel, p) for p in problems))
+    if unmet_terminal(doc, args.status):
         return 1
     text = set_field(set_field(doc.text, "status", args.status), "updated", today())
     doc.path.write_text(text, encoding="utf-8")
@@ -1748,6 +1758,8 @@ def cmd_status(repo, args):
         condition = "`implemented` not above `reviewed`"
     if condition:
         sys.exit("canon: {} needs {} to become {}".format(doc.id, condition, args.status))
+    if doc.type == "E" and args.status == "answered" and unmet_terminal(doc, "concluded"):
+        return 1
     text = set_field(set_field(doc.text, "status", args.status), "updated", today())
     doc.path.write_text(text, encoding="utf-8")
     write_indexes(Repo())

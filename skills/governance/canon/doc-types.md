@@ -95,6 +95,7 @@ An experiment answers one question with evidence, either by running something (b
 - **Setup** for a run lists `- Commit:`, `- Environment:` and `- Command:` so it can be rerun. Research lists `- Sources:` instead, one primary source per indented line.
 - **Results** link every measurement to its raw data and every finding to its source.
 - Prototype code, raw data and source excerpts go in `experiments/E00X/`, each relative or `/`-rooted link and image target of an excerpt resolved against its source's URL. A prototype wired into the product code stays on a `prototype/E00X-<slug>` branch that `Commit:` points to.
+- **Status**: `running` while a run or research is under way, and `answered` once its Conclusion is written, until a design or plan absorbs it.
 - Absorb the conclusion into the owning design (spec, budget or decision), then archive as `concluded`.
 
 ## Investigations (I)

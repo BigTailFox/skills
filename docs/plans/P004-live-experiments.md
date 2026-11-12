@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: in-progress
 created: 2026-11-12
 updated: 2026-11-12
 revision: 1
@@ -18,13 +18,13 @@ Implements [D006: Doc model and writing rules](../designs/D006-doc-model.md) r9 
 
 ## Current state
 
-Next: S1.
+Next: S2.
 
 ## Slices
 
 ### S1: The `answered` status
 
-Status: todo
+Status: done
 
 Builds on `D006#doc-types` (Experiments, Status), `D006#statuses-and-archiving` (terminal conditions and the `canon.py status` block), `D006#check` (the unfinished level), `D008#recorded-research` step 5, `D008#research-brief` and `D008#prototype-verdicts` step 1.
 
@@ -151,3 +151,5 @@ Test criteria; seam: the `status` command line, its output, exit code and the fi
 ## Log
 
 - 2026-11-12: Started from D006 r9 and D008 r5, approved by the user at 832e6c7.
+- 2026-11-12: The user approved this plan at 72297ad. Started at 72297ad.
+- 2026-11-12, S1 done: `answered` among the experiment's non-terminal statuses; `status` checks the terminal conditions of `concluded` before setting it, and `check` gives a live answered experiment the `ERROR` unfinished level and its terminal conditions (`CANON_VERSION` 41). `unmet_terminal` now prints the failed terminal conditions for both `archive` and `status`. Tests: three new in `StatusTest` and `UnfinishedDocTest`, with the `EXPERIMENT` and `RUN` fixtures, and the `HelpTest` assertion; `validate.py` passed with D001's budgets measured. In `canon-research`, Absorb step 1 sets `answered` at its end, so steps 2 and 3 keep the numbers S2 cites; in `canon-prototype`, the Conclusion is the verdict, since `UI.md` already asks for the winning variant and why.

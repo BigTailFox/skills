@@ -32,6 +32,8 @@ _spec.loader.exec_module(canon)
 FINDINGS = "## Scope\n\nFixture.\n\n## Findings\n\n| ID | Severity | Finding | Disposition |\n|---|---|---|---|\n{}\n"
 PLAN = "## Current state\n\nNext: S1.\n\n## Slices\n\n### S1: First\n\nStatus: todo\n\n## Notes\n\n{}\n\n## Log\n\nStarted.\n"
 ISSUES = "\n## Known issues\n\n| ID | Severity | Issue | Source | Since | Next |\n|---|---|---|---|---|---|\n{}\n"
+EXPERIMENT = "## Question\n\nFast?\n\n## Setup\n\n{}\n\n## Results\n\nFast.\n\n## Conclusion\n\n{}\n"
+RUN = "- Commit: 3f9a1c2\n- Environment: x\n- Command: y"
 OUTSIDE = ("canon: the copy's path {} is not a relative path inside the repository without whitespace; pass `--script` "
            "with one")
 NO_OVERVIEW = "ERROR docs: no D000, the project overview every project keeps; run `canon.py init` at the repo root"
@@ -575,6 +577,16 @@ class UnfinishedDocTest(CanonTest):
         self.set(path, status="running")
         self.assertRegex(self.ok("check", "--fix"), r"WARN .*template guidance")
 
+    def test_an_answered_experiment_must_be_finished_while_a_running_one_only_warns(self):
+        path = self.doc("E", "bench", body=EXPERIMENT.format(RUN, ""), status="answered")
+        self.set(path, summary="")
+        mine = "docs/experiments/E001-bench.md: "
+        self.assertCountEqual([p for p in self.problems(self.fails("check", "--fix")) if mine in p],
+                              ["ERROR " + mine + "`summary` is empty", "ERROR " + mine + "Conclusion is empty"])
+        self.set(path, status="running")
+        self.assertEqual([p for p in self.problems(self.ok("check", "--fix")) if mine in p],
+                         ["WARN " + mine + "`summary` is empty"])
+
     def test_guidance_fails_once_past_the_review_gate(self):
         path = self.root / self.ok("new", "D", "gated").strip()
         self.set(path, status="accepted", reviewed=1, reviewers=["fixture"], summary="Fixture")
@@ -1076,6 +1088,29 @@ class StatusTest(CanonTest):
         self.assertEqual(self.ok("status", "C001", "adopted"), "C001: draft -> adopted\n")
         self.assertIn("status: adopted", concept.read_text())
         self.assertEqual(self.ok("status", "P001", "in-progress"), "P001: draft -> in-progress\n")
+
+    def test_status_sets_a_complete_running_experiment_answered(self):
+        self.doc("E", "bench", body=EXPERIMENT.format(RUN, "Fast enough."), status="running")
+        self.commit(check=False)
+        self.assertEqual(self.ok("status", "E001", "answered"), "E001: running -> answered\n")
+        self.assertNotIn("E001-bench.md", self.ok("check"))
+
+    def test_answered_needs_the_terminal_conditions_of_concluded_and_changes_no_file_without_them(self):
+        path = self.doc("E", "bench", status="running", body=EXPERIMENT.format(
+            "- Commit: 3f9a1c2\n- Environment: x\n- Command:", "<!-- canon: The answer. -->"))
+        self.commit(check=False)
+        error = "ERROR docs/experiments/E001-bench.md: "
+        self.assertCountEqual(self.fails("status", "E001", "answered").splitlines(), [
+            error + "Setup: `Command` is empty (research lists `- Sources:` instead)",
+            error + "Conclusion is empty",
+            error + "template guidance `<!-- canon: ... -->` left in the doc"])
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        path.write_text(path.read_text().replace(
+            "- Command:\n", "- Command:\n- Sources:\n  - [Spec](https://example.com/spec)\n"))
+        self.commit(check=False)
+        out = self.fails("status", "E001", "answered")
+        self.assertNotIn("Setup:", out)
+        self.assertIn(error + "Conclusion is empty", out)
 
     def refused(self, message, *args):
         """`status args` exits 1 with `canon: message` and changes no file."""
@@ -1632,7 +1667,7 @@ class HelpTest(CanonTest):
             self.assertIn("{}: {}".format(letter, ", ".join(info["terminal"])), archive)
         self.assertIn("status move a doc's status forward and check the move", self.help())
         self.assertIn("C: draft, adopted; D: draft, accepted, active; P: draft, accepted, in-progress; R: open; "
-                      "E: planned, running; I: open", self.help("status"))
+                      "E: planned, running, answered; I: open", self.help("status"))
         end = self.help("trace", "end")
         for kinds, outcomes in [("other kinds", canon.OUTCOMES)] + list(canon.KIND_OUTCOMES.items()):
             self.assertIn("{}: {}".format(kinds, ", ".join(outcomes)), end)
