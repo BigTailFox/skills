@@ -2,6 +2,17 @@
 
 Notable changes in each release. Versions follow [Semantic Versioning](https://semver.org); while the major version is 0, a minor release may change how skills behave.
 
+## 0.5.0 - 2026-11-12
+
+Experiments stay where readers find them while designs and plans rest on them: a new `answered` status, concluded experiments that stay live while linked, and archiving as `superseded`, `overturned` or `dropped`.
+
+- `answered`: an experiment whose Conclusion is written but that no design or plan has absorbed yet. `canon.py status E00X answered` first checks what archiving as `concluded` would: a filled `summary`, the Setup's run labels or `Sources:`, a Conclusion and no template guidance. `check` reports their absence as errors on a live answered experiment.
+- `concluded` means answered and absorbed, and a concluded experiment now stays in `experiments/` while the body of a live design or plan links it. `status E00X concluded` sets it only while such a link exists. The session that writes the link sets it, else `canon-design`'s gate, else the docs step, which now archives plans after concluding the experiments they link. `check` warns about a live concluded experiment that no live design or plan links, and the docs step archives it as `concluded`. `audit` leaves live concluded experiments out of its idle docs. Experiments archived as `concluded` before stay valid.
+- Experiments can be archived as `superseded` when a later experiment answers the same question and the result still holds, with the successor in `refs`, as `overturned` when the result is found wrong, and as `dropped`, from any status and without the Setup's run labels, when the question no longer matters. Concluding an experiment archives the earlier ones on its question that it links. `archive E00X concluded` refuses an experiment that is not `concluded`, pointing to `dropped`, and one a live design or plan still links.
+- A later run on a question extends an experiment that is `planned` or `running`, or `answered` with no live design or plan linking it, which `status E00X running` moves back for the run; otherwise the run gets a new experiment that links the earlier one. `canon-research` and `canon-prototype` look for earlier experiments with `canon.py find --archived`.
+- `canon-research` and `canon-prototype` write a `summary` that leads with the question's subject and states the answer, and a Conclusion that states the answer alone; the new-experiment template asks for that.
+- `canon.py` is now canon version 45: run `/canon-init` in an existing project to upgrade its copy.
+
 ## 0.4.0 - 2026-11-11
 
 One review gate per change, with follow-up rounds and recorded approval, a command that moves a doc's status, a reviewer file per user, and an `audit` that counts from the last time a design was reconciled with its code.
