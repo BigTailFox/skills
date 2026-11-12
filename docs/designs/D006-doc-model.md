@@ -5,7 +5,7 @@ updated: 2026-11-12
 revision: 9
 modules: [canon]
 summary: Doc types, ids, frontmatter, sections, statuses and archiving of canon docs, the templates of new, the doc rules check enforces and the writing rules.
-refs: [D000, D001, D002, D003, D004, D005, D007, D008, R003]
+refs: [D000, D001, D002, D003, D004, D005, D007, D008, R003, D010]
 owns: [doc-model, doc-writing]
 paths: [skills/governance/canon/SKILL.md, skills/governance/canon/doc-types.md, skills/governance/canon/writing.md, skills/governance/canon/workflow.md, skills/execution/canon-design/SKILL.md, skills/governance/canon/scripts/canon.py, tests/test_canon.py]
 reviewed: 9
@@ -23,7 +23,7 @@ implemented: 9
 3. `canon.py new` creates each doc from its type's template with the next free id; `canon.py archive` moves a doc and its attachments to `archived/` and rewrites every link to them, and refuses while the type's terminal conditions fail.
 4. Docs state each fact once, in the doc that owns it, for a reader who arrives through a pointer.
 
-Out of scope: the generated index ([D005: Docs index](D005-docs-index.md)); D000, as-built revisions and `as_built`, ids that Git history keeps taken, docs by their name such as READMEs, and unchecked commits and coverage in `audit` ([D002: Project overview and as-built designs](D002-overview-and-as-built.md)); `init`, `adopt` and the `AGENTS.md` block ([D004: Project setup](D004-project-setup.md)); change tiers, the review gate and design problems ([D007: Change tiers and the review gate](D007-change-tiers.md)); `rename`, `renumber`, `show`, `find`, `which`, `affected` and the rest of `audit` apart from the idle docs it skips ([Statuses and archiving](#statuses-and-archiving)), which no design covers.
+Out of scope: the generated index ([D005: Docs index](D005-docs-index.md)); D000, as-built revisions and `as_built`, ids that Git history keeps taken, docs by their name such as READMEs, and unchecked commits and coverage in `audit` ([D002: Project overview and as-built designs](D002-overview-and-as-built.md)); `init`, `adopt` and the `AGENTS.md` block ([D004: Project setup](D004-project-setup.md)); change tiers, the review gate and design problems ([D007: Change tiers and the review gate](D007-change-tiers.md)); `rename`, `renumber`, `show`, `find`, `which` and `affected` ([D010: Doc queries and renames](D010-doc-queries-and-renames.md)); the rest of `audit` apart from the idle docs it skips ([Statuses and archiving](#statuses-and-archiving)), which no design covers.
 
 ## Spec
 
@@ -313,9 +313,3 @@ Agents and people read docs, usually after reaching them through a pointer: an `
 - Markdown in attachment directories gets the link checks of guides: translations and reports live there, and sessions wrote their own link checkers for them ([R003§r003-f33-links-in-attachments: R003-F33](../reviews/R003-silk-design-phase.md#r003-f33-links-in-attachments)).
 - A design with no `implemented` gets no warning for `paths` that match no file, as a planned module's Path gets none ([D002§project-overview-d000: project overview](D002-overview-and-as-built.md#project-overview-d000)): in a project still being designed, the same warnings for code not yet written buried new ones at every `check` ([R003§r003-f32-permanent-warnings: R003-F32](../reviews/R003-silk-design-phase.md#r003-f32-permanent-warnings); the user's decision, 2026-11-11).
 - `status` moves non-terminal statuses forward and checks each move's condition, leaving every other field to the steps that set it: `draft`, `accepted` and `active` were hand edits sessions got wrong ([R003§r003-f36-no-status-command: R003-F36](../reviews/R003-silk-design-phase.md#r003-f36-no-status-command); the user's decision, 2026-11-11).
-
-## Known issues
-
-| ID | Severity | Issue | Source | Since | Next |
-|----|----------|-------|--------|-------|------|
-| D006-K14 | minor | `renumber`, which has no design, and `init`'s move of a design to D000 rewrite `moved <id>` dispositions but no other plain-text citation of the moved doc's ids, such as `fixed <id>@r<n>`, a known issue's Source (`R004-F2`) or a finding id in prose, so after a conflict renumber they name the old id: they point unnoticed at the other branch's doc with that id, or else `check` reports a disposition fixed in an unknown doc; it is settled with D002-K1's designs for the commands | code review e122546 | 2026-11-11 | L2 |

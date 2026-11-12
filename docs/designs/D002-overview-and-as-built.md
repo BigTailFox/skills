@@ -1,11 +1,11 @@
 ---
 status: active
 created: 2026-10-22
-updated: 2026-11-11
+updated: 2026-11-12
 revision: 8
 modules: [canon]
 summary: D000 overview, as-built designs of existing code, backfill before changing unspecified behavior, and audit's unchecked commits and design coverage.
-refs: [D001, D006, D007, D009, R003]
+refs: [D001, D006, D007, D009, R003, D010]
 owns: [project-overview, as-built-design, design-coverage, unchecked-commits]
 paths: [skills/governance/canon/as-built.md, skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/governance/canon/doc-types.md, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-review/architecture.md, tests/test_canon.py]
 reviewed: 8
@@ -167,7 +167,7 @@ Designs with code commits since the design last changed or was reconciled that n
   - Its last change is the newest commit that `git log -- <the design's file>` lists and that changed the design, against its first parent, beyond its Known issues. The Known issues section starts at the `## Known issues` heading outside code fences and runs to the next heading of level 1 or 2. A commit whose change outside that section lies only in blank lines and in lines starting with `updated:` or `refs:`, and which changed that section, is no such change. Any other change is, one to `updated` or `refs` alone included, and so is the commit that added the file at its current path. A design whose file has no such commit is not listed.
   - A reconciliation of the design is a commit whose message has a line starting with `Reconciled:`, in any case, that names the design's id as a `Refs:` line does, below. The canon workflow's Maintenance and `canon-sync` write it once they have compared the design with the commits `audit` lists for it and updated what those commits changed, in an empty commit (`git commit --allow-empty`) when the design needed no change. No other step writes it.
 - Its unchecked commits are the commits `git log HEAD --not <each baseline>` lists that touch a file the design governs by its `paths` ([D006§frontmatter: frontmatter](D006-doc-model.md#frontmatter)), a doc only through an entry equal to its path, and whose message has no line starting with `Refs:`, in any case, that names the design's id, as a word of `C`, `D`, `P`, `R`, `E` or `I`, three or more digits and an optional capital letter. Which files a commit or merge touches: [Project docs](#project-docs); which commits carry the trailer: [D007§choosing-a-tier: choosing a tier](D007-change-tiers.md#choosing-a-tier).
-- A design with unchecked commits gets the line `  <n> commits since <the first 12 hex digits of the first reconciliation that git log lists, else of the last change>  <id> <status> <path> - <summary>`, followed by ` [spec r<revision> leads code r<implemented>]` while `implemented` is below `revision` and ` [<n> known issues]`, singular for one, while it lists any. The lines run most commits first, and the section is left out when no design has one.
+- A design with unchecked commits gets the line `  <n> commits since <the first 12 hex digits of the first reconciliation that git log lists, else of the last change>  <doc line>`, the design's doc line as [D010§doc-lines: doc lines](D010-doc-queries-and-renames.md#doc-lines) defines it. The lines run most commits first, and the section is left out when no design has one.
 
 ### Coverage in audit
 
@@ -212,7 +212,7 @@ Scenarios, tested through the commands:
 
 | ID | Severity | Issue | Source | Since | Next |
 |----|----------|-------|--------|-------|------|
-| D002-K1 | major | A `paths` entry matches a whole file, so coverage counts all of `canon.py` as covered while parts of it (`rename`, `renumber`, `show`, `find`, `which`, `affected`) have no design, and any `canon.py` edit must name all six designs in `Refs:` | R001-F1 | 2026-11-05 | L2 |
+| D002-K1 | major | A `paths` entry matches a whole file, so coverage counts a whole file covered when any design names it, and a commit that touches a file several designs share must name each in `Refs:`, all seven for `canon.py` | R001-F1 | 2026-11-05 | L2 |
 
 ## Decisions
 
