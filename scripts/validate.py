@@ -235,7 +235,8 @@ def misplaced_skill_files(skill_files):
 
 
 def check_canon_version():
-    """Projects upgrade their canon.py copy by CANON_VERSION, so every change to canon.py needs a new version."""
+    """Projects record in their canon block the CANON_VERSION they need instead of upgrading a canon.py copy by it, so
+    every change to canon.py needs a new version."""
     text = (ROOT / CANON_SCRIPT).read_text(encoding="utf-8")
     match = VERSION_RE.search(text)
     if not match:

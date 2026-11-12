@@ -29,7 +29,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "47"
+CANON_VERSION = "48"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -102,18 +102,26 @@ AGENTS_END = "<!-- canon:agents:end -->"
 AGENTS_BLOCK = AGENTS_START + """
 ## Docs
 
-This repo follows the canon documentation system (`canon` skill; without it, ask the user to install the skills with `npx skills add BigTailFox/skills -g -s '*'`). Engineering docs live in `docs/` and in module `docs/` directories. Start at [D000: Project overview](docs/designs/D000-project-overview.md); [docs/README.md](docs/README.md) indexes every doc.
+This repo follows the canon documentation system, run from the `canon` skill installed in this project. Without that skill, or when its `canon.py` says it runs only from an install inside the project or that the project needs a newer canon version, ask the user whether to install canon here. At the repo root, `npx skills experimental_install` restores the release `skills-lock.json` records for `canon`; for the newest release, run `npx skills add BigTailFox/skills@<tag> -s '*' -a claude-code -a codex -a cursor -y`, where `<tag>` is the name after `refs/tags/` on the first line of `git ls-remote --tags --refs --sort=-v:refname https://github.com/BigTailFox/skills 'v*'`. Engineering docs live in `docs/` and in module `docs/` directories. Start at [D000: Project overview](docs/designs/D000-project-overview.md); [docs/README.md](docs/README.md) indexes every doc.
 
-- Tool: `python3 {script}` from the repo root (`-h` lists commands). Run `check --fix` before committing and after every merge or rebase.
+- Tool: `scripts/canon.py` of the `canon` skill installed in this project, `.agents/skills/canon/scripts/canon.py` as `npx skills` installs it, canon version {version} or later, run from the repo root (`-h` lists commands). Run `check --fix` before committing and after every merge or rebase.
 - When a change may alter behavior or standards a design specifies, run `which <file>` and read the governing sections with `show D00X#slug` first.
 - State each change's tier (L0, L1, L2) before starting, unless it touches only docs that no design's `paths` names and bumps no revision. Designs and plans pass the review gate defined by the `canon` skill.
 - Skip `docs/archived/` unless researching history.
 """ + AGENTS_END
-PRE_COMMIT_HOOK = "#!/bin/sh\nexec python3 {} check\n"
+PRE_COMMIT_HOOK = """#!/bin/sh
+c=.agents/skills/canon/scripts/canon.py
+[ -f "$c" ] && exec python3 "$c" check
+echo "canon: no canon skill installed in this checkout; install it as the canon block of AGENTS.md says" >&2
+exit 1
+"""
+OLD_HOOK_RE = re.compile(rb"#!/bin/sh\nexec python3 \S+ check\n?")
+OLD_COPY = ("the project no longer keeps a copy of canon.py; remove {0} and replace `python3 {0}` where files still name "
+            "it, such as CI and each `docs/README.md`")
 SUB_AGENTS = "Module docs: [docs/README.md](docs/README.md). The repo root `AGENTS.md` defines the docs rules.\n"
 DOCS_README = """# Docs
 
-Engineering docs managed with canon. Designs (D) are the source of truth; plans (P) record implementation; concepts (C), reviews (R), experiments (E) and investigations (I) cover the rest. Search from the repo root with `python3 {script} find <words>`.
+Engineering docs managed with canon. Designs (D) are the source of truth; plans (P) record implementation; concepts (C), reviews (R), experiments (E) and investigations (I) cover the rest. Search from the repo root with `canon.py find <words>`.
 
 ## Index
 """
@@ -843,6 +851,14 @@ class Repo:
             return True
         return any(rel.startswith(root.docs_rel + "/") for root in self.roots)
 
+    def is_installed_skill(self, rel):
+        """Whether a repo-relative path is an installed skill file: the repo root's `skills-lock.json`, a path under
+        `.agents/skills/`, or one whose real path in the work tree lies in that directory's."""
+        if rel == "skills-lock.json" or rel.startswith(".agents/skills/"):
+            return True
+        skills = Path(os.path.realpath(str(self.root / ".agents/skills")))
+        return skills in Path(os.path.realpath(str(self.root / rel))).parents
+
     def designs_for(self, abs_path):
         """The non-archived designs whose `paths` govern a file."""
         rel = posix_rel(abs_path, self.root)
@@ -1424,6 +1440,9 @@ def run_check(repo, base=None):
 
     check_overview(repo)
 
+    for rel in old_copies(repo):
+        repo.problem("WARN", rel, OLD_COPY.format(rel))
+
     overview_kept = root_overview(repo) is not None
     for rel, commit in repo.deleted_docs(base):
         match = FILE_RE.match(rel.rsplit("/", 1)[-1])
@@ -1814,11 +1833,6 @@ def cmd_rename(repo, args):
     return 0
 
 
-def script_version(path):
-    match = re.search(r'^CANON_VERSION = "(\d+)"', path.read_text(encoding="utf-8"), re.M) if path.is_file() else None
-    return int(match.group(1)) if match else None
-
-
 def canon_block_span(text):
     """The span of the canon block in an `AGENTS.md` text, from its first start marker through the first end marker
     after it; None without a start marker. Exits when no end marker follows the start marker."""
@@ -1829,20 +1843,25 @@ def canon_block_span(text):
     return span
 
 
-def repo_relative(path):
-    """`path`, relative to the repo root, with `.` and `..` resolved; None when it is absolute or leads out of the
-    repository."""
-    rel = os.path.normpath(path).replace(os.sep, "/")
-    return None if os.path.isabs(path) or rel.split("/")[0] == ".." else rel
-
-
-def block_script(block):
-    """The path the canon block names: the rest of its first code span that starts with `python3 `; None when no span
-    does."""
-    for code in INLINE_CODE_RE.finditer(block):
-        if code.group(0).startswith("`python3 "):
-            return code.group(0)[len("`python3 "):-1]
-    return None
+def old_copies(repo):
+    """The tracked files named canon.py that hold a `CANON_VERSION` line, copies kept from when projects held one,
+    other than installed skill files and the `<dir>/scripts/canon.py` whose `<dir>/SKILL.md` names the `canon` skill."""
+    if not repo.is_git:
+        return []
+    found = []
+    for rel in git_checked(repo.root, "ls-files", "-z", "--", ":(glob)**/canon.py").stdout.split("\0"):
+        path = repo.root / rel
+        if not rel or not path.is_file() or repo.is_installed_skill(rel):
+            continue
+        skill = path.parent.parent / "SKILL.md"
+        if rel.split("/")[-2:-1] == ["scripts"] and skill.is_file():
+            fields = parse_frontmatter(skill.read_text(encoding="utf-8", errors="replace").split("\n"))[0]
+            if fields and fields.get("name") == "canon":
+                continue
+        with contextlib.suppress(OSError):
+            if re.search(rb'^CANON_VERSION = "\d+"', path.read_bytes(), re.M):
+                found.append(rel)
+    return found
 
 
 def cmd_init(repo, args):
@@ -1857,43 +1876,13 @@ def cmd_init(repo, args):
     root_agents = repo.root / "AGENTS.md"
     root_text = root_agents.read_text(encoding="utf-8") if root_agents.is_file() else ""
     span = canon_block_span(root_text)
-    block_path = block_script(root_text[span[0]:span[1]]) if span else None
     actions = []
 
     def note(verb, path):
         actions.append("{} {}".format(verb, posix_rel(path, repo.root)))
 
-    copy_path = args.script or block_path or "scripts/canon.py"
-    script_rel = repo_relative(copy_path)
-    if script_rel is None or re.search(r"\s", copy_path):
-        sys.exit("canon: the copy's path {} is not a relative path inside the repository without whitespace; pass "
-                 "`--script` with one".format(copy_path))
-    script = repo.root / script_rel
-    moved = bool(args.script and block_path) and \
-        os.path.realpath(str(repo.root / block_path)) != os.path.realpath(str(script))
-    if moved and not top:
-        sys.exit("canon: the canon block of AGENTS.md names {}; move the copy with `init --script {}` at the repo root "
-                 "first".format(block_path, script_rel))
-    me = Path(os.path.realpath(__file__))
-    if Path(os.path.realpath(str(script))) != me:
-        current = script_version(script)
-        if current is None and script.exists():
-            sys.exit("canon: {} is not a copy of canon.py; move it or pass `--script` with another path"
-                     .format(script_rel))
-        if current is None or current < int(CANON_VERSION):
-            script.parent.mkdir(parents=True, exist_ok=True)
-            script.write_text(me.read_text(encoding="utf-8"), encoding="utf-8")
-            os.chmod(str(script), 0o755)
-            note("updated" if current else "created", script)
-        elif current > int(CANON_VERSION):
-            print("warning: {} is v{}, newer than this canon.py (v{}); kept it".format(script_rel, current, CANON_VERSION))
-        elif script.read_text(encoding="utf-8") != me.read_text(encoding="utf-8"):
-            print("warning: {0} differs from this canon.py though both are v{1}; kept it. Unless it has local edits "
-                  "to keep, replace it: cp {2} {0}".format(script_rel, current, me))
-    old_rel = repo_relative(block_path) if moved else None
-    if old_rel and script_version(repo.root / old_rel) is not None:
-        print("warning: moved the copy from {}; remove it and replace its path where files still name it, such as "
-              "each `docs/README.md` and CI".format(block_path))
+    for rel in old_copies(repo) if top else []:
+        print("warning: " + OLD_COPY.format(rel))
 
     attributes = repo.root / ".gitattributes"
     lines = attributes.read_text(encoding="utf-8").splitlines() if attributes.is_file() else []
@@ -1909,7 +1898,7 @@ def cmd_init(repo, args):
         note("updated" if lines else "created", ignore)
 
     agents = project / "AGENTS.md"
-    block = AGENTS_BLOCK.format(script=script_rel)
+    block = AGENTS_BLOCK.format(version=CANON_VERSION)
     if not agents.is_file():
         agents.write_text("# AGENTS.md\n\n" + (block if top else SUB_AGENTS) + "\n", encoding="utf-8")
         note("created", agents)
@@ -1926,7 +1915,7 @@ def cmd_init(repo, args):
     readme = project / "docs" / "README.md"
     if not readme.is_file():
         readme.parent.mkdir(parents=True, exist_ok=True)
-        readme.write_text(DOCS_README.format(script=script_rel), encoding="utf-8")
+        readme.write_text(DOCS_README, encoding="utf-8")
         note("created", readme)
 
     fresh = Repo()
@@ -1950,27 +1939,28 @@ def cmd_init(repo, args):
             note("created", write_doc(find_root(fresh, str(project)), "D", OVERVIEW_ID, OVERVIEW_SLUG,
                                       OVERVIEW_TITLE, fields, template=OVERVIEW_TEMPLATE))
 
-    if (args.hook or moved) and repo.is_git:
+    if (top or args.hook) and repo.is_git:
         found = git(repo.root, "rev-parse", "--git-path", "hooks/pre-commit")
         hook = repo.root / found.strip() if found else None
+        old = False
         try:
             if hook is None:
                 raise OSError("git rev-parse --git-path hooks/pre-commit failed")
-            if moved and hook.is_file() and hook.read_bytes() == PRE_COMMIT_HOOK.format(block_path).encode("utf-8"):
-                hook.write_text(PRE_COMMIT_HOOK.format(script_rel), encoding="utf-8")
+            old = top and hook.is_file() and OLD_HOOK_RE.fullmatch(hook.read_bytes()) is not None
+            if old:
+                hook.write_text(PRE_COMMIT_HOOK, encoding="utf-8")
                 note("updated", hook)
-            elif args.hook and hook.exists():
-                print("kept the existing pre-commit hook; add `python3 {} check` to it".format(script_rel))
+            elif args.hook and os.path.lexists(str(hook)):
+                print("kept the existing pre-commit hook; add `canon.py check` to it")
             elif args.hook:
                 hook.parent.mkdir(parents=True, exist_ok=True)
-                hook.write_text(PRE_COMMIT_HOOK.format(script_rel), encoding="utf-8")
+                hook.write_text(PRE_COMMIT_HOOK, encoding="utf-8")
                 os.chmod(str(hook), 0o755)
                 note("created", hook)
         except OSError as error:
-            rewrite = moved and (hook is None or os.path.lexists(str(hook)))
-            remedy = ("replace {0} with {1} in it where .git is writable, before removing {0}" if rewrite else
-                      "rerun `python3 {1} init --hook` where .git is writable").format(block_path, script_rel)
-            print("warning: cannot write the pre-commit hook: {}; {}".format(error, remedy))
+            if args.hook or old:
+                print("warning: cannot write the pre-commit hook: {}; rerun `canon.py init --hook` where .git is "
+                      "writable".format(error))
 
     actions += ["wrote " + rel for rel in write_indexes(Repo())]
     print("\n".join(actions) if actions else "canon init: nothing to do")
@@ -3637,10 +3627,8 @@ def main(argv=None):
                                             for letter in TYPES))
     p.set_defaults(func=cmd_status)
 
-    p = command(sub, "init", help="set up canon in a repo or module (idempotent; also upgrades the script copy)")
+    p = command(sub, "init", help="set up canon in a repo or module (idempotent)")
     p.add_argument("--root", help="module directory to set up (default: repo root)")
-    p.add_argument("--script", help="where to copy canon.py, relative to the repo root (default: the path the canon "
-                                    "block of the repo root's AGENTS.md names, else scripts/canon.py)")
     p.add_argument("--hook", action="store_true", help="install a git pre-commit hook running `check`")
     p.set_defaults(func=cmd_init)
 

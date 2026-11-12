@@ -18,7 +18,7 @@ Implements [D004: Project setup](../designs/D004-project-setup.md) r5 and its fo
 
 ## Current state
 
-S1 done. Next: S2.
+S1 and S2 done. Next: S3.
 
 ## Slices
 
@@ -55,7 +55,7 @@ Test criteria; seam: `canon.py` started by a given path, its exit code, its outp
 
 ### S2: init sets a project up without a copy
 
-Status: todo
+Status: done
 
 Risk: data migration. Upgrading a project that kept a copy must leave the copy and every hook but the exact old one alone and leave CI and each `docs/README.md` to the warning; taking this repository's canon source, or an installed `canon.py`, for an old copy would warn on every `check`.
 
@@ -193,3 +193,4 @@ Test criteria; seam: the checkout after the command, `npx skills`, `validate.py`
 - Review gate r1 (claude-opus-5.5, gemini-4-argon-high): accepted every finding, seven from the same-model reviewer and four from the cross-family reviewer, which overlapped on all but `PruneTest` and `CoverageTest`. The fixes cover the `list` command `canon.py` lacks, the harness link shared with the S2 and S4 fixtures and with `PruneTest`, `CoverageTest`'s count without the copy, S6's `which` criterion, the stale help texts and `canon-init` description, the silent hook lookup without `--hook`, the version check needing a complete block, and a one-pass rollout. Both reviewers confirmed the fixes.
 - 2026-11-12: The user approved this plan at 4cc4c2e. Started at 4cc4c2e.
 - S1 done: `require_project_install()` in `main()` after `parse_args`, `CANON_VERSION` 47; the harness starts the link at `<top>/.agents/skills/canon/scripts/canon.py`, rechecks its `info/exclude` line on every call, passes the working directory unresolved and creates no link under `script=`; `SnapshotTest` appends to `info/exclude`. Criteria 1 and 6 went red first; criteria 2 to 5 held already, so a scratch mutation script applied six wrong rules in turn (resolved start path, string comparison, `AGENTS.md` before `.git`, `git rev-parse`, any ancestor outside Git, no check), each turning a test red. 269 tests pass with the default `TMPDIR`; `init` here had nothing to do.
+- S2 done: `init` keeps no copy, writes the Notes' block with `canon version 48 or later`, and warns of old copies found by `old_copies()`, which `check` reports as `WARN`; `OLD_HOOK_RE` finds the old hook, which every root `init` replaces in place, keeping its mode. The exemption rules and the hook rules each passed a scratch mutation run of seven wrong rules. Review found that `old_copies` read the parent directory name from the absolute path, so a repository directory named `scripts` exempted a root `canon.py` by a `SKILL.md` outside the repository; it now reads the repo-relative path, with a regression test. For the code review: an unreadable hook under `--hook` gets the cannot-write warning, and stays silent without it. `init` here rewrote the block to version 48; 266 tests pass with the default `TMPDIR`.

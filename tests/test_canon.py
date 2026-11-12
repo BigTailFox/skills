@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -36,8 +37,6 @@ PLAN = "## Current state\n\nNext: S1.\n\n## Slices\n\n### S1: First\n\nStatus: t
 ISSUES = "\n## Known issues\n\n| ID | Severity | Issue | Source | Since | Next |\n|---|---|---|---|---|---|\n{}\n"
 EXPERIMENT = "## Question\n\nFast?\n\n## Setup\n\n{}\n\n## Results\n\nFast.\n\n## Conclusion\n\n{}\n"
 RUN = "- Commit: 3f9a1c2\n- Environment: x\n- Command: y"
-OUTSIDE = ("canon: the copy's path {} is not a relative path inside the repository without whitespace; pass `--script` "
-           "with one")
 NO_OVERVIEW = "ERROR docs: no D000, the project overview every project keeps; run `canon.py init` at the repo root"
 UNIT_TIME_FORMAT = "%Y%m%dT%H%M%SZ"
 RUN_DIR = None
@@ -1482,34 +1481,6 @@ class IndexTest(CanonTest):
 
 
 class InitTest(CanonTest):
-    def test_init_replaces_an_older_script_copy(self):
-        copy = self.root / "scripts/canon.py"
-        copy.write_text(re.sub(r'^CANON_VERSION = "\d+"', 'CANON_VERSION = "2"', SCRIPT.read_text(), flags=re.M))
-        self.assertIn("updated scripts/canon.py", self.ok("init"))
-        self.assertEqual(copy.read_text(), SCRIPT.read_text())
-
-    def test_init_warns_about_a_same_version_copy_that_differs(self):
-        copy = self.root / "scripts/canon.py"
-        copy.write_text(SCRIPT.read_text() + "# local edit\n")
-        self.assertIn("differs from this canon.py", self.ok("init"))
-        self.assertTrue(copy.read_text().endswith("# local edit\n"))
-
-    def test_init_refuses_a_file_at_the_copy_path_that_is_no_copy_of_canon_py(self):
-        message = "canon: {} is not a copy of canon.py; move it or pass `--script` with another path"
-        (self.root / "scripts/canon.py").write_text("print('a project script')\n")
-        (self.root / ".gitattributes").unlink()
-        self.refuses(message.format("scripts/canon.py"))
-        self.create("tools/canon.py")
-        self.refuses(message.format("tools/canon.py"), "--script", "tools/canon.py")
-
-    def test_init_keeps_the_copy_where_the_canon_block_names_it(self):
-        self.repository_without_docs()
-        self.ok("init", "--script", "tools/canon.py")
-        self.assertEqual(self.ok("init"), "canon init: nothing to do\n")
-        self.init_module("mod")
-        self.assertFalse((self.root / "scripts").exists())
-        self.assertIn("`python3 tools/canon.py find <words>`", (self.root / "mod/docs/README.md").read_text())
-
     def refuses(self, message, *args):
         """`init` with `args` exits with `message` and changes no file."""
         if self.git("status", "--porcelain"):
@@ -1529,46 +1500,48 @@ class InitTest(CanonTest):
         self.refuses(message)
         self.refuses(message, "--root", "mod")
 
-    def test_init_refuses_a_copy_path_with_whitespace_from_the_canon_block_too(self):
-        message = OUTSIDE.format("my tools/canon.py")
-        self.refuses(message, "--script", "my tools/canon.py")
-        agents = self.root / "AGENTS.md"
-        agents.write_text(agents.read_text().replace("`python3 scripts/canon.py`", "`python3 my tools/canon.py`"))
-        self.refuses(message)
+    HOOK = ('#!/bin/sh\nc=.agents/skills/canon/scripts/canon.py\n[ -f "$c" ] && exec python3 "$c" check\n'
+            'echo "canon: no canon skill installed in this checkout; install it as the canon block of AGENTS.md says" '
+            '>&2\nexit 1\n')
 
-    def test_init_refuses_a_copy_path_that_is_absolute_or_outside_the_repository(self):
-        message = OUTSIDE
-        agents = self.root / "AGENTS.md"
-        agents.write_text(agents.read_text().replace("`python3 scripts/canon.py`", "`python3 ../outside/canon.py`"))
-        self.refuses(message.format("../outside/canon.py"))
-        self.refuses(message.format("tools/../../outside/canon.py"), "--script", "tools/../../outside/canon.py")
-        self.assertFalse((self.root.parent / "outside").exists())
-        absolute = str(self.root / "tools/canon.py")
-        self.refuses(message.format(absolute), "--script", absolute)
+    def test_init_at_the_repo_root_replaces_the_hook_a_project_with_a_copy_had_and_keeps_any_other(self):
+        hook = self.root / ".git/hooks/pre-commit"
+        self.init_module("mod")
+        for old in ("#!/bin/sh\nexec python3 scripts/canon.py check\n", "#!/bin/sh\nexec python3 tools/canon.py check"):
+            with self.subTest(old=old):
+                hook.write_text(old)
+                self.assertNotIn("pre-commit", self.ok("init", "--root", "mod"))
+                self.assertIn("kept the existing pre-commit hook", self.ok("init", "--root", "mod", "--hook"))
+                self.assertEqual(hook.read_text(), old)
+                self.assertIn("updated .git/hooks/pre-commit", self.ok("init").splitlines())
+                self.assertEqual(hook.read_text(), self.HOOK)
+        other = "#!/bin/sh\nexec python3 scripts/canon.py check\nmake lint\n"
+        hook.write_text(other)
+        self.assertNotIn("pre-commit", self.ok("init"))
+        self.assertIn("kept the existing pre-commit hook; add `canon.py check` to it\n", self.ok("init", "--hook"))
+        self.assertEqual(hook.read_text(), other)
 
-    def test_a_module_run_refuses_another_copy_than_the_canon_block_names(self):
-        (self.root / "mod").mkdir()
-        self.refuses("canon: the canon block of AGENTS.md names scripts/canon.py; move the copy with "
-                     "`init --script tools/canon.py` at the repo root first",
-                     "--root", "mod", "--script", "tools/canon.py")
-        self.refuses(OUTSIDE.format("../canon.py"), "--root", "mod", "--script", "../canon.py")
-        self.init_module("mod", "--script", "./scripts/canon.py")
-        self.assertTrue((self.root / "mod/AGENTS.md").is_file())
-
-    def test_init_at_the_repo_root_moves_the_copy_and_rewrites_the_hook_it_wrote(self):
+    def test_init_hook_writes_a_hook_that_runs_check_through_the_installed_canon_py_or_says_to_install_it(self):
+        self.repository_without_docs()
         self.ok("init", "--hook")
         hook = self.root / ".git/hooks/pre-commit"
-        out = self.ok("init", "--script", "tools/canon.py")
-        self.assertIn("warning: moved the copy from scripts/canon.py; remove it and replace its path where files "
-                      "still name it, such as each `docs/README.md` and CI", out)
-        self.assertIn("created tools/canon.py", out)
-        self.assertIn("updated .git/hooks/pre-commit", out)
-        self.assertEqual(hook.read_text(), "#!/bin/sh\nexec python3 tools/canon.py check\n")
-        self.assertIn("`python3 tools/canon.py`", (self.root / "AGENTS.md").read_text())
-        self.assertTrue((self.root / "scripts/canon.py").is_file())
-        hook.write_text("#!/bin/sh\nmake lint\n")
-        self.assertNotIn("pre-commit", self.ok("init", "--script", "bin/canon.py"))
-        self.assertEqual(hook.read_text(), "#!/bin/sh\nmake lint\n")
+        self.assertEqual(hook.read_text(), self.HOOK)
+        self.assertEqual(stat.S_IMODE(hook.stat().st_mode), 0o755)
+        self.create("docs/stray/x.md")
+        self.git("add", "-A")
+        result = self.run_here("git", "commit", "-qm", "stray")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("ERROR docs/stray: unknown entry", result.stderr)
+        self.git("rm", "-rq", "--cached", "docs/stray")
+        shutil.rmtree(str(self.root / "docs/stray"))
+        self.git("commit", "-qm", "setup")
+        (self.root / INSTALL).unlink()
+        self.create("src/a.py")
+        self.git("add", "-A")
+        result = self.run_here("git", "commit", "-qm", "without the link")
+        self.assertEqual((result.returncode, result.stderr),
+                         (1, "canon: no canon skill installed in this checkout; install it as the canon block of "
+                             "AGENTS.md says\n"))
 
     def test_init_that_cannot_write_the_hook_finishes_and_says_how_to_add_it(self):
         self.repository_without_docs()
@@ -1577,25 +1550,29 @@ class InitTest(CanonTest):
         hooks.write_text("a file where the hooks directory belongs\n")
         out = self.ok("init", "--hook")
         self.assertIn("warning: cannot write the pre-commit hook: ", out)
-        self.assertIn("; rerun `python3 scripts/canon.py init --hook` where .git is writable\n", out)
+        self.assertIn("; rerun `canon.py init --hook` where .git is writable\n", out)
         self.assertIn("created AGENTS.md", out)
         self.assertIn(canon.INDEX_START, (self.root / "docs/README.md").read_text())
 
     @unittest.skipIf(os.name == "nt" or os.geteuid() == 0, "file modes stop only a non-root POSIX user")
-    def test_init_that_cannot_rewrite_the_hook_for_a_moved_copy_says_to_fix_it_before_removing_the_old_copy(self):
-        for mode in (0o555, 0o000):  # unwritable, then unreadable too
-            with self.subTest(mode=oct(mode)):
-                self.repository_without_docs()
-                self.ok("init", "--hook")
-                hook = self.root / ".git/hooks/pre-commit"
-                hook.chmod(mode)
-                out = self.ok("init", "--script", "tools/canon.py")
-                self.assertIn("warning: cannot write the pre-commit hook: ", out)
-                self.assertIn("; replace scripts/canon.py with tools/canon.py in it where .git is writable, before "
-                              "removing scripts/canon.py\n", out)
-                hook.chmod(0o755)
-                self.assertEqual(hook.read_text(), "#!/bin/sh\nexec python3 scripts/canon.py check\n")
-                self.assertIn("`python3 tools/canon.py`", (self.root / "AGENTS.md").read_text())
+    def test_init_that_cannot_write_the_hook_warns_under_hook_or_for_an_old_hook_and_finishes(self):
+        self.repository_without_docs()
+        hooks = self.root / ".git/hooks"
+        hooks.chmod(0o555)
+        self.addCleanup(hooks.chmod, 0o755)
+        out = self.ok("init", "--hook")
+        self.assertRegex(out, r"(?m)^warning: cannot write the pre-commit hook: .+; rerun `canon\.py init --hook` "
+                              r"where \.git is writable$")
+        self.assertIn("created AGENTS.md", out)
+        self.assertIn(canon.INDEX_START, (self.root / "docs/README.md").read_text())
+        self.assertNotIn("pre-commit", self.ok("init"))
+        hooks.chmod(0o755)
+        hook = hooks / "pre-commit"
+        hook.write_text("#!/bin/sh\nexec python3 scripts/canon.py check\n")
+        hook.chmod(0o555)
+        self.assertRegex(self.ok("init"), r"(?m)^warning: cannot write the pre-commit hook: .+; rerun "
+                                          r"`canon\.py init --hook` where \.git is writable$")
+        self.assertEqual(hook.read_text(), "#!/bin/sh\nexec python3 scripts/canon.py check\n")
 
     @unittest.skipIf(os.name == "nt", "the stand-in git is a shell script")
     def test_init_whose_git_cannot_name_the_hook_path_finishes_and_says_how_to_add_it(self):
@@ -1604,10 +1581,13 @@ class InitTest(CanonTest):
         (bin_dir / "git").write_text('#!/bin/sh\ncase "$*" in *--git-path*) exit 128;; esac\nexec {} "$@"\n'
                                      .format(shutil.which("git")))
         (bin_dir / "git").chmod(0o755)
+        result = self.canon_process("init", env=dict(os.environ, PATH=str(bin_dir)))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("pre-commit", result.stdout)
         result = self.canon_process("init", "--hook", env=dict(os.environ, PATH=str(bin_dir)))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("warning: cannot write the pre-commit hook: git rev-parse --git-path hooks/pre-commit failed; "
-                      "rerun `python3 scripts/canon.py init --hook` where .git is writable\n", result.stdout)
+                      "rerun `canon.py init --hook` where .git is writable\n", result.stdout)
         self.assertIn(canon.INDEX_START, (self.root / "docs/README.md").read_text())
 
     def test_init_refuses_a_root_that_is_not_a_directory_inside_the_repository(self):
@@ -1617,9 +1597,91 @@ class InitTest(CanonTest):
         self.assertFalse((self.root / "mod").exists())
         self.assertEqual(list(outside.iterdir()), [])
 
-    def test_the_canon_block_names_the_command_that_installs_the_skills(self):
-        self.assertIn("without it, ask the user to install the skills with `npx skills add BigTailFox/skills -g -s '*'`",
-                      (self.root / "AGENTS.md").read_text())
+    def test_init_writes_no_copy_and_the_canon_block_names_the_installed_canon_py_and_how_to_install_it(self):
+        self.repository_without_docs()
+        self.ok("init")
+        self.assertEqual([p.relative_to(self.root).as_posix() for p in self.root.rglob("canon.py")], [INSTALL])
+        agents = (self.root / "AGENTS.md").read_text()
+        self.assertIn("\n- Tool: `scripts/canon.py` of the `canon` skill installed in this project, "
+                      "`.agents/skills/canon/scripts/canon.py` as `npx skills` installs it, canon version {} or later, "
+                      "run from the repo root (`-h` lists commands).".format(canon.CANON_VERSION), agents)
+        self.assertIn("`npx skills add BigTailFox/skills@<tag> -s '*' -a claude-code -a codex -a cursor -y`", agents)
+        self.assertIn("`<tag>` is the name after `refs/tags/` on the first line of `git ls-remote --tags --refs "
+                      "--sort=-v:refname https://github.com/BigTailFox/skills 'v*'`", agents)
+        self.assertIn("`npx skills experimental_install`", agents)
+        readme = (self.root / "docs/README.md").read_text()
+        self.assertIn("`canon.py find <words>`", readme)
+        self.assertNotIn("python3", readme)
+        self.assertEqual(self.canon("init", "--script", "x").returncode, 2)
+
+    OLD_COPY = ("the project no longer keeps a copy of canon.py; remove {0} and replace `python3 {0}` where files "
+                "still name it, such as CI and each `docs/README.md`")
+
+    def old_copy(self, rel, text='#!/usr/bin/env python3\nCANON_VERSION = "18"\n'):
+        """A tracked file at `rel` holding `text`, by default a copy of canon.py version 18, committed."""
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+        self.commit()
+        return path
+
+    def test_init_and_check_warn_of_a_tracked_old_copy_and_leave_it_to_the_user(self):
+        agents = self.root / "AGENTS.md"
+        agents.write_text(re.sub(r"`scripts/canon.py` of .*?\(`-h` lists commands\)\.",
+                                 "`python3 scripts/canon.py` from the repo root (`-h` lists commands).",
+                                 agents.read_text()))
+        copy = self.old_copy("scripts/canon.py")
+        self.init_module("mod")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "module")
+        out = self.ok("init")
+        self.assertTrue(out.startswith("warning: {}\nupdated AGENTS.md\n".format(self.OLD_COPY.format(
+            "scripts/canon.py"))), out)
+        self.assertEqual(copy.read_text(), '#!/usr/bin/env python3\nCANON_VERSION = "18"\n')
+        self.assertNotIn("python3 scripts/canon.py", agents.read_text())
+        warning = "WARN scripts/canon.py: " + self.OLD_COPY.format("scripts/canon.py")
+        out = self.ok("check")
+        problems = self.problems(out)
+        self.assertIn(warning, problems)
+        self.assertIn(", 0 errors, {} warnings".format(len(problems)), out)
+        self.assertNotIn("copy", self.ok("init", "--root", "mod"))
+        self.git("rm", "-q", "scripts/canon.py")
+        out = self.ok("check")
+        self.assertEqual(self.problems(out), [p for p in problems if p != warning])
+        self.assertIn(", 0 errors, {} warnings".format(len(problems) - 1), out)
+
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_an_old_copy_is_a_tracked_canon_py_with_the_version_line_no_installed_skill_file_nor_the_canon_source(self):
+        copy = '#!/usr/bin/env python3\nCANON_VERSION = "18"\n'
+        self.git("add", "-f", INSTALL)
+        for rel, name in (("tools/canon", "canon"), ("tools/other", "other")):
+            self.create(rel + "/SKILL.md")
+            (self.root / rel / "SKILL.md").write_text("---\nname: {}\ndescription: Fixture.\n---\n".format(name))
+            self.create(rel + "/scripts/canon.py")
+            (self.root / rel / "scripts/canon.py").write_text(copy)
+        self.create(".agents/skills/canon-x/scripts/canon.py")
+        (self.root / ".agents/skills/canon-x/scripts/canon.py").write_text(copy)
+        (self.root / "bin").mkdir()
+        (self.root / "bin/canon.py").symlink_to("../.agents/skills/canon-x/scripts/canon.py")
+        self.old_copy("lib/canon.py", text="print('a project script')\n")
+        (self.root / "scripts").mkdir()
+        (self.root / "scripts/canon.py").write_text(copy)
+        message = self.OLD_COPY.format("tools/other/scripts/canon.py")
+        self.assertEqual(self.ok("init").splitlines()[:1], ["warning: " + message])
+        self.assertEqual([p for p in self.problems(self.ok("check")) if "copy" in p],
+                         ["WARN tools/other/scripts/canon.py: " + message])
+
+    def test_a_canon_py_at_the_repo_root_is_an_old_copy_whatever_lies_above_the_repository(self):
+        outer = self.tmpdir()
+        (outer / "SKILL.md").write_text("---\nname: canon\ndescription: Fixture.\n---\n")
+        self.root = outer / "scripts"
+        self.root.mkdir()
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.name", "canon test")
+        self.git("config", "user.email", "canon@example.invalid")
+        self.ok("init")
+        self.old_copy("canon.py")
+        self.assertIn("WARN canon.py: " + self.OLD_COPY.format("canon.py"), self.problems(self.ok("check")))
 
     def test_the_canon_block_exempts_docs_only_changes_that_bump_no_revision_from_a_tier(self):
         self.repository_without_docs()
@@ -1627,13 +1689,6 @@ class InitTest(CanonTest):
         self.assertIn("\n- State each change's tier (L0, L1, L2) before starting, unless it touches only docs that no "
                       "design's `paths` names and bumps no revision. Designs and plans pass the review gate defined by "
                       "the `canon` skill.\n", (self.root / "AGENTS.md").read_text())
-
-    def test_init_warns_of_a_move_only_from_a_copy_inside_the_repository(self):
-        agents = self.root / "AGENTS.md"
-        for old in ("old/canon.py", "../shared/canon.py"):
-            agents.write_text(re.sub(r"`python3 [^`]*`", "`python3 {}`".format(old), agents.read_text(), count=1))
-            self.assertNotIn("warning: moved", self.ok("init", "--script", "tools/canon.py"))
-            self.assertIn("`python3 tools/canon.py`", agents.read_text())
 
 
 class AdoptTest(CanonTest):
@@ -2113,12 +2168,12 @@ class CoverageTest(CanonTest):
         self.modules("./", "`src`")
         self.create("build.sh", ".github/ci.yml", "src/x.py")
         self.commit()
-        # ./ holds build.sh, .github/ci.yml, and .gitattributes, .gitignore and scripts/canon.py from `init`.
-        self.assertEqual(self.areas(), ["  1 commits  ./  5 files", "  1 commits  src/  2 files"])
+        # ./ holds build.sh, .github/ci.yml, and .gitattributes and .gitignore from `init`.
+        self.assertEqual(self.areas(), ["  1 commits  ./  4 files", "  1 commits  src/  2 files"])
         self.ok("check")
         self.design(paths=["src/**"])
         self.commit()
-        self.assertEqual(self.areas(), ["  1 commits  ./  5 files"])
+        self.assertEqual(self.areas(), ["  1 commits  ./  4 files"])
 
     def commit_at(self, days, *names):
         """Commit the work tree, with each of `names` edited, dated `days` back."""
