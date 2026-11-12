@@ -1,7 +1,7 @@
 ---
 status: closed
 created: 2026-11-10
-updated: 2026-11-11
+updated: 2026-11-12
 revision: 1
 modules: [canon]
 summary: Open findings from the retro notes, canon friction log and blind-review outputs kept only in .canon/, and what to restore when moving machines.
@@ -19,7 +19,7 @@ refs: [C001, D000, D001, D002, D003, D004]
   - `canon-blind-review/`: the reviewer outputs of 23 blind reviews, the gates of D000 to D005, P001 and P002 and the code reviews from P001 through R001's fixes.
 - Modules and paths: canon (`skills/`, `tests/`) and `scripts/validate.py`.
 - Angles: functional, usability, architecture.
-- Each item was checked against the commit. Findings are the items whose cause is still present and that no other doc tracks. Left out are the items fixed since and the open items tracked in [D002§known-issues: known issues](../../designs/D002-overview-and-as-built.md#known-issues), [D003: Subagents](../../designs/D003-subagents.md), [D004§known-issues: known issues](../../designs/D004-project-setup.md#known-issues) and [C001: Canon backlog](../../concepts/C001-canon-backlog.md). Of `skills.jsonl`'s entries, only R002-F2 and R002-F3 are still open.
+- Each item was checked against the commit. Findings are the items whose cause is still present and that no other doc tracks. Left out are the items fixed since and the open items tracked in [D002: Project overview and as-built designs](../../designs/D002-overview-and-as-built.md), [D003: Subagents](../../designs/D003-subagents.md), [D004§known-issues: known issues](../../designs/D004-project-setup.md#known-issues) and [C001: Canon backlog](../../concepts/C001-canon-backlog.md). Of `skills.jsonl`'s entries, only R002-F2 and R002-F3 are still open.
 
 ## Findings
 

@@ -37,7 +37,7 @@ implemented: 3
 | Blind reviews by fresh subagents, a cross-family reviewer included, for the review gate, code review or any request (`canon-blind-review`), and a fresh worker for each plan slice | canon | [D003: Subagents](D003-subagents.md), [D007: Change tiers and the review gate](D007-change-tiers.md) |
 | Opt-in tracing of workflow runs for replay and analysis (`canon.py trace`) | canon | [D001: Skill telemetry with canon trace](D001-skill-telemetry.md) |
 | Project setup: `docs/`, the `AGENTS.md` block, migration of existing docs and upgrades of a project's `canon.py` (`canon-init`) | canon | [D004: Project setup](D004-project-setup.md) |
-| Docs kept in step with the code: the docs step, repair after a merge or rebase, and the doc health audit (`canon-sync`) | canon | none |
+| Docs kept in step with the code: the docs step, repair after a merge or rebase, and the doc health audit (`canon-sync`, and the known issues, idle docs and due reviews `canon.py audit` reports) | canon | none |
 | Code review of a finished change (`canon-code-review`) | canon | none |
 | Codebase review from chosen angles (`canon-review`) | canon | none |
 | Test-driven development at a slice's seams (`canon-tdd`) | canon | none |
