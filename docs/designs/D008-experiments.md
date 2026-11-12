@@ -10,6 +10,7 @@ owns: [prototypes, research]
 paths: [skills/execution/canon-prototype/SKILL.md, skills/execution/canon-prototype/LOGIC.md, skills/execution/canon-prototype/UI.md, skills/execution/canon-research/SKILL.md]
 reviewed: 5
 reviewers: [claude-opus-5.5, gemini-4-argon-medium]
+approved: 5
 implemented: 3
 ---
 
