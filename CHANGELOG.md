@@ -2,6 +2,16 @@
 
 Notable changes in each release. Versions follow [Semantic Versioning](https://semver.org); while the major version is 0, a minor release may change how skills behave.
 
+## 0.5.1 - 2026-11-12
+
+Fixes to `canon.py`'s `rename`, `renumber`, `affected` and `show`.
+
+- `rename` and `renumber` refuse the repo root's D000, whose file name the canon block of `AGENTS.md` links; a module's D000 can still be renumbered.
+- `renumber` accepts a sub-design id written with extra zeros, such as `D0001B`, as `D001B`, and in a checkout Git cannot read ends with Git's reason instead of `unknown ref`.
+- `affected` counts a renamed file under both its old and its new path, for uncommitted changes and with `--base`, so the designs governing either path are listed.
+- `show` on a doc without frontmatter no longer prints the doc's first lines as frontmatter.
+- `canon.py` is now canon version 46: run `/canon-init` in an existing project to upgrade its copy.
+
 ## 0.5.0 - 2026-11-12
 
 Experiments stay where readers find them while designs and plans rest on them: a new `answered` status, concluded experiments that stay live while linked, and archiving as `superseded`, `overturned` or `dropped`.
