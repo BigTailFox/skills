@@ -29,7 +29,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "44"
+CANON_VERSION = "45"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -1705,7 +1705,7 @@ def new_doc(repo, args):
     return 0
 
 
-def unmet_terminal(doc, status):
+def report_unmet_terminal(doc, status):
     """Print `ERROR <path>: <problem>` for each terminal condition of `status` that `doc` fails; whether any did."""
     problems = unfinished_problems(doc) + terminal_problems(doc, status)
     if problems:
@@ -1729,13 +1729,14 @@ def cmd_archive(repo, args):
         if doc.status != "concluded":
             sys.exit("canon: {} is {}, not concluded; archive an experiment nothing absorbed as dropped"
                      .format(doc.id, doc.status))
-        if doc.path in repo.live_links():
+        linkers = repo.live_links().get(doc.path)
+        if linkers:
             sys.exit("canon: {} is linked by {}; it stays live while a live design or plan links it"
-                     .format(doc.id, ", ".join(repo.live_links()[doc.path])))
+                     .format(doc.id, ", ".join(linkers)))
     live = [d.id for d in repo.docs if d.type == "D" and d.suffix and "D" + d.digits == doc.id and not d.archived]
     if live:
         sys.exit("canon: {} has live sub-designs {}; archive them first".format(doc.id, ", ".join(live)))
-    if unmet_terminal(doc, args.status):
+    if report_unmet_terminal(doc, args.status):
         return 1
     text = set_field(set_field(doc.text, "status", args.status), "updated", today())
     doc.path.write_text(text, encoding="utf-8")
@@ -1774,20 +1775,22 @@ def cmd_status(repo, args):
             doc.id, doc.status, ", to " + ", ".join(later) if later else "", ", or back to " + back if back else ""))
     passed = later[:later.index(args.status) + 1] if args.status in later else []
     implemented = doc.get("implemented")
+    linkers = repo.live_links().get(doc.path)
     condition = None
     if {"accepted", "in-progress"} & set(passed) and not 1 <= doc.reviewed == doc.revision:
         condition = "`reviewed` equal to `revision`"
     elif args.status == "active" and not (isinstance(implemented, int) and 1 <= implemented <= doc.reviewed):
         condition = "`implemented` not above `reviewed`"
-    elif doc.type == "E" and args.status == "concluded" and doc.path not in repo.live_links():
+    elif doc.type == "E" and args.status == "concluded" and not linkers:
         condition = "a live design or plan that links it"
     if condition:
         sys.exit("canon: {} needs {} to become {}".format(doc.id, condition, args.status))
-    if args.status == back and doc.path in repo.live_links():
+    if args.status == back and linkers:
         sys.exit("canon: {} is linked by {}; a later run gets a new experiment that links it"
-                 .format(doc.id, ", ".join(repo.live_links()[doc.path])))
-    if doc.type == "E" and args.status in ("answered", "concluded") and unmet_terminal(doc, "concluded"):
-        return 1
+                 .format(doc.id, ", ".join(linkers)))
+    if doc.type == "E" and args.status in ("answered", "concluded"):
+        if report_unmet_terminal(doc, "concluded"):
+            return 1
     text = set_field(set_field(doc.text, "status", args.status), "updated", today())
     doc.path.write_text(text, encoding="utf-8")
     write_indexes(Repo())

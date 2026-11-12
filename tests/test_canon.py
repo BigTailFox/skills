@@ -30,6 +30,7 @@ canon = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(canon)
 
 FINDINGS = "## Scope\n\nFixture.\n\n## Findings\n\n| ID | Severity | Finding | Disposition |\n|---|---|---|---|\n{}\n"
+DESIGN = "## Goals\n\nFrom {}.\n\n## Spec\n\nX.\n\n## Decisions\n\nNone.\n"
 PLAN = "## Current state\n\nNext: S1.\n\n## Slices\n\n### S1: First\n\nStatus: todo\n\n## Notes\n\n{}\n\n## Log\n\nStarted.\n"
 ISSUES = "\n## Known issues\n\n| ID | Severity | Issue | Source | Since | Next |\n|---|---|---|---|---|---|\n{}\n"
 EXPERIMENT = "## Question\n\nFast?\n\n## Setup\n\n{}\n\n## Results\n\nFast.\n\n## Conclusion\n\n{}\n"
@@ -117,6 +118,11 @@ class CanonTest(unittest.TestCase):
         result = self.canon(*args)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         return result.stdout + result.stderr
+
+    def refuses(self, message, *args):
+        """`canon.py args` exits 1 with `canon: message` and changes no file."""
+        self.assertEqual(self.fails(*args), "canon: {}\n".format(message))
+        self.assertEqual(self.git("status", "--porcelain"), "")
 
     def set(self, path, **fields):
         text = path.read_text()
@@ -967,8 +973,7 @@ class DocRulesTest(CanonTest):
         out = self.ok("check", "--fix")
         self.assertIn("WARN docs/concepts/C001-idea.md: adopted, but no design links it", out)
         self.assertNotIn("requires the doc to be in archived/", out)
-        self.design(body="## Goals\n\nFrom [C001: Idea](../concepts/C001-idea.md).\n\n## Spec\n\nX.\n\n## Decisions\n\n"
-                         "None.\n")
+        self.design(body=DESIGN.format("[C001: Idea](../concepts/C001-idea.md)"))
         self.ok("check", "--fix")
         self.assertNotIn("no design links it", self.ok("check"))
         self.set(concept, summary="")
@@ -988,7 +993,7 @@ class DocRulesTest(CanonTest):
         self.assertEqual(self.experiment_problems(self.ok("check", "--fix")), [])
         plan.write_text(plan.read_text().replace(link, "nothing"))
         anchored = "[E001§results: Fixture](../experiments/E001-bench.md#results)"
-        design = self.design(body="## Goals\n\nFrom {}.\n\n## Spec\n\nX.\n\n## Decisions\n\nNone.\n".format(anchored))
+        design = self.design(body=DESIGN.format(anchored))
         self.assertEqual(self.experiment_problems(self.ok("check", "--fix")), [])
         design.write_text(design.read_text().replace(anchored, "nothing"))
         self.init_module("mod")
@@ -1000,7 +1005,7 @@ class DocRulesTest(CanonTest):
     def test_a_concluded_experiment_warns_when_only_archived_docs_concepts_experiments_or_its_attachments_link_it(self):
         self.doc("E", "bench", body=EXPERIMENT.format(RUN, "Fast enough."), status="concluded")
         link = "[E001: Fixture](../experiments/E001-bench.md)"
-        self.design(body="## Goals\n\nFrom {}.\n\n## Spec\n\nX.\n\n## Decisions\n\nNone.\n".format(link))
+        self.design(body=DESIGN.format(link))
         self.doc("P", "work", body=PLAN.format("From " + link + "."))
         self.doc("C", "idea", body="## Motivation\n\n{}\n\n## Ideas\n\nX.\n\n## Open questions\n\nNone.\n".format(link))
         self.doc("E", "other", body=EXPERIMENT.format(RUN, "As [E001: Fixture](E001-bench.md)."))
@@ -1099,30 +1104,25 @@ class DocRulesTest(CanonTest):
         self.assertIn("Conclusion is empty", self.fails("archive", "E001", "dropped"))
         self.assertEqual(self.git("status", "--porcelain"), "")
 
-    def archive_refused(self, message, *args):
-        """`archive args` exits 1 with `canon: message` and changes no file."""
-        self.assertEqual(self.fails("archive", *args), "canon: {}\n".format(message))
-        self.assertEqual(self.git("status", "--porcelain"), "")
-
     def test_archive_as_concluded_refuses_an_experiment_with_another_status_before_its_links(self):
         path = self.doc("E", "bench", body=EXPERIMENT.format(RUN, "Fast enough."), status="running")
         self.doc("P", "work", body=PLAN.format("From [E001: Fixture](../experiments/E001-bench.md)."))
         self.commit()
-        self.archive_refused("E001 is running, not concluded; archive an experiment nothing absorbed as dropped",
-                             "E001", "concluded")
+        self.refuses("E001 is running, not concluded; archive an experiment nothing absorbed as dropped",
+                     "archive", "E001", "concluded")
         self.set(path, status="answered")
         self.commit()
-        self.archive_refused("E001 is answered, not concluded; archive an experiment nothing absorbed as dropped",
-                             "E001", "concluded")
+        self.refuses("E001 is answered, not concluded; archive an experiment nothing absorbed as dropped",
+                     "archive", "E001", "concluded")
 
     def test_archive_as_concluded_refuses_an_experiment_a_live_design_or_plan_links(self):
         self.doc("E", "bench", body=EXPERIMENT.format(RUN, "Fast enough."), status="concluded")
         link = "[E001: Fixture](../experiments/E001-bench.md)"
-        design = self.design(body="## Goals\n\nFrom {}.\n\n## Spec\n\nX.\n\n## Decisions\n\nNone.\n".format(link))
+        design = self.design(body=DESIGN.format(link))
         self.doc("P", "work", body=PLAN.format("From " + link + "."))
         self.commit()
-        self.archive_refused("E001 is linked by D001, P001; it stays live while a live design or plan links it",
-                             "E001", "concluded")
+        self.refuses("E001 is linked by D001, P001; it stays live while a live design or plan links it",
+                     "archive", "E001", "concluded")
         design.write_text(design.read_text().replace(link, "nothing"))
         self.ok("archive", "P001", "abandoned")
         self.commit()
@@ -1261,8 +1261,7 @@ class StatusTest(CanonTest):
 
     def refused(self, message, *args):
         """`status args` exits 1 with `canon: message` and changes no file."""
-        self.assertEqual(self.fails("status", *args), "canon: {}\n".format(message))
-        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.refuses(message, "status", *args)
 
     def test_concluded_needs_a_live_link_first_then_the_terminal_conditions_and_changes_no_file_without_them(self):
         path = self.doc("E", "bench", body=EXPERIMENT.format(RUN, "Fast enough."), status="answered")
@@ -1280,8 +1279,7 @@ class StatusTest(CanonTest):
 
     def test_status_moves_an_answered_experiment_that_only_an_archived_design_links_back_to_running(self):
         path = self.doc("E", "bench", body=EXPERIMENT.format(RUN, "Fast enough."), status="answered")
-        self.design(body="## Goals\n\nFrom [E001: Fixture](../experiments/E001-bench.md).\n\n## Spec\n\nX.\n\n"
-                         "## Decisions\n\nNone.\n")
+        self.design(body=DESIGN.format("[E001: Fixture](../experiments/E001-bench.md)"))
         self.commit()
         self.ok("archive", "D001", "retired")
         self.commit()
