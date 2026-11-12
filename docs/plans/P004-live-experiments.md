@@ -1,5 +1,5 @@
 ---
-status: draft
+status: accepted
 created: 2026-11-12
 updated: 2026-11-12
 revision: 1
@@ -9,6 +9,7 @@ refs: [D006, D008]
 based_on: [D006@r9, D008@r5]
 reviewed: 1
 reviewers: [claude-opus-5.5, gemini-4-argon-high]
+approved: 1
 ---
 
 # P004: Live concluded experiments
