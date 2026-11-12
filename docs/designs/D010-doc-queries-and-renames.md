@@ -165,6 +165,7 @@ Without another doc of the id, everything follows the renumbered doc.
 | D010-K5 | minor | Without FILE arguments, `affected` lists a rename that Git's rename detection pairs under its new path only, as `diff.renames` allows, so a design that governs only the old path is missed and the commit's `Refs:` omits it | as-built 374d94d | 2026-11-12 | fix |
 | D010-K6 | minor | `show ID` of a doc without frontmatter prints all its lines but the first and the last as its frontmatter lines | as-built 374d94d | 2026-11-12 | fix |
 | D010-K7 | minor | `renumber --base REF` reads REF before the history of HEAD, so in a checkout Git cannot read it exits with `canon: unknown ref <REF>` for a REF that exists, instead of the history error of [D002§project-overview-d000: D000](D002-overview-and-as-built.md#project-overview-d000) | D002 r9 gate | 2026-11-12 | fix |
+| D010-K8 | minor | `rename` leaves the H1 title, link texts that repeat the old title, and attachments named after the old slug, such as `D001/<slug>.zh.md`, with the old name; it could rewrite the H1 with a `--title` and rename the attachments whose names start with the old slug | R003-F37 | 2026-11-10 | L1 |
 
 ## Decisions
 

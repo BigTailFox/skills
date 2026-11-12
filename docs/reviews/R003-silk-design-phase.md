@@ -61,7 +61,7 @@ refs: [C001, D000, D001, D003, D005, R001, R002, D002, D006]
 | R003-F34 | minor | functional: `check` cannot validate a commit or the staged state | open |
 | R003-F35 | minor | usability: `show D00X#known-issues` fails when a design has no Known issues section | fixed 8f4f34c |
 | R003-F36 | minor | usability: No command changes a non-terminal status | fixed a26f057 |
-| R003-F37 | minor | functional: `rename` leaves the H1 title, link texts and attachments named after the slug | open |
+| R003-F37 | minor | functional: `rename` leaves the H1 title, link texts and attachments named after the slug | moved D010 |
 | R003-F38 | minor | usability: The 160-character `summary` limit shows only after the summary is written | fixed d733c74 |
 | R003-F39 | minor | usability: A stale index is an error, which blocks a subagent allowed to edit only its own files | open |
 | R003-F40 | minor | usability: The `canon` skill sends L1 revisions to `canon-design`, which the agent cannot invoke | fixed 18b7dcf |
