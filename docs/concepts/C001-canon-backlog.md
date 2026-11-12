@@ -1,11 +1,11 @@
 ---
 status: draft
 created: 2026-11-05
-updated: 2026-11-11
-revision: 1
+updated: 2026-11-12
+revision: 2
 modules: [canon]
 summary: Ideas for the canon module that no design tracks yet, from codebase reviews and deferred findings.
-refs: [R001, D006, D007, D008]
+refs: [R001, D006, D007, D008, D001, D003]
 ---
 
 # C001: Canon backlog
@@ -27,6 +27,7 @@ Findings that are not defects of code a design governs, and work that needs a ne
 - **`which` on missing paths** (R001-F19). `which` answers `no design`, or a design, for paths that exist neither on disk nor in Git.
 - **Tests for `adopt` and the index format** (R001-F28). D004's `adopt` and D005's format and `index out of date` error are as-built and almost untested.
 - **Experiment bookkeeping** ([D008: Prototypes and research](../designs/D008-experiments.md), found in its as-built revision). Nothing fills an experiment's `summary`, `modules` and `refs`; a research Conclusion does not name where it was absorbed, as a prototype's does; and neither skill says who commits the experiment and its attachments, or when.
+- **How strong a reviewer needs to be** (the user, 2026-11-12). Nothing shows how a reviewer's model and reasoning effort trade review quality against time: a same-model reviewer runs on the session's model and effort ([D003: Subagents](../designs/D003-subagents.md)), and the reviewer file orders cross-family reviewers by preference alone. Research and experiments that replay gates and code reviews with known findings at several models and efforts could set defaults that stay fast and still catch what matters; the snapshots and review dispositions of [D001: Skill telemetry](../designs/D001-skill-telemetry.md) could supply the cases.
 - **`new P` without `--from`** ([D006: Doc model and writing rules](../designs/D006-doc-model.md), found in its as-built revision). Plans come only from an accepted or active design, yet `new` creates one without `--from` silently; it could warn.
 
 ## Open questions
