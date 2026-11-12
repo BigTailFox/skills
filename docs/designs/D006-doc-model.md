@@ -11,7 +11,7 @@ paths: [skills/governance/canon/SKILL.md, skills/governance/canon/doc-types.md, 
 reviewed: 10
 reviewers: [claude-opus-5.5, gemini-4-argon-high]
 approved: 10
-implemented: 9
+implemented: 10
 ---
 
 # D006: Doc model and writing rules
@@ -218,7 +218,7 @@ canon.py new TYPE SLUG [--title T] [--root DIR] [--parent D012] [--from D012]
 ```
 
 - TYPE is a type letter in either case or a type's directory name, plural or singular (`designs`, `design`); else `canon: unknown type <type>; use one of C D P R E I`. A SLUG that is not kebab-case ends `new` with `canon: slug must be kebab-case`.
-- The project is `--root`, a project directory or its `docs/`, else the nearest directory from the working directory up to the repo root that holds an `AGENTS.md`; without one, ``canon: no AGENTS.md at <absolute path>; set the project up with `canon.py init` first``.
+- The project is `--root`, a project directory or its `docs/`, else the nearest directory from the working directory up to the repo root that holds an `AGENTS.md` other than an installed skill file ([D004§install: install](D004-project-setup.md#install)); without one, ``canon: no AGENTS.md at <absolute path>; set the project up with `canon.py init` first``.
 - `--parent` takes a top-level design and TYPE D, else `canon: --parent takes a top-level design and only applies to designs`, and excludes `--root`: `canon: --parent puts the sub-design beside its parent; drop --root`. The sub-design goes into the parent's docs root, with the parent's id and its first free letter, else `canon: <id> has no free sub-design letter; create a new top-level design`. Without `--parent`, the doc gets the next free id ([Ids and file names](#ids-and-file-names)).
 - `--from` applies to TYPE P and takes an accepted or active design, else `canon: --from takes an accepted or active design`. The plan gets the design's `modules`, `refs: [<id>]`, `based_on: [<id>@r<revision>]` and, after its H1, the line `Implements [<id>: <title>](<relative path>).` With another TYPE, `new` ends with `canon: --from only applies to plans`.
 - The title is `--title`, else the slug with each `-` turned into a space and its first letter capitalized (`api-v2` gives `Api v2`).

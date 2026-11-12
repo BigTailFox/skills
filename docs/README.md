@@ -16,10 +16,6 @@
 - [D009: Settling decisions](designs/D009-settling-decisions.md) · active · Settling open decisions with the user (canon-grill): triage before asking, open decisions kept in the doc, and small batches of related questions. · owns: settling-decisions · modules: canon
 - [D010: Doc queries and renames](designs/D010-doc-queries-and-renames.md) · active · 2 known issues · Doc queries and renames with canon.py show, find, which and affected, and rename and renumber, with the references and id collisions renumber settles. · owns: doc-queries, doc-renames, doc-renumbering · modules: canon
 
-### Plans
-
-- [P005: Project install](plans/P005-project-install.md) · in-progress · canon.py run only from the project's install, init without a copy, the version check, installed skill files as tooling, and the skill texts. · modules: canon
-
 ### Reviews
 
 - [R003: Canon friction in Silk's design phase](reviews/R003-silk-design-phase.md) · open · Canon friction in a docs-only bilingual project: review gates per doc, parallel sessions, archived experiments, translations, check gaps, tool drift. · modules: canon

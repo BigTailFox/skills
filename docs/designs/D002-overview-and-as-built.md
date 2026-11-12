@@ -11,7 +11,7 @@ paths: [skills/governance/canon/as-built.md, skills/governance/canon/scripts/can
 reviewed: 10
 reviewers: [claude-opus-5.5, gemini-4-argon-high]
 approved: 10
-implemented: 9
+implemented: 10
 ---
 
 # D002: Project overview and as-built designs
