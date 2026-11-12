@@ -18,7 +18,7 @@
 
 ### Plans
 
-- [P005: Project install](plans/P005-project-install.md) · draft · canon.py run only from the project's install, init without a copy, the version check, installed skill files as tooling, and the skill texts. · modules: canon
+- [P005: Project install](plans/P005-project-install.md) · in-progress · canon.py run only from the project's install, init without a copy, the version check, installed skill files as tooling, and the skill texts. · modules: canon
 
 ### Reviews
 

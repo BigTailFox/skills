@@ -1,5 +1,5 @@
 ---
-status: draft
+status: in-progress
 created: 2026-11-12
 updated: 2026-11-12
 revision: 1
@@ -9,6 +9,7 @@ refs: [D004, D000, D002, D006, D010, E001, R003]
 based_on: [D004@r5, D000@r4, D002@r10, D006@r10, D010@r2]
 reviewed: 1
 reviewers: [claude-opus-5.5, gemini-4-argon-high]
+approved: 1
 ---
 
 # P005: Project install
@@ -17,7 +18,7 @@ Implements [D004: Project setup](../designs/D004-project-setup.md) r5 and its fo
 
 ## Current state
 
-Next: S1.
+S1 in progress.
 
 ## Slices
 
@@ -190,3 +191,4 @@ Test criteria; seam: the checkout after the command, `npx skills`, `validate.py`
 - Drafted from D004 r5 and its follow-ons at 1300ed7.
 - S6: this repository loads its skills through links to the working tree rather than a copy from `npx skills add .`, stale after each edit, or a pinned release, whose texts lag the code and whose `canon.py` refuses once the block records a newer version (the user's decision).
 - Review gate r1 (claude-opus-5.5, gemini-4-argon-high): accepted every finding, seven from the same-model reviewer and four from the cross-family reviewer, which overlapped on all but `PruneTest` and `CoverageTest`. The fixes cover the `list` command `canon.py` lacks, the harness link shared with the S2 and S4 fixtures and with `PruneTest`, `CoverageTest`'s count without the copy, S6's `which` criterion, the stale help texts and `canon-init` description, the silent hook lookup without `--hook`, the version check needing a complete block, and a one-pass rollout. Both reviewers confirmed the fixes.
+- 2026-11-12: The user approved this plan at 4cc4c2e. Started at 4cc4c2e.
