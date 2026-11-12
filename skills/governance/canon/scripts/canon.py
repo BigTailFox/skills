@@ -29,7 +29,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "42"
+CANON_VERSION = "43"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -40,7 +40,8 @@ TYPES = {
           "sections": ("Current state", "Slices", "Notes", "Log")},
     "R": {"dir": "reviews", "active": ("open",), "terminal": ("closed",),
           "sections": ("Scope", "Findings")},
-    "E": {"dir": "experiments", "active": ("planned", "running", "answered"), "terminal": ("concluded",),
+    "E": {"dir": "experiments", "active": ("planned", "running", "answered"),
+          "terminal": ("concluded", "superseded", "overturned", "dropped"),
           "sections": ("Question", "Setup", "Results", "Conclusion")},
     "I": {"dir": "investigations", "active": ("open",), "terminal": ("resolved",),
           "sections": ("Symptom", "Reproduction", "Analysis", "Resolution")},
@@ -1002,7 +1003,7 @@ def terminal_problems(doc, status=None):
     if doc.type == "D":
         out += ["known issue {} is still listed; move it to the design that takes over, or remove it".format(row[0])
                 for row in known_issues(doc)[0]]
-    if doc.type == "E":
+    if doc.type == "E" and (status or doc.status) != "dropped":
         labels = doc.labels("Setup")
         if not labels.get(SOURCES_LABEL):
             out += ["Setup: `{}` is empty (research lists `- {}:` instead)".format(k, SOURCES_LABEL)
@@ -1724,6 +1725,13 @@ def cmd_archive(repo, args):
         sys.exit("canon: {} is already archived".format(doc.id))
     if args.status not in info["terminal"]:
         sys.exit("canon: {} can be archived as {}".format(doc.id, " or ".join(info["terminal"])))
+    if doc.type == "E" and args.status == "concluded":
+        if doc.status != "concluded":
+            sys.exit("canon: {} is {}, not concluded; archive an experiment nothing absorbed as dropped"
+                     .format(doc.id, doc.status))
+        if doc.path in repo.live_links():
+            sys.exit("canon: {} is linked by {}; it stays live while a live design or plan links it"
+                     .format(doc.id, ", ".join(repo.live_links()[doc.path])))
     live = [d.id for d in repo.docs if d.type == "D" and d.suffix and "D" + d.digits == doc.id and not d.archived]
     if live:
         sys.exit("canon: {} has live sub-designs {}; archive them first".format(doc.id, ", ".join(live)))

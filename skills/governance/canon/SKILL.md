@@ -73,7 +73,7 @@ File names are `<id>-<kebab-slug>.md`, e.g. `designs/D003-auth.md`. The title is
 | D designs | Long-lived authoritative design and spec of one topic. | draft → accepted → active → superseded, retired |
 | P plans | Implementation plan and log of one change. | draft → accepted → in-progress → done, abandoned |
 | R reviews | Findings of a functional, performance, security, architecture or usability review. | open → closed |
-| E experiments | A question answered with evidence: a run (benchmark, prototype) or research of primary sources. | planned → running → answered → concluded |
+| E experiments | A question answered with evidence: a run (benchmark, prototype) or research of primary sources. | planned → running → answered → concluded, superseded, overturned, dropped |
 | I investigations | Debugging and profiling. | open → resolved |
 
 Sections and per-type rules: [doc-types.md](doc-types.md).

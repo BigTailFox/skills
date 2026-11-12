@@ -1028,6 +1028,30 @@ class DocRulesTest(CanonTest):
         self.assertIn("status `active` requires the doc to be outside archived/; set one of superseded, retired",
                       self.fails("check"))
 
+    def test_only_concluded_is_a_terminal_status_an_experiment_may_hold_live(self):
+        self.doc("E", "bench", body=EXPERIMENT.format(RUN, "Fast enough."), status="concluded")
+        self.commit()
+        self.ok("archive", "E001", "concluded")
+        self.set(self.root / "docs/archived/experiments/E001-bench.md", status="answered")
+        self.doc("E", "load", body=EXPERIMENT.format(RUN, "No longer matters."), status="dropped")
+        out = self.fails("check")
+        self.assertIn("ERROR docs/experiments/E002-load.md: status `dropped` requires the doc to be in archived/; use "
+                      "`canon.py archive`", out)
+        self.assertIn("ERROR docs/archived/experiments/E001-bench.md: status `answered` requires the doc to be outside "
+                      "archived/; set one of concluded, superseded, overturned, dropped", out)
+
+    def test_check_skips_the_setup_labels_of_an_archived_dropped_experiment_only(self):
+        self.doc("E", "bench", body=EXPERIMENT.format("- Commit:\n- Environment:\n- Command:",
+                                                      "The question no longer matters."), status="planned")
+        self.commit()
+        self.ok("archive", "E001", "dropped")
+        self.assertEqual(self.experiment_problems(self.ok("check")), [])
+        self.set(self.root / "docs/archived/experiments/E001-bench.md", status="superseded")
+        error = ("ERROR docs/archived/experiments/E001-bench.md: Setup: `{}` is empty (research lists `- Sources:` "
+                 "instead)")
+        self.assertCountEqual(self.experiment_problems(self.fails("check")),
+                              [error.format(label) for label in ("Commit", "Environment", "Command")])
+
     def test_an_archived_design_does_not_warn_about_unmatched_paths(self):
         self.design(paths=["src/gone.py"])
         self.assertIn("`paths` entry `src/gone.py` matches no file", self.ok("check", "--fix"))
@@ -1072,8 +1096,54 @@ class DocRulesTest(CanonTest):
         self.assertIn("ERROR docs/concepts/C001-idea.md: `summary` is empty", out)
         self.assertIn("ERROR docs/concepts/C001-idea.md: template guidance `<!-- canon: ... -->` left in the doc", out)
         self.assertIn("ERROR docs/plans/P001-work.md: plan has no slices", self.fails("archive", "P001", "done"))
-        self.assertIn("Conclusion is empty", self.fails("archive", "E001", "concluded"))
+        self.assertIn("Conclusion is empty", self.fails("archive", "E001", "dropped"))
         self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def archive_refused(self, message, *args):
+        """`archive args` exits 1 with `canon: message` and changes no file."""
+        self.assertEqual(self.fails("archive", *args), "canon: {}\n".format(message))
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_archive_as_concluded_refuses_an_experiment_with_another_status_before_its_links(self):
+        path = self.doc("E", "bench", body=EXPERIMENT.format(RUN, "Fast enough."), status="running")
+        self.doc("P", "work", body=PLAN.format("From [E001: Fixture](../experiments/E001-bench.md)."))
+        self.commit()
+        self.archive_refused("E001 is running, not concluded; archive an experiment nothing absorbed as dropped",
+                             "E001", "concluded")
+        self.set(path, status="answered")
+        self.commit()
+        self.archive_refused("E001 is answered, not concluded; archive an experiment nothing absorbed as dropped",
+                             "E001", "concluded")
+
+    def test_archive_as_concluded_refuses_an_experiment_a_live_design_or_plan_links(self):
+        self.doc("E", "bench", body=EXPERIMENT.format(RUN, "Fast enough."), status="concluded")
+        link = "[E001: Fixture](../experiments/E001-bench.md)"
+        design = self.design(body="## Goals\n\nFrom {}.\n\n## Spec\n\nX.\n\n## Decisions\n\nNone.\n".format(link))
+        self.doc("P", "work", body=PLAN.format("From " + link + "."))
+        self.commit()
+        self.archive_refused("E001 is linked by D001, P001; it stays live while a live design or plan links it",
+                             "E001", "concluded")
+        design.write_text(design.read_text().replace(link, "nothing"))
+        self.ok("archive", "P001", "abandoned")
+        self.commit()
+        self.assertEqual(self.ok("archive", "E001", "concluded"),
+                         "docs/experiments/E001-bench.md -> docs/archived/experiments/E001-bench.md\n")
+        self.assertIn("From [E001: Fixture](../experiments/E001-bench.md).",
+                      (self.root / "docs/archived/plans/P001-work.md").read_text())
+
+    def test_archive_as_dropped_needs_a_conclusion_but_no_setup(self):
+        no_setup = "- Commit:\n- Environment:\n- Command:"
+        self.doc("E", "bench", body=EXPERIMENT.format(no_setup, "The question no longer matters."), status="planned")
+        self.doc("E", "load", body=EXPERIMENT.format(no_setup, ""), status="planned")
+        self.commit()
+        error = "ERROR docs/experiments/E001-bench.md: Setup: `{}` is empty (research lists `- Sources:` instead)"
+        for status in ("superseded", "overturned"):
+            self.assertCountEqual(self.fails("archive", "E001", status).splitlines(),
+                                  [error.format(label) for label in ("Commit", "Environment", "Command")])
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.ok("archive", "E001", "dropped")
+        self.assertEqual(self.fails("archive", "E002", "dropped"),
+                         "ERROR docs/experiments/E002-load.md: Conclusion is empty\n")
 
     def test_archive_refuses_a_design_with_live_sub_designs(self):
         self.design()
@@ -1756,6 +1826,7 @@ class HelpTest(CanonTest):
         archive = self.help("archive")
         for letter, info in canon.TYPES.items():
             self.assertIn("{}: {}".format(letter, ", ".join(info["terminal"])), archive)
+        self.assertIn("E: concluded, superseded, overturned, dropped", archive)
         self.assertIn("status move a doc's status forward and check the move", self.help())
         self.assertIn("C: draft, adopted; D: draft, accepted, active; P: draft, accepted, in-progress; R: open; "
                       "E: planned, running, answered, concluded; I: open", self.help("status"))

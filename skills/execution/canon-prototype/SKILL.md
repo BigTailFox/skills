@@ -41,4 +41,4 @@ If the question is ambiguous and the user is unavailable, pick the branch matchi
    Then set the experiment `answered` with `canon.py status`.
 2. Write the validated decision into the design or plan, with a link to the experiment. While a design is being written, write it straight in; a detail a plan settles within its design goes into the plan's Notes. An accepted or active design changes only through the tier flow in the `canon` skill, so take the verdict to the user. The real code follows through the change's tier, in a plan slice or an L0 change, never now.
 3. Main keeps the decision, the experiment and its `experiments/E00X/` files. Code wired into the product stays only on the prototype branch.
-4. Once you have written the link, set the experiment `concluded` with `canon.py status`; the `canon` skill's doc types say which other steps set it and when it is archived.
+4. Once you have written the link, set the experiment `concluded` with `canon.py status` and archive the earlier experiments on its question; the `canon` skill's doc types say how, which other steps set `concluded` and when the experiment is archived.
