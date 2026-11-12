@@ -22,7 +22,7 @@ Execute `canon.py`; do not read it. Use the project's copy at the path named in 
 | `index` | Regenerate the indexes in `docs/README.md` and `docs/archived/README.md`. |
 | `show ID` / `show ID#slug` | Print a doc's frontmatter and outline, or one section. |
 | `find WORDS [--archived]` | Search ids, titles, summaries, owned topics, modules and headings. |
-| `which FILE...` | List the designs whose `paths` govern the files, `doc` for a [project doc](#layout) that no `paths` entry names exactly, and `no design` for any other file. |
+| `which FILE...` | List the designs whose `paths` govern the files, `skill` for an installed skill file and `doc` for a [project doc](#layout) that no `paths` entry names exactly, and `no design` for any other file. |
 | `affected [FILE...] [--base REF]` | Designs and plans governing the given files, else the uncommitted changes plus, with `--base`, the branch's. |
 | `audit` | Designs with code commits since the design last changed or was reconciled (a `Reconciled:` trailer) that no `Refs:` trailer names, known issues oldest first, idle open docs other than concepts, active designs and concluded experiments, due reviews, source areas under D000's module Paths that no design covers, ranked by commits in the last 90 days, and designs D000 does not reach by following `refs` from design to design. |
 | `snapshot` | Record the work tree, untracked files included, and print the snapshot commit, for the diffs of a review's confirmation and follow-up rounds (the `canon-blind-review` skill). |

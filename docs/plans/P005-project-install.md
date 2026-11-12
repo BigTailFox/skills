@@ -18,7 +18,7 @@ Implements [D004: Project setup](../designs/D004-project-setup.md) r5 and its fo
 
 ## Current state
 
-S1 to S3 done. Next: S4.
+S1 to S4 done. Next: S5.
 
 ## Slices
 
@@ -105,7 +105,7 @@ Test criteria; seam: any command's exit code, standard output, standard error an
 
 ### S4: Installed skill files are tooling
 
-Status: todo
+Status: done
 
 Risk: the file matching that `which`, `affected`, `audit`'s unchecked commits and coverage share; a wrong predicate hides governed code from its design or counts installed skills as uncovered code.
 
@@ -195,3 +195,4 @@ Test criteria; seam: the checkout after the command, `npx skills`, `validate.py`
 - S1 done: `require_project_install()` in `main()` after `parse_args`, `CANON_VERSION` 47; the harness starts the link at `<top>/.agents/skills/canon/scripts/canon.py`, rechecks its `info/exclude` line on every call, passes the working directory unresolved and creates no link under `script=`; `SnapshotTest` appends to `info/exclude`. Criteria 1 and 6 went red first; criteria 2 to 5 held already, so a scratch mutation script applied six wrong rules in turn (resolved start path, string comparison, `AGENTS.md` before `.git`, `git rev-parse`, any ancestor outside Git, no check), each turning a test red. 269 tests pass with the default `TMPDIR`; `init` here had nothing to do.
 - S2 done: `init` keeps no copy, writes the Notes' block with `canon version 48 or later`, and warns of old copies found by `old_copies()`, which `check` reports as `WARN`; `OLD_HOOK_RE` finds the old hook, which every root `init` replaces in place, keeping its mode. The exemption rules and the hook rules each passed a scratch mutation run of seven wrong rules. Review found that `old_copies` read the parent directory name from the absolute path, so a repository directory named `scripts` exempted a root `canon.py` by a `SKILL.md` outside the repository; it now reads the repo-relative path, with a regression test. For the code review: an unreadable hook under `--hook` gets the cannot-write warning, and stays silent without it. `init` here rewrote the block to version 48; the suite passes with the default `TMPDIR`.
 - S3 done: `require_project_install()` returns the top whose `AGENTS.md` `project_version_notice()` reads, through `marker_span` so an incomplete block skips the check; versions compare as integers; `CANON_VERSION` 49. Deviation: the plan said `init` without `--root` prints no reminder, D004 says `init` at the repo root, so an `init --root` naming the repo root is silent too, as D004 has it; a module's `init --root` reminds. Criteria 1 and 2 went red first; a scratch mutation run of fifteen wrong rules all turned tests red. `init` here rewrote the block to version 49.
+- S4 done: `Repo.is_code` (neither doc nor installed skill file) drives `designs_for`, `unchecked_commits` and coverage, and `Doc.governs`' `doc_file` became `exact`; `which` prints `skill` first; an installed `AGENTS.md` makes no root; `CANON_VERSION` 50. Each test runs on the install untracked and committed, the harness link added with `git add -f`; criterion 3's design also holds `.agents/**` and `*.json`, since `which` and `affected` resolve `.claude/...` to `.agents/...`. A scratch mutation run of nine wrong rules turned tests red but for dropping `is_doc`'s own exclusion, which every caller already covers; it stays, as D002 states it. For the code review: `is_installed_skill` resolves two real paths per call, about 1.6 s per 100k tracked files in coverage; the `canon` skill does not yet define an installed skill file, for S5. 279 tests pass; `init` here rewrote the block to version 50.

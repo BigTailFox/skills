@@ -2002,6 +2002,7 @@ class HelpTest(CanonTest):
         for kinds, outcomes in [("other kinds", canon.OUTCOMES)] + list(canon.KIND_OUTCOMES.items()):
             self.assertIn("{}: {}".format(kinds, ", ".join(outcomes)), end)
         self.assertIn("--input FILE|- a gate's, follow-up's or code review's dispositions", end)
+        self.assertIn("`skill` for an installed skill file", self.help("which"))
         self.assertIn("`no design` for other files", self.help("which"))
         self.assertIn("only when `check` asks for it", self.help("renumber"))
         self.assertIn("an open doc other than a concept, active design or concluded experiment is idle",
@@ -2115,6 +2116,94 @@ class ProjectDocsTest(CanonTest):
         self.assertRegex(self.ok("audit"), r"  1 commits since [0-9a-f]+  D001 ")
         self.git("commit", "-q", "--amend", "-m", "Merge branch 'side'\n\nRefs: D001")
         self.assertNotIn("commits since", self.ok("audit"))
+
+
+@unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+class InstalledSkillsTest(CanonTest):
+    """The skills a project installs are tooling, neither code nor docs; here the install is left untracked."""
+    committed = False
+    SKILL = ".agents/skills/canon/SKILL.md"
+
+    def install_skills(self, *extra):
+        """Install canon as `npx skills` does, beside the harness's link at INSTALL: the skills in `.agents/skills/`,
+        a link to each from `.claude/skills/` and `skills-lock.json`, with the files `extra`; when `committed`, commit
+        the work tree with the harness's link."""
+        self.create(self.SKILL, ".agents/skills/canon-tdd/LICENSE", "skills-lock.json", *extra)
+        (self.root / ".claude/skills").mkdir(parents=True)
+        (self.root / ".claude/skills/canon").symlink_to("../../.agents/skills/canon")
+        if self.committed:
+            self.git("add", "-A")
+            self.git("add", "-f", INSTALL)
+            self.git("commit", "-qm", "chore: install canon")
+
+    def test_which_prints_skill_for_an_installed_skill_file_and_no_design_for_a_copy_outside_the_install(self):
+        self.install_skills()
+        copy = self.root / ".cursor/skills/canon/SKILL.md"
+        copy.parent.mkdir(parents=True)
+        shutil.copy(str(self.root / self.SKILL), str(copy))
+        lines = self.ok("which", self.SKILL, ".claude/skills/canon/SKILL.md", "skills-lock.json",
+                        ".agents/skills/canon-tdd/LICENSE", ".cursor/skills/canon/SKILL.md").splitlines()
+        self.assertEqual(lines, [self.SKILL + ": skill", self.SKILL + ": skill", "skills-lock.json: skill",
+                                 ".agents/skills/canon-tdd/LICENSE: skill", ".cursor/skills/canon/SKILL.md: no design"])
+
+    def test_a_design_governs_an_installed_skill_file_only_through_an_entry_equal_to_its_path(self):
+        self.design("everything", paths=["**"])
+        self.design("agents", paths=[".agents/**"])
+        self.design("skill", paths=[self.SKILL])
+        self.install_skills()
+        lines = self.ok("which", self.SKILL, ".claude/skills/canon/SKILL.md", "skills-lock.json",
+                        ".agents/skills/canon-tdd/LICENSE").splitlines()
+        governed = self.SKILL + ": D003 docs/designs/D003-skill.md - Fixture"
+        self.assertEqual(lines, [governed, governed, "skills-lock.json: skill",
+                                 ".agents/skills/canon-tdd/LICENSE: skill"])
+
+    def test_an_agents_md_among_the_installed_skills_makes_no_project(self):
+        self.install_skills(".agents/skills/canon/AGENTS.md", ".agents/skills/canon/docs/x.md")
+        self.assertEqual(self.ok("which", ".agents/skills/canon/docs/x.md"), ".agents/skills/canon/docs/x.md: skill\n")
+        result = self.canon("check")
+        self.assertEqual([p for p in self.problems(result.stdout) if ".agents/" in p], [])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_coverage_counts_no_installed_skill_file_in_a_module_at_the_project_directory(self):
+        self.modules("./")
+        self.design(paths=["src/**"])
+        self.commit()
+        self.install_skills()
+        # ./ holds .gitattributes and .gitignore from `init`.
+        self.assertEqual(self.section(self.ok("audit"), CoverageTest.AREAS), ["  1 commits  ./  2 of 2 files"])
+
+    def test_affected_lists_no_file_of_the_install_named_on_the_command_line_or_changed(self):
+        self.design(paths=[".claude/**", ".agents/**", "*.json"])
+        self.commit()
+        base = self.git("rev-parse", "HEAD")
+        self.install_skills(".claude/settings.json")
+        self.assertEqual(self.ok("affected", self.SKILL, ".claude/skills/canon", ".claude/skills/canon/SKILL.md",
+                                 "skills-lock.json", ".agents/skills/canon-tdd/LICENSE", INSTALL),
+                         "no design governs the changed files\n")
+        self.assertEqual(self.ok("affected", "--base", base),
+                         "D001 active docs/designs/D001-area.md - Fixture\n  .claude/settings.json\n")
+
+
+class CommittedInstalledSkillsTest(InstalledSkillsTest):
+    """The install of `InstalledSkillsTest`, committed with the project."""
+    committed = True
+
+    def retarget_install(self, target):
+        link = self.root / INSTALL
+        link.unlink()
+        link.symlink_to(target)
+
+    def test_a_commit_changing_only_an_installed_skill_file_is_no_unchecked_commit_of_a_design_globbing_it(self):
+        self.create("src/a.py")
+        self.install_skills()
+        self.design(paths=["**/*.py"])
+        self.commit()
+        self.retarget_install(os.path.relpath(str(SCRIPT), str((self.root / INSTALL).parent)))
+        self.git("commit", "-qam", "chore: update canon")
+        self.assertNotIn("commits since", self.ok("audit"))
+        self.retarget_install(SCRIPT)
+        self.edit_commit("src/a.py")
+        self.assertRegex(self.ok("audit"), r"  1 commits since [0-9a-f]+  D001 ")
 
 
 class CoverageTest(CanonTest):

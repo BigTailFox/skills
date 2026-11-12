@@ -29,7 +29,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "49"
+CANON_VERSION = "50"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -600,9 +600,9 @@ class Doc:
         """The entries of the Path cells of D000's Modules table."""
         return [entry for entries, _design_cell in self.module_rows() for entry in entries]
 
-    def governs(self, rel, doc_file=False):
-        """Whether this design's `paths` match a repo-relative file; when `doc_file` says the file is a doc, only an
-        entry equal to its path does."""
+    def governs(self, rel, exact=False):
+        """Whether this design's `paths` match a repo-relative file; under `exact`, for a file that is no code
+        (`Repo.is_code`), only an entry equal to its path does."""
         prefix = self.root.rel + "/" if self.root.rel else ""
         if not rel.startswith(prefix):
             return False
@@ -612,7 +612,7 @@ class Doc:
             self._paths = {entry_path(p) for p in entries}, re.compile(pattern) if entries else None
         listed, matcher = self._paths
         rel = rel[len(prefix):]
-        return rel in listed if doc_file else bool(matcher and matcher.match(rel))
+        return rel in listed if exact else bool(matcher and matcher.match(rel))
 
     def labels(self, section_name):
         """Map `- Label: value` lines to their values; indented lines below a label extend its value."""
@@ -643,7 +643,8 @@ class Repo:
         self.has_head = self.is_git and git_checked(self.root, "rev-parse", "--verify", "-q", "HEAD",
                                                     ok=(0, 1)).returncode == 0
         self.files = self._list_files()
-        parents = [f.rsplit("/", 1)[0] if "/" in f else "" for f in self.files if f.rsplit("/", 1)[-1] == "AGENTS.md"]
+        parents = [f.rsplit("/", 1)[0] if "/" in f else "" for f in self.files
+                   if f.rsplit("/", 1)[-1] == "AGENTS.md" and not self.is_installed_skill(f)]
         self.roots = [Root(self, rel) for rel in parents]
         self.docs, self.problems, self.attachments = [], [], []
         self.index_files, self.scope_md = [], []
@@ -843,13 +844,19 @@ class Repo:
         return sorted({f for out in outs for f in (out or "").split("\0") if f})
 
     def is_doc(self, rel):
-        """Whether a repo-relative file is a doc by its name, such as a README, or lies under a docs root."""
+        """Whether a repo-relative file is a doc by its name, such as a README, or lies under a docs root, and is no
+        installed skill file."""
         name = rel.rsplit("/", 1)[-1]
         stem = name.split(".", 1)[0].upper()
-        if (stem in DOC_NAMES or stem.startswith("LICENSE-")) \
-                and ("." not in name or name.lower().endswith(DOC_SUFFIXES)):
-            return True
-        return any(rel.startswith(root.docs_rel + "/") for root in self.roots)
+        named = (stem in DOC_NAMES or stem.startswith("LICENSE-")) \
+            and ("." not in name or name.lower().endswith(DOC_SUFFIXES))
+        return (named or any(rel.startswith(root.docs_rel + "/") for root in self.roots)) \
+            and not self.is_installed_skill(rel)
+
+    def is_code(self, rel):
+        """Whether a repo-relative file is neither a doc nor an installed skill file, the files a design's `paths`
+        govern only through an entry equal to their path and coverage never counts."""
+        return not (self.is_doc(rel) or self.is_installed_skill(rel))
 
     def is_installed_skill(self, rel):
         """Whether a repo-relative path is an installed skill file: the repo root's `skills-lock.json`, a path under
@@ -864,8 +871,8 @@ class Repo:
         rel = posix_rel(abs_path, self.root)
         if rel == ".." or rel.startswith("../"):
             return []
-        doc_file = self.is_doc(rel)
-        return [doc for doc in self.docs if doc.type == "D" and not doc.archived and doc.governs(rel, doc_file)]
+        exact = not self.is_code(rel)
+        return [doc for doc in self.docs if doc.type == "D" and not doc.archived and doc.governs(rel, exact)]
 
 
 # ---------------------------------------------------------------- index
@@ -2370,7 +2377,8 @@ def cmd_which(repo, args):
         hits = repo.designs_for(path)
         rel = posix_rel(path, repo.root)
         if not hits:
-            print("{}: {}".format(rel, "doc" if repo.is_doc(rel) else "no design"))
+            kind = "skill" if repo.is_installed_skill(rel) else "doc" if repo.is_doc(rel) else "no design"
+            print("{}: {}".format(rel, kind))
         for doc in hits:
             print("{}: {} {} - {}{}".format(rel, doc.id, doc.rel, doc.get("summary", ""), design_notes(doc)))
     return 0
@@ -2434,7 +2442,7 @@ def unchecked_commits(repo, doc):
             merged = git_checked(repo.root, "diff-tree", "-z", "-r", "-m", "--no-commit-id", "--name-only",
                                  "--no-renames", sha, "--", *specs).stdout
             files = [f for f in merged.split("\0") if f]
-        if files and not any(doc.governs(f, repo.is_doc(f)) for f in files):
+        if files and not any(doc.governs(f, not repo.is_code(f)) for f in files):
             continue
         if sha and doc.id not in trailer_ids(message, "refs"):
             commits.append(sha)
@@ -2467,8 +2475,9 @@ def module_dir(overview, entry):
 
 
 def coverage_report(repo, overview):
-    """`audit`'s source areas: the tracked files under D000's module Paths, docs aside, that no design's `paths`
-    match, grouped by directory within their module and ranked by the commits of the last 90 days."""
+    """`audit`'s source areas: the tracked files under D000's module Paths, docs and installed skill files aside, that
+    no design's `paths` match, grouped by directory within their module and ranked by the commits of the last 90
+    days."""
     modules = sorted({module_dir(overview, entry) for entry in overview.module_entries()} - {None}, key=len,
                      reverse=True)
     designs = [doc for doc in repo.docs if doc.type == "D" and not doc.archived and doc.as_list("paths")]
@@ -2476,7 +2485,7 @@ def coverage_report(repo, overview):
     tracked = git_checked(repo.root, "ls-files", "-z").stdout if modules else ""
     for rel in tracked.split("\0"):
         module = next((m for m in modules if not m or rel.startswith(m + "/")), None) if rel else None
-        if module is None or repo.is_doc(rel):
+        if module is None or not repo.is_code(rel):
             continue
         folder = posixpath.dirname(rel)
         files_directly_in[folder] = files_directly_in.get(folder, 0) + 1
@@ -3695,8 +3704,9 @@ def main(argv=None):
     p.add_argument("--archived", action="store_true", help="include archived docs")
     p.set_defaults(func=cmd_find)
 
-    p = command(sub, "which", help="list the designs whose `paths` govern the given files; `doc` for a project "
-                                   "doc no `paths` entry names exactly, `no design` for other files")
+    p = command(sub, "which", help="list the designs whose `paths` govern the given files; `skill` for an installed "
+                                   "skill file and `doc` for a project doc that no `paths` entry names exactly, "
+                                   "`no design` for other files")
     p.add_argument("files", nargs="+")
     p.set_defaults(func=cmd_which)
 
