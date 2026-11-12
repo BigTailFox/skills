@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Plan
 
-Read the `canon` skill first. `canon.py` means the project copy named in `AGENTS.md`.
+Read the `canon` skill first. `canon.py` means the `canon` skill's `scripts/canon.py`, as its Tool section says.
 
 ## 1. Start
 

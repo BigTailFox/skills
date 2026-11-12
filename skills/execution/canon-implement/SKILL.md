@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Implement
 
-Read the `canon` skill first; its workflow governs tiers, deviations, code review and the docs step. `canon.py` means the project copy named in `AGENTS.md`.
+Read the `canon` skill first; its workflow governs tiers, deviations, code review and the docs step. `canon.py` means the `canon` skill's `scripts/canon.py`, as its Tool section says.
 
 ## 1. Start
 

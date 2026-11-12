@@ -1,26 +1,26 @@
 ---
 name: canon-init
-description: Sets up canon in a repository or monorepo module, migrates existing docs into it, sets up the cross-family reviewer, and upgrades a project's canon.py.
+description: Sets up canon in a repository or monorepo module, migrates existing docs into it, sets up the cross-family reviewer, and upgrades the project's canon install.
 disable-model-invocation: true
 ---
 
 # Canon init
 
-Read the `canon` skill first; it defines the system. Until the project has its own copy, run `scripts/canon.py` from the `canon` skill directory, written below as `<canon>/scripts/canon.py`. `<copy>` is the project's copy, at the path the canon block of the repo root's `AGENTS.md` names, where `init` keeps it.
+Read the `canon` skill first; it defines the system. `canon.py` means the `canon` skill's `scripts/canon.py`, as its Tool section says; run it from the repo root. On a first run from a user install, with canon installed for every project but not in this one, `canon.py` refuses to run: install canon in the project first, as the `canon` skill's Tool section says.
 
 ## Pick the flow
 
 Run the flow the user names; resume a setup or upgrade that stopped before its end only then. Otherwise, when the repo root's `AGENTS.md` has no canon block, set up the project. In a project set up, run each of these that applies, in order, and when neither does, ask the user which flow to run:
 
-1. **Upgrade** when `<copy>` is missing, or `python3 <copy> --version` prints a lower version than `python3 <canon>/scripts/canon.py --version`.
+1. **Upgrade** when the project's canon version, the `canon version <n> or later` in the Tool line of the canon block, is below `canon.py --version`, or the block records none.
 2. **Set up the cross-family reviewer** when that section says to run it alone.
 
 ## Set up a project
 
 1. **Survey.** List existing docs: `docs/`, ADRs, RFCs, design notes, plans, postmortems, benchmark reports. Skip generated and vendored files. Docs by their name outside every docs root, such as READMEs, changelogs and licenses (the `canon` skill's Layout lists the names), and a docs root's own `README.md` stay where they are: they are neither adopted nor folded into D000. Every other file under a docs root is surveyed, whatever its name. In a monorepo, find the modules that deserve their own docs root: independently built or released packages and services.
-2. **Propose a mapping** and wait for the user's approval. One line per file: target type (C, D, P, R, E, I), `guides/`, fold into another doc, or leave in place. A doc that describes the whole project, such as an architecture overview, folds into D000. Also name the modules that get a docs root.
-3. **Initialize** at the repo root: `python3 <canon>/scripts/canon.py init`. Then run `python3 <copy> init --root <module>` for each module. `init` is idempotent. It copies the script to `<copy>`; when `init` exits because of the copy's path, ask the user for one and rerun with `--script <path>`. It also adds the canon block to `AGENTS.md`, adds union-merge rules for the indexes to `.gitattributes`, adds `.canon/` to `.gitignore`, and creates `docs/README.md` and, at the repo root only, D000, the project overview, from its template.
-4. **Adopt** each mapped file: `python3 <copy> adopt <file> <type> [--slug <slug>]`. It keeps git history, assigns the id, prepends frontmatter, appends missing sections and rewrites every link to the file. Move guides into `docs/guides/` with `git mv`. Commit before restructuring so git still recognizes the renames.
+2. **Propose a mapping** and wait for the user's approval. One line per file: target type (C, D, P, R, E, I), `guides/`, fold into another doc, or leave in place. A doc that describes the whole project, such as an architecture overview, folds into D000. Also name the modules that get a docs root, and ask whether to commit the installed skills, `.agents/skills/` and the agents' links to it such as `.claude/skills/`, which canon recommends so that every clone, worktree and CI job runs the pinned release with nothing to install, or only `skills-lock.json`, from which `npx skills experimental_install` restores them.
+3. **Initialize** at the repo root: `canon.py init`. Then run `canon.py init --root <module>` for each module. `init` is idempotent. It adds the canon block to `AGENTS.md`, recording the project's canon version, adds union-merge rules for the indexes to `.gitattributes`, adds `.canon/` to `.gitignore`, and creates `docs/README.md` and, at the repo root only, D000, the project overview, from its template.
+4. **Adopt** each mapped file: `canon.py adopt <file> <type> [--slug <slug>]`. It keeps git history, assigns the id, prepends frontmatter, appends missing sections and rewrites every link to the file. Move guides into `docs/guides/` with `git mv`. Commit before restructuring so git still recognizes the renames, with the installed skills, or with `skills-lock.json` alone and the installed skills' paths in `.gitignore`, as step 2 settled.
 5. **Restructure** the adopted docs:
    - Move content into the required sections and replace the guidance comments.
    - Merge standards stated in several docs into the one design that owns them; link from elsewhere.
@@ -30,10 +30,10 @@ Run the flow the user names; resume a setup or upgrade that stopped before its e
 6. **D000.** Fill it from the code, as an as-built revision of HEAD (the `canon` skill's `as-built.md`) that follows D000's rules in the `canon` skill's doc types: Goals; every capability, and every module with its Path, each row linking its designs or reading `none`; the standards designs own across modules; the dependency directions; and the glossary. In a project without code, D000 is the project's first L2 design instead: skip it here and in the Review step, and end setup by giving the user `/canon-design D000`.
 7. **AGENTS.md.** Leave the canon block as `init` wrote it, since every `init` at the repo root rewrites it from its template. Move spec-like content from the rest of `AGENTS.md` into designs, and remove instructions that conflict with canon, such as old doc conventions. If the project uses Claude Code, make sure its `CLAUDE.md` imports `AGENTS.md`: create it containing `@AGENTS.md`, or add that line to an existing one that lacks it, unless `CLAUDE.md` and `AGENTS.md` are the same file. Remove the instructions in `CLAUDE.md` that conflict with canon too.
 8. **Cross-family reviewer.** Set it up as described below.
-9. **CI.** If the project has CI, add `python3 <copy> check --base origin/<default branch>`, with a fetch depth that includes the merge base.
+9. **CI.** If the project has CI, add a job that runs `python3 .agents/skills/canon/scripts/canon.py check --base origin/<default branch>`, with a fetch depth that includes the merge base, after `npx skills experimental_install` when the project commits only `skills-lock.json`.
 10. **Review.** D000 and every adopted design that describes existing code are as-built revisions of HEAD, each with its `as_built` set: pass each through the review gate at L1, whose status step makes it `active` with `implemented` equal to its revision. Setup ends once they have passed. Write no other as-built design: the first change that alters behavior no design states records what it needs. Show the user D000.
-11. Run `python3 <copy> check --fix` until it reports no errors, and commit as `docs: adopt canon`, with a `Refs:` trailer naming D000 and the adopted designs that describe existing code.
-12. **Hook.** If the user wants a pre-commit hook, run `python3 <copy> init --hook` now, not earlier: its `check` would reject step 4's commit. When it warns that it cannot write the hook, give the user the command the warning names.
+11. Run `canon.py check --fix` until it reports no errors, and commit as `docs: adopt canon`, with a `Refs:` trailer naming D000 and the adopted designs that describe existing code.
+12. **Hook.** If the user wants a pre-commit hook, run `canon.py init --hook` now, not earlier: its `check` would reject step 4's commit. When it warns that it cannot write the hook, give the user the command the warning names.
 
 ## Set up the cross-family reviewer
 
@@ -41,7 +41,9 @@ Follow the reviewer setup in the `canon` skill's workflow (Subagents), covering 
 
 ## Upgrade
 
-From the repo root run `python3 <canon>/scripts/canon.py init`; when it exits because of the copy's path, ask the user for one and rerun with `--script <path>`. It replaces an older `<copy>` (by `CANON_VERSION`), refreshes the `AGENTS.md` block between its markers and gives a project without D000 one, as below; everything else is kept. Then run `check --fix` and fix what the new version still reports, apart from D000's guidance, which the D000 work below replaces. `--fix` gives `implemented: 1` only to an active design never revised and without an open plan; give any other active design the revision its code fully implements, found by comparing the code with each revision of the spec in the git history, and the open plan's `based_on` when there is one. A plan in progress whose `reviewed` is below its `revision` passes the review gate before its slices continue.
+A project whose canon block records no canon version kept a copy of `canon.py` and needs canon installed: unless it is, install it as the `canon` skill's Tool section says. Either way, ask whether to commit the installed skills or only `skills-lock.json`, as setup step 2 does, and commit them with the upgrade, as setup step 4 does. Otherwise, when a newer release than the one `skills-lock.json` records for `canon` exists, found as the `canon` skill's Tool section finds the newest, offer to install it; on a yes, install it, read this skill and the `canon` skill again from the new install and run its `canon.py` from here on.
+
+From the repo root run `canon.py init`. It rewrites the canon block of `AGENTS.md` with the running canon version, replaces a pre-commit hook that ran a copy, and gives a project without D000 one, as below; everything else is kept. When it warns that the project no longer keeps a copy, ask the user whether to remove the copy, then replace `python3 <path>` where files still name it, `<path>` being the copy the warning names: in CI with the job of setup step 9, elsewhere, such as in each `docs/README.md`, with `canon.py`. Then run `check --fix` and fix what the new version still reports, apart from D000's guidance, which the D000 work below replaces. `--fix` gives `implemented: 1` only to an active design never revised and without an open plan; give any other active design the revision its code fully implements, found by comparing the code with each revision of the spec in the git history, and the open plan's `based_on` when there is one. A plan in progress whose `reviewed` is below its `revision` passes the review gate before its slices continue.
 
 When the project had no D000, `init` prints how it got one:
 
@@ -51,4 +53,4 @@ When the project had no D000, `init` prints how it got one:
 
 ## Add a module
 
-Run `python3 <copy> init --root <module> --script <copy>`, then add the module's row to D000's Modules table, or update the row it has, linking the designs in the module's docs root.
+Run `canon.py init --root <module>`, then add the module's row to D000's Modules table, or update the row it has, linking the designs in the module's docs root.

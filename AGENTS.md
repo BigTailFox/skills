@@ -22,7 +22,7 @@ Do not commit or leave untracked any `SKILL.md` other than a skill's own `skills
 
 - The directory name is the skill name: lowercase letters, digits and hyphens, at most 64 characters. Skill names are unique across the whole repository, across categories too.
 - Every skill belongs to the canon documentation system: the core skill is `canon`, and every other skill is named `canon-<task>`, with the task word matching a doc type where possible (`canon-design`, `canon-plan`, `canon-investigate`).
-- `npx skills` installs skills flat by name, without the category directories. Skills refer to each other by name (e.g. "follow the `canon` skill"), never by relative paths across skill directories; to run `canon.py`, use the path given in the project's `AGENTS.md`.
+- `npx skills` installs skills flat by name, without the category directories. Skills refer to each other by name (e.g. "follow the `canon` skill"), never by relative paths across skill directories. A canon skill runs the `scripts/canon.py` of the `canon` skill it follows, and a reviewer given only a prompt runs the one the project's `AGENTS.md` names.
 - `SKILL.md` starts with YAML frontmatter containing:
   - `name`: equal to the directory name.
   - `description`: non-empty, at most 1024 characters, in the third person, and free of `: ` (it breaks YAML parsing). An auto-invoked skill states what it does in one short sentence, followed at once by "Use when …" triggers and, where needed, when it does not apply; keep the trigger words within the first 190 characters, because hosts truncate long descriptions. A manual skill gets a one-line summary for humans.

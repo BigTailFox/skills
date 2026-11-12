@@ -6,23 +6,34 @@ Personal agent skills for long-running software projects, built around **canon**
 
 Canon needs Git and Python 3.8+ as `python3` on PATH; `canon.py` uses only the standard library.
 
-The skills refer to each other by name, so install all of them. `-g` installs at user level, for every project:
+Install canon in each project, pinned to a release. The skills refer to each other by name, so install all of them. At the repo root, for the newest release:
 
 ```bash
-npx skills add BigTailFox/skills -g                                     # pick agents interactively; select every skill
-npx skills add BigTailFox/skills -g -s '*' -a cursor -a claude-code -y  # every skill, for the named agents
-npx skills update -g                                                    # pull the latest version
-npx skills ls -g                                                        # list installed skills
-npx skills remove canon-teach -g                                        # remove one skill
+tag=$(git ls-remote --tags --refs --sort=-v:refname https://github.com/BigTailFox/skills 'v*' | head -n 1 | sed 's|.*refs/tags/||')
+npx skills add "BigTailFox/skills@$tag" -s '*' -a claude-code -a codex -a cursor -y
 ```
 
-To try unpushed changes, install from the local path instead. That installs a copy, which `npx skills update` does not track, so rerun the same `add` after each change:
+This puts the skills in `.agents/skills/`, which Codex and Cursor read, links each from `.claude/skills/` for Claude Code, and records the release in `skills-lock.json`. Name the agents as above: run inside one agent, `npx skills` otherwise targets only that agent and those that read `.agents/skills/`.
+
+Commit the installed skills with the project, `.agents/skills/`, `.claude/skills/` and `skills-lock.json`, so that every clone, worktree and CI job runs the release the project pins with nothing to install. Or commit only `skills-lock.json`, ignore `.agents/skills/` and `.claude/skills/`, and restore the pinned release in each checkout and CI job:
 
 ```bash
-npx skills add ~/my/skills -g -s '*' -a cursor -y
+npx skills experimental_install
 ```
 
-Then run `/canon-init` in a project. It sets up `docs/`, migrates the project's existing docs, and sets up this machine's cross-family reviewer.
+`canon.py` runs only from an install inside the project, so canon installed for every project refuses to run. Claude Code would also keep running such an install instead of the project's, and Cursor and Codex would offer both, so remove it:
+
+```bash
+npx skills remove -g $(ls ~/.agents/skills | grep -E '^canon(-|$)')
+```
+
+Then run `/canon-init` in the project. It sets up `docs/`, migrates the project's existing docs, and sets up this machine's cross-family reviewer. Later, `/canon-sync`'s audit offers each newer release, and `/canon-init` upgrades the project to it.
+
+To try unpushed changes, install from the local path in a scratch project. That installs a copy of the working tree, so rerun the same `add` after each change:
+
+```bash
+npx skills add ~/my/skills -s '*' -a claude-code -a codex -a cursor -y
+```
 
 ## How canon works
 
@@ -50,16 +61,16 @@ Reviewers who confirm fixes or review a later revision read only what changed: `
 
 ## Tracing
 
-Tracing records how canon's workflows run in your projects, so the skills can be judged and improved on real work. It is off until you turn it on, and nothing it records leaves the machine. Run these with a project's `canon.py`, at the path its `AGENTS.md` names:
+Tracing records how canon's workflows run in your projects, so the skills can be judged and improved on real work. It is off until you turn it on, and nothing it records leaves the machine. Run these at a project's repo root, with the `canon.py` installed there:
 
 ```bash
-python3 scripts/canon.py trace on          # turn tracing on for every checkout on this machine
-python3 scripts/canon.py trace off         # turn it off again
-python3 scripts/canon.py trace off --here  # opt this checkout out; `trace on --here` opts it back in
-python3 scripts/canon.py trace status      # whether tracing is on and why, open units, snapshots
+python3 .agents/skills/canon/scripts/canon.py trace on          # turn tracing on for every checkout on this machine
+python3 .agents/skills/canon/scripts/canon.py trace off         # turn it off again
+python3 .agents/skills/canon/scripts/canon.py trace off --here  # opt this checkout out; `trace on --here` opts it back in
+python3 .agents/skills/canon/scripts/canon.py trace status      # whether tracing is on and why, open units, snapshots
 ```
 
-`trace on` creates the machine switch, `~/.config/canon/trace` (under `$XDG_CONFIG_HOME` when that is set). It lies outside the project, so run it yourself: a sandboxed agent cannot write there. Installing the skills and running `/canon-init` never turn tracing on, and a project whose `canon.py` predates tracing stays untraced until `/canon-init` upgrades it.
+`trace on` creates the machine switch, `~/.config/canon/trace` (under `$XDG_CONFIG_HOME` when that is set). It lies outside the project, so run it yourself: a sandboxed agent cannot write there. Installing the skills and running `/canon-init` never turn tracing on, and a project whose canon release predates tracing stays untraced until it installs a newer one.
 
 With tracing on, the session you talk to calls `canon.py trace` at the boundaries of each unit of work: a design, plan, implementation and each of its slices, review gate and each of its follow-up rounds, code review, investigation, codebase review or retro. Everything lands in the checkout's `.canon/canon/trace/`:
 
@@ -82,7 +93,7 @@ Auto skills load when the context calls for them. Manual skills run only as comm
 | Skill | Summary | Trigger |
 |---|---|---|
 | `canon` | The documentation system: doc types, frontmatter, references, lifecycle and archiving, the change tiers, the review gate, how subagents launch, and `canon.py`, which creates, checks, queries and archives docs, and records workflow runs when tracing is on. | Auto |
-| `canon-init` | Sets up canon in a repository or monorepo module: writes D000, the project overview, from the code, migrates existing docs (design notes, ADRs, RFCs, plans, postmortems, benchmarks), folding whole-project ones into D000 and leaving READMEs as they are, and passes D000 and the designs that describe existing code through the review gate. Also sets up the cross-family reviewer and upgrades the project's `canon.py`, turning an older project's design that owns `architecture` into D000. Rerun it on a new machine to set up the reviewer alone, or name that flow to change your reviewers. | Manual |
+| `canon-init` | Sets up canon in a repository or monorepo module: writes D000, the project overview, from the code, migrates existing docs (design notes, ADRs, RFCs, plans, postmortems, benchmarks), folding whole-project ones into D000 and leaving READMEs as they are, and passes D000 and the designs that describe existing code through the review gate. Also sets up the cross-family reviewer and upgrades the project's canon install, turning an older project's design that owns `architecture` into D000. Rerun it on a new machine to set up the reviewer alone, or name that flow to change your reviewers. | Manual |
 | `canon-sync` | Keeps docs in step with the code: runs the docs step after a change, repairs docs after a merge or rebase, and audits doc health (designs with unchecked code commits, known issues, idle docs, reviews that are due, designs D000 does not reach, source areas no design covers). | Manual |
 
 ### execution

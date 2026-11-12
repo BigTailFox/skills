@@ -51,7 +51,7 @@ While walking a tree, write every open decision into the doc before you ask it, 
 | A plan being written or revised | a temporary `## Open questions` section | slices or Notes |
 | A concept | Open questions | Ideas |
 
-When the tree has no doc yet, as in a discussion before any work, first create a concept (`canon.py new C <slug>`, with the `canon.py` that `AGENTS.md` names) and record there. A stress test of a design or plan keeps its open decisions in the same temporary section, and an answer that changes the doc is a design problem or a plan revision, as below.
+When the tree has no doc yet, as in a discussion before any work, first create a concept (`canon.py new C <slug>`, with the `canon` skill's `scripts/canon.py`, as its Tool section says) and record there. A stress test of a design or plan keeps its open decisions in the same temporary section, and an answer that changes the doc is a design problem or a plan revision, as below.
 
 Record a single blocking decision once it is answered: with a plan, in its Log with the reason; in L1 work without a plan, in the commit message; in L0 work, in the commit message when the choice would surprise a reader.
 

@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Codebase review
 
-Read the `canon` skill first. `canon.py` means the project copy named in `AGENTS.md`. This reviews the code as it stands; reviewing one change is the `canon-code-review` skill's job.
+Read the `canon` skill first. `canon.py` means the `canon` skill's `scripts/canon.py`, as its Tool section says. This reviews the code as it stands; reviewing one change is the `canon-code-review` skill's job.
 
 ## 1. Scope
 
