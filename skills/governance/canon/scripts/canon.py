@@ -29,7 +29,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "48"
+CANON_VERSION = "49"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -1637,6 +1637,8 @@ def cmd_check(repo, args):
         for line in done:
             print("fixed " + line)
         run_check(repo, args.base)
+    if args.version_notice:
+        repo.problem("WARN", "AGENTS.md", args.version_notice)
     errors, warnings = print_problems(repo)
     fixable = sum(1 for p in repo.problems if p[4])
     tail = "; {} fixable with --fix".format(fixable) if fixable and not args.fix else ""
@@ -3575,7 +3577,8 @@ def require_project_install():
     """End the command unless this canon.py was started by a path inside the project, found without running Git: the
     path passes through a directory that is the nearest at or above the working directory holding `.git`; outside
     Git, the working directory or a directory above it holding `AGENTS.md`. Links on the path stay unresolved, so a
-    user install refuses and a project's link to it runs."""
+    user install refuses and a project's link to it runs. Return the first of those directories, whose `AGENTS.md`
+    records the project's version."""
     start = os.path.abspath(__file__)
     cwd = Path(os.getcwd())
     tops = [path for path in (cwd, *cwd.parents) if (path / ".git").exists()][:1] \
@@ -3584,10 +3587,36 @@ def require_project_install():
         for top in tops:
             with contextlib.suppress(OSError):
                 if os.path.samefile(str(path), str(top)):
-                    return
+                    return tops[0]
     sys.exit("canon: canon runs only from an install inside the project, and this canon.py is {}; install canon in "
              "the project as https://github.com/BigTailFox/skills#install says, and remove a user install of canon "
              "with `npx skills remove -g`".format(start))
+
+
+def project_version_notice(top):
+    """Compare CANON_VERSION with the version the canon block of `top`'s AGENTS.md records in its first `- Tool:`
+    line: exit when the project needs a newer canon.py, and return the reminder to upgrade the project when it is set
+    up for an older one or records none. None when they are equal, or without the file or a start marker with an end
+    marker after it, where no check runs."""
+    try:
+        text = (top / "AGENTS.md").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    span = marker_span(text, AGENTS_START, AGENTS_END)
+    if not span or span[1] is None:
+        return None
+    tool = next((line for line in text[span[0]:span[1]].split("\n") if line.startswith("- Tool:")), "")
+    match = re.search(r"canon version (\d+) or later", tool)
+    if not match:
+        return "this project records no canon version; run `/canon-init` to upgrade it to version " + CANON_VERSION
+    recorded = int(match.group(1))
+    if int(CANON_VERSION) < recorded:
+        sys.exit("canon: this project needs canon version {} or later, and this canon.py is version {}; install a "
+                 "newer canon release as the canon block of AGENTS.md says".format(recorded, CANON_VERSION))
+    if int(CANON_VERSION) > recorded:
+        return "this project is set up for canon version {}; run `/canon-init` to upgrade it to version {}".format(
+            recorded, CANON_VERSION)
+    return None
 
 
 def main(argv=None):
@@ -3729,7 +3758,13 @@ def main(argv=None):
                                   "and print the snapshot commit; exit 1 when none was recorded")
 
     args = parser.parse_args(argv)
-    require_project_install()
+    top = require_project_install()
+    notice = project_version_notice(top)
+    records_it = args.command == "init" and os.path.realpath(args.root or str(top)) == os.path.realpath(str(top))
+    if args.command == "check":
+        args.version_notice = notice
+    elif notice and not records_it:
+        print("canon: " + notice, file=sys.stderr)
     if args.command == "trace":
         return cmd_trace(args)
     if args.command == "snapshot":

@@ -3815,5 +3815,111 @@ class InstallLocationTest(CanonTest):
         self.assertEqual(list(sibling.iterdir()), [])
 
 
+class ProjectVersionTest(CanonTest):
+    def setUp(self):
+        super().setUp()
+        self.init_module("mod")
+        self.commit()
+
+    def record(self, old, new):
+        """Commit the repo root's AGENTS.md with `old`, in its canon block, replaced by `new`."""
+        agents = self.root / "AGENTS.md"
+        text = agents.read_text()
+        self.assertIn(old, text)
+        agents.write_text(text.replace(old, new))
+        self.git("commit", "-qam", "record " + new, "--allow-empty")
+
+    def run_canon(self, *args, script=None, cwd=None):
+        """`canon.py args` with the machine's tracing switch under a temporary XDG_CONFIG_HOME: its exit code, standard
+        output and standard error."""
+        result = self.canon_process(*args, script=script, cwd=cwd,
+                                    env=dict(os.environ, XDG_CONFIG_HOME=str(self.tmpdir())))
+        return result.returncode, result.stdout, result.stderr
+
+    @staticmethod
+    def needs(version):
+        return ("canon: this project needs canon version {} or later, and this canon.py is version {}; install a newer "
+                "canon release as the canon block of AGENTS.md says\n".format(version, canon.CANON_VERSION))
+
+    def test_a_project_that_needs_a_newer_canon_refuses_every_command_but_help_and_version(self):
+        self.record("canon version {} or later".format(canon.CANON_VERSION), "canon version 9999 or later")
+        for args, cwd in ((["which", "src/base.py"], None), (["check"], None), (["init"], None),
+                          (["init", "--root", "mod"], None), (["trace", "status"], None),
+                          (["which", "base.py"], self.root / "src"), (["which", "../src/base.py"], self.root / "mod")):
+            with self.subTest(args=args, cwd=cwd):
+                self.assertEqual(self.run_canon(*args, cwd=cwd), (1, "", self.needs(9999)))
+                self.assertEqual(self.git("status", "--porcelain", "--untracked-files=all"), "")
+        more_digits = 10 ** len(canon.CANON_VERSION)
+        self.record("canon version 9999 or later", "canon version {} or later".format(more_digits))
+        self.assertEqual(self.run_canon("which", "src/base.py"), (1, "", self.needs(more_digits)))
+        self.assertEqual(self.run_canon("-h")[0], 0)
+        self.assertEqual(self.run_canon("--version"), (0, "canon {}\n".format(canon.CANON_VERSION), ""))
+
+    def test_outside_git_the_working_directorys_agents_md_records_the_version(self):
+        top = self.outside_checkouts()
+        self.assertEqual(self.run_canon("init", cwd=top)[0], 0)
+        agents = top / "AGENTS.md"
+        agents.write_text(agents.read_text().replace("canon version {} or".format(canon.CANON_VERSION),
+                                                     "canon version 9999 or"))
+        self.assertEqual(self.run_canon("which", "x.py", cwd=top), (1, "", self.needs(9999)))
+
+    def test_a_project_set_up_for_an_older_canon_runs_with_a_reminder_until_init_at_the_repo_root_records_it(self):
+        usual = self.run_canon("find", "x")
+        current = "canon version {} or later".format(canon.CANON_VERSION)
+        self.record(current, "canon version 1 or later")
+        reminder = "this project is set up for canon version 1; run `/canon-init` to upgrade it to version {}".format(
+            canon.CANON_VERSION)
+        self.assertEqual(self.run_canon("find", "x"), usual[:2] + ("canon: {}\n".format(reminder),))
+        code, out, err = self.run_canon("check")
+        problems = self.problems(out)
+        self.assertIn("WARN AGENTS.md: " + reminder, problems)
+        self.assertIn(", 0 errors, {} warnings".format(len(problems)), out)
+        self.assertEqual((code, err), (0, ""))
+        self.assertEqual(self.run_canon("init", "--root", "mod")[::2], (0, "canon: {}\n".format(reminder)))
+        code, out, err = self.run_canon("init")
+        self.assertEqual((code, out, err), (0, "updated AGENTS.md\n", ""))
+        self.assertIn(current, (self.root / "AGENTS.md").read_text())
+        code, out, err = self.run_canon("check")
+        self.assertEqual((code, [p for p in self.problems(out) if "AGENTS.md" in p], err), (0, [], ""))
+        self.record(current, "canon version 1 or later")
+        self.assertEqual(self.run_canon("init", "--root", ".")[::2], (0, ""))
+        self.assertIn(current, (self.root / "AGENTS.md").read_text())
+
+    def test_a_block_whose_first_tool_line_names_no_version_records_none(self):
+        tool = re.search(r"(?m)^- Tool: .*$", (self.root / "AGENTS.md").read_text()).group(0)
+        self.record(tool, "- Tool: `python3 scripts/canon.py` from the repo root (`-h` lists commands).\n"
+                          "- Tool: canon version 9999 or later.")
+        self.record(canon.AGENTS_END, canon.AGENTS_END + "\n\nOnce on canon version 9999 or later.")
+        reminder = "this project records no canon version; run `/canon-init` to upgrade it to version {}".format(
+            canon.CANON_VERSION)
+        self.assertEqual(self.run_canon("which", "src/base.py"),
+                         (0, "src/base.py: no design\n", "canon: {}\n".format(reminder)))
+        code, out, err = self.run_canon("check")
+        self.assertEqual((code, [p for p in self.problems(out) if "AGENTS.md" in p], err),
+                         (0, ["WARN AGENTS.md: " + reminder], ""))
+
+    def test_no_reminder_at_the_recorded_version_nor_without_a_canon_block_with_an_end_marker_after_its_start(self):
+        agents = self.root / "AGENTS.md"
+        block = canon.AGENTS_START + agents.read_text().split(canon.AGENTS_START, 1)[1]
+        for name, text in (("equal", agents.read_text()), ("no file", None), ("no block", "# AGENTS.md\n\nNotes.\n"),
+                           ("no end marker", "# AGENTS.md\n\n{}\nNotes.\n".format(block.replace(canon.AGENTS_END, ""))),
+                           ("end before start", "# AGENTS.md\n\n{}\n\n{}\n".format(
+                               canon.AGENTS_END, block.replace(canon.AGENTS_END, "")))):
+            with self.subTest(name):
+                if text is None:
+                    agents.unlink()
+                else:
+                    agents.write_text(text.replace("canon version {} or".format(canon.CANON_VERSION),
+                                                   "canon version 1 or") if name != "equal" else text)
+                self.assertEqual(self.run_canon("which", "src/base.py"), (0, "src/base.py: no design\n", ""))
+
+    def test_a_canon_py_from_outside_the_project_refuses_before_the_version_check(self):
+        self.record("canon version {} or later".format(canon.CANON_VERSION), "canon version 9999 or later")
+        self.assertEqual(self.run_canon("which", "src/base.py", script=SCRIPT),
+                         (1, "", "canon: canon runs only from an install inside the project, and this canon.py is {}; "
+                                 "install canon in the project as https://github.com/BigTailFox/skills#install says, "
+                                 "and remove a user install of canon with `npx skills remove -g`\n".format(SCRIPT)))
+
+
 if __name__ == "__main__":
     unittest.main()

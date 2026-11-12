@@ -18,7 +18,7 @@ Implements [D004: Project setup](../designs/D004-project-setup.md) r5 and its fo
 
 ## Current state
 
-S1 and S2 done. Next: S3.
+S1 to S3 done. Next: S4.
 
 ## Slices
 
@@ -83,7 +83,7 @@ Test criteria; seam: the `init` and `check` command lines, their output and the 
 
 ### S3: The project's version gates every command
 
-Status: todo
+Status: done
 
 Risk: the check also runs before every command, so a parse that misreads the Tool line refuses every project or silences the check.
 
@@ -193,4 +193,5 @@ Test criteria; seam: the checkout after the command, `npx skills`, `validate.py`
 - Review gate r1 (claude-opus-5.5, gemini-4-argon-high): accepted every finding, seven from the same-model reviewer and four from the cross-family reviewer, which overlapped on all but `PruneTest` and `CoverageTest`. The fixes cover the `list` command `canon.py` lacks, the harness link shared with the S2 and S4 fixtures and with `PruneTest`, `CoverageTest`'s count without the copy, S6's `which` criterion, the stale help texts and `canon-init` description, the silent hook lookup without `--hook`, the version check needing a complete block, and a one-pass rollout. Both reviewers confirmed the fixes.
 - 2026-11-12: The user approved this plan at 4cc4c2e. Started at 4cc4c2e.
 - S1 done: `require_project_install()` in `main()` after `parse_args`, `CANON_VERSION` 47; the harness starts the link at `<top>/.agents/skills/canon/scripts/canon.py`, rechecks its `info/exclude` line on every call, passes the working directory unresolved and creates no link under `script=`; `SnapshotTest` appends to `info/exclude`. Criteria 1 and 6 went red first; criteria 2 to 5 held already, so a scratch mutation script applied six wrong rules in turn (resolved start path, string comparison, `AGENTS.md` before `.git`, `git rev-parse`, any ancestor outside Git, no check), each turning a test red. 269 tests pass with the default `TMPDIR`; `init` here had nothing to do.
-- S2 done: `init` keeps no copy, writes the Notes' block with `canon version 48 or later`, and warns of old copies found by `old_copies()`, which `check` reports as `WARN`; `OLD_HOOK_RE` finds the old hook, which every root `init` replaces in place, keeping its mode. The exemption rules and the hook rules each passed a scratch mutation run of seven wrong rules. Review found that `old_copies` read the parent directory name from the absolute path, so a repository directory named `scripts` exempted a root `canon.py` by a `SKILL.md` outside the repository; it now reads the repo-relative path, with a regression test. For the code review: an unreadable hook under `--hook` gets the cannot-write warning, and stays silent without it. `init` here rewrote the block to version 48; 266 tests pass with the default `TMPDIR`.
+- S2 done: `init` keeps no copy, writes the Notes' block with `canon version 48 or later`, and warns of old copies found by `old_copies()`, which `check` reports as `WARN`; `OLD_HOOK_RE` finds the old hook, which every root `init` replaces in place, keeping its mode. The exemption rules and the hook rules each passed a scratch mutation run of seven wrong rules. Review found that `old_copies` read the parent directory name from the absolute path, so a repository directory named `scripts` exempted a root `canon.py` by a `SKILL.md` outside the repository; it now reads the repo-relative path, with a regression test. For the code review: an unreadable hook under `--hook` gets the cannot-write warning, and stays silent without it. `init` here rewrote the block to version 48; the suite passes with the default `TMPDIR`.
+- S3 done: `require_project_install()` returns the top whose `AGENTS.md` `project_version_notice()` reads, through `marker_span` so an incomplete block skips the check; versions compare as integers; `CANON_VERSION` 49. Deviation: the plan said `init` without `--root` prints no reminder, D004 says `init` at the repo root, so an `init --root` naming the repo root is silent too, as D004 has it; a module's `init --root` reminds. Criteria 1 and 2 went red first; a scratch mutation run of fifteen wrong rules all turned tests red. `init` here rewrote the block to version 49.
