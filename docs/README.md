@@ -8,7 +8,7 @@
 - [D001: Skill telemetry with canon trace](designs/D001-skill-telemetry.md) · active · Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions. · owns: skill-telemetry · modules: canon
 - [D002: Project overview and as-built designs](designs/D002-overview-and-as-built.md) · active · D000 overview, as-built designs of existing code, backfill before changing unspecified behavior, and audit's unchecked commits and design coverage. · owns: project-overview, as-built-design, design-coverage, unchecked-commits · modules: canon
 - [D003: Subagents](designs/D003-subagents.md) · active · How canon runs reviewers and workers as new subagents on the session's model, resumed by id, the review snapshots confirmations diff, and the reviewer file. · owns: subagents · modules: canon
-- [D004: Project setup](designs/D004-project-setup.md) · active · 1 known issue · Project setup and upgrades with canon.py init, migration of existing docs with adopt, and the canon-init flows for setup, upgrade and new modules. · owns: project-setup · modules: canon
+- [D004: Project setup](designs/D004-project-setup.md) · active · canon installed in each project and its recorded version, setup and upgrades with canon.py init, migration of docs with adopt, and the canon-init flows. · owns: project-setup · modules: canon
 - [D005: Docs index](designs/D005-docs-index.md) · active · The generated doc index in each docs root's README.md and archived/README.md, its markers and format, the commands that regenerate it and check's index errors. · owns: docs-index · modules: canon
 - [D006: Doc model and writing rules](designs/D006-doc-model.md) · active · Doc types, ids, frontmatter, sections, statuses and archiving of canon docs, the templates of new, the doc rules check enforces and the writing rules. · owns: doc-model, doc-writing · modules: canon
 - [D007: Change tiers and the review gate](designs/D007-change-tiers.md) · active · Change tiers and their flows, design problems, and the review gate of a change: steps, prompt, merge rules, confirmation and follow-up rounds, status. · owns: change-tiers, review-gate, design-problems · modules: canon
@@ -19,6 +19,10 @@
 ### Reviews
 
 - [R003: Canon friction in Silk's design phase](reviews/R003-silk-design-phase.md) · open · Canon friction in a docs-only bilingual project: review gates per doc, parallel sessions, archived experiments, translations, check gaps, tool drift. · modules: canon
+
+### Experiments
+
+- [E001: Precedence of project and user skills across hosts](experiments/E001-skill-scope-precedence.md) · concluded · Same-name user and project skills load both in Cursor and Codex, told apart by path; Claude Code runs the user's. npx skills project installs reach all three. · modules: canon
 
 ### Concepts
 

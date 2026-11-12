@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-10-22
-updated: 2026-11-11
+updated: 2026-11-12
 revision: 7
 modules: [canon]
 summary: How canon runs reviewers and workers as new subagents on the session's model, resumed by id, the review snapshots confirmations diff, and the reviewer file.
@@ -74,7 +74,7 @@ This design covers the subagents of the `canon` workflow, meaning the reviewers 
 - The repository lives in the checkout's `.canon/canon/snapshots/`, found as [D001§switch-and-storage: switch and storage](D001-skill-telemetry.md#switch-and-storage) finds the trace directory, so a linked worktree has its own; the diff command runs from that checkout's root. It is built on first use as the trace one is, and each call writes `.canon/canon/.gitignore` when it is missing, as `trace start` does. Nothing is written in `.canon/canon/trace/`, so tracing off still writes nothing there.
 - It takes the snapshot as [D001§snapshots: snapshots](D001-skill-telemetry.md#snapshots) takes a trace snapshot, with no parent, in this repository instead of the trace one and at `refs/snapshots/<id>`, where `<id>` is the UTC time and 6 random hex digits. The snapshot holds what `git add -A` would record, and the project is left as a trace snapshot leaves it. Step 5 is skipped: each call writes the absolute path of the project's object directory, as `git rev-parse --git-path objects` names it, to the repository's `objects/info/alternates`, so a snapshot stores only the objects the project lacks and the first one copies no tree. A snapshot that reaches an object the project has since pruned no longer diffs, and the repository's `gc --auto` fails, unreported, until that snapshot expires.
 - The repository is scratch. Each call, holding `snapshot.lock`, first deletes, best-effort, the refs of snapshots taken more than 30 days ago and the index copies and `.init-<id>` directories that interrupted calls left more than an hour ago; step 6's `gc --auto` reclaims the space once enough packs or loose objects accumulate. Deleting the directory loses only the diffs of open reviews.
-- A call that records no snapshot prints `snapshot error: <reason>`, a reason as [D001§event-lines: event lines](D001-skill-telemetry.md#event-lines) defines, with `alternates` and `gitignore` as the steps that write the repository's alternates and `.canon/canon/.gitignore`, followed on standard error by Git's message when there is one, and exits 1: outside Git, when the untracked and unstaged files total more than 10 MiB, after 5 s waiting for `snapshot.lock`, or when a step fails. A project's copy of `canon.py` that predates the command fails with a usage error instead; either failure leaves the confirmation without a diff.
+- A call that records no snapshot prints `snapshot error: <reason>`, a reason as [D001§event-lines: event lines](D001-skill-telemetry.md#event-lines) defines, with `alternates` and `gitignore` as the steps that write the repository's alternates and `.canon/canon/.gitignore`, followed on standard error by Git's message when there is one, and exits 1: outside Git, when the untracked and unstaged files total more than 10 MiB, after 5 s waiting for `snapshot.lock`, or when a step fails. Such a failure leaves the confirmation without a diff.
 
 ## Decisions
 

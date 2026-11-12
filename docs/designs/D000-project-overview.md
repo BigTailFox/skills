@@ -2,14 +2,14 @@
 status: active
 created: 2026-10-23
 updated: 2026-11-12
-revision: 3
+revision: 4
 modules: []
 summary: Agent skills built around canon, a documentation system kept in the repository; one module, its capabilities and the designs that own them.
 refs: [D001, D002, D003, D004, D005, D006, D007, D008, D009, D010]
 owns: [architecture]
 paths: []
-reviewed: 3
-reviewers: [claude-opus-5.5]
+reviewed: 4
+reviewers: [claude-opus-5.5, gemini-4-argon-high]
 implemented: 3
 ---
 
@@ -36,7 +36,7 @@ implemented: 3
 | As-built designs, and the backfill before a change to behavior no design states | canon | [D002: Project overview and as-built designs](D002-overview-and-as-built.md) |
 | Blind reviews by fresh subagents, a cross-family reviewer included, for the review gate, code review or any request (`canon-blind-review`), and a fresh worker for each plan slice | canon | [D003: Subagents](D003-subagents.md), [D007: Change tiers and the review gate](D007-change-tiers.md) |
 | Opt-in tracing of workflow runs for replay and analysis (`canon.py trace`) | canon | [D001: Skill telemetry with canon trace](D001-skill-telemetry.md) |
-| Project setup: `docs/`, the `AGENTS.md` block, migration of existing docs and upgrades of a project's `canon.py` (`canon-init`) | canon | [D004: Project setup](D004-project-setup.md) |
+| Project setup: canon installed in each project with the canon version the project records, `docs/`, the `AGENTS.md` block, migration of existing docs and upgrades (`canon-init`) | canon | [D004: Project setup](D004-project-setup.md) |
 | Docs kept in step with the code: the docs step, repair after a merge or rebase, and the doc health audit (`canon-sync`, and the known issues, idle docs and due reviews `canon.py audit` reports) | canon | none |
 | Code review of a finished change (`canon-code-review`) | canon | none |
 | Codebase review from chosen angles (`canon-review`) | canon | none |
@@ -62,7 +62,7 @@ implemented: 3
 There is one module, so no direction between modules applies. These hold inside it and at its edges:
 
 - Skills refer to each other by name, never by a relative path across skill directories, since `npx skills` installs them flat by name.
-- A skill runs the project's copy of `canon.py` at the path the canon block of the repo root's `AGENTS.md` names, and the `canon` skill's own `scripts/canon.py` while the project has no copy. `init` puts the copy where [D004§init: init](D004-project-setup.md#init) states.
+- A skill runs the `scripts/canon.py` of the `canon` skill installed in the project, which refuses to run from outside the project ([D004§install: install](D004-project-setup.md#install)). In this repository, agents, reviewers included, run the working tree's `skills/governance/canon/scripts/canon.py` instead of the one the canon block's Tool line names, as `AGENTS.md` says outside the block, which `init` rewrites; a commit that bumps `CANON_VERSION` reruns `init`, so the block records the new version.
 - Execution skills read and write project docs only through the documentation system the governance skills define.
 - `canon.py` is a single file on the Python 3.8+ standard library, and runs `git` in a Git checkout.
 - The repository tooling, `scripts/validate.py`, checks each skill's layout, frontmatter, length and links, that every `SKILL.md` on disk that Git tracks or does not ignore is a skill's own, directly inside a non-hidden `skills/<category>/<name>/`, failing when Git cannot list the files, the links of the root's Markdown files, the Skills tables of `README.md`, `CANON_VERSION`, and [D001§budgets: budgets](D001-skill-telemetry.md#budgets) for skill text, failing when no paragraph of the `canon` skill starts as they say. That last check needs tiktoken and its `cl100k_base` encoding; when either fails to load, it prints why, with the `uv run` command that adds a missing tiktoken. It runs `tests/`, where `test_validate.py` tests it. Nothing under `skills/` depends on it.
@@ -75,11 +75,11 @@ The module and the repository tooling share these terms. The Skill rules of [AGE
 - **Category**: `governance`, for skills that build and maintain the documentation system, or `execution`, for skills that do development work through it.
 - **Manual skill**: a skill that runs only as a command. An **auto skill** also loads when the context calls for it. The README's Skills tables give each skill's trigger mode.
 - **Ported skill**: a skill adapted from [mattpocock/skills](https://github.com/mattpocock/skills), whose directory holds the upstream `LICENSE` and a `NOTICE`.
-- **`CANON_VERSION`**: the decimal integer, written as a string, that `canon.py` carries and `init` compares with a project's copy to decide whether to replace it.
+- **`CANON_VERSION`**: the decimal integer, written as a string, that `canon.py` carries. A project records the one it was last set up with, and every command compares it with its own ([D004§project-version: project version](D004-project-setup.md#project-version)).
 
 ## Decisions
 
 - The repository ships no install script; installing, updating and removing are left to `npx skills` (`AGENTS.md`).
-- `CANON_VERSION` is separate from the release version: `init` upgrades a project's copy by version number only (`AGENTS.md`).
-- `canon.py` is one file on the standard library, copied into each project, where agents and CI run it (`canon.py`'s docstring, `canon-init`; reason unknown, kept as found).
+- `CANON_VERSION` is separate from the release version: it changes only with `canon.py`, and a project's recorded version is compared by it alone ([D004§project-version: project version](D004-project-setup.md#project-version)).
+- `canon.py` is one file on the standard library, which agents and CI run from the `canon` skill installed in each project; projects keep no copy of it ([D004: Project setup](D004-project-setup.md) gives the reasons).
 - The tooling's tests share `tests/` with `canon.py`'s, which `validate.py` already runs, and only `skills/`, the part that is installed, must not depend on the tooling (the user's decision; R001-F31). Until a design lists `tests/test_validate.py`, coverage reports it as uncovered; like the tooling it tests, it needs no backfill.

@@ -2,14 +2,14 @@
 status: active
 created: 2026-10-22
 updated: 2026-11-12
-revision: 9
+revision: 10
 modules: [canon]
 summary: D000 overview, as-built designs of existing code, backfill before changing unspecified behavior, and audit's unchecked commits and design coverage.
-refs: [D001, D006, D007, D009, R003, D010]
+refs: [D001, D006, D007, D009, R003, D010, D004]
 owns: [project-overview, as-built-design, design-coverage, unchecked-commits]
 paths: [skills/governance/canon/as-built.md, skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/governance/canon/doc-types.md, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-review/architecture.md, tests/test_canon.py]
-reviewed: 9
-reviewers: [claude-opus-5.5]
+reviewed: 10
+reviewers: [claude-opus-5.5, gemini-4-argon-high]
 implemented: 9
 ---
 
@@ -22,7 +22,7 @@ implemented: 9
 3. A change's tier measures the change, not the docs the project lacks: changing behavior no design states costs one L1 as-built revision more than changing stated behavior, never an L2 detour.
 4. What an as-built revision adds holds for the code at the commit it records, apart from defects its known issues name, and it states intent only where evidence or the user gives it.
 5. `audit` ranks the parts of the project's modules no design covers by recent commits, and coverage never fails `check`.
-6. No tool or step takes a doc, such as the project's README, for code that lacks a design, and the docs step keeps what docs state in line with the change.
+6. No tool or step takes a doc, such as the project's README, or a skill installed in the project for code that lacks a design, and the docs step keeps what docs state in line with the change.
 7. `audit` names each design whose code changed, since the design last changed or was reconciled with its code, in commits whose `Refs:` trailer does not name it.
 
 ## Spec
@@ -146,12 +146,19 @@ The skills apply them:
 
 A project's `README.md`, its hand-written intro for users, belongs to the doc system like its `AGENTS.md` and its docs root; the `canon` skill's Layout names it. A project need not have one, and `check` does not read it. It stays: `canon-init` neither folds it into D000 nor adopts it, and where it restates D000 or a design, they hold.
 
-A file in any directory whose name up to its first `.` is, in any case, `README`, `AGENTS`, `CLAUDE`, `CHANGELOG`, `CONTRIBUTING`, `LICENSE`, `NOTICE`, `SECURITY`, `CODE_OF_CONDUCT` or `COPYING`, or starts with `LICENSE-`, and whose name has no `.` or ends, in any case, in `.md`, `.markdown`, `.rst`, `.txt`, `.adoc` or `.org`, is a doc by its name: `README.md`, `readme.rst`, `LICENSE`, `LICENSE-MIT` and `README.zh.md` are, `agents.py` and `notice.ts` are not. A doc by its name, and any file under a docs root, is a doc:
+A file in any directory whose name up to its first `.` is, in any case, `README`, `AGENTS`, `CLAUDE`, `CHANGELOG`, `CONTRIBUTING`, `LICENSE`, `NOTICE`, `SECURITY`, `CODE_OF_CONDUCT` or `COPYING`, or starts with `LICENSE-`, and whose name has no `.` or ends, in any case, in `.md`, `.markdown`, `.rst`, `.txt`, `.adoc` or `.org`, is a doc by its name unless it is an [installed skill file](#installed-skills): `README.md`, `readme.rst`, `LICENSE`, `LICENSE-MIT` and `README.zh.md` are, `agents.py` and `notice.ts` are not. A doc by its name, and any file under a docs root, is a doc:
 
 - `which` prints `<path>: doc` for it, unless an entry of a design's `paths` is its exact path, so neither the docs step, code review nor `canon-review` takes it for code no design covers. A glob or directory entry never matches a doc, in `which`, in `affected` and in the unchecked commits `audit` counts. An entry equals a doc's path after the trimming of whitespace and leading `./` that glob entries get.
 - `audit` reads each commit's files with `git log -z -c --name-only --no-renames`: a merge touches the files its resolution changed against every parent, or, for a clean merge, whose combined diff lists none, the files it changed against any parent. A commit, or merge, whose files are all docs its design's entries do not list is no unchecked commit; through `--no-renames`, one that renames governed code to a doc still is.
 - Coverage counts no doc.
 - The docs step fixes, in READMEs, guides and `AGENTS.md`, the names the change renamed or removed and what they state of behavior the change altered.
+
+### Installed skills
+
+The skills a project commits with its install of canon are tooling, neither code a design specifies nor docs, even a `LICENSE` or `README.md` among them, and an `AGENTS.md` among them makes no project ([D006§layout: layout](D006-doc-model.md#layout)). An installed skill file is one [D004§install: install](D004-project-setup.md#install) defines, such as `.agents/skills/canon/scripts/canon.py`:
+
+- `which` prints `<path>: skill` for it, unless an entry of a design's `paths` is its exact path, so neither the docs step, code review nor `canon-review` takes it for code no design covers. A glob or directory entry never matches it, in `which`, in `affected` and in the unchecked commits `audit` counts, so a skill update is no unchecked commit of a design whose `paths` hold `**/*.py`.
+- Coverage counts none.
 
 ### Unchecked commits in audit
 
@@ -166,7 +173,7 @@ Designs with code commits since the design last changed or was reconciled that n
 - A design's baselines are its last change and each reconciliation that `git log <last change>..HEAD` lists.
   - Its last change is the newest commit that `git log -- <the design's file>` lists and that changed the design, against its first parent, beyond its Known issues. The Known issues section starts at the `## Known issues` heading outside code fences and runs to the next heading of level 1 or 2. A commit whose change outside that section lies only in blank lines and in lines starting with `updated:` or `refs:`, and which changed that section, is no such change. Any other change is, one to `updated` or `refs` alone included, and so is the commit that added the file at its current path. A design whose file has no such commit is not listed.
   - A reconciliation of the design is a commit whose message has a line starting with `Reconciled:`, in any case, that names the design's id as a `Refs:` line does, below. The canon workflow's Maintenance and `canon-sync` write it once they have compared the design with the commits `audit` lists for it and updated what those commits changed, in an empty commit (`git commit --allow-empty`) when the design needed no change. No other step writes it.
-- Its unchecked commits are the commits `git log HEAD --not <each baseline>` lists that touch a file the design governs by its `paths` ([D006§frontmatter: frontmatter](D006-doc-model.md#frontmatter)), a doc only through an entry equal to its path, and whose message has no line starting with `Refs:`, in any case, that names the design's id, as a word of `C`, `D`, `P`, `R`, `E` or `I`, three or more digits and an optional capital letter. Which files a commit or merge touches: [Project docs](#project-docs); which commits carry the trailer: [D007§choosing-a-tier: choosing a tier](D007-change-tiers.md#choosing-a-tier).
+- Its unchecked commits are the commits `git log HEAD --not <each baseline>` lists that touch a file the design governs by its `paths` ([D006§frontmatter: frontmatter](D006-doc-model.md#frontmatter)), a doc or an [installed skill file](#installed-skills) only through an entry equal to its path, and whose message has no line starting with `Refs:`, in any case, that names the design's id, as a word of `C`, `D`, `P`, `R`, `E` or `I`, three or more digits and an optional capital letter. Which files a commit or merge touches: [Project docs](#project-docs); which commits carry the trailer: [D007§choosing-a-tier: choosing a tier](D007-change-tiers.md#choosing-a-tier).
 - A design with unchecked commits gets the line `  <n> commits since <the first 12 hex digits of the first reconciliation that git log lists, else of the last change>  <doc line>`, the design's doc line as [D010§doc-lines: doc lines](D010-doc-queries-and-renames.md#doc-lines) defines it. The lines run most commits first, and the section is left out when no design has one.
 
 ### Coverage in audit
@@ -180,7 +187,7 @@ Source areas no design covers (commits in the last 90 days, most first):
   and 3 more areas
 ```
 
-- Files are the tracked files under the Paths of D000's Modules rows, other than [docs](#project-docs); tooling, CI and configuration outside every module are not counted. A file belongs to the module with the longest Path that holds it, and is covered when the `paths` of a non-archived design, in any project, match it. Area paths are relative to the repo root, and one list covers the repository.
+- Files are the tracked files under the Paths of D000's Modules rows, other than [docs](#project-docs) and [installed skill files](#installed-skills); tooling, CI and configuration outside every module are not counted. A file belongs to the module with the longest Path that holds it, and is covered when the `paths` of a non-archived design, in any project, match it. Area paths are relative to the repo root, and one list covers the repository.
 - The Modules table is the first table under `### Modules`, outside code fences, its Path column found by its header in any case. An empty entry, and one that is no existing directory of the project, holds no file. The files are those `git ls-files` lists, so coverage prints nothing outside Git or without a root D000.
 - Each uncovered file starts in the area of its directory. While every counted file of its module under the parent directory is uncovered, the area moves up to the parent, never above its module's Path. The files of other modules under that parent neither stop the area nor join it.
 - An area whose counted files of its module are all uncovered, its subdirectories' included, shows `<n> files`, counting them all. Any other area shows `<uncovered> of <counted> files`, counting its module's files directly in it.
@@ -194,8 +201,9 @@ Source areas no design covers (commits in the last 90 days, most first):
 2. The `canon` skill: `as-built.md`; the backfill rules in the tiers; `as_built` among the frontmatter fields; D000 in Layout, in Reading docs and in `doc-types.md`, in place of the architecture design, and the project's `README.md` in Layout; the `audit` row of the Tool table; in `workflow.md`, the reviewer prompt's as-built lines, the as-built status in the gate's status step and the docs step's rules for uncovered files, D000's rows and what docs state; the `as-built <commit>` source among the known issues' sources.
 3. `canon-init`, `canon-design`, `canon-plan`, `canon-implement`, `canon-code-review`, `canon-sync` and `canon-review` as this design states, `canon-review`'s `architecture.md` included. `canon-init`'s architecture step becomes D000's and drops its rule that `paths` cover the main source directories. Every mention of the architecture design in the skills names D000.
 4. `README.md`: the roadmap entry on as-built designs becomes part of How canon works, and the Skills table summaries of `canon-init` and `canon-design` follow their changes.
-5. This repository's own D000, no later than the commit that adds `check`'s D000 rule: `init --script skills/governance/canon/scripts/canon.py` run here adds the canon block to `AGENTS.md` and the `.gitattributes` rules and creates D000, which is filled as in setup. D001's `paths` are extended to the files it specifies, docs excepted.
+5. This repository's own D000, no later than the commit that adds `check`'s D000 rule (done; `init` has since dropped `--script`): `init --script skills/governance/canon/scripts/canon.py` run here adds the canon block to `AGENTS.md` and the `.gitattributes` rules and creates D000, which is filled as in setup. D001's `paths` are extended to the files it specifies, docs excepted.
 6. Reconciliations and planned code: in `canon.py`, the reconciliation baselines, the header that names them, the commits counted for `paths` entries with `[` or with `**` inside a path segment as D006's matching gives them, and no warning for a planned module's Path or, as [D006§frontmatter: frontmatter](D006-doc-model.md#frontmatter) states, for the `paths` of a design with no `implemented`; in the `canon` skill, the `audit` row of the Tool table, the Maintenance rule in `workflow.md`, planned modules in `doc-types.md`, and D006's rule on when files join `paths` among the frontmatter fields and in `canon-design`; `canon-sync`'s reconciliation step.
+7. Installed skills: in `canon.py`, `which` printing `skill`, installed skill files kept out of docs by their name, of project roots, of glob and directory matches in `which`, `affected` and the unchecked commits `audit` counts, and of coverage; the `which` row of the `canon` skill's Tool table.
 
 Scenarios, tested through the commands:
 
@@ -204,6 +212,7 @@ Scenarios, tested through the commands:
 - After D003 was committed and deleted, `new D x` with Git missing from PATH, or with a Git that refuses the checkout, ends with `canon: cannot read the history of HEAD in <repo>: <reason>` and creates no doc, also when run from a module directory below the repo root that holds its own `AGENTS.md`.
 - `check` errors without D000, with a D000 under a module's docs root, with a subsection missing, with `src/**`, `src/` or an existing directory in D000's `paths`, with an `as_built` that names no commit, or reads `worktree` once HEAD has a commit, and with an `as_built` left on a reviewed revision, which `check --fix` removes. It only warns for a Modules Path that is not a directory, and not at all while the row links only designs with no `implemented`; a row reading `none` warns. It gives no `matches no file` warning for the `paths` of an accepted design with no `implemented`, and gives it once the design has `implemented`.
 - `archive D000` is refused.
+- With canon installed in `.agents/skills/` and linked from `.claude/skills/canon`, committed or not, `which` prints `.agents/skills/canon/SKILL.md: skill` for that file and for `.claude/skills/canon/SKILL.md`, which it resolves to it, `skill` for `skills-lock.json` and `.agents/skills/canon-tdd/LICENSE`, and `no design` for the same `SKILL.md` copied to `.cursor/skills/canon/SKILL.md`. In a project whose module Path is `./`, `audit` lists no area under `.agents/` or `.claude/` and not `skills-lock.json`, `affected` with a design whose `paths` hold `.claude/**` lists no file of the install, a commit that changes only `.agents/skills/canon/scripts/canon.py` is no unchecked commit of a design whose `paths` hold `**/*.py`, and an `AGENTS.md` under `.agents/skills/` adds no docs root.
 - `which` prints `doc` for `README.md`, `src/a/readme.rst`, `AGENTS.md`, `CLAUDE.md`, `LICENSE` and a file under a docs root, and for `src/auth/README.md` while a design's `paths` hold `src/auth/**`; it prints the design for a README whose exact path a design's `paths` list, and for `src/agents.py` and `src/license.py` while a design's `paths` hold `src/**`. A commit that changes only `src/auth/README.md` is no unchecked commit of that design.
 - `audit` counts for D001 the commits after its last change whose trailer omits D001, as `2 commits since <commit>  D001 `. A commit that changes D001, or bumps only its `updated`, moves the baseline; one that changes only its Known issues, with the `refs` entry `check --fix` adds for a design an issue links, or removes the section, keeps it. A later commit with `Reconciled: D001`, an empty one included, restarts the count after it, while a commit of docs with only `Refs: D001` does not; a reconciliation on a branch merged later leaves the commits it does not descend from counted. A design whose `paths` all lie outside the repository counts none, and an entry with `[` or with `**` inside a path segment counts the commits D006's matching gives it.
 - `audit` counts only files under D000's module Paths, and no doc among them. It lists a fully uncovered `src/a/` with its subdirectories folded in but never above its module's Path, `src/b/` as `2 of 5 files`, and the files of a module whose Path is `./` as one area `./  <n> files` while a design covers the files of a module whose Path is `src/`; it ranks areas by commits of the last 90 days, lists 10 and counts the rest. It lists a design D000 does not reach, and not one reached through another design's `refs`.
@@ -230,5 +239,6 @@ Scenarios, tested through the commands:
 - Moving a design's file, by `rename`, `renumber`, `init`'s move to D000 or by hand, restarts its count, since the baseline search does not follow renames (reason unknown, kept as found).
 - Coverage counts only files under D000's module Paths: tooling, CI and configuration need no design, and the Modules table already says where the code lives. A module whose Path is `./` counts them too, so a project with tooling at its root gives its modules narrower Paths.
 - READMEs, `AGENTS.md` and the other project docs are docs, never code no design covers: they describe the project rather than implement it, and listing them in the `paths` of the designs they restate, or letting a glob there match them, would count every edit to them, such as a new row of a skills table, as an unchecked commit of each.
+- Installed skill files are tooling, neither code no design covers nor docs (the user's decision): committed with the project as [D004§install: install](D004-project-setup.md#install) recommends, they would otherwise show as an uncovered area of every module whose Path is `./`, make each canon upgrade an unchecked commit of any design with a broad glob, and fill the docs step's report with every skill file the upgrade changed.
 - `as_built` lives only until the gate: the gate, a resumed session and a replay need the base, and once past its gate the revision is maintained like any other.
 - After a backfill, the change's revision is the session's next one only when the session knew of the behavior as it took the work; one found later is a design problem, since the work was tiered or planned without it (D007 gate; the user's decision, 2026-11-11).

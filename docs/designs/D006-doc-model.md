@@ -2,14 +2,14 @@
 status: active
 created: 2026-11-10
 updated: 2026-11-12
-revision: 9
+revision: 10
 modules: [canon]
 summary: Doc types, ids, frontmatter, sections, statuses and archiving of canon docs, the templates of new, the doc rules check enforces and the writing rules.
 refs: [D000, D001, D002, D003, D004, D005, D007, D008, R003, D010]
 owns: [doc-model, doc-writing]
 paths: [skills/governance/canon/SKILL.md, skills/governance/canon/doc-types.md, skills/governance/canon/writing.md, skills/governance/canon/workflow.md, skills/execution/canon-design/SKILL.md, skills/governance/canon/scripts/canon.py, tests/test_canon.py]
-reviewed: 9
-reviewers: [claude-opus-5.5, gemini-4-argon-medium]
+reviewed: 10
+reviewers: [claude-opus-5.5, gemini-4-argon-high]
 approved: 9
 implemented: 9
 ---
@@ -31,7 +31,7 @@ The agent-facing text of this spec is the `canon` skill: `SKILL.md` (Layout, Doc
 
 ### Layout
 
-- A project is a directory holding an `AGENTS.md` that Git tracks or would add; outside Git, one found while walking the tree, skipping directories named `node_modules` or `venv` or starting with `.`. Its docs root is its `docs/` directory, when that exists. Repo-wide and cross-module docs live in the repo root's `docs/`, a module's docs in the module's `docs/`; a more specific `AGENTS.md` and its `docs/` govern their subtree and override broader rules.
+- A project is a directory holding an `AGENTS.md` that Git tracks or would add, other than an installed skill file ([D002§installed-skills: installed skills](D002-overview-and-as-built.md#installed-skills)); outside Git, one found while walking the tree, skipping directories named `node_modules` or `venv` or starting with `.`. Its docs root is its `docs/` directory, when that exists. Repo-wide and cross-module docs live in the repo root's `docs/`, a module's docs in the module's `docs/`; a more specific `AGENTS.md` and its `docs/` govern their subtree and override broader rules.
 - The repo root is the top of the Git work tree, from whichever of its directories a command runs, else the directory the command runs in. `check` reads the files Git tracks or would add that exist on disk, or outside Git the files that walk finds.
 - A docs root holds:
 

@@ -2,14 +2,14 @@
 status: active
 created: 2026-11-12
 updated: 2026-11-12
-revision: 1
+revision: 2
 modules: [canon]
 summary: Doc queries and renames with canon.py show, find, which and affected, and rename and renumber, with the references and id collisions renumber settles.
 refs: [D002, D004, D005, D006]
 owns: [doc-queries, doc-renames, doc-renumbering]
 paths: [skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, tests/test_canon.py]
-reviewed: 1
-reviewers: [claude-opus-5.5]
+reviewed: 2
+reviewers: [claude-opus-5.5, gemini-4-argon-high]
 implemented: 1
 ---
 
@@ -22,7 +22,7 @@ implemented: 1
 3. After `rename` or `renumber` and `check --fix`, no link, `refs`, `based_on` or `moved` entry that named the doc is broken or names an unknown doc.
 4. After a merge or rebase leaves two docs with one id, `renumber` on the doc the branch added settles the collision without guessing: whatever neither the branch merged onto nor the links attribute is kept and listed for the user, or, for a sub-design, stops `renumber` before any change.
 
-Out of scope: `paths` and the files a design governs ([D006§frontmatter: frontmatter](D006-doc-model.md#frontmatter)); docs by their name, which designs govern only through an exact entry ([D002§project-docs: project docs](D002-overview-and-as-built.md#project-docs)); ids, file names and the `check` errors that ask for `renumber` ([D006§ids-and-file-names: ids and file names](D006-doc-model.md#ids-and-file-names)); ids that history keeps taken, and `init`'s move of a design to D000, which moves it as `renumber` does ([D002§project-overview-d000: D000](D002-overview-and-as-built.md#project-overview-d000)); the link rewriting that every moving command shares ([D006§statuses-and-archiving: statuses and archiving](D006-doc-model.md#statuses-and-archiving)); index regeneration ([D005§regeneration: regeneration](D005-docs-index.md#regeneration)); `adopt` ([D004§adopt: adopt](D004-project-setup.md#adopt)).
+Out of scope: `paths` and the files a design governs ([D006§frontmatter: frontmatter](D006-doc-model.md#frontmatter)); docs by their name and installed skill files, which designs govern only through an exact entry ([D002§project-docs: project docs](D002-overview-and-as-built.md#project-docs), [D002§installed-skills: installed skills](D002-overview-and-as-built.md#installed-skills)); ids, file names and the `check` errors that ask for `renumber` ([D006§ids-and-file-names: ids and file names](D006-doc-model.md#ids-and-file-names)); ids that history keeps taken, and `init`'s move of a design to D000, which moves it as `renumber` does ([D002§project-overview-d000: D000](D002-overview-and-as-built.md#project-overview-d000)); the link rewriting that every moving command shares ([D006§statuses-and-archiving: statuses and archiving](D006-doc-model.md#statuses-and-archiving)); index regeneration ([D005§regeneration: regeneration](D005-docs-index.md#regeneration)); `adopt` ([D004§adopt: adopt](D004-project-setup.md#adopt)).
 
 ## Spec
 
@@ -78,7 +78,7 @@ canon.py which FILE...
 ```
 
 - Each FILE is resolved from the working directory, symlinks followed, and printed relative to the repo root. It need not exist; one outside the repository matches no design.
-- For each FILE in the order given, it prints one line per live design whose `paths` govern it, in id order: `<file>: <id> <path> - <summary><notes>`. With none: `<file>: doc` for a doc ([D002§project-docs: project docs](D002-overview-and-as-built.md#project-docs)), else `<file>: no design`. It exits 0.
+- For each FILE in the order given, it prints one line per live design whose `paths` govern it, in id order: `<file>: <id> <path> - <summary><notes>`. With none: `<file>: skill` for an installed skill file ([D002§installed-skills: installed skills](D002-overview-and-as-built.md#installed-skills)), `<file>: doc` for a doc ([D002§project-docs: project docs](D002-overview-and-as-built.md#project-docs)), else `<file>: no design`. It exits 0.
 
 ### affected
 
