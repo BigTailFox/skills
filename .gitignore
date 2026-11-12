@@ -12,8 +12,9 @@ __pycache__/
 *.py[cod]
 .venv/
 
-# Artifacts from running `npx skills add` inside this repo
+# This checkout's links to its skills (AGENTS.md), and artifacts of `npx skills add` inside this repo
 .agents/
+.claude/skills/
 skills-lock.json
 
 # Linked git worktrees

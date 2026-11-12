@@ -18,7 +18,7 @@ Implements [D004: Project setup](../designs/D004-project-setup.md) r5 and its fo
 
 ## Current state
 
-S1 to S5 done. Next: S6.
+Every slice is done. Next: the code review from 4cc4c2e, then the docs step.
 
 ## Slices
 
@@ -151,7 +151,7 @@ Test criteria; seam: the skill texts as installed, `validate.py`, `npx skills` a
 
 ### S6: This repository runs its skills from the working tree
 
-Status: todo
+Status: done
 
 Builds on `D000#dependencies` (this repository's agents and reviewers run the working tree's `canon.py`) and `D004#install` (where `npx skills` puts a project install).
 
@@ -197,3 +197,4 @@ Test criteria; seam: the checkout after the command, `npx skills`, `validate.py`
 - S3 done: `require_project_install()` returns the top whose `AGENTS.md` `project_version_notice()` reads, through `marker_span` so an incomplete block skips the check; versions compare as integers; `CANON_VERSION` 49. Deviation: the plan said `init` without `--root` prints no reminder, D004 says `init` at the repo root, so an `init --root` naming the repo root is silent too, as D004 has it; a module's `init --root` reminds. Criteria 1 and 2 went red first; a scratch mutation run of fifteen wrong rules all turned tests red. `init` here rewrote the block to version 49.
 - S4 done: `Repo.is_code` (neither doc nor installed skill file) drives `designs_for`, `unchecked_commits` and coverage, and `Doc.governs`' `doc_file` became `exact`; `which` prints `skill` first; an installed `AGENTS.md` makes no root; `CANON_VERSION` 50. Each test runs on the install untracked and committed, the harness link added with `git add -f`; criterion 3's design also holds `.agents/**` and `*.json`, since `which` and `affected` resolve `.claude/...` to `.agents/...`. A scratch mutation run of nine wrong rules turned tests red but for dropping `is_doc`'s own exclusion, which every caller already covers; it stays, as D002 states it. For the code review: `is_installed_skill` resolves two real paths per call, about 1.6 s per 100k tracked files in coverage; the `canon` skill does not yet define an installed skill file, for S5. 279 tests pass; `init` here rewrote the block to version 50.
 - S5 done: skill texts, README and `AGENTS.md`'s Skill rules as the slice lists. Additions: the `canon` skill's Layout defines an installed skill file (S4's Log); its Tool section gives the install commands in full, since a first `/canon-init` from a user install finds no canon block yet; whether a user install exists is read from `~/.agents/skills/` or `~/.claude/skills/`, and README removes it with `npx skills remove -g $(ls ~/.agents/skills | grep -E '^canon(-|$)')`, which picked exactly the 19 canon skills on this machine. No automated test: criteria 2 and 3 ran as a scratch script, red before the texts changed, green after, the scratch project under `.tmp/`. `validate.py` measured D001's budgets. For the code review: `canon-retro`'s `skill_hash` reads the global lock before the project's `skills-lock.json`, which project installs may want reversed; D004 does not cover it.
+- S6 done: `AGENTS.md` gives the zsh command, which also drops links of removed skills; `.gitignore` adds `.claude/skills/`; the links exist in this checkout, and `.agents/skills/canon/scripts/canon.py --version` prints the working tree's. Beyond the plan, `LinkedSkillSourceTest` keeps criterion 3 tested without the links: `which` through a link into the skill source prints the source's designs; it held at once, and a scratch mutation run of two wrong rules turned it red. For the code review: a plain `npx skills add .` at this repo's root replaces the links with stale copies, and the two worktrees under `.worktrees/` have no links yet. 283 tests pass.

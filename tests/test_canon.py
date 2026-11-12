@@ -2206,6 +2206,31 @@ class CommittedInstalledSkillsTest(InstalledSkillsTest):
         self.assertRegex(self.ok("audit"), r"  1 commits since [0-9a-f]+  D001 ")
 
 
+@unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+class LinkedSkillSourceTest(CanonTest):
+    """A repository that develops canon, as this one does, loads its skills from their source through links:
+    `.agents/skills/<name>` to `skills/<category>/<name>`, and `.claude/skills/<name>` to that link."""
+
+    def link_skill_source(self):
+        """Replace the harness's install with links to the canon skill's source, whose canon.py links to SCRIPT."""
+        source = self.root / "skills/governance/canon"
+        (source / "scripts").mkdir(parents=True)
+        (source / "SKILL.md").write_text("---\nname: canon\n---\n")
+        (source / "scripts/canon.py").symlink_to(SCRIPT)
+        shutil.rmtree(str(self.root / ".agents"))
+        for directory, target in ((".agents/skills", "../../skills/governance/canon"),
+                                  (".claude/skills", "../../.agents/skills/canon")):
+            (self.root / directory).mkdir(parents=True)
+            (self.root / directory / "canon").symlink_to(target)
+
+    def test_which_resolves_a_link_into_the_skill_source_to_the_source_which_stays_code(self):
+        self.design("skills", paths=["skills/**"])
+        self.link_skill_source()
+        governed = "skills/governance/canon/SKILL.md: D001 docs/designs/D001-skills.md - Fixture"
+        self.assertEqual(self.ok("which", ".agents/skills/canon/SKILL.md", ".claude/skills/canon/SKILL.md"),
+                         governed + "\n" + governed + "\n")
+
+
 class CoverageTest(CanonTest):
     """`audit`'s source areas: the tracked files under the Paths of D000's Modules rows that no design covers."""
     AREAS = "Source areas no design covers (commits in the last 90 days, most first):"
