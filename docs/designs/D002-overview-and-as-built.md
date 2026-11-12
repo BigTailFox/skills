@@ -10,6 +10,7 @@ owns: [project-overview, as-built-design, design-coverage, unchecked-commits]
 paths: [skills/governance/canon/as-built.md, skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/governance/canon/doc-types.md, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-review/architecture.md, tests/test_canon.py]
 reviewed: 10
 reviewers: [claude-opus-5.5, gemini-4-argon-high]
+approved: 10
 implemented: 9
 ---
 
