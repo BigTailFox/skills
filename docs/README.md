@@ -15,10 +15,6 @@
 - [D008: Prototypes and research](designs/D008-experiments.md) · active · Prototypes and research (canon-prototype, canon-research): quick answers, the research brief, logic, UI and spike prototypes, verdicts in E docs. · owns: prototypes, research · modules: canon
 - [D009: Settling decisions](designs/D009-settling-decisions.md) · active · Settling open decisions with the user (canon-grill): triage before asking, open decisions kept in the doc, and small batches of related questions. · owns: settling-decisions · modules: canon
 
-### Plans
-
-- [P004: Live concluded experiments](plans/P004-live-experiments.md) · in-progress · Experiment statuses answered, live concluded, superseded, overturned and dropped in canon.py, its tests and the skill texts that set and archive them. · modules: canon
-
 ### Reviews
 
 - [R003: Canon friction in Silk's design phase](reviews/R003-silk-design-phase.md) · open · Canon friction in a docs-only bilingual project: review gates per doc, parallel sessions, archived experiments, translations, check gaps, tool drift. · modules: canon

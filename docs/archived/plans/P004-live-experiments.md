@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 created: 2026-11-12
 updated: 2026-11-12
 revision: 1
@@ -14,11 +14,11 @@ approved: 1
 
 # P004: Live concluded experiments
 
-Implements [D006: Doc model and writing rules](../designs/D006-doc-model.md) r9 and [D008: Prototypes and research](../designs/D008-experiments.md) r5, which passed one gate together. Each design's `implemented` equals its revision at 13203bc, D006 7 and D008 3, so the work is each design's Spec diff from 13203bc to 832e6c7.
+Implements [D006: Doc model and writing rules](../../designs/D006-doc-model.md) r9 and [D008: Prototypes and research](../../designs/D008-experiments.md) r5, which passed one gate together. Each design's `implemented` equals its revision at 13203bc, D006 7 and D008 3, so the work is each design's Spec diff from 13203bc to 832e6c7.
 
 ## Current state
 
-Every slice is done. Next: the code review from 72297ad, then the docs step.
+Every slice is done, the code review's fixes landed, and the docs step set D006's `implemented` to 9 and D008's to 5. Nothing is left.
 
 ## Slices
 
@@ -156,3 +156,5 @@ Test criteria; seam: the `status` command line, its output, exit code and the fi
 - 2026-11-12, S2 done: `LIVE_TERMINAL` names the terminal status each type may hold live (a concept's `adopted`, an experiment's `concluded`), which `check` and `status_moves` share; `Repo.live_links()` maps each file to the ids of the live designs and plans whose body links it, in `docs` order, which puts designs before plans and sorts each by id; `check` sends both live statuses through the terminal branch, warning on an unlinked one; `status` checks the live link, then the terminal conditions; `audit` and its `--days` help leave out live concluded experiments; the experiment template's Conclusion guidance asks for the answer only (`CANON_VERSION` 42). Tests: eight new in `DocRulesTest`, `UnfinishedDocTest`, `StatusTest` and `AuditTest`, and `HelpTest` assertions; a mutation counting only plans as live linkers turned the criterion 1 test red. `validate.py` passed with D001's budgets measured. The main session restored "into the design or plan" in `canon-prototype`'s Capture step 2.
 - 2026-11-12, S3 done: `superseded`, `overturned` and `dropped` join the experiment's terminal statuses; `archive E00X concluded` refuses another status, then a live link, naming the linking ids from `live_links()`; `terminal_problems` skips the Setup labels for `dropped` (`CANON_VERSION` 43). Tests: five new in `DocRulesTest`, the `archive_refused` helper, a literal `archive -h` assertion in `HelpTest`, whose loop over `TYPES` passes whatever the types hold, and `test_archive_checks_every_terminal_condition` archiving as `dropped`; mutations confirmed the two tests that passed on arrival can fail. `validate.py` passed with D001's budgets measured. `doc-types.md` puts D006's archiving rules in a **Superseded, overturned** and a **Dropped** bullet, and docs step 5 links them rather than restating them.
 - 2026-11-12, S4 done: `status` moves an answered experiment back to `running` unless a live design or plan links it, refusing with the linking ids from `live_links()`; its forward-only refusal for an answered experiment ends with `, or back to running`, and its help names the move back (`CANON_VERSION` 44). Tests: three new in `StatusTest` and the `HelpTest` assertion; a mutation letting `concluded` move back turned the criterion 3 test red. `validate.py` passed with D001's budgets measured.
+- 2026-11-12: Code review from 72297ad, with a Spec, a Standards and a cross-family (gemini-4-argon-high) reviewer: no blocker or major finding and eight minor ones, the cross-family reviewer none. Fixed in 93f3913 (`CANON_VERSION` 45): the superseded experiment gains its successor in its `refs`, the archiving of earlier experiments names the newly concluded one as the linker, docs step 5 walks each affected design and plan, `canon.py` reads the live linkers once per command and calls the printing helper `report_unmet_terminal`, the tests share a `DESIGN` body and a `refuses` helper, and this Log names the main session. Declined: one helper for the experiment status rules that `check` and `status` each branch on, since `canon.py` branches per type throughout.
+- 2026-11-12: Docs step: D006 states what counts as a live link and the order of the linking ids, and its `implemented` is 9; D008's is 5. Archived as done.

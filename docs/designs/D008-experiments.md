@@ -11,7 +11,7 @@ paths: [skills/execution/canon-prototype/SKILL.md, skills/execution/canon-protot
 reviewed: 5
 reviewers: [claude-opus-5.5, gemini-4-argon-medium]
 approved: 5
-implemented: 3
+implemented: 5
 ---
 
 # D008: Prototypes and research
