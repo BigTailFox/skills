@@ -2,6 +2,24 @@
 
 Notable changes in each release. Versions follow [Semantic Versioning](https://semver.org); while the major version is 0, a minor release may change how skills behave.
 
+## 0.6.0 - 2026-11-12
+
+canon is installed in each project, pinned to a release, and projects keep no copy of `canon.py`.
+
+- Install canon at the repo root with `npx skills add BigTailFox/skills@<tag> -s '*' -a claude-code -a codex -a cursor -y`, as README's Install section shows. It puts the skills in `.agents/skills/`, links them from `.claude/skills/` and records the release in `skills-lock.json`. Commit them with the project, so every clone, worktree and CI job runs the pinned release, or commit only `skills-lock.json` and restore the skills with `npx skills experimental_install`.
+- `canon.py` runs only from an install inside the project. Started from canon installed for every project, or from another checkout's install, every command but `-h` and `--version` refuses and says how to install canon in the project. Each skill runs its own install's `canon.py`, `.agents/skills/canon/scripts/canon.py`, which the canon block's Tool line names.
+- The canon block of `AGENTS.md` records the canon version the project was last set up with, as `canon version <n> or later`. An older `canon.py` refuses to run in the project; a newer one prints a reminder, and `check` warns, until `/canon-init` upgrades the project.
+- `init` writes no copy of `canon.py` and drops `--script`. It warns about a tracked old copy, which `check` also reports while the copy is tracked, and every `init` at the repo root replaces the pre-commit hook an older `init` wrote with one that runs the installed `canon.py`. `init --hook` keeps any other hook, one it cannot read included.
+- Installed skill files, `skills-lock.json`, `.agents/skills/` and the links into it, are tooling: `which` prints `skill` for them, a design's `paths` match them only by their exact path, so a skill update is no unchecked commit in `audit`, coverage skips them, and an `AGENTS.md` among them makes no project.
+- `canon-retro` reads a skill's hash from the project's `skills-lock.json`.
+- `canon.py` is now canon version 51.
+
+Upgrade every machine and project in one pass, since Claude Code runs canon installed for every project instead of the project's, and the new `canon.py` refuses to run from there:
+
+1. Remove canon installed for every project: `npx skills remove -g $(ls ~/.agents/skills ~/.claude/skills 2>/dev/null | grep -E '^canon(-|$)' | sort -u)`.
+2. In each project, install this release at the repo root as above and run `/canon-init`. Its Upgrade rewrites the canon block and the old pre-commit hook, and asks before removing the old copy and replacing `python3 <copy>` where files name it, such as CI.
+3. A project not yet migrated keeps its copy and its old canon block, which says to install canon for every project; install it in the project instead, or the user install comes back.
+
 ## 0.5.1 - 2026-11-12
 
 Fixes to `canon.py`'s `rename`, `renumber`, `affected` and `show`.
