@@ -18,13 +18,13 @@ Implements [D004: Project setup](../designs/D004-project-setup.md) r5 and its fo
 
 ## Current state
 
-S1 in progress.
+S1 done. Next: S2.
 
 ## Slices
 
 ### S1: canon.py runs only from inside the project
 
-Status: todo
+Status: done
 
 Risk: the check runs before every command, so a wrong rule refuses every project, one under a symbolic link such as macOS's `/tmp` or a linked worktree included, or lets a user install through; and every test now runs `canon.py` through a link the harness places.
 
@@ -192,3 +192,4 @@ Test criteria; seam: the checkout after the command, `npx skills`, `validate.py`
 - S6: this repository loads its skills through links to the working tree rather than a copy from `npx skills add .`, stale after each edit, or a pinned release, whose texts lag the code and whose `canon.py` refuses once the block records a newer version (the user's decision).
 - Review gate r1 (claude-opus-5.5, gemini-4-argon-high): accepted every finding, seven from the same-model reviewer and four from the cross-family reviewer, which overlapped on all but `PruneTest` and `CoverageTest`. The fixes cover the `list` command `canon.py` lacks, the harness link shared with the S2 and S4 fixtures and with `PruneTest`, `CoverageTest`'s count without the copy, S6's `which` criterion, the stale help texts and `canon-init` description, the silent hook lookup without `--hook`, the version check needing a complete block, and a one-pass rollout. Both reviewers confirmed the fixes.
 - 2026-11-12: The user approved this plan at 4cc4c2e. Started at 4cc4c2e.
+- S1 done: `require_project_install()` in `main()` after `parse_args`, `CANON_VERSION` 47; the harness starts the link at `<top>/.agents/skills/canon/scripts/canon.py`, rechecks its `info/exclude` line on every call, passes the working directory unresolved and creates no link under `script=`; `SnapshotTest` appends to `info/exclude`. Criteria 1 and 6 went red first; criteria 2 to 5 held already, so a scratch mutation script applied six wrong rules in turn (resolved start path, string comparison, `AGENTS.md` before `.git`, `git rev-parse`, any ancestor outside Git, no check), each turning a test red. 269 tests pass with the default `TMPDIR`; `init` here had nothing to do.

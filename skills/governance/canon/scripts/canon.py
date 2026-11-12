@@ -29,7 +29,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "46"
+CANON_VERSION = "47"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -3581,6 +3581,25 @@ def cmd_snapshot(_args):
     return 0
 
 
+def require_project_install():
+    """End the command unless this canon.py was started by a path inside the project, found without running Git: the
+    path passes through a directory that is the nearest at or above the working directory holding `.git`; outside
+    Git, the working directory or a directory above it holding `AGENTS.md`. Links on the path stay unresolved, so a
+    user install refuses and a project's link to it runs."""
+    start = os.path.abspath(__file__)
+    cwd = Path(os.getcwd())
+    tops = [path for path in (cwd, *cwd.parents) if (path / ".git").exists()][:1] \
+        or [cwd] + [path for path in cwd.parents if (path / "AGENTS.md").exists()]
+    for path in Path(start).parents:
+        for top in tops:
+            with contextlib.suppress(OSError):
+                if os.path.samefile(str(path), str(top)):
+                    return
+    sys.exit("canon: canon runs only from an install inside the project, and this canon.py is {}; install canon in "
+             "the project as https://github.com/BigTailFox/skills#install says, and remove a user install of canon "
+             "with `npx skills remove -g`".format(start))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="canon.py", description="canon documentation system tool")
     parser.add_argument("--version", action="version", version="canon " + CANON_VERSION)
@@ -3722,6 +3741,7 @@ def main(argv=None):
                                   "and print the snapshot commit; exit 1 when none was recorded")
 
     args = parser.parse_args(argv)
+    require_project_install()
     if args.command == "trace":
         return cmd_trace(args)
     if args.command == "snapshot":

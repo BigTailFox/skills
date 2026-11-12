@@ -24,6 +24,7 @@ except ImportError:  # Windows
     fcntl = None
 
 SCRIPT = Path(__file__).resolve().parents[1] / "skills/governance/canon/scripts/canon.py"
+INSTALL = ".agents/skills/canon/scripts/canon.py"
 sys.dont_write_bytecode = True
 _spec = importlib.util.spec_from_file_location("canon", SCRIPT)
 canon = importlib.util.module_from_spec(_spec)
@@ -95,16 +96,47 @@ class CanonTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return result.stdout.strip()
 
-    def canon_process(self, *args, cwd=None, start=subprocess.run, **options):
-        """`canon.py args` started with `start` and `options`, its output captured as text. `cwd`, by default the test
-        repository, must lie in a test repository or in a directory from `outside_checkouts`: anywhere else canon.py
-        would act on the checkout around TMPDIR."""
-        cwd = Path(cwd or self.root).resolve()
-        if not any((d / ".git").exists() for d in (cwd, *cwd.parents) if within(d, RUN_DIR)) \
-                and not any(within(cwd, d) for d in self.outside):
-            self.fail("canon.py would run in {}, in no test repository and not from outside_checkouts()".format(cwd))
-        return start([sys.executable, "-B", str(SCRIPT), *args], cwd=str(cwd), stdout=subprocess.PIPE,
+    def canon_process(self, *args, cwd=None, script=None, start=subprocess.run, **options):
+        """`canon.py args` started with `start` and `options`, its output captured as text, by the path `script`, by
+        default the project's installed canon.py (`install`). `cwd`, by default the test repository, must lie in a
+        test repository or in a directory from `outside_checkouts`: anywhere else canon.py would act on the checkout
+        around TMPDIR."""
+        cwd = Path(cwd or self.root)
+        script = script or self.install(*self.project_top(cwd.resolve()))
+        return start([sys.executable, "-B", str(script), *args], cwd=str(cwd), stdout=subprocess.PIPE,
                      stderr=subprocess.PIPE, text=True, **options)
+
+    def project_top(self, cwd):
+        """The directory canon.py's location check finds for `cwd`, and whether it holds `.git`: the nearest test
+        repository at or above `cwd`; else, within its `outside_checkouts` directory, the nearest directory at or above
+        it that holds an AGENTS.md, else `cwd`."""
+        for path in (cwd, *cwd.parents):
+            if within(path, RUN_DIR) and (path / ".git").exists():
+                return path, True
+        outside = next((path for path in self.outside if within(cwd, path)), None)
+        if outside is None:
+            self.fail("canon.py would run in {}, in no test repository and not from outside_checkouts()".format(cwd))
+        return next((path for path in (cwd, *cwd.parents) if within(path, outside) and (path / "AGENTS.md").exists()),
+                    cwd), False
+
+    def install(self, top, is_git):
+        """The project's installed canon.py: the link `<top>/INSTALL` to SCRIPT, created when missing, which no test
+        writes through; in a Git checkout, the repository's info/exclude names it, so Git never sees it."""
+        link = top / INSTALL
+        if not os.path.lexists(str(link)):
+            link.parent.mkdir(parents=True, exist_ok=True)
+            with contextlib.suppress(FileExistsError):
+                link.symlink_to(SCRIPT)
+        if not (link.is_symlink() and link.resolve() == SCRIPT):
+            self.fail("{} is not a link to {}".format(link, SCRIPT))
+        if is_git:
+            exclude = top / subprocess.run(["git", "rev-parse", "--git-path", "info/exclude"], cwd=str(top),
+                                           capture_output=True, text=True, check=True).stdout.strip()
+            text = exclude.read_text() if exclude.exists() else ""
+            if "/" + INSTALL not in text.splitlines():
+                exclude.parent.mkdir(parents=True, exist_ok=True)
+                exclude.write_text(text + ("\n" if text and not text.endswith("\n") else "") + "/" + INSTALL + "\n")
+        return link
 
     def canon(self, *args):
         return self.canon_process(*args)
@@ -2666,7 +2698,8 @@ class SnapshotTest(TraceCase):
         with (self.root / ".gitignore").open("a") as ignore:
             ignore.write("*.log\n")
         (self.root / ".git/info").mkdir(exist_ok=True)
-        (self.root / ".git/info/exclude").write_text("*.tmp\n")
+        with (self.root / ".git/info/exclude").open("a") as exclude:
+            exclude.write("*.tmp\n")
         excludes = self.tmpdir() / "excludes"
         excludes.write_text("*.secret\n")
         self.git("config", "core.excludesFile", str(excludes))
@@ -3635,7 +3668,7 @@ class PruneTest(TraceCase):
         (outside / "AGENTS.md").write_text("# AGENTS.md\n")
         out = self.trace("prune", "--days", "7", cwd=outside)
         self.assertEqual(out.splitlines()[-1], "snapshots: 0, 0.0 KiB on disk")
-        self.assertEqual([path.name for path in outside.iterdir()], ["AGENTS.md"])
+        self.assertEqual([path.name for path in outside.iterdir() if path.name != ".agents"], ["AGENTS.md"])
         archive = outside / ".canon/canon/trace" / self.unit_id(datetime.timedelta(days=8), 1)
         archive.mkdir(parents=True)
         (archive / "snapshot-error.txt").write_text("fatal: index file corrupt\n")
@@ -3650,6 +3683,81 @@ class OutsideCheckoutTest(CanonTest):
         with self.assertRaisesRegex(AssertionError, "in no test repository and not from outside_checkouts"):
             self.canon_process("init", cwd=self.tmpdir())
         self.assertEqual(self.canon_process("init", cwd=self.outside_checkouts()).returncode, 0)
+
+    def test_canon_py_runs_through_the_projects_link_to_script_that_git_never_sees(self):
+        self.assertEqual(os.readlink(str(self.root / INSTALL)), str(SCRIPT))
+        self.assertNotIn(".agents", self.git("status", "--porcelain", "--untracked-files=all"))
+        self.repository_without_docs()
+        (self.root / INSTALL).parent.mkdir(parents=True)
+        (self.root / INSTALL).write_text(SCRIPT.read_text())
+        with self.assertRaisesRegex(AssertionError, "is not a link to"):
+            self.canon_process("init")
+
+
+class InstallLocationTest(CanonTest):
+    def runs(self, *args, **options):
+        result = self.canon_process(*args, **options)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return result
+
+    def refused(self, script, *args, **options):
+        """`canon.py args` started by `script` exits 1 with the message that names `script`."""
+        result = self.canon_process(*args, script=script, **options)
+        self.assertEqual((result.returncode, result.stdout + result.stderr),
+                         (1, "canon: canon runs only from an install inside the project, and this canon.py is {}; "
+                             "install canon in the project as https://github.com/BigTailFox/skills#install says, and "
+                             "remove a user install of canon with `npx skills remove -g`\n".format(script)))
+
+    def test_canon_py_started_by_its_own_path_refuses_every_command_but_help_and_version(self):
+        self.commit()
+        for args in (["which", "src/base.py"], ["check"]):
+            self.refused(SCRIPT, *args)
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.runs("-h", script=SCRIPT)
+        self.assertEqual(self.runs("--version", script=SCRIPT).stdout, "canon {}\n".format(canon.CANON_VERSION))
+
+    def test_the_projects_link_runs_from_the_repo_root_a_subdirectory_and_a_module_with_its_own_agents_md(self):
+        self.init_module("mod")
+        self.assertTrue((self.root / "mod/AGENTS.md").is_file())
+        for cwd, base in ((self.root, "src/base.py"), (self.root / "src", "base.py"),
+                          (self.root / "mod", "../src/base.py")):
+            with self.subTest(cwd=cwd.name):
+                self.assertEqual(self.runs("which", base, cwd=cwd).stdout, "src/base.py: no design\n")
+                self.runs("check", cwd=cwd)
+
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_a_link_above_the_checkout_on_the_start_path_or_the_working_directory_runs(self):
+        alias = self.root.with_name(self.root.name + "-link")
+        alias.symlink_to(self.root, target_is_directory=True)
+        self.addCleanup(alias.unlink)
+        self.runs("which", "src/base.py", script=alias / INSTALL)
+        self.runs("which", "src/base.py", cwd=alias, script=self.root / INSTALL)
+
+    def test_a_linked_worktree_refuses_the_main_checkouts_install_and_runs_its_own(self):
+        self.commit()
+        worktree = self.tmpdir() / "worktree"
+        self.git("worktree", "add", "-q", "--detach", str(worktree))
+        self.refused(self.root / INSTALL, "which", "src/base.py", cwd=worktree)
+        self.assertFalse((worktree / ".agents").exists())
+        self.assertEqual(self.runs("which", "src/base.py", cwd=worktree).stdout, "src/base.py: no design\n")
+        self.assertTrue((worktree / INSTALL).is_symlink())
+        self.assertEqual(self.git("-C", str(worktree), "status", "--porcelain"), "")
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_the_check_runs_no_git(self):
+        env = dict(os.environ, PATH=str(self.tmpdir()), XDG_CONFIG_HOME=str(self.tmpdir()))
+        self.refused(SCRIPT, "trace", "status", env=env)
+        self.assertRegex(self.runs("trace", "status", env=env).stdout, r"^trace off: no machine switch ")
+
+    def test_outside_git_the_working_directory_and_each_directory_above_it_with_an_agents_md_hold_the_install(self):
+        top = self.outside_checkouts()
+        self.assertIn("created AGENTS.md", self.runs("init", cwd=top).stdout)
+        self.assertTrue((top / INSTALL).is_symlink())
+        (top / "sub").mkdir()
+        self.assertEqual(self.runs("which", "x.py", cwd=top / "sub", script=top / INSTALL).stdout, "x.py: no design\n")
+        sibling = self.outside_checkouts()
+        self.refused(top / INSTALL, "which", "x.py", cwd=sibling)
+        self.assertEqual(list(sibling.iterdir()), [])
 
 
 if __name__ == "__main__":
