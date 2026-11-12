@@ -29,7 +29,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "41"
+CANON_VERSION = "42"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -45,6 +45,7 @@ TYPES = {
     "I": {"dir": "investigations", "active": ("open",), "terminal": ("resolved",),
           "sections": ("Symptom", "Reproduction", "Analysis", "Resolution")},
 }
+LIVE_TERMINAL = {"C": "adopted", "E": "concluded"}
 TYPE_ORDER = "DPIREC"
 CATEGORY_DIRS = {info["dir"]: letter for letter, info in TYPES.items()}
 ALIASES = {}
@@ -201,7 +202,7 @@ TEMPLATES = {
 
 ## Conclusion
 
-<!-- canon: The answer, and the design section or decision it was absorbed into. -->
+<!-- canon: The answer the Results give to the Question. -->
 """,
     "I": """
 ## Symptom
@@ -638,7 +639,7 @@ class Repo:
         self.docs, self.problems, self.attachments = [], [], []
         self.index_files, self.scope_md = [], []
         self.by_id, self.by_path = {}, {}
-        self._slug_cache, self._design_linked = {}, None
+        self._slug_cache, self._design_linked, self._live_links = {}, None, None
         self._scan()
 
     def _list_files(self):
@@ -744,6 +745,17 @@ class Repo:
         if self._design_linked is None:
             self._design_linked = set().union(*(doc_links(self, d) for d in self.docs if d.type == "D"))
         return self._design_linked
+
+    def live_links(self):
+        """For each file the body of a design or plan outside archived/ links to, the ids of those docs, sorted as
+        `docs` is."""
+        if self._live_links is None:
+            self._live_links = {}
+            for d in self.docs:
+                if d.type in ("D", "P") and not d.archived:
+                    for path in doc_links(self, d):
+                        self._live_links.setdefault(path, []).append(d.id)
+        return self._live_links
 
     def resolve(self, src_dir, target):
         if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", target) or target.startswith("//"):
@@ -1130,17 +1142,19 @@ def check_doc(repo, doc, changed, strict=False):
         pass
     elif status not in info["active"] + info["terminal"]:
         err("status `{}` invalid; use one of {}".format(status, ", ".join(info["active"] + info["terminal"])))
-    elif status in info["terminal"] and not doc.archived:
-        if (doc.type, status) != ("C", "adopted"):
-            err("status `{}` requires the doc to be in archived/; use `canon.py archive`".format(status))
-        elif doc.path not in repo.design_linked():
-            repo.problem("WARN", rel, "adopted, but no design links it")
+    elif status in info["terminal"] and not doc.archived and LIVE_TERMINAL.get(doc.type) != status:
+        err("status `{}` requires the doc to be in archived/; use `canon.py archive`".format(status))
     elif status not in info["terminal"] and doc.archived:
         err("status `{}` requires the doc to be outside archived/; set one of {}".format(
             status, ", ".join(info["terminal"])))
     elif status in info["terminal"]:
         for msg in terminal_problems(doc):
             err(msg)
+        if doc.type == "C" and not doc.archived and doc.path not in repo.design_linked():
+            repo.problem("WARN", rel, "adopted, but no design links it")
+        if doc.type == "E" and not doc.archived and doc.path not in repo.live_links():
+            repo.problem("WARN", rel, "concluded, but no live design or plan links it; link it or archive it as "
+                                      "concluded")
     elif answered:
         for msg in terminal_problems(doc, "concluded"):
             err(msg)
@@ -1731,8 +1745,8 @@ def cmd_archive(repo, args):
 
 def status_moves(letter):
     """The statuses `status` moves a doc of type `letter` along, in order: the non-terminal ones, then a concept's live
-    `adopted`."""
-    return TYPES[letter]["active"] + (("adopted",) if letter == "C" else ())
+    `adopted` or an experiment's live `concluded`."""
+    return TYPES[letter]["active"] + ((LIVE_TERMINAL[letter],) if letter in LIVE_TERMINAL else ())
 
 
 def cmd_status(repo, args):
@@ -1756,9 +1770,11 @@ def cmd_status(repo, args):
         condition = "`reviewed` equal to `revision`"
     elif args.status == "active" and not (isinstance(implemented, int) and 1 <= implemented <= doc.reviewed):
         condition = "`implemented` not above `reviewed`"
+    elif doc.type == "E" and args.status == "concluded" and doc.path not in repo.live_links():
+        condition = "a live design or plan that links it"
     if condition:
         sys.exit("canon: {} needs {} to become {}".format(doc.id, condition, args.status))
-    if doc.type == "E" and args.status == "answered" and unmet_terminal(doc, "concluded"):
+    if doc.type == "E" and args.status in ("answered", "concluded") and unmet_terminal(doc, "concluded"):
         return 1
     text = set_field(set_field(doc.text, "status", args.status), "updated", today())
     doc.path.write_text(text, encoding="utf-8")
@@ -2533,7 +2549,8 @@ def cmd_audit(repo, args):
     idle = []
     for doc in repo.docs:
         updated = parse_date(doc.get("updated"))
-        in_work = not doc.archived and doc.type != "C" and not (doc.type == "D" and doc.status == "active")
+        exempt = doc.type == "C" or (doc.type, doc.status) in (("D", "active"), ("E", "concluded"))
+        in_work = not doc.archived and not exempt
         if in_work and updated and (now - updated).days > args.days:
             idle.append(doc)
     if idle:
@@ -3633,8 +3650,8 @@ def main(argv=None):
     p = command(sub, "audit", help="report designs with unchecked code commits, known issues, idle open docs, due "
                                    "reviews, source areas no design covers, and designs D000 does not reach")
     p.add_argument("--days", type=int, default=30,
-                   help="days without an update before an open doc other than a concept or active design is idle "
-                        "(default 30)")
+                   help="days without an update before an open doc other than a concept, active design or concluded "
+                        "experiment is idle (default 30)")
     p.add_argument("--review-after", type=int, default=5, help="finished plans before a review is due (default 5)")
     p.add_argument("--review-commits", type=int, default=50,
                    help="code commits before a review is due (default 50)")

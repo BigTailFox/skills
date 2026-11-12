@@ -1,6 +1,6 @@
 # Doc types
 
-`canon.py new` creates each type with its required sections; `check` enforces them. Other sections may be added freely. Set a non-terminal status, and a live concept's `adopted`, with `canon.py status` or by editing the field; `canon.py archive` sets every other terminal status.
+`canon.py new` creates each type with its required sections; `check` enforces them. Other sections may be added freely. Set a non-terminal status, a live concept's `adopted` and a live experiment's `concluded` with `canon.py status` or by editing the field; `canon.py archive` sets every other terminal status.
 
 ## Concepts (C)
 
@@ -65,7 +65,7 @@ Sections: Current state, Slices, Notes, Log.
 - Create a plan only from an accepted or active design: `new P <slug> --from D00X`.
 - **Current state** (top): current slice, next action, paused slices with their reasons. Update it at the end of every slice; a new session resumes from here.
 - **Slices**: ordered `### S1: name` subsections. Each starts with a `Status:` line (`todo`, `in-progress`, `done`, `paused`), then a `Risk:` line naming the kinds when the slice involves complex logic, concurrency, performance, security or data migration (e.g. `Risk: concurrency, data migration`), then lists its changes and the test criteria that prove it done. Each criterion names its seam: the public interface, as the design's Spec defines it, where the test observes behavior. Seams in an accepted plan are agreed with the user; tests go only there.
-- **Notes**: risks and constraints the implementer must keep in mind, findings about the plan the user left for later, and details the plan settled that its design leaves unstated, which the docs step writes into the design.
+- **Notes**: risks and constraints the implementer must keep in mind, findings about the plan the user left for later, and details the plan settled that its design leaves unstated, which the docs step writes into the design with the experiment links they carry.
 - **Log**: append decisions, results, evidence and deviations as they happen. How to handle deviations: [workflow.md](workflow.md#implementation).
 - **Status**: `accepted` after the review gate, in L2 once the user approves the plan ([Gate status](workflow.md#gate-status)); `in-progress` while implementing. Archive as `done` once every slice is `done`, in the commit that completes the implementation, or as `abandoned`.
 
@@ -96,7 +96,7 @@ An experiment answers one question with evidence, either by running something (b
 - **Results** link every measurement to its raw data and every finding to its source.
 - Prototype code, raw data and source excerpts go in `experiments/E00X/`, each relative or `/`-rooted link and image target of an excerpt resolved against its source's URL. A prototype wired into the product code stays on a `prototype/E00X-<slug>` branch that `Commit:` points to.
 - **Status**: `running` while a run or research is under way, and `answered` once its Conclusion is written, until a design or plan absorbs it.
-- Absorb the conclusion into the owning design (spec, budget or decision), then archive as `concluded`.
+- **Concluded** means answered and absorbed: `canon.py status` sets it only while the body of a live design or plan links the experiment. The session that writes the link sets it; else `canon-design`'s Gate step 4 does, for each answered experiment its design links; else the docs step, before it archives any plan. A concluded experiment stays live while such a link remains and is archived as `concluded` once none does, which the docs step does for each one `check` reports unlinked.
 
 ## Investigations (I)
 

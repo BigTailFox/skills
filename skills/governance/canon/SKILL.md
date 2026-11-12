@@ -15,7 +15,7 @@ Execute `canon.py`; do not read it. Use the project's copy at the path named in 
 |---|---|
 | `check [--fix] [--base REF]` | Validate all docs. `--fix` applies mechanical fixes (`refs`, `updated`, indexes, `implemented` of an active design never revised, and deleting an `as_built` left on a reviewed revision). `--base origin/main` also checks the branch against that ref: deleted docs, id collisions, revisions pending review and unfinished docs fail. |
 | `new TYPE SLUG [--title T] [--from D00X] [--parent D00X] [--root DIR]` | Create a doc from its template with the next free id. `--from` links a plan to its design; `--parent` creates a sub-design. |
-| `status ID STATUS` | Move a doc's status forward and check the move; a concept may move to a live `adopted`. |
+| `status ID STATUS` | Move a doc's status forward and check the move; a concept may move to a live `adopted`, an experiment to a live `concluded`. |
 | `archive ID STATUS` | Set a terminal status, move the doc to `archived/`, rewrite every link to it. Refuses D000. |
 | `rename ID SLUG` | Change a doc's file slug and rewrite every link to it. |
 | `renumber ID\|PATH [NEW] [--base REF]` | Give a doc a new id, NEW or the next free one, which its sub-designs follow, or a sub-design a new letter, and rewrite the links and references to them. Only when `check` asks for it: for an id collision, with REF the branch merged or rebased onto, or for a D000 in a module's docs. |
@@ -24,7 +24,7 @@ Execute `canon.py`; do not read it. Use the project's copy at the path named in 
 | `find WORDS [--archived]` | Search ids, titles, summaries, owned topics, modules and headings. |
 | `which FILE...` | List the designs whose `paths` govern the files, `doc` for a [project doc](#layout) that no `paths` entry names exactly, and `no design` for any other file. |
 | `affected [FILE...] [--base REF]` | Designs and plans governing the given files, else the uncommitted changes plus, with `--base`, the branch's. |
-| `audit` | Designs with code commits since the design last changed or was reconciled (a `Reconciled:` trailer) that no `Refs:` trailer names, known issues oldest first, idle open docs other than concepts and active designs, due reviews, source areas under D000's module Paths that no design covers, ranked by commits in the last 90 days, and designs D000 does not reach by following `refs` from design to design. |
+| `audit` | Designs with code commits since the design last changed or was reconciled (a `Reconciled:` trailer) that no `Refs:` trailer names, known issues oldest first, idle open docs other than concepts, active designs and concluded experiments, due reviews, source areas under D000's module Paths that no design covers, ranked by commits in the last 90 days, and designs D000 does not reach by following `refs` from design to design. |
 | `snapshot` | Record the work tree, untracked files included, and print the snapshot commit, for the diffs of a review's confirmation and follow-up rounds (the `canon-blind-review` skill). |
 | `init`, `adopt` | Project setup, upgrades and migration; the user runs them through the `canon-init` skill. |
 
@@ -67,7 +67,7 @@ A more specific `AGENTS.md` and its `docs/` govern their subtree and override br
 
 File names are `<id>-<kebab-slug>.md`, e.g. `designs/D003-auth.md`. The title is the H1 `# D003: Auth and sessions`.
 
-| Type | Purpose | Statuses (terminal ones live in `archived/`, except that an adopted concept may stay live) |
+| Type | Purpose | Statuses (terminal ones live in `archived/`, except that an adopted concept and a concluded experiment may stay live) |
 |---|---|---|
 | C concepts | Ideas and brainstorming; the source of future work. No spec or plan. | draft → adopted, dropped |
 | D designs | Long-lived authoritative design and spec of one topic. | draft → accepted → active → superseded, retired |

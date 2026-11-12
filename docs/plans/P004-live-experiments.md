@@ -18,7 +18,7 @@ Implements [D006: Doc model and writing rules](../designs/D006-doc-model.md) r9 
 
 ## Current state
 
-Next: S2.
+Next: S3.
 
 ## Slices
 
@@ -51,7 +51,7 @@ Test criteria; seam: the `status`, `check` and `-h` command lines, their output,
 
 ### S2: Live `concluded` experiments
 
-Status: todo
+Status: done
 
 Risk: `check_doc`'s status branches set the level of every doc's problems, and the live links feed `check`, `status` and S3's `archive`; a link they miss or miscount misleads all three.
 
@@ -153,3 +153,4 @@ Test criteria; seam: the `status` command line, its output, exit code and the fi
 - 2026-11-12: Started from D006 r9 and D008 r5, approved by the user at 832e6c7.
 - 2026-11-12: The user approved this plan at 72297ad. Started at 72297ad.
 - 2026-11-12, S1 done: `answered` among the experiment's non-terminal statuses; `status` checks the terminal conditions of `concluded` before setting it, and `check` gives a live answered experiment the `ERROR` unfinished level and its terminal conditions (`CANON_VERSION` 41). `unmet_terminal` now prints the failed terminal conditions for both `archive` and `status`. Tests: three new in `StatusTest` and `UnfinishedDocTest`, with the `EXPERIMENT` and `RUN` fixtures, and the `HelpTest` assertion; `validate.py` passed with D001's budgets measured. In `canon-research`, Absorb step 1 sets `answered` at its end, so steps 2 and 3 keep the numbers S2 cites; in `canon-prototype`, the Conclusion is the verdict, since `UI.md` already asks for the winning variant and why.
+- 2026-11-12, S2 done: `LIVE_TERMINAL` names the terminal status each type may hold live (a concept's `adopted`, an experiment's `concluded`), which `check` and `status_moves` share; `Repo.live_links()` maps each file to the ids of the live designs and plans whose body links it, in `docs` order, which puts designs before plans and sorts each by id; `check` sends both live statuses through the terminal branch, warning on an unlinked one; `status` checks the live link, then the terminal conditions; `audit` and its `--days` help leave out live concluded experiments; the experiment template's Conclusion guidance asks for the answer only (`CANON_VERSION` 42). Tests: eight new in `DocRulesTest`, `UnfinishedDocTest`, `StatusTest` and `AuditTest`, and `HelpTest` assertions; a mutation counting only plans as live linkers turned the criterion 1 test red. `validate.py` passed with D001's budgets measured. The orchestrator restored "into the design or plan" in `canon-prototype`'s Capture step 2.

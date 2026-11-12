@@ -587,6 +587,14 @@ class UnfinishedDocTest(CanonTest):
         self.assertEqual([p for p in self.problems(self.ok("check", "--fix")) if mine in p],
                          ["WARN " + mine + "`summary` is empty"])
 
+    def test_a_live_concluded_experiment_must_be_finished(self):
+        path = self.doc("E", "bench", body=EXPERIMENT.format(RUN, ""), status="concluded")
+        self.doc("P", "work", body=PLAN.format("From [E001: Fixture](../experiments/E001-bench.md)."))
+        self.set(path, summary="")
+        mine = "docs/experiments/E001-bench.md: "
+        self.assertCountEqual([p for p in self.problems(self.fails("check", "--fix")) if mine in p],
+                              ["ERROR " + mine + "`summary` is empty", "ERROR " + mine + "Conclusion is empty"])
+
     def test_guidance_fails_once_past_the_review_gate(self):
         path = self.root / self.ok("new", "D", "gated").strip()
         self.set(path, status="accepted", reviewed=1, reviewers=["fixture"], summary="Fixture")
@@ -752,6 +760,13 @@ class AuditTest(CanonTest):
         out = self.ok("audit")
         self.assertIn("I001", out)
         self.assertNotIn("C001", out)
+
+    def test_idle_docs_skip_live_concluded_experiments(self):
+        old = dict(created="2020-01-01", updated="2020-01-01")
+        self.doc("E", "bench", body=EXPERIMENT.format(RUN, "Fast enough."), status="concluded", **old)
+        self.doc("E", "load", body=EXPERIMENT.format(RUN, ""), status="running", **old)
+        idle = self.section(self.ok("audit"), "Open docs untouched for over 30 days:")
+        self.assertEqual([line.split()[0] for line in idle], ["E002"])
 
 
 @unittest.skipIf(os.name == "nt", "the failing git is a shell script")
@@ -963,6 +978,47 @@ class DocRulesTest(CanonTest):
         self.assertIn("docs/archived/concepts/C001-idea.md", self.ok("archive", "C001", "adopted"))
         self.assertNotIn("C001", self.ok("check"))
 
+    def experiment_problems(self, out):
+        return [p for p in self.problems(out) if "E001-bench.md" in p]
+
+    def test_a_concluded_experiment_stays_live_while_the_body_of_a_live_design_or_plan_links_it(self):
+        self.doc("E", "bench", body=EXPERIMENT.format(RUN, "Fast enough."), status="concluded")
+        link = "[E001: Fixture](../experiments/E001-bench.md)"
+        plan = self.doc("P", "work", body=PLAN.format("From " + link + "."))
+        self.assertEqual(self.experiment_problems(self.ok("check", "--fix")), [])
+        plan.write_text(plan.read_text().replace(link, "nothing"))
+        anchored = "[E001§results: Fixture](../experiments/E001-bench.md#results)"
+        design = self.design(body="## Goals\n\nFrom {}.\n\n## Spec\n\nX.\n\n## Decisions\n\nNone.\n".format(anchored))
+        self.assertEqual(self.experiment_problems(self.ok("check", "--fix")), [])
+        design.write_text(design.read_text().replace(anchored, "nothing"))
+        self.init_module("mod")
+        part = self.root / self.ok("new", "D", "part", "--root", "mod").strip()
+        part.write_text(part.read_text().replace("<!-- canon: What", "[E001: Fixture](../../../docs/experiments/"
+                                                 "E001-bench.md). <!-- canon: What"))
+        self.assertEqual(self.experiment_problems(self.ok("check", "--fix")), [])
+
+    def test_a_concluded_experiment_warns_when_only_archived_docs_concepts_experiments_or_its_attachments_link_it(self):
+        self.doc("E", "bench", body=EXPERIMENT.format(RUN, "Fast enough."), status="concluded")
+        link = "[E001: Fixture](../experiments/E001-bench.md)"
+        self.design(body="## Goals\n\nFrom {}.\n\n## Spec\n\nX.\n\n## Decisions\n\nNone.\n".format(link))
+        self.doc("P", "work", body=PLAN.format("From " + link + "."))
+        self.doc("C", "idea", body="## Motivation\n\n{}\n\n## Ideas\n\nX.\n\n## Open questions\n\nNone.\n".format(link))
+        self.doc("E", "other", body=EXPERIMENT.format(RUN, "As [E001: Fixture](E001-bench.md)."))
+        self.create("docs/experiments/E001/raw.txt")
+        self.doc("P", "data", body=PLAN.format("[Raw data](../experiments/E001/raw.txt)."))
+        self.commit()
+        self.ok("archive", "D001", "retired")
+        self.ok("archive", "P001", "abandoned")
+        self.assertEqual(self.experiment_problems(self.ok("check", "--fix")), [
+            "WARN docs/experiments/E001-bench.md: concluded, but no live design or plan links it; link it or archive "
+            "it as concluded"])
+
+    def test_an_archived_concluded_experiment_that_nothing_links_does_not_warn(self):
+        self.doc("E", "bench", body=EXPERIMENT.format(RUN, "Fast enough."), status="concluded")
+        self.commit()
+        self.ok("archive", "E001", "concluded")
+        self.assertEqual(self.experiment_problems(self.ok("check")), [])
+
     def test_a_live_status_inside_archived_names_the_terminal_statuses(self):
         self.design()
         self.commit()
@@ -984,6 +1040,11 @@ class DocRulesTest(CanonTest):
         self.assertNotIn("matches no file", self.ok("check", "--fix"))
         self.set(design, status="active", implemented=1)
         self.assertIn("`paths` entry `src/gone.py` matches no file", self.ok("check", "--fix"))
+
+    def test_new_experiment_asks_its_conclusion_for_the_answer_only(self):
+        path = self.root / self.ok("new", "E", "bench").strip()
+        self.assertTrue(path.read_text().endswith(
+            "## Conclusion\n\n<!-- canon: The answer the Results give to the Question. -->\n"))
 
     def test_new_rejects_from_on_another_type_and_root_with_parent(self):
         self.design()
@@ -1112,9 +1173,39 @@ class StatusTest(CanonTest):
         self.assertNotIn("Setup:", out)
         self.assertIn(error + "Conclusion is empty", out)
 
+    def linked_experiment(self, slug, status):
+        """A complete experiment that the Notes of a live draft plan link."""
+        path = self.doc("E", slug, body=EXPERIMENT.format(RUN, "Fast enough."), status=status)
+        self.doc("P", "uses-" + slug, body=PLAN.format("From [{}: Fixture](../experiments/{}).".format(
+            path.name.split("-", 1)[0], path.name)))
+        self.commit()
+        return path
+
+    def test_status_sets_a_linked_answered_or_complete_running_experiment_concluded_and_leaves_it_live(self):
+        self.linked_experiment("bench", "answered")
+        self.assertEqual(self.ok("status", "E001", "concluded"), "E001: answered -> concluded\n")
+        self.assertIn("status: concluded", (self.root / "docs/experiments/E001-bench.md").read_text())
+        running = self.linked_experiment("load", "running")
+        self.assertEqual(self.ok("status", "E002", "concluded"), "E002: running -> concluded\n")
+        self.assertIn("status: concluded", running.read_text())
+
     def refused(self, message, *args):
         """`status args` exits 1 with `canon: message` and changes no file."""
         self.assertEqual(self.fails("status", *args), "canon: {}\n".format(message))
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_concluded_needs_a_live_link_first_then_the_terminal_conditions_and_changes_no_file_without_them(self):
+        path = self.doc("E", "bench", body=EXPERIMENT.format(RUN, "Fast enough."), status="answered")
+        self.commit()
+        message = "E001 needs a live design or plan that links it to become concluded"
+        self.refused(message, "E001", "concluded")
+        path.write_text(path.read_text().replace("Fast enough.", ""))
+        self.commit(check=False)
+        self.refused(message, "E001", "concluded")
+        self.doc("P", "work", body=PLAN.format("From [E001: Fixture](../experiments/E001-bench.md)."))
+        self.commit(check=False)
+        self.assertEqual(self.fails("status", "E001", "concluded"),
+                         "ERROR docs/experiments/E001-bench.md: Conclusion is empty\n")
         self.assertEqual(self.git("status", "--porcelain"), "")
 
     def test_status_refuses_an_unknown_or_archived_doc(self):
@@ -1667,13 +1758,15 @@ class HelpTest(CanonTest):
             self.assertIn("{}: {}".format(letter, ", ".join(info["terminal"])), archive)
         self.assertIn("status move a doc's status forward and check the move", self.help())
         self.assertIn("C: draft, adopted; D: draft, accepted, active; P: draft, accepted, in-progress; R: open; "
-                      "E: planned, running, answered; I: open", self.help("status"))
+                      "E: planned, running, answered, concluded; I: open", self.help("status"))
         end = self.help("trace", "end")
         for kinds, outcomes in [("other kinds", canon.OUTCOMES)] + list(canon.KIND_OUTCOMES.items()):
             self.assertIn("{}: {}".format(kinds, ", ".join(outcomes)), end)
         self.assertIn("--input FILE|- a gate's, follow-up's or code review's dispositions", end)
         self.assertIn("`no design` for other files", self.help("which"))
         self.assertIn("only when `check` asks for it", self.help("renumber"))
+        self.assertIn("an open doc other than a concept, active design or concluded experiment is idle",
+                      self.help("audit"))
 
 
 class ProjectDocsTest(CanonTest):

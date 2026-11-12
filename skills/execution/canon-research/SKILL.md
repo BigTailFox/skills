@@ -49,5 +49,5 @@ When the subagent stops before finishing, resume it once by the id in `id.txt` w
 When the subagent finishes:
 
 1. Open the sources behind the findings your decision depends on and confirm they say what the doc claims, then set the experiment `answered` with `canon.py status`.
-2. Absorb the conclusion into the target doc: in a design, a Spec constraint, a Budget, or a Decision linking the experiment; in a plan, its Notes. An accepted or active design changes only through the tier flow in the `canon` skill.
-3. The docs step archives the experiment as `concluded` once a design absorbs it.
+2. Absorb the conclusion into the target doc with a link to the experiment: in a design, a Spec constraint, a Budget, or a Decision; in a plan, its Notes. An accepted or active design changes only through the tier flow in the `canon` skill.
+3. Once you have written the link, set the experiment `concluded` with `canon.py status`; the `canon` skill's doc types say which other steps set it and when it is archived.
