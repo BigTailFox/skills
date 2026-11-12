@@ -38,6 +38,9 @@ ISSUES = "\n## Known issues\n\n| ID | Severity | Issue | Source | Since | Next |
 EXPERIMENT = "## Question\n\nFast?\n\n## Setup\n\n{}\n\n## Results\n\nFast.\n\n## Conclusion\n\n{}\n"
 RUN = "- Commit: 3f9a1c2\n- Environment: x\n- Command: y"
 NO_OVERVIEW = "ERROR docs: no D000, the project overview every project keeps; run `canon.py init` at the repo root"
+OUTSIDE_INSTALL = ("canon: canon runs only from an install inside the project, and this canon.py is {}; install canon in "
+                   "the project as https://github.com/BigTailFox/skills#install says, and remove a user install of "
+                   "canon with `npx skills remove -g`\n")
 UNIT_TIME_FORMAT = "%Y%m%dT%H%M%SZ"
 RUN_DIR = None
 
@@ -101,7 +104,8 @@ class CanonTest(unittest.TestCase):
         test repository or in a directory from `outside_checkouts`: anywhere else canon.py would act on the checkout
         around TMPDIR."""
         cwd = Path(cwd or self.root)
-        script = script or self.install(*self.project_top(cwd.resolve()))
+        top = self.project_top(cwd.resolve())
+        script = script or self.install(*top)
         return start([sys.executable, "-B", str(script), *args], cwd=str(cwd), stdout=subprocess.PIPE,
                      stderr=subprocess.PIPE, text=True, **options)
 
@@ -137,11 +141,11 @@ class CanonTest(unittest.TestCase):
                 exclude.write_text(text + ("\n" if text and not text.endswith("\n") else "") + "/" + INSTALL + "\n")
         return link
 
-    def canon(self, *args):
-        return self.canon_process(*args)
+    def canon(self, *args, **options):
+        return self.canon_process(*args, **options)
 
-    def ok(self, *args):
-        result = self.canon(*args)
+    def ok(self, *args, **options):
+        result = self.canon(*args, **options)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result.stdout
 
@@ -1574,6 +1578,16 @@ class InitTest(CanonTest):
                                           r"`canon\.py init --hook` where \.git is writable$")
         self.assertEqual(hook.read_text(), "#!/bin/sh\nexec python3 scripts/canon.py check\n")
 
+    @unittest.skipIf(os.name == "nt" or os.geteuid() == 0, "file modes stop only a non-root POSIX user")
+    def test_init_hook_keeps_an_existing_hook_it_cannot_read(self):
+        self.repository_without_docs()
+        hook = self.root / ".git/hooks/pre-commit"
+        hook.write_text("#!/bin/sh\nexit 0\n")
+        hook.chmod(0)
+        out = self.ok("init", "--hook")
+        self.assertIn("kept the existing pre-commit hook; add `canon.py check` to it\n", out)
+        self.assertNotIn("warning", out)
+
     @unittest.skipIf(os.name == "nt", "the stand-in git is a shell script")
     def test_init_whose_git_cannot_name_the_hook_path_finishes_and_says_how_to_add_it(self):
         self.repository_without_docs()
@@ -1614,7 +1628,7 @@ class InitTest(CanonTest):
         self.assertNotIn("python3", readme)
         self.assertEqual(self.canon("init", "--script", "x").returncode, 2)
 
-    OLD_COPY = ("the project no longer keeps a copy of canon.py; remove {0} and replace `python3 {0}` where files "
+    OLD_COPY_WARNING = ("the project no longer keeps a copy of canon.py; remove {0} and replace `python3 {0}` where files "
                 "still name it, such as CI and each `docs/README.md`")
 
     def old_copy(self, rel, text='#!/usr/bin/env python3\nCANON_VERSION = "18"\n'):
@@ -1635,11 +1649,11 @@ class InitTest(CanonTest):
         self.git("add", "-A")
         self.git("commit", "-qm", "module")
         out = self.ok("init")
-        self.assertTrue(out.startswith("warning: {}\nupdated AGENTS.md\n".format(self.OLD_COPY.format(
+        self.assertTrue(out.startswith("warning: {}\nupdated AGENTS.md\n".format(self.OLD_COPY_WARNING.format(
             "scripts/canon.py"))), out)
         self.assertEqual(copy.read_text(), '#!/usr/bin/env python3\nCANON_VERSION = "18"\n')
         self.assertNotIn("python3 scripts/canon.py", agents.read_text())
-        warning = "WARN scripts/canon.py: " + self.OLD_COPY.format("scripts/canon.py")
+        warning = "WARN scripts/canon.py: " + self.OLD_COPY_WARNING.format("scripts/canon.py")
         out = self.ok("check")
         problems = self.problems(out)
         self.assertIn(warning, problems)
@@ -1666,7 +1680,7 @@ class InitTest(CanonTest):
         self.old_copy("lib/canon.py", text="print('a project script')\n")
         (self.root / "scripts").mkdir()
         (self.root / "scripts/canon.py").write_text(copy)
-        message = self.OLD_COPY.format("tools/other/scripts/canon.py")
+        message = self.OLD_COPY_WARNING.format("tools/other/scripts/canon.py")
         self.assertEqual(self.ok("init").splitlines()[:1], ["warning: " + message])
         self.assertEqual([p for p in self.problems(self.ok("check")) if "copy" in p],
                          ["WARN tools/other/scripts/canon.py: " + message])
@@ -1681,7 +1695,7 @@ class InitTest(CanonTest):
         self.git("config", "user.email", "canon@example.invalid")
         self.ok("init")
         self.old_copy("canon.py")
-        self.assertIn("WARN canon.py: " + self.OLD_COPY.format("canon.py"), self.problems(self.ok("check")))
+        self.assertIn("WARN canon.py: " + self.OLD_COPY_WARNING.format("canon.py"), self.problems(self.ok("check")))
 
     def test_the_canon_block_exempts_docs_only_changes_that_bump_no_revision_from_a_tier(self):
         self.repository_without_docs()
@@ -2164,6 +2178,25 @@ class InstalledSkillsTest(CanonTest):
         self.assertEqual([p for p in self.problems(result.stdout) if ".agents/" in p], [])
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_new_and_adopt_walk_past_an_agents_md_among_the_installed_skills_to_the_project(self):
+        self.install_skills(".agents/skills/canon/AGENTS.md", ".agents/skills/canon/notes.md")
+        result = self.canon_process("new", "D", "x", cwd=self.root / ".agents/skills/canon")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((self.root / "docs/designs/D001-x.md").is_file())
+        self.ok("adopt", ".agents/skills/canon/notes.md", "D")
+        self.assertTrue((self.root / "docs/designs/D002-notes.md").is_file())
+        self.assertFalse((self.root / ".agents/skills/canon/docs").exists())
+
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_a_link_to_the_install_directory_itself_is_an_installed_skill_file(self):
+        self.design(paths=[".codex/**"])
+        self.commit()
+        base = self.git("rev-parse", "HEAD")
+        (self.root / ".codex").mkdir()
+        (self.root / ".codex/skills").symlink_to("../.agents/skills")
+        self.install_skills()
+        self.assertEqual(self.ok("affected", "--base", base), "no design governs the changed files\n")
+
     def test_coverage_counts_no_installed_skill_file_in_a_module_at_the_project_directory(self):
         self.modules("./")
         self.design(paths=["src/**"])
@@ -2228,6 +2261,17 @@ class LinkedSkillSourceTest(CanonTest):
         self.link_skill_source()
         governed = "skills/governance/canon/SKILL.md: D001 docs/designs/D001-skills.md - Fixture"
         self.assertEqual(self.ok("which", ".agents/skills/canon/SKILL.md", ".claude/skills/canon/SKILL.md"),
+                         governed + "\n" + governed + "\n")
+
+    def test_an_install_directory_linked_to_the_skill_source_leaves_the_source_code(self):
+        self.design("skills", paths=["skills/**"])
+        self.link_skill_source()
+        shutil.rmtree(str(self.root / ".agents"))
+        shutil.rmtree(str(self.root / ".claude"))
+        (self.root / ".agents").mkdir()
+        (self.root / ".agents/skills").symlink_to("../skills/governance")
+        governed = "skills/governance/canon/SKILL.md: D001 docs/designs/D001-skills.md - Fixture"
+        self.assertEqual(self.ok("which", "skills/governance/canon/SKILL.md", ".agents/skills/canon/SKILL.md"),
                          governed + "\n" + governed + "\n")
 
 
@@ -3864,26 +3908,18 @@ class OutsideCheckoutTest(CanonTest):
 
 
 class InstallLocationTest(CanonTest):
-    def runs(self, *args, **options):
-        result = self.canon_process(*args, **options)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        return result
-
     def refused(self, script, *args, **options):
         """`canon.py args` started by `script` exits 1 with the message that names `script`."""
         result = self.canon_process(*args, script=script, **options)
-        self.assertEqual((result.returncode, result.stdout + result.stderr),
-                         (1, "canon: canon runs only from an install inside the project, and this canon.py is {}; "
-                             "install canon in the project as https://github.com/BigTailFox/skills#install says, and "
-                             "remove a user install of canon with `npx skills remove -g`\n".format(script)))
+        self.assertEqual((result.returncode, result.stdout + result.stderr), (1, OUTSIDE_INSTALL.format(script)))
 
     def test_canon_py_started_by_its_own_path_refuses_every_command_but_help_and_version(self):
         self.commit()
         for args in (["which", "src/base.py"], ["check"]):
             self.refused(SCRIPT, *args)
         self.assertEqual(self.git("status", "--porcelain"), "")
-        self.runs("-h", script=SCRIPT)
-        self.assertEqual(self.runs("--version", script=SCRIPT).stdout, "canon {}\n".format(canon.CANON_VERSION))
+        self.ok("-h", script=SCRIPT)
+        self.assertEqual(self.ok("--version", script=SCRIPT), "canon {}\n".format(canon.CANON_VERSION))
 
     def test_the_projects_link_runs_from_the_repo_root_a_subdirectory_and_a_module_with_its_own_agents_md(self):
         self.init_module("mod")
@@ -3891,16 +3927,16 @@ class InstallLocationTest(CanonTest):
         for cwd, base in ((self.root, "src/base.py"), (self.root / "src", "base.py"),
                           (self.root / "mod", "../src/base.py")):
             with self.subTest(cwd=cwd.name):
-                self.assertEqual(self.runs("which", base, cwd=cwd).stdout, "src/base.py: no design\n")
-                self.runs("check", cwd=cwd)
+                self.assertEqual(self.ok("which", base, cwd=cwd), "src/base.py: no design\n")
+                self.ok("check", cwd=cwd)
 
     @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
     def test_a_link_above_the_checkout_on_the_start_path_or_the_working_directory_runs(self):
         alias = self.root.with_name(self.root.name + "-link")
         alias.symlink_to(self.root, target_is_directory=True)
         self.addCleanup(alias.unlink)
-        self.runs("which", "src/base.py", script=alias / INSTALL)
-        self.runs("which", "src/base.py", cwd=alias, script=self.root / INSTALL)
+        self.ok("which", "src/base.py", script=alias / INSTALL)
+        self.ok("which", "src/base.py", cwd=alias, script=self.root / INSTALL)
 
     def test_a_linked_worktree_refuses_the_main_checkouts_install_and_runs_its_own(self):
         self.commit()
@@ -3908,7 +3944,7 @@ class InstallLocationTest(CanonTest):
         self.git("worktree", "add", "-q", "--detach", str(worktree))
         self.refused(self.root / INSTALL, "which", "src/base.py", cwd=worktree)
         self.assertFalse((worktree / ".agents").exists())
-        self.assertEqual(self.runs("which", "src/base.py", cwd=worktree).stdout, "src/base.py: no design\n")
+        self.assertEqual(self.ok("which", "src/base.py", cwd=worktree), "src/base.py: no design\n")
         self.assertTrue((worktree / INSTALL).is_symlink())
         self.assertEqual(self.git("-C", str(worktree), "status", "--porcelain"), "")
         self.assertEqual(self.git("status", "--porcelain"), "")
@@ -3916,14 +3952,14 @@ class InstallLocationTest(CanonTest):
     def test_the_check_runs_no_git(self):
         env = dict(os.environ, PATH=str(self.tmpdir()), XDG_CONFIG_HOME=str(self.tmpdir()))
         self.refused(SCRIPT, "trace", "status", env=env)
-        self.assertRegex(self.runs("trace", "status", env=env).stdout, r"^trace off: no machine switch ")
+        self.assertRegex(self.ok("trace", "status", env=env), r"^trace off: no machine switch ")
 
     def test_outside_git_the_working_directory_and_each_directory_above_it_with_an_agents_md_hold_the_install(self):
         top = self.outside_checkouts()
-        self.assertIn("created AGENTS.md", self.runs("init", cwd=top).stdout)
+        self.assertIn("created AGENTS.md", self.ok("init", cwd=top))
         self.assertTrue((top / INSTALL).is_symlink())
         (top / "sub").mkdir()
-        self.assertEqual(self.runs("which", "x.py", cwd=top / "sub", script=top / INSTALL).stdout, "x.py: no design\n")
+        self.assertEqual(self.ok("which", "x.py", cwd=top / "sub", script=top / INSTALL), "x.py: no design\n")
         sibling = self.outside_checkouts()
         self.refused(top / INSTALL, "which", "x.py", cwd=sibling)
         self.assertEqual(list(sibling.iterdir()), [])
@@ -4030,9 +4066,7 @@ class ProjectVersionTest(CanonTest):
     def test_a_canon_py_from_outside_the_project_refuses_before_the_version_check(self):
         self.record("canon version {} or later".format(canon.CANON_VERSION), "canon version 9999 or later")
         self.assertEqual(self.run_canon("which", "src/base.py", script=SCRIPT),
-                         (1, "", "canon: canon runs only from an install inside the project, and this canon.py is {}; "
-                                 "install canon in the project as https://github.com/BigTailFox/skills#install says, "
-                                 "and remove a user install of canon with `npx skills remove -g`\n".format(SCRIPT)))
+                         (1, "", OUTSIDE_INSTALL.format(SCRIPT)))
 
 
 if __name__ == "__main__":

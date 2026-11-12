@@ -29,7 +29,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "50"
+CANON_VERSION = "51"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -99,24 +99,25 @@ INDEX_START = "<!-- canon:index:start -->"
 INDEX_END = "<!-- canon:index:end -->"
 AGENTS_START = "<!-- canon:agents:start -->"
 AGENTS_END = "<!-- canon:agents:end -->"
+INSTALL_DIR = ".agents/skills"
 AGENTS_BLOCK = AGENTS_START + """
 ## Docs
 
 This repo follows the canon documentation system, run from the `canon` skill installed in this project. Without that skill, or when its `canon.py` says it runs only from an install inside the project or that the project needs a newer canon version, ask the user whether to install canon here. At the repo root, `npx skills experimental_install` restores the release `skills-lock.json` records for `canon`; for the newest release, run `npx skills add BigTailFox/skills@<tag> -s '*' -a claude-code -a codex -a cursor -y`, where `<tag>` is the name after `refs/tags/` on the first line of `git ls-remote --tags --refs --sort=-v:refname https://github.com/BigTailFox/skills 'v*'`. Engineering docs live in `docs/` and in module `docs/` directories. Start at [D000: Project overview](docs/designs/D000-project-overview.md); [docs/README.md](docs/README.md) indexes every doc.
 
-- Tool: `scripts/canon.py` of the `canon` skill installed in this project, `.agents/skills/canon/scripts/canon.py` as `npx skills` installs it, canon version {version} or later, run from the repo root (`-h` lists commands). Run `check --fix` before committing and after every merge or rebase.
+- Tool: `scripts/canon.py` of the `canon` skill installed in this project, `{install}/canon/scripts/canon.py` as `npx skills` installs it, canon version {version} or later, run from the repo root (`-h` lists commands). Run `check --fix` before committing and after every merge or rebase.
 - When a change may alter behavior or standards a design specifies, run `which <file>` and read the governing sections with `show D00X#slug` first.
 - State each change's tier (L0, L1, L2) before starting, unless it touches only docs that no design's `paths` names and bumps no revision. Designs and plans pass the review gate defined by the `canon` skill.
 - Skip `docs/archived/` unless researching history.
 """ + AGENTS_END
 PRE_COMMIT_HOOK = """#!/bin/sh
-c=.agents/skills/canon/scripts/canon.py
+c={install}/canon/scripts/canon.py
 [ -f "$c" ] && exec python3 "$c" check
 echo "canon: no canon skill installed in this checkout; install it as the canon block of AGENTS.md says" >&2
 exit 1
-"""
+""".format(install=INSTALL_DIR)
 OLD_HOOK_RE = re.compile(rb"#!/bin/sh\nexec python3 \S+ check\n?")
-OLD_COPY = ("the project no longer keeps a copy of canon.py; remove {0} and replace `python3 {0}` where files still name "
+OLD_COPY_WARNING = ("the project no longer keeps a copy of canon.py; remove {0} and replace `python3 {0}` where files still name "
             "it, such as CI and each `docs/README.md`")
 SUB_AGENTS = "Module docs: [docs/README.md](docs/README.md). The repo root `AGENTS.md` defines the docs rules.\n"
 DOCS_README = """# Docs
@@ -859,12 +860,14 @@ class Repo:
         return not (self.is_doc(rel) or self.is_installed_skill(rel))
 
     def is_installed_skill(self, rel):
-        """Whether a repo-relative path is an installed skill file: the repo root's `skills-lock.json`, a path under
-        `.agents/skills/`, or one whose real path in the work tree lies in that directory's."""
-        if rel == "skills-lock.json" or rel.startswith(".agents/skills/"):
+        """Whether a repo-relative path is an installed skill file: the repo root's `skills-lock.json`, INSTALL_DIR or
+        a path under it, or a link whose real path in the work tree is INSTALL_DIR or lies under it. INSTALL_DIR stays
+        unresolved, so that when it is itself a link, the files it points to keep their own kind."""
+        if rel in ("skills-lock.json", INSTALL_DIR) or rel.startswith(INSTALL_DIR + "/"):
             return True
-        skills = Path(os.path.realpath(str(self.root / ".agents/skills")))
-        return skills in Path(os.path.realpath(str(self.root / rel))).parents
+        skills = self.root / INSTALL_DIR
+        real = Path(os.path.realpath(str(self.root / rel)))
+        return real == skills or skills in real.parents
 
     def designs_for(self, abs_path):
         """The non-archived designs whose `paths` govern a file."""
@@ -1448,7 +1451,7 @@ def run_check(repo, base=None):
     check_overview(repo)
 
     for rel in old_copies(repo):
-        repo.problem("WARN", rel, OLD_COPY.format(rel))
+        repo.problem("WARN", rel, OLD_COPY_WARNING.format(rel))
 
     overview_kept = root_overview(repo) is not None
     for rel, commit in repo.deleted_docs(base):
@@ -1612,15 +1615,25 @@ def id_lock(repo):
 
 # ---------------------------------------------------------------- commands
 
+def project_dir(repo, path):
+    """The nearest directory from `path` up to the repo root that holds an AGENTS.md other than an installed skill
+    file, else the last directory looked at."""
+    def holds_project(path):
+        agents = path / "AGENTS.md"
+        return agents.is_file() and not repo.is_installed_skill(posix_rel(agents, repo.root))
+
+    while not holds_project(path) and path != repo.root and path.parent != path:
+        path = path.parent
+    return path
+
+
 def find_root(repo, root_arg):
     if root_arg:
         path = Path(os.path.realpath(root_arg))
         if path.name == "docs":
             path = path.parent
     else:
-        path = Path(os.path.realpath(os.getcwd()))
-        while not (path / "AGENTS.md").is_file() and path != repo.root and path.parent != path:
-            path = path.parent
+        path = project_dir(repo, Path(os.path.realpath(os.getcwd())))
     if not (path / "AGENTS.md").is_file():
         sys.exit("canon: no AGENTS.md at {}; set the project up with `canon.py init` first".format(path))
     rel = posix_rel(path, repo.root)
@@ -1880,6 +1893,8 @@ def cmd_init(repo, args):
         sys.exit("canon: --root {} is not a directory inside the repository".format(args.root))
     require_intact_indexes(repo, project)
     top = project == repo.root
+    if args.version_notice and not top:
+        print("canon: " + args.version_notice, file=sys.stderr)
     if top and not has_overview(repo):
         architecture_design(repo)  # refuses before any file changes
     root_agents = repo.root / "AGENTS.md"
@@ -1891,7 +1906,7 @@ def cmd_init(repo, args):
         actions.append("{} {}".format(verb, posix_rel(path, repo.root)))
 
     for rel in old_copies(repo) if top else []:
-        print("warning: " + OLD_COPY.format(rel))
+        print("warning: " + OLD_COPY_WARNING.format(rel))
 
     attributes = repo.root / ".gitattributes"
     lines = attributes.read_text(encoding="utf-8").splitlines() if attributes.is_file() else []
@@ -1907,7 +1922,7 @@ def cmd_init(repo, args):
         note("updated" if lines else "created", ignore)
 
     agents = project / "AGENTS.md"
-    block = AGENTS_BLOCK.format(version=CANON_VERSION)
+    block = AGENTS_BLOCK.format(install=INSTALL_DIR, version=CANON_VERSION)
     if not agents.is_file():
         agents.write_text("# AGENTS.md\n\n" + (block if top else SUB_AGENTS) + "\n", encoding="utf-8")
         note("created", agents)
@@ -1955,7 +1970,8 @@ def cmd_init(repo, args):
         try:
             if hook is None:
                 raise OSError("git rev-parse --git-path hooks/pre-commit failed")
-            old = top and hook.is_file() and OLD_HOOK_RE.fullmatch(hook.read_bytes()) is not None
+            with contextlib.suppress(OSError):
+                old = top and hook.is_file() and OLD_HOOK_RE.fullmatch(hook.read_bytes()) is not None
             if old:
                 hook.write_text(PRE_COMMIT_HOOK, encoding="utf-8")
                 note("updated", hook)
@@ -2039,10 +2055,7 @@ def adopt_doc(repo, args):
     if args.root:
         root = find_root(repo, args.root)
     else:
-        project = src.parent
-        while not (project / "AGENTS.md").is_file() and project != repo.root and project.parent != project:
-            project = project.parent
-        root = find_root(repo, str(project))
+        root = find_root(repo, str(project_dir(repo, src.parent)))
     slug = args.slug or slugify(src.stem)
     if not SLUG_RE.match(slug):
         sys.exit("canon: slug must be kebab-case")
@@ -3602,7 +3615,7 @@ def require_project_install():
              "with `npx skills remove -g`".format(start))
 
 
-def project_version_notice(top):
+def require_project_version(top):
     """Compare CANON_VERSION with the version the canon block of `top`'s AGENTS.md records in its first `- Tool:`
     line: exit when the project needs a newer canon.py, and return the reminder to upgrade the project when it is set
     up for an older one or records none. None when they are equal, or without the file or a start marker with an end
@@ -3768,13 +3781,9 @@ def main(argv=None):
                                   "and print the snapshot commit; exit 1 when none was recorded")
 
     args = parser.parse_args(argv)
-    top = require_project_install()
-    notice = project_version_notice(top)
-    records_it = args.command == "init" and os.path.realpath(args.root or str(top)) == os.path.realpath(str(top))
-    if args.command == "check":
-        args.version_notice = notice
-    elif notice and not records_it:
-        print("canon: " + notice, file=sys.stderr)
+    args.version_notice = require_project_version(require_project_install())
+    if args.version_notice and args.command not in ("check", "init"):
+        print("canon: " + args.version_notice, file=sys.stderr)
     if args.command == "trace":
         return cmd_trace(args)
     if args.command == "snapshot":

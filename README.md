@@ -24,7 +24,7 @@ npx skills experimental_install
 `canon.py` runs only from an install inside the project, so canon installed for every project refuses to run. Claude Code would also keep running such an install instead of the project's, and Cursor and Codex would offer both, so remove it:
 
 ```bash
-npx skills remove -g $(ls ~/.agents/skills | grep -E '^canon(-|$)')
+npx skills remove -g $(ls ~/.agents/skills ~/.claude/skills 2>/dev/null | grep -E '^canon(-|$)' | sort -u)
 ```
 
 Then run `/canon-init` in the project. It sets up `docs/`, migrates the project's existing docs, and sets up this machine's cross-family reviewer. Later, `/canon-sync`'s audit offers each newer release, and `/canon-init` upgrades the project to it.
