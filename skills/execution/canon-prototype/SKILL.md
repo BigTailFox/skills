@@ -11,7 +11,7 @@ A prototype is **throwaway code that answers a question**. The question decides 
 
 Write the question in one sentence, plus the observation that would settle it.
 
-- The verdict will feed a design or plan, the prototype is a UI prototype, or no design, plan or task is in view (a state model the user wants to sanity-check): create the experiment now with `canon.py new E <slug>`, fill its Question and set `status: running`, or extend a live experiment on the same question as `canon-research` does when it reserves its doc. Self-contained prototype files go in `experiments/E00X/`.
+- The verdict will feed a design or plan, the prototype is a UI prototype, or no design, plan or task is in view (a state model the user wants to sanity-check): create the experiment now with `canon.py new E <slug>`, fill its Question and set it `running` with `canon.py status`, or extend or link an earlier experiment on the same question as `canon-research` does when it reserves its doc. Self-contained prototype files go in `experiments/E00X/`.
 - Otherwise the question is a detail inside the current task, answered by self-contained files (a logic prototype or a spike): skip the doc. Build in `.canon/canon-prototype/<topic>/`, record the verdict in the plan's Log or the commit message, and delete the prototype.
 
 ## 2. Pick a branch

@@ -1278,6 +1278,20 @@ class StatusTest(CanonTest):
                          "ERROR docs/experiments/E001-bench.md: Conclusion is empty\n")
         self.assertEqual(self.git("status", "--porcelain"), "")
 
+    def test_status_moves_an_answered_experiment_that_only_an_archived_design_links_back_to_running(self):
+        path = self.doc("E", "bench", body=EXPERIMENT.format(RUN, "Fast enough."), status="answered")
+        self.design(body="## Goals\n\nFrom [E001: Fixture](../experiments/E001-bench.md).\n\n## Spec\n\nX.\n\n"
+                         "## Decisions\n\nNone.\n")
+        self.commit()
+        self.ok("archive", "D001", "retired")
+        self.commit()
+        self.assertEqual(self.ok("status", "E001", "running"), "E001: answered -> running\n")
+        self.assertIn("status: running", path.read_text())
+
+    def test_status_refuses_to_move_an_answered_experiment_a_live_plan_links_back_to_running(self):
+        self.linked_experiment("bench", "answered")
+        self.refused("E001 is linked by P001; a later run gets a new experiment that links it", "E001", "running")
+
     def test_status_refuses_an_unknown_or_archived_doc(self):
         self.design()
         self.commit()
@@ -1301,6 +1315,19 @@ class StatusTest(CanonTest):
         self.set(design, status="active", implemented=1)
         self.commit(check=False)
         self.refused("D001 is active; status moves only forward", "D001", "accepted")
+
+    def test_only_an_answered_experiment_moves_back_and_its_refusal_names_the_move_back(self):
+        path = self.doc("E", "bench", body=EXPERIMENT.format(RUN, "Fast enough."), status="answered")
+        self.commit(check=False)
+        for status in ("planned", "answered"):
+            self.refused("E001 is answered; status moves only forward, to concluded, or back to running",
+                         "E001", status)
+        self.set(path, status="concluded")
+        self.commit(check=False)
+        self.refused("E001 is concluded; status moves only forward", "E001", "running")
+        self.set(path, status="running")
+        self.commit(check=False)
+        self.refused("E001 is running; status moves only forward, to answered, concluded", "E001", "planned")
 
     def test_accepted_and_in_progress_need_the_revision_reviewed(self):
         self.design(status="draft", revision=2, reviewed=1, implemented=None)
@@ -1827,7 +1854,8 @@ class HelpTest(CanonTest):
         for letter, info in canon.TYPES.items():
             self.assertIn("{}: {}".format(letter, ", ".join(info["terminal"])), archive)
         self.assertIn("E: concluded, superseded, overturned, dropped", archive)
-        self.assertIn("status move a doc's status forward and check the move", self.help())
+        self.assertIn("status move a doc's status forward, or an answered experiment back to running, and check the "
+                      "move", self.help())
         self.assertIn("C: draft, adopted; D: draft, accepted, active; P: draft, accepted, in-progress; R: open; "
                       "E: planned, running, answered, concluded; I: open", self.help("status"))
         end = self.help("trace", "end")

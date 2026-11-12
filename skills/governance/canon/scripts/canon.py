@@ -29,7 +29,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "43"
+CANON_VERSION = "44"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -1768,10 +1768,11 @@ def cmd_status(repo, args):
     if args.status not in moves:
         sys.exit("canon: {} is terminal for {}; use `canon.py archive`".format(args.status, doc.id))
     later = moves[moves.index(doc.status) + 1:] if doc.status in moves else moves
-    if args.status not in later:
-        sys.exit("canon: {} is {}; status moves only forward{}".format(
-            doc.id, doc.status, ", to " + ", ".join(later) if later else ""))
-    passed = later[:later.index(args.status) + 1]
+    back = "running" if doc.type == "E" and doc.status == "answered" else None
+    if args.status not in later and args.status != back:
+        sys.exit("canon: {} is {}; status moves only forward{}{}".format(
+            doc.id, doc.status, ", to " + ", ".join(later) if later else "", ", or back to " + back if back else ""))
+    passed = later[:later.index(args.status) + 1] if args.status in later else []
     implemented = doc.get("implemented")
     condition = None
     if {"accepted", "in-progress"} & set(passed) and not 1 <= doc.reviewed == doc.revision:
@@ -1782,6 +1783,9 @@ def cmd_status(repo, args):
         condition = "a live design or plan that links it"
     if condition:
         sys.exit("canon: {} needs {} to become {}".format(doc.id, condition, args.status))
+    if args.status == back and doc.path in repo.live_links():
+        sys.exit("canon: {} is linked by {}; a later run gets a new experiment that links it"
+                 .format(doc.id, ", ".join(repo.live_links()[doc.path])))
     if doc.type == "E" and args.status in ("answered", "concluded") and unmet_terminal(doc, "concluded"):
         return 1
     text = set_field(set_field(doc.text, "status", args.status), "updated", today())
@@ -3598,7 +3602,8 @@ def main(argv=None):
                                             for letter, info in TYPES.items()))
     p.set_defaults(func=cmd_archive)
 
-    p = command(sub, "status", help="move a doc's status forward and check the move")
+    p = command(sub, "status",
+                help="move a doc's status forward, or an answered experiment back to running, and check the move")
     p.add_argument("id")
     p.add_argument("status", help="; ".join("{}: {}".format(letter, ", ".join(status_moves(letter)))
                                             for letter in TYPES))

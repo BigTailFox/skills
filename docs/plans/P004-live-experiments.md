@@ -18,7 +18,7 @@ Implements [D006: Doc model and writing rules](../designs/D006-doc-model.md) r9 
 
 ## Current state
 
-Next: S4.
+Every slice is done. Next: the code review from 72297ad, then the docs step.
 
 ## Slices
 
@@ -113,7 +113,7 @@ Test criteria; seam: the `archive`, `check` and `-h` command lines and their out
 
 ### S4: A later run on an answered experiment
 
-Status: todo
+Status: done
 
 Builds on `D006#doc-types` (Experiments: a later run), `D006#statuses-and-archiving` (the `canon.py status` block: the move back), `D008#recorded-research` step 2 and `D008#prototype-framing` step 2.
 
@@ -155,3 +155,4 @@ Test criteria; seam: the `status` command line, its output, exit code and the fi
 - 2026-11-12, S1 done: `answered` among the experiment's non-terminal statuses; `status` checks the terminal conditions of `concluded` before setting it, and `check` gives a live answered experiment the `ERROR` unfinished level and its terminal conditions (`CANON_VERSION` 41). `unmet_terminal` now prints the failed terminal conditions for both `archive` and `status`. Tests: three new in `StatusTest` and `UnfinishedDocTest`, with the `EXPERIMENT` and `RUN` fixtures, and the `HelpTest` assertion; `validate.py` passed with D001's budgets measured. In `canon-research`, Absorb step 1 sets `answered` at its end, so steps 2 and 3 keep the numbers S2 cites; in `canon-prototype`, the Conclusion is the verdict, since `UI.md` already asks for the winning variant and why.
 - 2026-11-12, S2 done: `LIVE_TERMINAL` names the terminal status each type may hold live (a concept's `adopted`, an experiment's `concluded`), which `check` and `status_moves` share; `Repo.live_links()` maps each file to the ids of the live designs and plans whose body links it, in `docs` order, which puts designs before plans and sorts each by id; `check` sends both live statuses through the terminal branch, warning on an unlinked one; `status` checks the live link, then the terminal conditions; `audit` and its `--days` help leave out live concluded experiments; the experiment template's Conclusion guidance asks for the answer only (`CANON_VERSION` 42). Tests: eight new in `DocRulesTest`, `UnfinishedDocTest`, `StatusTest` and `AuditTest`, and `HelpTest` assertions; a mutation counting only plans as live linkers turned the criterion 1 test red. `validate.py` passed with D001's budgets measured. The orchestrator restored "into the design or plan" in `canon-prototype`'s Capture step 2.
 - 2026-11-12, S3 done: `superseded`, `overturned` and `dropped` join the experiment's terminal statuses; `archive E00X concluded` refuses another status, then a live link, naming the linking ids from `live_links()`; `terminal_problems` skips the Setup labels for `dropped` (`CANON_VERSION` 43). Tests: five new in `DocRulesTest`, the `archive_refused` helper, a literal `archive -h` assertion in `HelpTest`, whose loop over `TYPES` passes whatever the types hold, and `test_archive_checks_every_terminal_condition` archiving as `dropped`; mutations confirmed the two tests that passed on arrival can fail. `validate.py` passed with D001's budgets measured. `doc-types.md` puts D006's archiving rules in a **Superseded, overturned** and a **Dropped** bullet, and docs step 5 links them rather than restating them.
+- 2026-11-12, S4 done: `status` moves an answered experiment back to `running` unless a live design or plan links it, refusing with the linking ids from `live_links()`; its forward-only refusal for an answered experiment ends with `, or back to running`, and its help names the move back (`CANON_VERSION` 44). Tests: three new in `StatusTest` and the `HelpTest` assertion; a mutation letting `concluded` move back turned the criterion 3 test red. `validate.py` passed with D001's budgets measured.

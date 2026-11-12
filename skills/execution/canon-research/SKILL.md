@@ -13,7 +13,7 @@ Write the question, the answer that would settle it, and the doc that will absor
 
 ## 2. Reserve the doc
 
-In the main session, look for a live experiment on the same question with `canon.py find`. If one exists, extend it as the `canon` skill's doc types say for a later run; otherwise run `canon.py new E <slug>` and fill Question. Either way, set `status: running`. One already `running` from another session is handled as [Recover](#4-recover) says. Reserving the id before the subagent starts keeps ids unique while both sessions write docs.
+In the main session, look for experiments on the same question with `canon.py find --archived`. Extend one that is `planned` or `running`, or `answered` with no live design or plan linking it, setting a `planned` or `answered` one `running` with `canon.py status`. Otherwise run `canon.py new E <slug>`, fill Question, link each earlier experiment you found on the question, and set it `running` with `canon.py status`. One already `running` from another session is still handled as [Recover](#4-recover) says. Reserving the id before the subagent starts keeps ids unique while both sessions write docs.
 
 ## 3. Launch
 

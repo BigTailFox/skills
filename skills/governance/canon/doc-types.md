@@ -90,7 +90,7 @@ Sections: Scope, Findings.
 
 Sections: Question, Setup, Results, Conclusion.
 
-An experiment answers one question with evidence, either by running something (benchmark, prototype, measurement) or by researching primary sources (official docs, specs, source code). A later run that answers the same question, such as a measurement after research, extends the experiment's Setup and Results while it is live; once it is archived, the run gets a new experiment that links it. A new question is a new experiment.
+An experiment answers one question with evidence, either by running something (benchmark, prototype, measurement) or by researching primary sources (official docs, specs, source code). A later run that answers the same question, such as a measurement after research, extends the experiment's Setup and Results while it is `planned` or `running`, or `answered` with no live design or plan linking it, which moves back to `running` for the run; otherwise the run gets a new experiment that links it. A new question is a new experiment.
 
 - **Setup** for a run lists `- Commit:`, `- Environment:` and `- Command:` so it can be rerun. Research lists `- Sources:` instead, one primary source per indented line.
 - **Results** link every measurement to its raw data and every finding to its source.
