@@ -304,6 +304,16 @@ class RenumberTest(CanonTest):
         self.assertIn("[D002: Area](../designs/D002-area.md)", plan.read_text())
         self.ok("show", "D002")
 
+    def test_renumber_normalizes_a_requested_sub_design_id(self):
+        self.design()
+        child = self.design("part", parent="D001")
+        self.design("other-part", parent="D001")
+        self.commit()
+        self.refuses("D0001B is already used", "renumber", "D001A", "D0001B")
+        self.refuses("new id must be a sub-design of D001", "renumber", "D001A", "D0002C")
+        self.assertEqual(self.ok("renumber", "D001A", "D0001C").splitlines()[0], "D001A -> D001C")
+        self.assertTrue(child.with_name("D001C-part.md").is_file())
+
     def test_padded_requested_id_cannot_reuse_an_existing_id(self):
         self.design()
         self.design("other")
@@ -523,6 +533,14 @@ class HistoryIdTest(CanonTest):
         result = self.run_with_path(no_git, "new", "D", "y", cwd=nested)
         self.assertEqual((result.returncode, result.stderr), (1, message))
 
+    def test_a_checkout_without_git_on_path_ends_renumber_with_a_base_with_the_history_error(self):
+        self.three_designs()
+        self.commit()
+        result = self.run_with_path(self.tmpdir(), "renumber", "D001", "--base", "main")
+        message = "canon: cannot read the history of HEAD in {}: git is not on PATH\n".format(self.root.resolve())
+        self.assertEqual((result.returncode, result.stderr), (1, message))
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
     def test_the_id_of_a_deleted_design_stays_taken(self):
         design = self.three_designs()[2]
         self.commit()
@@ -629,6 +647,16 @@ class ChangedFilesTest(CanonTest):
             self.assertIn("  " + name + "\n", untracked)
             self.assertIn("  " + name + "\n", modified)
 
+    def test_affected_counts_a_renamed_file_under_its_old_and_new_path(self):
+        self.design()
+        self.commit()
+        self.git("config", "diff.renames", "true")
+        self.git("branch", "before")
+        self.git("mv", "src/base.py", "src/moved.py")
+        self.assertIn("\n  src/base.py\n  src/moved.py\n", self.ok("affected"))
+        self.git("commit", "-qm", "move")
+        self.assertIn("\n  src/base.py\n  src/moved.py\n", self.ok("affected", "--base", "before"))
+
 
 class FrontmatterTest(CanonTest):
     def test_brackets_make_lists_only_in_list_fields(self):
@@ -649,6 +677,15 @@ class FrontmatterTest(CanonTest):
         self.assertIn("unknown frontmatter field `reviewed`", out)
         self.assertNotIn("`reviewers` must list", out)
         self.assertNotIn("must be an integer revision", out)
+
+    def test_show_prints_no_frontmatter_lines_for_a_doc_without_any(self):
+        concept = self.root / "docs/concepts/C001-raw.md"
+        concept.parent.mkdir(parents=True, exist_ok=True)
+        body = "# C001: Raw\n\n## Motivation\n\nX.\n\n## Ideas\n\nY.\n"
+        outline = "docs/concepts/C001-raw.md\n# C001: Raw\nMotivation  #motivation\nIdeas  #ideas\n"
+        for text in (body, "---\n---\n" + body):
+            concept.write_text(text)
+            self.assertEqual(self.ok("show", "C001"), outline)
 
 
 class AuditTest(CanonTest):
@@ -812,7 +849,7 @@ class GitFailureTest(CanonTest):
         self.design()
         self.commit()
         (self.root / "src/base.py").write_text("value = 2\n")
-        self.assertEqual(self.fails_with_git("diff -z --name-only HEAD", "affected"), self.message("diff"))
+        self.assertEqual(self.fails_with_git("diff -z --name-only --no-renames HEAD", "affected"), self.message("diff"))
         self.assertEqual(self.fails_with_git("ls-files -z -o", "affected"), self.message("ls-files"))
 
     def test_a_failing_history_query_ends_audit_instead_of_reporting_nothing(self):
@@ -1656,6 +1693,24 @@ class ProjectOverviewTest(CanonTest):
         self.commit()
         self.assertIn("D000", self.fails("archive", "D000", "retired"))
         self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_d000_keeps_its_file_name(self):
+        self.commit()
+        message = "D000 keeps its file name, which the AGENTS.md block links"
+        self.refuses(message, "rename", "D000", "overview")
+        self.refuses(message, "rename", "D000", "Not_A_Slug")
+
+    def test_only_a_d000_in_a_module_s_docs_is_renumbered(self):
+        self.commit()
+        message = "D000 is the project overview every project keeps; renumber only a D000 in a module's docs"
+        self.refuses(message, "renumber", "D000")
+        self.init_module("mod")
+        module_overview = self.root / "mod" / self.OVERVIEW
+        module_overview.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(self.root / self.OVERVIEW, module_overview)
+        self.commit(check=False)
+        self.refuses(message, "renumber", self.OVERVIEW)
+        self.assertEqual(self.ok("renumber", "mod/" + self.OVERVIEW).splitlines()[0], "D000 -> D001")
 
 
 class OverviewMoveTest(CanonTest):

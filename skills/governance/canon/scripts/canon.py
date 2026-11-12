@@ -29,7 +29,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "45"
+CANON_VERSION = "46"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -826,10 +826,10 @@ class Repo:
     def changed_files(self, base=None):
         if not self.has_head:
             return list(self.files)
-        outs = [git_checked(self.root, "diff", "-z", "--name-only", "HEAD").stdout,
+        outs = [git_checked(self.root, "diff", "-z", "--name-only", "--no-renames", "HEAD").stdout,
                 git_checked(self.root, "ls-files", "-z", "-o", "--exclude-standard").stdout]
         if base:
-            outs.append(git(self.root, "diff", "-z", "--name-only", base + "...HEAD"))
+            outs.append(git(self.root, "diff", "-z", "--name-only", "--no-renames", base + "...HEAD"))
             if outs[-1] is None:
                 sys.exit("canon: cannot diff against {}".format(base))
         return sorted({f for out in outs for f in (out or "").split("\0") if f})
@@ -1802,6 +1802,8 @@ def cmd_rename(repo, args):
     require_clean_merge(repo)
     require_intact_indexes(repo)
     doc = repo.get(args.id)
+    if doc.id == OVERVIEW_ID:
+        sys.exit("canon: D000 keeps its file name, which the AGENTS.md block links")
     if not SLUG_RE.match(args.slug):
         sys.exit("canon: slug must be kebab-case")
     moves = {doc.path: doc.path.with_name("{}-{}.md".format(doc.id, args.slug))}
@@ -2099,6 +2101,9 @@ def renumber_doc(repo, args):
         doc = repo.by_path.get(Path(os.path.realpath(args.target)))
         if doc is None:
             sys.exit("canon: {} is not a canon doc".format(args.target))
+    if doc.id == OVERVIEW_ID and not doc.root.rel:
+        sys.exit("canon: D000 is the project overview every project keeps; renumber only a D000 in a module's docs")
+    repo.require_readable()
     on_base = repo.tree_files(args.base) if args.base else None
     new_id = renumbered_id(repo, doc, args.new, on_base)
     id_map, _moves, notes = move_doc(repo, doc, new_id, args.base, on_base, offer_base=True)
@@ -2217,27 +2222,27 @@ def renumbered_id(repo, doc, wanted, on_base):
     """`wanted`, once checked and normalized, or the next free id; a sub-design keeps its parent and takes a free
     letter. Ids in the base's files (`on_base`) and in the history of HEAD stay taken."""
     taken = repo.taken_ids() | {i for i in map(path_id, on_base or ()) if i}
+    match = FULL_ID_RE.match(wanted or "")
+    normalized = match.group(1) + str(int(match.group(2))).zfill(3) + match.group(3) if match else None
     if doc.suffix:
         parent = doc.type + doc.digits
         letters = [parent + c for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"]
         free = [i for i in letters if i not in taken]
-        if wanted and wanted not in letters:
+        if wanted and normalized not in letters:
             sys.exit("canon: new id must be a sub-design of {}".format(parent))
-        if wanted and wanted not in free:
+        if wanted and normalized not in free:
             sys.exit("canon: {} is already used".format(wanted))
         if not free:
             sys.exit("canon: {} has no free sub-design letter".format(parent))
-        return wanted or free[0]
+        return normalized or free[0]
     used = {int(FULL_ID_RE.match(i).group(2)) for i in taken if i[0] == doc.type}
     if not wanted:
         return doc.type + str(max(used) + 1).zfill(3)
-    match = FULL_ID_RE.match(wanted)
     if not match or match.group(1) != doc.type or match.group(3):
         sys.exit("canon: new id must be a top-level {} id".format(doc.type))
-    number = int(match.group(2))
-    if number in used:
+    if int(match.group(2)) in used:
         sys.exit("canon: {} is already used".format(wanted))
-    return doc.type + str(number).zfill(3)
+    return normalized
 
 
 def link_targets(repo, path, lines, start=0):
@@ -2323,7 +2328,8 @@ def cmd_show(repo, args):
             return 0
         sys.exit("canon: {} has no section #{}".format(doc.id, anchor))
     print(doc.rel)
-    print("\n".join(doc.lines[1:doc.fm_end]))
+    for line in doc.lines[1:max(doc.fm_end, 1)]:
+        print(line)
     print("# {}: {}".format(doc.id, doc.title))
     for h in doc.headings:
         if h.level >= 2:

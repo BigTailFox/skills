@@ -159,17 +159,11 @@ Without another doc of the id, everything follows the renumbered doc.
 | ID | Severity | Issue | Source | Since | Next |
 |----|----------|-------|--------|-------|------|
 | D010-K1 | minor | `renumber` and `init`'s move of a design to D000 rewrite `moved <id>` dispositions but no other plain-text citation of the moved doc's ids, such as `fixed <id>@r<n>`, a known issue's Source (`R004-F2`) or a finding id in prose, so after a conflict renumber they name the old id: they point unnoticed at the other branch's doc with that id, or else `check` reports a disposition fixed in an unknown doc | code review e122546 | 2026-11-11 | L1 |
-| D010-K2 | minor | `rename D000 <slug>` moves the overview instead of refusing, so the next `init` writes the `AGENTS.md` block's link to the fixed path again and `check` reports it broken | as-built 374d94d | 2026-11-12 | fix |
-| D010-K3 | minor | `renumber` of the repo root's D000 renumbers it instead of refusing, which leaves the project without D000 | as-built 374d94d | 2026-11-12 | fix |
-| D010-K4 | minor | `renumber` refuses a sub-design NEW written with extra zeros, such as `D0001B` for a sub-design of D001, with `new id must be a sub-design of D001`, instead of normalizing it | as-built 374d94d | 2026-11-12 | fix |
-| D010-K5 | minor | Without FILE arguments, `affected` lists a rename that Git's rename detection pairs under its new path only, as `diff.renames` allows, so a design that governs only the old path is missed and the commit's `Refs:` omits it | as-built 374d94d | 2026-11-12 | fix |
-| D010-K6 | minor | `show ID` of a doc without frontmatter prints all its lines but the first and the last as its frontmatter lines | as-built 374d94d | 2026-11-12 | fix |
-| D010-K7 | minor | `renumber --base REF` reads REF before the history of HEAD, so in a checkout Git cannot read it exits with `canon: unknown ref <REF>` for a REF that exists, instead of the history error of [D002§project-overview-d000: D000](D002-overview-and-as-built.md#project-overview-d000) | D002 r9 gate | 2026-11-12 | fix |
 | D010-K8 | minor | `rename` leaves the H1 title, link texts that repeat the old title, and attachments named after the old slug, such as `D001/<slug>.zh.md`, with the old name; it could rewrite the H1 with a `--title` and rename the attachments whose names start with the old slug | R003-F37 | 2026-11-10 | L1 |
 
 ## Decisions
 
-- `renumber` renumbers any doc it is given but the repo root's D000, with or without a collision, and its `-h` and the Tool table limit its use to what `check` asks for (R001-F23, settled in 4d74020 by the help text); the repo root's D000 is refused, since a project keeps it (the user's decision, 2026-11-12; D010-K3).
+- `renumber` renumbers any doc it is given but the repo root's D000, with or without a collision, and its `-h` and the Tool table limit its use to what `check` asks for (R001-F23, settled in 4d74020 by the help text); the repo root's D000 is refused, since a project keeps it (the user's decision, 2026-11-12).
 - After an id collision, `renumber` gives a sub-design, attachment file or reference to one of the docs sharing the id only when REF's tree or the links show whose it is, stops before any change on an unclear sub-design, and keeps and lists unclear references (550068a).
 - `show <id>#known-issues` on a design without the section prints that it has none and exits 0: sessions run it for each design they work from, as the `canon` skill's Reading docs says (8f4f34c).
 - `find`, `which` and `affected` exit 0 whether or not anything matches (reason unknown, kept as found).
