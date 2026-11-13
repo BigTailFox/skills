@@ -2,6 +2,14 @@
 
 Notable changes in each release. Versions follow [Semantic Versioning](https://semver.org); while the major version is 0, a minor release may change how skills behave.
 
+## 0.8.1 - 2026-11-13
+
+`init --hook` recognizes the hook it wrote, on every platform.
+
+- `init --hook` prints nothing for a pre-commit hook that already holds the hook it writes, at the repo root and in a module run, instead of telling you to add `check --staged` to a hook that already runs it.
+- `init` writes the hook with `\n` line endings on every platform, so on Windows a later `init` recognizes the hook it wrote.
+- `canon.py` is now canon version 67: install this release in each project and run `/canon-init` to upgrade.
+
 ## 0.8.0 - 2026-11-13
 
 Sessions that work in one repository at the same time each take a worktree of their own, and `check` checks what a commit records, so one session's uncommitted work no longer fails or gets rewritten by another's.
