@@ -67,7 +67,7 @@ Name each file by the reviewer's role, `same-model` or `cross-family` unless the
 
 Save a host subagent's report, from any round, verbatim in its findings file, never a translation or summary, and merge it in whatever language it came. A report is saved once its findings file is newer than its prompt file, so a completion notice for a saved report changes nothing; hosts repeat notices and deliver them late.
 
-Before a round's reviewers start, run `canon.py snapshot` (the `canon` skill's Tool) from the repo root with its output written to `snapshot.txt` in the round's directory, replacing any earlier one; once the fixes for its confirmation are made, run it again with its output written to `snapshot-confirm.txt` beside it. The commit it prints is a ref of `.canon/canon/snapshots`, not its HEAD: check it with `git -C .canon/canon/snapshots cat-file -e <commit>`.
+Before a round's reviewers start, run `canon.py snapshot` (the `canon` skill's Tool) from the repo root, the worktree's root when you work in a linked worktree, with its output written to `snapshot.txt` in the round's directory, replacing any earlier one; once the fixes for its confirmation are made, run it again with its output written to `snapshot-confirm.txt` beside it. The commit it prints is a ref of `.canon/canon/snapshots`, not its HEAD: check it with `git -C .canon/canon/snapshots cat-file -e <commit>`.
 
 ## Stopped runs
 

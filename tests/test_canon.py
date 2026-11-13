@@ -39,6 +39,7 @@ EXPERIMENT = "## Question\n\nFast?\n\n## Setup\n\n{}\n\n## Results\n\nFast.\n\n#
 RUN = "- Commit: 3f9a1c2\n- Environment: x\n- Command: y"
 CONCEPT = "## Motivation\n\n{}\n\n## Ideas\n\nX.\n\n## Open questions\n\nNone.\n"
 NO_OVERVIEW = "ERROR docs: no D000, the project overview every project keeps; run `canon.py init` at the repo root"
+MISSING_DECISIONS = "ERROR docs/designs/D001-area.md: missing section `## Decisions`"
 OUTSIDE_INSTALL = ("canon: canon runs only from an install inside the project, and this canon.py is {}; install canon in "
                    "the project as https://github.com/BigTailFox/skills#install says, and remove a user install of "
                    "canon with `npx skills remove -g`\n")
@@ -160,6 +161,18 @@ class CanonTest(unittest.TestCase):
         """`canon.py args` exits 1 with `canon: message` and changes no file."""
         self.assertEqual(self.fails(*args), "canon: {}\n".format(message))
         self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def refuses_keeping_index(self, message, *args):
+        """`canon.py args` exits 1 with `canon: message` and changes neither a work-tree file nor the Git index, which
+        may differ from HEAD."""
+        def state():
+            return self.git("ls-files", "-s"), {
+                path: path.read_bytes() for path in self.root.rglob("*")
+                if path.is_file() and ".git" not in path.relative_to(self.root).parts}
+
+        before = state()
+        self.assertEqual(self.fails(*args), "canon: {}\n".format(message))
+        self.assertEqual(state(), before)
 
     def set(self, path, **fields):
         text = path.read_text()
@@ -1317,7 +1330,7 @@ class RevCheckTest(CanonTest):
         warnings = {"WARN docs/designs/D001-area.md: `paths` entry `lib/new.py` matches no file",
                     "WARN {}: Modules Path `lib/` is not a directory of the project".format(self.OVERVIEW),
                     "WARN scripts/canon.py: " + InitTest.OLD_COPY_WARNING.format("scripts/canon.py")}
-        errors = {"ERROR docs/designs/D001-area.md: missing section `## Decisions`",
+        errors = {MISSING_DECISIONS,
                   "ERROR docs/designs/D001-area.md: broken link ../guides/new.md",
                   "ERROR docs/designs/D001-area.md: missing anchor #later in docs/guides/use.md",
                   "ERROR docs/README.md: index out of date",
@@ -1397,44 +1410,49 @@ class RevCheckTest(CanonTest):
                              "`git fetch --deepen=1`\n"))
         self.assertEqual(self.git("-C", str(clone), "status", "--porcelain"), "")
 
-    def test_rev_prints_no_fixable_tail_and_warns_of_the_version_the_work_tree_records(self):
+    def test_rev_and_staged_print_no_fixable_tail_and_warn_of_the_version_the_work_tree_records(self):
         self.design()
         self.doc("C", "idea", body=CONCEPT.format("Extends [D001: Area](../designs/D001-area.md)."))
         self.commit(check=False)
         self.assertRegex(self.fails("check"), r"; 1 fixable with --fix\n$")
-        out = self.fails("check", "--rev", "HEAD")
-        self.assertIn("ERROR docs/concepts/C001-idea.md: linked docs missing from `refs`: D001\n", out)
-        self.assertRegex(out, r"\ncanon check: 3 docs, 1 errors, \d+ warnings\n$")
         agents = self.root / "AGENTS.md"
-        agents.write_text(agents.read_text().replace("canon version {} or".format(canon.CANON_VERSION),
-                                                     "canon version 1 or"))
-        self.assertIn("WARN AGENTS.md: this project is set up for canon version 1; run `/canon-init` to upgrade it to "
-                      "version {}".format(canon.CANON_VERSION), self.problems(self.fails("check", "--rev", "HEAD")))
+        current = agents.read_text()
+        older = current.replace("canon version {} or".format(canon.CANON_VERSION), "canon version 1 or")
+        warning = ("WARN AGENTS.md: this project is set up for canon version 1; run `/canon-init` to upgrade it to "
+                   "version {}".format(canon.CANON_VERSION))
+        for flags in (("--rev", "HEAD"), ("--staged",)):
+            with self.subTest(flags=flags):
+                agents.write_text(current)
+                out = self.fails("check", *flags)
+                self.assertIn("ERROR docs/concepts/C001-idea.md: linked docs missing from `refs`: D001\n", out)
+                self.assertRegex(out, r"\ncanon check: 3 docs, 1 errors, \d+ warnings\n$")
+                agents.write_text(older)
+                self.assertIn(warning, self.problems(self.fails("check", *flags)))
 
-    def test_outside_git_rev_ends_check_and_changes_no_file(self):
+    def test_outside_git_rev_and_staged_end_check_and_change_no_file(self):
         top = self.outside_checkouts()
-        result = self.canon_process("check", "--rev", "HEAD", cwd=top)
-        self.assertEqual((result.returncode, result.stdout + result.stderr),
-                         (1, "canon: --staged and --rev read Git; run check in a Git checkout\n"))
-        self.assertEqual([p for p in top.rglob("*") if not within(p, top / ".agents")], [])
+        for flags in (("--rev", "HEAD"), ("--staged",)):
+            with self.subTest(flags=flags):
+                result = self.canon_process("check", *flags, cwd=top)
+                self.assertEqual((result.returncode, result.stdout + result.stderr),
+                                 (1, "canon: --staged and --rev read Git; run check in a Git checkout\n"))
+                self.assertEqual([p for p in top.rglob("*") if not within(p, top / ".agents")], [])
 
 
 class StagedCheckTest(CanonTest):
     """`check --staged` checks the staged tree, what `git commit` records, whatever the work tree holds."""
-
-    MISSING = "ERROR docs/designs/D001-area.md: missing section `## Decisions`"
 
     def test_staged_reports_the_errors_the_index_holds_and_not_those_only_the_work_tree_holds(self):
         design = self.design()
         self.commit()
         clean = design.read_text()
         design.write_text(clean.replace("## Decisions", "## Choices"))
-        self.assertIn(self.MISSING, self.problems(self.fails("check")))
-        self.assertNotIn(self.MISSING, self.problems(self.ok("check", "--staged")))
+        self.assertIn(MISSING_DECISIONS, self.problems(self.fails("check")))
+        self.assertNotIn(MISSING_DECISIONS, self.problems(self.ok("check", "--staged")))
         self.git("add", "-A")
         design.write_text(clean)
-        self.assertNotIn(self.MISSING, self.problems(self.ok("check")))
-        self.assertIn(self.MISSING, self.problems(self.fails("check", "--staged")))
+        self.assertNotIn(MISSING_DECISIONS, self.problems(self.ok("check")))
+        self.assertIn(MISSING_DECISIONS, self.problems(self.fails("check", "--staged")))
 
     def test_a_pre_commit_hook_running_staged_checks_what_each_form_of_git_commit_records(self):
         self.design()
@@ -1540,6 +1558,24 @@ class StagedCheckTest(CanonTest):
         self.git("checkout", "-q", "--orphan", "unborn")
         self.assertEqual(self.design_problems(self.fails("check", "--staged")), expected[:1] + expected[2:])
 
+    def test_crlf_docs_and_indexes_read_as_on_the_work_tree(self):
+        self.git("config", "core.autocrlf", "false")
+        design = self.design(revision=2, reviewed=2, created="2020-01-01", updated="2020-01-01")
+        readme = self.root / "docs/README.md"
+        self.commit()
+        for path in (design, readme):
+            path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+        self.git("commit", "-qam", "crlf")
+        design.write_bytes(design.read_bytes().replace(b"implemented: 1\r\n", b"implemented: 2\r\n"))
+        self.git("add", "-A")
+        expected = self.problems(self.ok("check"))
+        self.assertEqual(self.problems(self.ok("check", "--staged")), expected)
+        entries = self.git("ls-files", "-s")
+        self.assertEqual(self.ok("index", "--staged"), "")
+        self.assertEqual(self.git("ls-files", "-s"), entries)
+        self.git("commit", "-qm", "implemented")
+        self.assertEqual(self.problems(self.ok("check", "--rev", "HEAD")), expected)
+
     def test_the_flag_errors_end_staged_before_any_doc_is_read_and_change_no_file_or_index_entry(self):
         self.design()
         self.doc("C", "idea", body=CONCEPT.format("Extends [D001: Area](../designs/D001-area.md)."))
@@ -1551,37 +1587,14 @@ class StagedCheckTest(CanonTest):
         self.git("add", "src/base.py")
         both = "--staged and --rev check different trees; give one of them"
         fix = "--fix edits the work tree, which --staged and --rev do not check; drop one of them"
-        self.leaves_unchanged(both, "check", "--staged", "--rev", "HEAD")
-        self.leaves_unchanged(both, "check", "--fix", "--staged", "--rev", "nosuch")
-        self.leaves_unchanged(fix, "check", "--fix", "--staged")
+        self.refuses_keeping_index(both, "check", "--staged", "--rev", "HEAD")
+        self.refuses_keeping_index(both, "check", "--fix", "--staged", "--rev", "nosuch")
+        self.refuses_keeping_index(fix, "check", "--fix", "--staged")
         self.git("commit", "-qm", "conflicting")
         self.assertEqual(self.run_here("git", "merge", "-q", "side").returncode, 1)
         self.assertEqual(self.git("ls-files", "-u").count("src/base.py"), 3)
-        self.leaves_unchanged("resolve the merge conflicts first", "check", "--staged")
-        self.leaves_unchanged(fix, "check", "--fix", "--staged")
-
-    def test_staged_prints_no_fixable_tail(self):
-        self.design()
-        self.doc("C", "idea", body=CONCEPT.format("Extends [D001: Area](../designs/D001-area.md)."))
-        self.ok("index")
-        self.git("add", "-A")
-        self.assertRegex(self.fails("check"), r"; 1 fixable with --fix\n$")
-        out = self.fails("check", "--staged")
-        self.assertIn("ERROR docs/concepts/C001-idea.md: linked docs missing from `refs`: D001\n", out)
-        self.assertRegex(out, r"\ncanon check: 3 docs, 1 errors, \d+ warnings\n$")
-
-    def test_outside_git_staged_ends_check_and_changes_no_file(self):
-        top = self.outside_checkouts()
-        result = self.canon_process("check", "--staged", cwd=top)
-        self.assertEqual((result.returncode, result.stdout + result.stderr),
-                         (1, "canon: --staged and --rev read Git; run check in a Git checkout\n"))
-        self.assertEqual([p for p in top.rglob("*") if not within(p, top / ".agents")], [])
-
-    def leaves_unchanged(self, message, *args):
-        """`canon.py args` exits 1 with `canon: message` and changes neither a file nor the Git index."""
-        before = self.git("status", "--porcelain"), self.git("ls-files", "-s")
-        self.assertEqual(self.fails(*args), "canon: {}\n".format(message))
-        self.assertEqual((self.git("status", "--porcelain"), self.git("ls-files", "-s")), before)
+        self.refuses_keeping_index("resolve the merge conflicts first", "check", "--staged")
+        self.refuses_keeping_index(fix, "check", "--fix", "--staged")
 
     def design_problems(self, out):
         """The problems of `check`'s output on the designs other than D000."""
@@ -1590,8 +1603,6 @@ class StagedCheckTest(CanonTest):
 
 class NamedDocsCheckTest(CanonTest):
     """`check ID|PATH ...` checks the work tree but reports only the problems on the named docs."""
-
-    MISSING = "ERROR docs/designs/D001-area.md: missing section `## Decisions`"
 
     def test_named_docs_report_only_their_own_and_their_attachments_problems(self):
         first = self.design()
@@ -1618,7 +1629,7 @@ class NamedDocsCheckTest(CanonTest):
                         "WARN docs/README.md: index out of date"):
             self.assertIn(problem, everything)
         self.assertTrue(any(p.startswith("ERROR AGENTS.md:") and "broken link nowhere.md" in p for p in everything))
-        own = [self.MISSING, "ERROR docs/designs/D001/notes.md:3: broken link gone.md"]
+        own = [MISSING_DECISIONS, "ERROR docs/designs/D001/notes.md:3: broken link gone.md"]
         for args in (("D001",), ("D001", "docs/designs/D001-area.md")):
             with self.subTest(args):
                 self.assertEqual(self.fails("check", *args),
@@ -1649,6 +1660,33 @@ class NamedDocsCheckTest(CanonTest):
                 self.assertEqual(self.problems(self.fails("check", name)), [duplicate])
         self.assertEqual(self.fails("check", "C001"), "canon: C001 is the id of docs/concepts/C001-idea.md and "
                                                       "docs/concepts/C001-twin.md; renumber one of them first\n")
+
+    def test_a_plan_behind_its_design_or_a_cited_archived_experiment_counts_as_on_each_doc_it_involves(self):
+        design = self.design()
+        self.design("other", paths=["lib/**"])
+        self.create("lib/a.py")
+        self.doc("E", "bench", body=EXPERIMENT.format(RUN, "Fast enough."), status="concluded")
+        self.commit()
+        self.ok("archive", "E001", "concluded")
+        cite = "From [E001: Fixture](../archived/experiments/E001-bench.md)."
+        plan = self.doc("P", "work", body=PLAN.format(cite), based_on=["D001@r1"])
+        self.doc("C", "idea", body=CONCEPT.format(cite))
+        self.set(design, revision=2, reviewed=2)
+        self.commit()
+        plan.write_text(plan.read_text().replace(cite, cite + " See [D002: Fixture](../designs/D002-other.md)."))
+        behind = ("WARN docs/plans/P001-work.md: based on D001@r1 but D001 is at r2; re-check the plan and update "
+                  "`based_on`")
+        cited = ("WARN docs/archived/experiments/E001-bench.md: concluded, but linked by P001, C001; a cited concluded "
+                 "experiment stays live, so move it and its attachment directory out of archived/ and fix the links, "
+                 "or remove the links that do not rest on its result")
+        refs = "ERROR docs/plans/P001-work.md: linked docs missing from `refs`: D002"
+        for name, expected in (("D001", [behind]), ("C001", [cited]), ("E001", [cited]), ("D002", [])):
+            with self.subTest(name):
+                self.assertEqual(self.problems(self.ok("check", name)), expected)
+        self.assertEqual(self.problems(self.fails("check", "P001")), [cited, refs, behind])
+        untouched = plan.read_text()
+        self.assertEqual(self.ok("check", "--fix", "D001"), behind + "\ncanon check: 1 docs, 0 errors, 1 warnings\n")
+        self.assertEqual(plan.read_text(), untouched)
 
     def test_fix_with_a_doc_argument_fixes_only_that_doc_and_touches_no_index(self):
         self.design()
@@ -1692,7 +1730,7 @@ class NamedDocsCheckTest(CanonTest):
         design.write_text(design.read_text().replace("## Decisions", "## Choices"))
         result = self.canon("check", "D001-area.md", cwd=self.root / "docs/designs")
         self.assertEqual((result.returncode, result.stdout + result.stderr),
-                         (1, self.MISSING + "\ncanon check: 1 docs, 1 errors, 0 warnings\n"))
+                         (1, MISSING_DECISIONS + "\ncanon check: 1 docs, 1 errors, 0 warnings\n"))
 
 
 class KnownIssuesTest(CanonTest):
@@ -2596,14 +2634,14 @@ class StagedIndexTest(CanonTest):
                 readme.write_text(staged)
                 self.git("add", "docs/README.md")
                 readme.write_text(work)
-                self.leaves_unchanged(message, "index", "--staged")
+                self.refuses_keeping_index(message, "index", "--staged")
         readme.write_text(intact)
         self.git("reset", "-q")
         (self.root / "src/base.py").write_text("value = 2\n")
         self.git("commit", "-qam", "conflicting")
         self.assertEqual(self.run_here("git", "merge", "-q", "side").returncode, 1)
         self.git("add", "docs/concepts/C001-idea.md")
-        self.leaves_unchanged("resolve the merge conflicts first", "index", "--staged")
+        self.refuses_keeping_index("resolve the merge conflicts first", "index", "--staged")
 
     def test_outside_git_staged_ends_index_before_it_writes_anything(self):
         top = self.outside_checkouts()
@@ -2614,17 +2652,6 @@ class StagedIndexTest(CanonTest):
         self.assertEqual((result.returncode, result.stdout + result.stderr),
                          (1, "canon: index --staged needs a Git checkout\n"))
         self.assertEqual(readme.read_text(), "# Docs\n")
-
-    def leaves_unchanged(self, message, *args):
-        """`canon.py args` exits 1 with `canon: message` and changes neither a work-tree file nor the Git index."""
-        def state():
-            return self.git("ls-files", "-s"), {
-                path: path.read_bytes() for path in self.root.rglob("*")
-                if path.is_file() and ".git" not in path.relative_to(self.root).parts}
-
-        before = state()
-        self.assertEqual(self.fails(*args), "canon: {}\n".format(message))
-        self.assertEqual(state(), before)
 
 
 class InitTest(CanonTest):
@@ -2668,13 +2695,13 @@ class InitTest(CanonTest):
             .format(NO_INSTALL))
 
     KEPT = "kept the existing pre-commit hook; add `canon.py check --staged` to it\n"
-    VERSION_57_HOOK = ('#!/bin/sh\nc=.agents/skills/canon/scripts/canon.py\n[ -f "$c" ] && exec python3 "$c" check\n'
+    CHECK_ONLY_HOOK = ('#!/bin/sh\nc=.agents/skills/canon/scripts/canon.py\n[ -f "$c" ] && exec python3 "$c" check\n'
                        'echo "{}" >&2\nexit 1\n'.format(NO_INSTALL))
 
     def test_init_at_the_repo_root_replaces_the_hooks_earlier_versions_wrote_and_keeps_any_other(self):
         hook = self.root / ".git/hooks/pre-commit"
         self.init_module("mod")
-        for old in (self.VERSION_57_HOOK, "#!/bin/sh\nexec python3 scripts/canon.py check\n",
+        for old in (self.CHECK_ONLY_HOOK, "#!/bin/sh\nexec python3 scripts/canon.py check\n",
                     "#!/bin/sh\nexec python3 tools/canon.py check"):
             for args in ((), ("--hook",)):
                 with self.subTest(old=old, args=args):
@@ -2685,14 +2712,31 @@ class InitTest(CanonTest):
                     self.assertEqual(hook.read_text(), old)
                     self.assertIn("updated .git/hooks/pre-commit", self.ok("init", *args).splitlines())
                     self.assertEqual(hook.read_text(), self.HOOK)
-        for other in (self.VERSION_57_HOOK + "make lint\n", self.VERSION_57_HOOK.rstrip("\n"),
-                      self.VERSION_57_HOOK.replace("exit 1", "  exit 1"),
+        for other in (self.CHECK_ONLY_HOOK + "make lint\n", self.CHECK_ONLY_HOOK.rstrip("\n"),
+                      self.CHECK_ONLY_HOOK.replace("exit 1", "  exit 1"),
                       "#!/bin/sh\nexec python3 scripts/canon.py check\nmake lint\n"):
             with self.subTest(other=other):
                 hook.write_text(other)
                 self.assertNotIn("pre-commit", self.ok("init"))
                 self.assertIn(self.KEPT, self.ok("init", "--hook"))
                 self.assertEqual(hook.read_text(), other)
+
+    def test_init_makes_a_hook_it_replaces_executable_so_that_git_commit_runs_it(self):
+        hook = self.root / ".git/hooks/pre-commit"
+        self.commit()
+        self.create("docs/stray/x.md")
+        self.git("add", "docs/stray")
+        head = self.git("rev-parse", "HEAD")
+        for args in ((), ("--hook",)):
+            with self.subTest(args=args):
+                hook.write_text(self.CHECK_ONLY_HOOK)
+                hook.chmod(0o644)
+                self.assertIn("updated .git/hooks/pre-commit", self.ok("init", *args).splitlines())
+                self.assertEqual(stat.S_IMODE(hook.stat().st_mode), 0o755)
+                result = self.run_here("git", "commit", "-qm", "stray")
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("ERROR docs/stray: unknown entry", result.stderr)
+                self.assertEqual(self.git("rev-parse", "HEAD"), head)
 
     def test_init_hook_writes_a_hook_that_checks_what_the_commit_records_with_the_installed_canon_py(self):
         self.assertEqual(self.ok("init", "--hook"), "created .git/hooks/pre-commit\n")

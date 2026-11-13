@@ -30,7 +30,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "63"
+CANON_VERSION = "64"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -127,13 +127,13 @@ v=$(python3 "$c" --version) || exit 1
 [ "${{v#canon }}" -ge {staged} ] 2>/dev/null && exec python3 "$c" check --staged
 exec python3 "$c" check
 """.format(install=INSTALL_DIR, staged=STAGED_SINCE)
-VERSION_57_HOOK = b"""#!/bin/sh
+CHECK_ONLY_HOOK = b"""#!/bin/sh
 c=.agents/skills/canon/scripts/canon.py
 [ -f "$c" ] && exec python3 "$c" check
 echo "canon: no canon skill installed in this checkout; install it as the canon block of AGENTS.md says" >&2
 exit 1
 """
-OLD_HOOK_RE = re.compile(re.escape(VERSION_57_HOOK) + rb"|#!/bin/sh\nexec python3 \S+ check\n?")
+OLD_HOOK_RE = re.compile(re.escape(CHECK_ONLY_HOOK) + rb"|#!/bin/sh\nexec python3 \S+ check\n?")
 OLD_COPY_WARNING = ("the project no longer keeps a copy of canon.py; remove {0} and replace `python3 {0}` where files still name "
             "it, such as CI and each `docs/README.md`")
 SUB_AGENTS = "Module docs: [docs/README.md](docs/README.md). The repo root `AGENTS.md` defines the docs rules.\n"
@@ -706,7 +706,9 @@ class GitTree:
         return self.blob(self.entries[self.resolve(path)][1])
 
     def read_text(self, path, errors="strict"):
-        return self.read_bytes(path).decode("utf-8", errors)
+        """The blob's text with `\\r\\n` and `\\r` read as `\\n`, as Python's text mode reads the work tree and `git` reads
+        the commit compared."""
+        return self.read_bytes(path).decode("utf-8", errors).replace("\r\n", "\n").replace("\r", "\n")
 
     def realpath(self, path):
         rel = self.resolve(path)
@@ -849,6 +851,9 @@ class Doc:
         return (TYPE_ORDER.index(self.type), self.number, self.suffix)
 
 
+Problem = collections.namedtuple("Problem", "level rel line msg fix also")
+
+
 class Repo:
     def __init__(self, start=None, rev=None, tip="HEAD", staged=False):
         """The repository around `start`, read from the work tree, from the tree of commit `rev`, a full object name,
@@ -861,6 +866,7 @@ class Repo:
         self.has_head = self.is_git and git_checked(self.root, "rev-parse", "--verify", "-q", "HEAD",
                                                     ok=(0, 1)).returncode == 0
         self.rev, self.staged, self.tip, self.head = rev, staged, tip, rev or "HEAD"
+        self.reads_work_tree = not (rev or staged)
         self.compared, self.days = "HEAD" if self.has_head else None, {today()}
         if rev:
             self.tree = GitTree.of_commit(self.root, rev)
@@ -892,10 +898,10 @@ class Repo:
         if self.unreadable:
             sys.exit("canon: cannot read the history of HEAD in {}: {}".format(*self.unreadable))
 
-    def problem(self, level, rel, msg, line=None, fix=None, also=None):
-        """Record a problem on the file at `rel`; `also` is the path of the other doc a problem between two docs
+    def problem(self, level, rel, msg, line=None, fix=None, also=()):
+        """Record a problem on the file at `rel`; `also` holds the paths of the other docs a problem between docs
         involves."""
-        self.problems.append((level, rel, line, msg, fix, also))
+        self.problems.append(Problem(level, rel, line, msg, fix, also))
 
     def _scan(self):
         for root in self.roots:
@@ -953,7 +959,7 @@ class Repo:
                     first = self.by_id[doc.id].rel
                     self.problem("ERROR", rel, "duplicate id {}, also {}; run `canon.py renumber <path> --base <ref>` "
                                  "on the doc this branch added, with the branch it merged or rebased onto"
-                                 .format(doc.id, first), also=first)
+                                 .format(doc.id, first), also=(first,))
                 else:
                     self.by_id[doc.id] = doc
                 self.by_path[path] = doc
@@ -1094,10 +1100,10 @@ class Repo:
         without that commit."""
         if self.compared is None:
             return set()
+        if self.reads_work_tree:
+            return set(self.changed_files())
         if self.staged:
             return set(self.staged_changes)
-        if self.rev is None:
-            return set(self.changed_files())
         out = git_checked(self.root, "diff", "-z", "--name-only", "--no-renames", *self.diff_args).stdout
         return {f for f in out.split("\0") if f}
 
@@ -1477,7 +1483,7 @@ def check_doc(repo, doc, changed, strict=False):
                 repo.problem("WARN", rel, "concluded, but linked by {}; a cited concluded experiment stays live, so "
                                           "move it and its attachment directory out of archived/ and fix the links, or "
                                           "remove the links that do not rest on its result"
-                             .format(", ".join(d.id for d in citers)))
+                             .format(", ".join(d.id for d in citers)), also=tuple(d.rel for d in citers))
     elif answered:
         for msg in terminal_problems(doc, "concluded"):
             err(msg)
@@ -1603,7 +1609,7 @@ def check_doc(repo, doc, changed, strict=False):
                 err("`based_on` design {} does not exist".format(match.group(1)))
             elif status in info["active"] and design.revision > int(match.group(2)):
                 repo.problem("WARN", rel, "based on {} but {} is at r{}; re-check the plan and update `based_on`"
-                             .format(entry, design.id, design.revision))
+                             .format(entry, design.id, design.revision), also=(design.rel,))
     if doc.type == "R":
         findings, errors = review_findings(doc)
         for msg in errors + id_row_problems(findings, "finding"):
@@ -1751,11 +1757,12 @@ def attachment_dirs(repo, docs):
 
 def run_check(repo, base=None, named=None):
     """Record the problems `check` finds in `repo`; with `named`, the docs the command names, only those on their
-    files and on the `.md` files in their attachment directories, leaving other docs, `AGENTS.md`, guides, indexes,
-    old copies and deleted docs unchecked."""
+    files, those between docs that involve one of them, and those on the `.md` files in their attachment directories,
+    leaving `AGENTS.md`, guides, indexes, old copies and deleted docs unchecked. Every doc is checked either way, since
+    a problem recorded on one doc may involve a named one."""
     fork = merge_base(repo, base) if base else None
     changed = repo.checked_changes()
-    for doc in repo.docs if named is None else named:
+    for doc in repo.docs:
         check_doc(repo, doc, changed, strict=bool(base))
 
     owners = {}
@@ -1764,7 +1771,7 @@ def run_check(repo, base=None, named=None):
             for topic in doc.as_list("owns"):
                 if topic in owners:
                     repo.problem("ERROR", doc.rel, "topic `{}` is already owned by {}".format(topic, owners[topic].id),
-                                 also=owners[topic].rel)
+                                 also=(owners[topic].rel,))
                 owners.setdefault(topic, doc)
 
     for root, archived, name, rel in repo.attachments:
@@ -1787,8 +1794,8 @@ def run_check(repo, base=None, named=None):
     check_overview(repo)
     if named is not None:
         rels = {doc.rel for doc in named}
-        repo.problems = [p for p in repo.problems
-                         if p[1] in rels or p[5] in rels or (p[1].endswith(".md") and p[1].startswith(attached))]
+        repo.problems = [p for p in repo.problems if p.rel in rels or rels.intersection(p.also)
+                         or (p.rel.endswith(".md") and p.rel.startswith(attached))]
         return
 
     for path in broken_indexes(repo):
@@ -1799,7 +1806,7 @@ def run_check(repo, base=None, named=None):
     for path, text in expected_indexes(repo).items():
         current = repo.tree.read_text(path) if repo.tree.is_file(path) else None
         if current != text:
-            repo.problem("ERROR" if base or repo.staged or repo.rev else "WARN", posix_rel(path, repo.root), stale,
+            repo.problem("ERROR" if base or not repo.reads_work_tree else "WARN", posix_rel(path, repo.root), stale,
                          fix=("index",))
         elif current:
             check_links(repo, path, current.split("\n"), 0)
@@ -1825,24 +1832,25 @@ def run_check(repo, base=None, named=None):
 
 def apply_fixes(repo):
     done, index = [], False
-    for _level, rel, _line, _msg, fix, _also in repo.problems:
-        if not fix:
+    for problem in repo.problems:
+        if not problem.fix:
             continue
-        if fix[0] == "index":
+        if problem.fix[0] == "index":
             index = True
             continue
-        doc, key, value = fix
+        doc, key, value = problem.fix
         doc.text = set_field(doc.text, key, value)
         doc.path.write_text(doc.text, encoding="utf-8")
-        done.append("{}: {} {}".format(rel, "set" if value is not None else "deleted", key))
+        done.append("{}: {} {}".format(problem.rel, "set" if value is not None else "deleted", key))
     return done, index
 
 
 def print_problems(repo):
     errors = warnings = 0
-    for level, rel, line, msg, _fix, _also in sorted(repo.problems, key=lambda p: (p[1], p[2] or 0)):
-        print("{} {}{}: {}".format(level, rel, ":" + str(line) if line else "", msg))
-        if level == "ERROR":
+    for problem in sorted(repo.problems, key=lambda p: (p.rel, p.line or 0)):
+        print("{} {}{}: {}".format(problem.level, problem.rel, ":" + str(problem.line) if problem.line else "",
+                                   problem.msg))
+        if problem.level == "ERROR":
             errors += 1
         else:
             warnings += 1
@@ -1966,8 +1974,9 @@ def move_paths(repo, moves):
             os.rename(str(src), str(dst))
 
 
-def require_clean_merge(repo):
-    if repo.is_git and git_checked(repo.root, "ls-files", "-u").stdout.strip():
+def require_clean_merge(root, is_git=True):
+    """End the command when the Git index of the checkout at `root` has unmerged entries; outside Git it has none."""
+    if is_git and git_checked(root, "ls-files", "-u").stdout.strip():
         sys.exit("canon: resolve the merge conflicts first")
 
 
@@ -2056,8 +2065,7 @@ def check_repo(args):
         sys.exit("canon: --staged and --rev read Git; run check in a Git checkout")
     root = Path(os.path.realpath(top.strip()))
     if args.staged:
-        if git_checked(root, "ls-files", "-u").stdout:
-            sys.exit("canon: resolve the merge conflicts first")
+        require_clean_merge(root)
         return Repo(staged=True)
     commit = None if args.rev.startswith("-") else git(root, "rev-parse", "--verify", "-q", args.rev + "^{commit}")
     if commit is None:
@@ -2088,9 +2096,8 @@ def cmd_check(repo, args):
     if args.version_notice:
         repo.problem("WARN", "AGENTS.md", args.version_notice)
     errors, warnings = print_problems(repo)
-    fixable = sum(1 for p in repo.problems if p[4])
-    tail = "; {} fixable with --fix".format(fixable) if fixable and isinstance(repo.tree, WorkTree) and not args.fix \
-        else ""
+    fixable = sum(1 for p in repo.problems if p.fix)
+    tail = "; {} fixable with --fix".format(fixable) if fixable and repo.reads_work_tree and not args.fix else ""
     print("canon check: {} docs, {} errors, {} warnings{}".format(len(repo.docs if named is None else named), errors,
                                                                   warnings, tail))
     return 1 if errors else 0
@@ -2188,7 +2195,7 @@ def report_unmet_terminal(doc, status):
 
 
 def cmd_archive(repo, args):
-    require_clean_merge(repo)
+    require_clean_merge(repo.root, repo.is_git)
     require_intact_indexes(repo)
     doc = repo.get(args.id)
     info = TYPES[doc.type]
@@ -2273,7 +2280,7 @@ def cmd_status(repo, args):
 
 
 def cmd_rename(repo, args):
-    require_clean_merge(repo)
+    require_clean_merge(repo.root, repo.is_git)
     require_intact_indexes(repo)
     doc = repo.get(args.id)
     if doc.id == OVERVIEW_ID:
@@ -2344,7 +2351,7 @@ def old_copies(repo):
 
 
 def cmd_init(repo, args):
-    require_clean_merge(repo)
+    require_clean_merge(repo.root, repo.is_git)
     project = Path(os.path.realpath(args.root)) if args.root else repo.root
     if not project.is_dir() or (project != repo.root and repo.root not in project.parents):
         sys.exit("canon: --root {} is not a directory inside the repository".format(args.root))
@@ -2434,6 +2441,7 @@ def cmd_init(repo, args):
                 old = top and hook.is_file() and OLD_HOOK_RE.fullmatch(hook.read_bytes()) is not None
             if old:
                 hook.write_text(PRE_COMMIT_HOOK, encoding="utf-8")
+                os.chmod(str(hook), 0o755)
                 note("updated", hook)
             elif args.hook and os.path.lexists(str(hook)):
                 print("kept the existing pre-commit hook; add `canon.py check --staged` to it")
@@ -2504,7 +2512,7 @@ def require_slug(slug):
 
 
 def cmd_adopt(repo, args):
-    require_clean_merge(repo)
+    require_clean_merge(repo.root, repo.is_git)
     require_intact_indexes(repo)
     with id_lock(repo):
         return adopt_doc(Repo(), args)
@@ -2561,7 +2569,7 @@ def adopted_text(text, letter, doc_id, slug, title=None):
 
 
 def cmd_renumber(repo, args):
-    require_clean_merge(repo)
+    require_clean_merge(repo.root, repo.is_git)
     require_intact_indexes(repo)
     with id_lock(repo):
         return renumber_doc(Repo(), args)
@@ -2906,7 +2914,7 @@ def staged_index_repo(repo):
     ends the command before it changes any file or stages anything."""
     if not repo.is_git:
         sys.exit("canon: index --staged needs a Git checkout")
-    require_clean_merge(repo)
+    require_clean_merge(repo.root, repo.is_git)
     staged = Repo(staged=True)
     broken = broken_indexes(staged)
     if broken:
