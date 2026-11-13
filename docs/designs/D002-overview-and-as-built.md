@@ -1,15 +1,15 @@
 ---
 status: active
 created: 2026-10-22
-updated: 2026-11-12
-revision: 10
+updated: 2026-11-13
+revision: 11
 modules: [canon]
 summary: D000 overview, as-built designs of existing code, backfill before changing unspecified behavior, and audit's unchecked commits and design coverage.
 refs: [D001, D006, D007, D009, R003, D010, D004]
 owns: [project-overview, as-built-design, design-coverage, unchecked-commits]
 paths: [skills/governance/canon/as-built.md, skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/governance/canon/doc-types.md, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-review/architecture.md, tests/test_canon.py]
-reviewed: 10
-reviewers: [claude-opus-5.5, gemini-4-argon-high]
+reviewed: 11
+reviewers: [claude-opus-5.5]
 approved: 10
 implemented: 10
 ---
@@ -34,6 +34,7 @@ Every repository that follows canon has `designs/D000-project-overview.md` in th
 
 - Goals state what the project is for, who uses it and what is out of scope.
 - Spec holds four subsections, in this order:
+  - `### Glossary`: terms used across modules; a term one module uses belongs to the design that owns it. It comes first, since the other subsections use its terms ([D006§writing-rules: writing rules](D006-doc-model.md#writing-rules)).
   - `### Capabilities`: one row per capability the project offers its users or callers, at the grain of a feature list.
 
     ```markdown
@@ -52,7 +53,6 @@ Every repository that follows canon has `designs/D000-project-overview.md` in th
     ```
 
   - `### Dependencies`: the allowed dependency directions between modules.
-  - `### Glossary`: terms used across modules; a term one module uses belongs to the design that owns it.
 
   After them, `### Standards` has one row per standard that applies across modules, such as error handling, with the design that owns it: `| Standard | Design |`. It is left out while no design owns one.
 - A Design cell links every top-level design that owns the capability or standard, or that governs the module's code, or reads `none`. Rows name modules, capabilities and standards, never single docs: designs reach their sub-topics through their own links, and `docs/README.md` stays the index of every doc. Detail below the module level belongs to the module's designs.
@@ -66,12 +66,12 @@ Every repository that follows canon has `designs/D000-project-overview.md` in th
 
 - `check` errors when the repo root's `docs/` holds no non-archived D000, when another docs root holds a D000, when D000's Spec lacks one of the four subsections, and when an entry of D000's `paths` contains `*`, `?` or `[`, ends with `/`, or is a directory. It warns when a Path in the Modules table is not a directory of the project, as it warns for `paths` that match no file, unless the row's Design cell links a design and no design it links has `implemented`: the module is still planned. The Design column is found by its header in any case, each link in the cell resolves as [D006§links-and-references: links and references](D006-doc-model.md#links-and-references) resolves a target, and a target that is no design counts as no link.
   - D000 is required whether or not the repo root has an `AGENTS.md`. An archived root D000 gets its own error, which says to move it back to `docs/designs/` with a live status; the error for a D000 under another docs root, archived or not, names `renumber <path>`.
-  - The subsections are checked for presence, not order, and not while `## Spec` itself is missing.
+  - The subsections are checked for presence, not order, and not while `## Spec` itself is missing. A D000 in another order stays valid; putting its subsections in this order changes no meaning, so it takes no revision bump and no gate.
   - A Modules Path is a directory of the project when it exists on disk inside the project directory, so a file, a missing path and a path leading out through `..` warn.
 - `archive D000` is refused.
 - In a Git checkout, `new`, `adopt` and `renumber` never assign an id, or a sub-design letter, that a doc file of that type has had in the history of HEAD. The ids come from the doc paths `git log -z --format= --name-only --no-renames --full-history -m HEAD` lists: without `--full-history`, history simplification skips a merged side branch whose docs the merge discarded, and without `-m`, `git log` lists no paths for a merge, whose resolution alone may have added a doc. With a HEAD commit, a history query that fails ends the command with `canon: cannot read the history of HEAD`, since going on could reuse an id.
   - When Git finds no checkout but a directory at or above the working directory holds `.git`, as when Git is not on PATH, refuses a checkout of dubious ownership or stops at `GIT_CEILING_DIRECTORIES`, the three commands end with `canon: cannot read the history of HEAD in <dir>: <reason>` before assigning anything, on an unborn branch too. `<dir>` is the nearest such directory, resolved; `<reason>` is what `git rev-parse --show-toplevel` printed on standard error, else `git rev-parse exited <code>`, or `git is not on PATH`. Ids follow the doc files alone only with no `.git` at or above the working directory, and on an unborn branch of a checkout Git reads.
-- `init` at the repo root creates D000 from its template when there is none; it has no flag to skip it. Only a non-archived design that owns `architecture` stands for an existing one: an archived owner does not stop `init`, and a D000 already in the repo root's `docs/`, archived or not, does. The template gives each table its header row and each part a guidance comment: `## Spec`'s states the rules for rows and `paths`, and a second one at the end of `### Glossary` says when to add `### Standards`.
+- `init` at the repo root creates D000 from its template when there is none; it has no flag to skip it. Only a non-archived design that owns `architecture` stands for an existing one: an archived owner does not stop `init`, and a D000 already in the repo root's `docs/`, archived or not, does. The template gives each table its header row and each part a guidance comment: `## Spec`'s states the rules for rows and `paths`, and a second one at the end of `### Dependencies` says when to add `### Standards`.
 - `init` in a project with no D000 but a design that owns `architecture` moves that design to `D000-project-overview.md`, titled `D000: Project overview`, as `renumber` moves a doc: its frontmatter, body, sub-designs, attachments and known issues come along, and every link, `refs`, `based_on` and `moved` entry follows. It then appends the subsections D000 lacks at the end of `## Spec`, each with a guidance comment. The id rule above keeps the old number taken.
   - Only a non-archived owner moves, and it keeps its status. Like `renumber`, the move rewrites references in other docs without bumping their `updated`, so the agent runs `check --fix` after it.
   - `init` changes no file and exits when several non-archived designs own `architecture`, naming them and asking that all but one drop it, and when the one that does is a sub-design or a module's design, asking that it drop `architecture` so that `init` creates a fresh D000 for its content to fold into.
@@ -141,7 +141,7 @@ The skills apply them:
 - Setup ends once D000 and the adopted designs that describe existing code have passed their gates. `canon-init` writes no other as-built design; the first change that alters unspecified behavior records what it needs.
 - A doc that describes the whole project, such as an architecture overview, is folded into D000 and removed, as an ADR is folded into its design. A [doc by its name](#project-docs) outside every docs root, such as the README, is neither folded nor adopted, and neither is a docs root's own `README.md`, which becomes its index. Setup surveys every other file under a docs root, whatever its name, and migrates it like any existing doc.
 - `canon-init` fills D000 from the code: Goals, every capability and module with its Path and designs or `none`, the standards designs own across modules, the dependency directions and the glossary. D000 passes the L1 gate as an as-built design, like the adopted designs that describe existing code, and is shown to the user.
-- Upgrade: after `init` has moved the architecture design to D000, the agent bumps D000's revision and, as an as-built revision, rewrites Goals as D000's, folds the old sections into the four subsections, fills what is still missing and narrows `paths` to files, then passes the L1 gate. Code the old `paths` covered shows in coverage until designs cover it. When `init` created a fresh D000 instead, the agent fills it as in setup.
+- Upgrade: after `init` has moved the architecture design to D000, the agent bumps D000's revision and, as an as-built revision, rewrites Goals as D000's, folds the old sections into the four subsections, in their order, fills what is still missing and narrows `paths` to files, then passes the L1 gate. Code the old `paths` covered shows in coverage until designs cover it. When `init` created a fresh D000 instead, the agent fills it as in setup.
 
 ### Project docs
 

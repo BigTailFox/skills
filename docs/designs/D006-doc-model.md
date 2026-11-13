@@ -1,15 +1,15 @@
 ---
 status: active
 created: 2026-11-10
-updated: 2026-11-12
-revision: 10
+updated: 2026-11-13
+revision: 11
 modules: [canon]
 summary: Doc types, ids, frontmatter, sections, statuses and archiving of canon docs, the templates of new, the doc rules check enforces and the writing rules.
 refs: [D000, D001, D002, D003, D004, D005, D007, D008, R003, D010]
 owns: [doc-model, doc-writing]
 paths: [skills/governance/canon/SKILL.md, skills/governance/canon/doc-types.md, skills/governance/canon/writing.md, skills/governance/canon/workflow.md, skills/execution/canon-design/SKILL.md, skills/governance/canon/scripts/canon.py, tests/test_canon.py]
-reviewed: 10
-reviewers: [claude-opus-5.5, gemini-4-argon-high]
+reviewed: 11
+reviewers: [claude-opus-5.5]
 approved: 10
 implemented: 10
 ---
@@ -284,6 +284,7 @@ Agents and people read docs, usually after reaching them through a pointer: an `
 - Keep a diagram's source with it: Mermaid in the doc, or the generating script in the attachments beside the image it renders, with how to install its dependencies. Its labels stay text a reviewer can read, never outlines or a raster image, and it changes in the commit that changes what it shows.
 - Write `summary` lines, titles and headings as pointers that lead with the words a reader would search for.
 - Keep a topic's definition, rules and caveats under one heading.
+- Order the sections a doc type leaves free, such as a design's Spec subsections, and the content within each from the whole to the parts and the core to the details, so a reader meets the frame before what fills it. Among those sections, define each term or name before the first one that uses it; where that cannot be, or another doc defines it, link the definition at its first use.
 - Record what the repository cannot tell (reasons, unwritten conventions, gotchas), and name the command or file for facts the environment already states.
 - Cut every sentence that changes nothing a capable reader would do anyway.
 - `AGENTS.md` holds only the pointers and rules every session needs; detail goes into designs.
@@ -309,7 +310,8 @@ Agents and people read docs, usually after reaching them through a pointer: an `
 - An experiment with a written Conclusion that nothing has absorbed is `answered`, so `running` always means a run or research under way and readers see which answers wait for a design; it is named `answered`, since `finished` reads as a synonym of `concluded` (the user's decision, 2026-11-11).
 - A later run extends an answered experiment that no live design or plan links, but never one they link, which it would change under the docs that cite it; the experiment it fully replaces is archived as `superseded` (the user's decision, 2026-11-11).
 - An experiment whose question no longer matters, run or not, is archived as `dropped`, and only a concluded one as `concluded`, so an archived `concluded` still means answered and absorbed (the user's decision, 2026-11-12).
+- Canon maintains docs only in the project's documentation language and has no translation convention: translations kept beside the docs doubled every edit and still drifted, and readers can translate with their own tools, such as an editor or browser extension ([R003§r003-f27-translations: R003-F27](../reviews/R003-silk-design-phase.md#r003-f27-translations); the user's decision, 2026-11-13).
 - Sub-designs have one level: a sub-design that outgrows itself becomes a new top-level design (`doc-types.md`; reason unknown, kept as found).
-- Markdown in attachment directories gets the link checks of guides: translations and reports live there, and sessions wrote their own link checkers for them ([R003§r003-f33-links-in-attachments: R003-F33](../reviews/R003-silk-design-phase.md#r003-f33-links-in-attachments)).
+- Markdown in attachment directories gets the link checks of guides: reports and other Markdown live there, and sessions wrote their own link checkers for them ([R003§r003-f33-links-in-attachments: R003-F33](../reviews/R003-silk-design-phase.md#r003-f33-links-in-attachments)).
 - A design with no `implemented` gets no warning for `paths` that match no file, as a planned module's Path gets none ([D002§project-overview-d000: project overview](D002-overview-and-as-built.md#project-overview-d000)): in a project still being designed, the same warnings for code not yet written buried new ones at every `check` ([R003§r003-f32-permanent-warnings: R003-F32](../reviews/R003-silk-design-phase.md#r003-f32-permanent-warnings); the user's decision, 2026-11-11).
 - `status` moves non-terminal statuses forward and checks each move's condition, leaving every other field to the steps that set it: `draft`, `accepted` and `active` were hand edits sessions got wrong ([R003§r003-f36-no-status-command: R003-F36](../reviews/R003-silk-design-phase.md#r003-f36-no-status-command); the user's decision, 2026-11-11).
