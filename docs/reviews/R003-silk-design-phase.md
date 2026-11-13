@@ -1,7 +1,7 @@
 ---
 status: open
 created: 2026-11-10
-updated: 2026-11-12
+updated: 2026-11-13
 revision: 1
 modules: [canon]
 summary: Canon friction in a docs-only bilingual project: review gates per doc, parallel sessions, archived experiments, translations, check gaps, tool drift.
@@ -38,7 +38,7 @@ refs: [C001, D000, D001, D003, D005, R001, R002, D002, D006]
 | R003-F11 | minor | usability: Reviewers cannot tell whether they may run `check` or read `.canon/canon/snapshots` | fixed 0872d6d |
 | R003-F12 | minor | usability: A late, repeated completion notice makes the session handle a reviewer twice | fixed 0872d6d |
 | R003-F13 | major | usability: A session cannot pass a request to another running session; handoff files go unnoticed or are read stale | fixed 18b7dcf |
-| R003-F14 | major | functional: Sessions sharing a checkout disturb each other: `check --fix` rewrites others' docs and staging one's own index lines takes hand-built blobs | open |
+| R003-F14 | major | functional: Sessions sharing a checkout disturb each other: `check --fix` rewrites others' docs and staging one's own index lines takes hand-built blobs | moved C001 |
 | R003-F15 | major | usability: A background researcher writes only at the end, so an interrupted one loses its work | fixed 18b7dcf |
 | R003-F16 | minor | usability: Decisions grilled before any doc exists stay only in the chat | moved D009 |
 | R003-F17 | major | usability: Archiving concluded experiments hides the evidence live designs rest on | fixed D006@r8 |
@@ -58,12 +58,12 @@ refs: [C001, D000, D001, D003, D005, R001, R002, D002, D006]
 | R003-F31 | minor | architecture: `canon.py` runs from a project copy that lags the installed skills, with project helpers beside it | fixed d9f7390 |
 | R003-F32 | minor | usability: Permanent `check` warnings for planned paths and modules bury new ones | fixed ac86361 (planned paths and modules; the user declined setting apart the warnings new since HEAD) |
 | R003-F33 | minor | functional: `check` skips links and anchors in attachment Markdown | fixed ecf822f |
-| R003-F34 | minor | functional: `check` cannot validate a commit or the staged state | open |
+| R003-F34 | minor | functional: `check` cannot validate a commit or the staged state | moved C001 |
 | R003-F35 | minor | usability: `show D00X#known-issues` fails when a design has no Known issues section | fixed 8f4f34c |
 | R003-F36 | minor | usability: No command changes a non-terminal status | fixed a26f057 |
 | R003-F37 | minor | functional: `rename` leaves the H1 title, link texts and attachments named after the slug | moved D010 |
 | R003-F38 | minor | usability: The 160-character `summary` limit shows only after the summary is written | fixed d733c74 |
-| R003-F39 | minor | usability: A stale index is an error, which blocks a subagent allowed to edit only its own files | open |
+| R003-F39 | minor | usability: A stale index is an error, which blocks a subagent allowed to edit only its own files | moved C001 |
 | R003-F40 | minor | usability: The `canon` skill sends L1 revisions to `canon-design`, which the agent cannot invoke | fixed 18b7dcf |
 | R003-F41 | minor | usability: Shell and tool pitfalls (zsh, the ignored `.canon/`, `/tmp`) reach no subagent prompt | fixed 80b9688 (the `.canon/` and `/tmp` pitfalls; the user declined the zsh rules) |
 | R003-F42 | minor | usability: No rule orders concepts and designs from the whole to the parts with each term defined before use, and D000 puts its Glossary last | open |
