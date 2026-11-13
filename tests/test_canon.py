@@ -168,12 +168,25 @@ class CanonTest(unittest.TestCase):
         path.write_text(text)
 
     def doc(self, letter, slug, body=None, parent=None, **fields):
-        path = self.root / self.ok("new", letter, slug, *(["--parent", parent] if parent else [])).strip()
+        if letter == "P":
+            path = self.plan_file(slug)
+        else:
+            path = self.root / self.ok("new", letter, slug, *(["--parent", parent] if parent else [])).strip()
         text = re.sub(r"<!-- canon:.*?-->", "Fixture content.", path.read_text(), flags=re.S)
         if body is not None:
             text = "{}\n# {}: Fixture\n\n{}".format(text.split("\n# ", 1)[0], path.name.split("-", 1)[0], body)
         path.write_text(text)
         self.set(path, summary="Fixture", **{k: v for k, v in fields.items() if v is not None})
+        return path
+
+    def plan_file(self, slug):
+        """A new plan in the repo root's docs, written as `new` writes one but without the design `new` requires, so
+        that tests of plan rules need none."""
+        repo = canon.Repo(self.root)
+        root = next(r for r in repo.roots if r.rel == "")
+        path = canon.write_doc(root, "P", canon.next_id(repo, "P"), slug, slug.replace("-", " ").capitalize(),
+                               canon.default_fields("P"))
+        self.ok("index")
         return path
 
     def design(self, slug="area", **fields):
@@ -931,6 +944,18 @@ class ChangedFilesTest(CanonTest):
         self.git("commit", "-qm", "move")
         self.assertIn("\n  src/base.py\n  src/moved.py\n", self.ok("affected", "--base", "before"))
 
+    def test_affected_and_renumber_end_with_the_base_errors_of_check(self):
+        self.design()
+        self.commit()
+        unknown = "canon: unknown ref nope; fetch it first or correct the name\n"
+        self.assertEqual(self.fails("affected", "--base", "nope"), unknown)
+        self.assertEqual(self.fails("renumber", "D001", "--base", "nope"), unknown)
+        for tree in ("HEAD^{tree}", "-x"):
+            self.assertEqual(self.fails("renumber", "D001", "--base=" + tree),
+                             "canon: unknown ref {}; fetch it first or correct the name\n".format(tree))
+        orphan = self.git("commit-tree", self.git("hash-object", "-t", "tree", "/dev/null"), "-m", "unrelated")
+        self.assertEqual(self.fails("affected", "--base", orphan), "canon: no merge base with {}\n".format(orphan))
+
 
 class FrontmatterTest(CanonTest):
     def test_brackets_make_lists_only_in_list_fields(self):
@@ -1186,6 +1211,13 @@ class KnownIssuesTest(CanonTest):
         self.assertIn("canon: D001 has no section #nope", self.fails("show", "D001#nope"))
         self.assertIn("canon: D000 has no section #nope", self.fails("show", "D000#nope"))
 
+    def test_show_of_a_missing_section_lists_the_slugs_of_the_outline(self):
+        self.doc("D", "area", body="## Goals\n\nX.\n\n## Spec\n\n### Token refresh\n\nY.\n\n## Decisions\n\nZ.\n")
+        self.doc("C", "bare", body="No headings.\n")
+        self.assertEqual(self.fails("show", "D001#nope"),
+                         "canon: D001 has no section #nope; sections: goals, spec, token-refresh, decisions\n")
+        self.assertEqual(self.fails("show", "C001#nope"), "canon: C001 has no section #nope\n")
+
     def test_check_rejects_a_future_date_and_warns_on_a_section_without_issues(self):
         later = datetime.date.today() + datetime.timedelta(days=1)
         self.issues(self.design(), "| D001-K1 | minor | Not yet | R001-F1 | {} | fix |".format(later))
@@ -1438,6 +1470,27 @@ class DocRulesTest(CanonTest):
         self.assertEqual(sorted(p.name for p in (self.root / "docs/designs").iterdir()),
                          ["D000-project-overview.md", "D001-area.md"])
 
+    def test_new_makes_a_plan_only_from_an_accepted_or_active_design_and_says_what_the_other_doc_is(self):
+        self.design()
+        self.doc("D", "sketch")
+        self.doc("C", "idea")
+        self.commit()
+        self.refuses("a plan comes from an accepted or active design; pass its id with `--from`", "new", "P", "work")
+        self.refuses("--from takes an accepted or active design; D002 is draft", "new", "P", "work", "--from", "D002")
+        self.refuses("--from takes an accepted or active design; C001 is not a design", "new", "plan", "work",
+                     "--from", "C001")
+        self.assertEqual(self.ok("new", "P", "work", "--from", "D001"), "docs/plans/P001-work.md\n")
+
+    def test_a_slug_that_is_not_kebab_case_is_named_with_its_kebab_form(self):
+        self.doc("C", "idea")
+        (self.root / "notes.md").write_text("# Notes\n")
+        self.commit()
+        self.refuses("slug `Auth_Tokens` must be kebab-case, such as `auth-tokens`", "new", "D", "Auth_Tokens")
+        self.refuses("slug `__` must be kebab-case, such as `doc`", "new", "C", "__")
+        self.refuses("slug `New Idea` must be kebab-case, such as `new-idea`", "rename", "C001", "New Idea")
+        self.refuses("slug `Bad.Slug` must be kebab-case, such as `bad-slug`", "adopt", "notes.md", "D", "--slug",
+                     "Bad.Slug")
+
     def test_new_with_parent_needs_no_agents_md_above_the_working_directory(self):
         self.init_module("mod")
         self.ok("new", "D", "area", "--root", "mod")
@@ -1535,15 +1588,58 @@ class DocRulesTest(CanonTest):
         self.create("docs/archived/guides/howto.md")
         out = self.fails("check")
         self.assertIn("ERROR docs/archived/guides: unknown entry; allowed: README.md, concepts/, designs/, plans/, "
-                      "reviews/, experiments/, investigations/", out)
+                      "reviews/, experiments/, investigations/; move it out of archived/", out)
 
-    def test_base_without_shared_history_ends_with_no_merge_base(self):
-        self.assertIn("canon: no merge base with main", self.fails("check", "--base", "main"))
+    def test_an_unknown_entry_ends_with_the_step_that_fits_it(self):
+        self.create("docs/notes.md", "docs/adr/old/0001-x.md", "docs/logo.png", "docs/data/raw.csv",
+                    "docs/D007-auth.md", "docs/E004/raw.txt", "docs/D0012-padded.md", "docs/archived/D003-old.md",
+                    "docs/archived/notes.md")
+        live = ("unknown entry; allowed: README.md, archived/, guides/, assets/, concepts/, designs/, plans/, reviews/, "
+                "experiments/, investigations/; ")
+        archived = "unknown entry; allowed: README.md, concepts/, designs/, plans/, reviews/, experiments/, investigations/; "
+        problems = self.problems(self.fails("check"))
+        for line in ["ERROR docs/D0012-padded.md: " + live + "adopt it with `canon.py adopt docs/D0012-padded.md TYPE` "
+                     "or move it into guides/",
+                     "ERROR docs/D007-auth.md: " + live + "move it into designs/",
+                     "ERROR docs/E004: " + live + "move it into experiments/",
+                     "ERROR docs/adr: " + live + "adopt its .md files with `canon.py adopt FILE TYPE` or move it into "
+                     "guides/",
+                     "ERROR docs/archived/D003-old.md: " + archived + "move it into archived/designs/",
+                     "ERROR docs/archived/notes.md: " + archived + "move it out of archived/",
+                     "ERROR docs/data: " + live + "move it into guides/ or assets/",
+                     "ERROR docs/logo.png: " + live + "move it into guides/ or assets/",
+                     "ERROR docs/notes.md: " + live + "adopt it with `canon.py adopt docs/notes.md TYPE` or move it "
+                     "into guides/"]:
+            self.assertIn(line, problems)
+
+    def test_base_errors_say_whether_the_ref_is_unknown_or_shares_no_history(self):
+        self.assertEqual(self.fails("check", "--base", "main"), "canon: no merge base with main\n")
         self.commit()
         tree = self.git("hash-object", "-t", "tree", "/dev/null")
         orphan = self.git("commit-tree", tree, "-m", "unrelated")
-        self.assertIn("canon: no merge base with " + orphan, self.fails("check", "--base", orphan))
-        self.assertIn("canon: cannot diff against nope...HEAD", self.fails("check", "--base", "nope"))
+        self.assertEqual(self.fails("check", "--base", orphan), "canon: no merge base with {}\n".format(orphan))
+        for ref in ("nope", "-x"):
+            self.assertEqual(self.fails("check", "--base=" + ref),
+                             "canon: unknown ref {}; fetch it first or correct the name\n".format(ref))
+
+    def test_base_in_a_shallow_clone_without_the_merge_base_says_to_fetch_the_full_history(self):
+        self.commit()
+        self.git("checkout", "-qb", "feature")
+        self.edit_commit("src/base.py")
+        self.git("checkout", "-q", "main")
+        self.create("src/main.py")
+        self.edit_commit("src/main.py")
+        clone = self.tmpdir()
+        for args, cwd in [(("clone", "-q", "--depth", "1", "--branch", "feature", self.root.as_uri(), str(clone)),
+                           self.root),
+                          (("fetch", "-q", "--depth", "1", "origin", "main:refs/remotes/origin/main"), clone)]:
+            subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True)
+        result = self.canon("check", "--base", "origin/main", cwd=clone)
+        self.assertEqual((result.returncode, result.stderr),
+                         (1, "canon: no merge base with origin/main in this shallow clone; fetch the full history "
+                             "with `git fetch --unshallow`\n"))
+        subprocess.run(["git", "fetch", "-q", "--unshallow"], cwd=str(clone), check=True, capture_output=True)
+        self.assertNotIn("no merge base", self.canon("check", "--base", "origin/main", cwd=clone).stderr)
 
 
 class StatusTest(CanonTest):
@@ -2273,10 +2369,12 @@ class AdoptTest(CanonTest):
         (self.root / "nomod").mkdir()
         self.doc("C", "idea")
         self.commit()
-        self.refuses("missing.md is not a markdown file", "adopt", "missing.md", "D")
+        self.refuses("missing.md does not exist", "adopt", "missing.md", "D")
+        self.refuses("nomod is not a markdown file", "adopt", "nomod", "D")
         self.refuses("notes.txt is not a markdown file", "adopt", "notes.txt", "D")
         self.refuses("docs/concepts/C001-idea.md is already a canon doc", "adopt", "docs/concepts/C001-idea.md", "D")
-        self.refuses("slug must be kebab-case", "adopt", "notes.md", "D", "--slug", "Bad_Slug")
+        self.refuses("slug `Bad_Slug` must be kebab-case, such as `bad-slug`", "adopt", "notes.md", "D", "--slug",
+                     "Bad_Slug")
         self.refuses("unknown type x; use one of C D P R E I", "adopt", "notes.md", "x")
         self.refuses("no AGENTS.md at {}; set the project up with `canon.py init` first".format(self.root / "nomod"),
                      "adopt", "notes.md", "D", "--root", "nomod")
@@ -2525,6 +2623,19 @@ class OverviewMoveTest(CanonTest):
         self.assertNotIn("--base", out)
 
 
+class FindTest(CanonTest):
+    def test_find_without_a_match_counts_the_archived_docs_that_would_match(self):
+        for slug in ("alpha-note", "beta-note", "gamma"):
+            self.doc("C", slug)
+        for doc_id in ("C001", "C002"):
+            self.ok("archive", doc_id, "dropped")
+        self.assertEqual(self.ok("find", "note"), "no match; 2 archived docs match with `--archived`\n")
+        self.assertEqual(self.ok("find", "alpha"), "no match; 1 archived doc matches with `--archived`\n")
+        self.assertEqual(self.ok("find", "zeta"), "no match\n")
+        self.assertEqual(self.ok("find", "zeta", "--archived"), "no match\n")
+        self.assertEqual(self.ok("find", "gamma"), "C003 draft docs/concepts/C003-gamma.md - Fixture\n")
+
+
 class WhichTest(CanonTest):
     def test_a_module_design_governs_only_the_files_of_its_module(self):
         self.init_module("mod")
@@ -2534,6 +2645,24 @@ class WhichTest(CanonTest):
         lines = self.ok("which", "mod/x.py", "src/base.py", "mod/README.md").splitlines()
         self.assertRegex(lines[0], r"^mod/x\.py: D001 mod/docs/designs/D001-part\.md - Fixture")
         self.assertEqual(lines[1:], ["src/base.py: no design", "mod/README.md: doc"])
+
+    def test_which_marks_a_file_missing_when_neither_the_disk_head_nor_the_git_index_has_it(self):
+        self.design()
+        self.create("src/sub/x.py", "notes1.txt")
+        self.commit()
+        (self.root / "src/staged.py").write_text("x\n")
+        self.git("add", "src/staged.py")
+        (self.root / "src/base.py").unlink()
+        self.git("rm", "-q", "src/sub/x.py")
+        (self.root / "src/staged.py").unlink()
+        line = " D001 docs/designs/D001-area.md - Fixture"
+        self.assertEqual(self.ok("which", "src/base.py", "src/sub", "src/staged.py", "src/gone.py", "docs/gone.md",
+                                 "notes[1].txt").splitlines(),
+                         ["src/base.py:" + line, "src/sub:" + line, "src/staged.py:" + line,
+                          "src/gone.py (missing):" + line, "docs/gone.md (missing): doc",
+                          "notes[1].txt (missing): no design"])
+        self.assertEqual(self.ok("which", "src/sub/x.py", cwd=self.root / "src"),
+                         "src/src/sub/x.py (missing):" + line + "\n")
 
 
 class HelpTest(CanonTest):
@@ -2556,7 +2685,9 @@ class HelpTest(CanonTest):
             self.assertIn("{}: {}".format(kinds, ", ".join(outcomes)), end)
         self.assertIn("--input FILE|- a gate's, follow-up's or code review's dispositions", end)
         self.assertIn("`skill` for an installed skill file", self.help("which"))
-        self.assertIn("`no design` for other files", self.help("which"))
+        self.assertIn("`no design` for other files; `(missing)` after a file neither on disk nor in Git",
+                      self.help("which"))
+        self.assertIn("--from DESIGN design a plan implements, required for plans", self.help("new"))
         self.assertIn("only when `check` asks for it", self.help("renumber"))
         self.assertIn("an open doc other than a concept, active design or concluded experiment is idle",
                       self.help("audit"))
@@ -4498,6 +4629,8 @@ class InstallLocationTest(CanonTest):
         self.assertIn("created AGENTS.md", self.ok("init", cwd=top))
         self.assertTrue((top / INSTALL).is_symlink())
         (top / "sub").mkdir()
+        self.assertEqual(self.ok("which", "x.py", cwd=top / "sub", script=top / INSTALL), "x.py (missing): no design\n")
+        (top / "sub/x.py").write_text("x = 1\n")
         self.assertEqual(self.ok("which", "x.py", cwd=top / "sub", script=top / INSTALL), "x.py: no design\n")
         sibling = self.outside_checkouts()
         self.refused(top / INSTALL, "which", "x.py", cwd=sibling)

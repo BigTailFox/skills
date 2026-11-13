@@ -11,7 +11,7 @@ paths: [skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.
 reviewed: 6
 reviewers: [claude-opus-5.5]
 approved: 2
-implemented: 5
+implemented: 6
 ---
 
 # D010: Doc queries and renames

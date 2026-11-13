@@ -11,7 +11,7 @@ paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py, skills/go
 reviewed: 6
 reviewers: [claude-opus-5.5]
 approved: 5
-implemented: 5
+implemented: 6
 ---
 
 # D004: Project setup

@@ -30,7 +30,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "56"
+CANON_VERSION = "57"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -279,6 +279,11 @@ def today():
 
 def posix_rel(path, start):
     return os.path.relpath(str(path), str(start)).replace(os.sep, "/")
+
+
+def well_formed_id(match):
+    """Whether a FILE_RE or FULL_ID_RE match pads its number to three digits and gives only a design a suffix."""
+    return str(int(match.group(2))).zfill(3) == match.group(2) and (not match.group(3) or match.group(1) == "D")
 
 
 def path_id(rel):
@@ -723,7 +728,8 @@ class Repo:
                         where = root.docs_rel + ("/archived/" if archived else "/") + parts[0]
                         self.problem("ERROR", where, "unknown entry; allowed: README.md, "
                                      + ("" if archived else "archived/, guides/, assets/, ")
-                                     + ", ".join(i["dir"] + "/" for i in TYPES.values()))
+                                     + ", ".join(i["dir"] + "/" for i in TYPES.values()) + "; "
+                                     + self.unknown_entry_step(where, len(parts) > 1, archived))
                     continue
                 id_match = FULL_ID_RE.match(parts[1]) if len(parts) >= 3 else None
                 if id_match and id_match.group(1) == letter:
@@ -732,8 +738,7 @@ class Repo:
                         self.scope_md.append(path)
                     continue
                 match = FILE_RE.match(parts[-1]) if len(parts) == 2 else None
-                if not match or match.group(1) != letter or (match.group(3) and letter != "D") \
-                        or str(int(match.group(2))).zfill(3) != match.group(2):
+                if not match or match.group(1) != letter or not well_formed_id(match):
                     self.problem("ERROR", rel, "invalid doc path; expected {}/{}NNN-kebab-slug.md{}".format(
                         TYPES[letter]["dir"], letter, " (D may add one A-Z suffix)" if letter == "D" else ""))
                     continue
@@ -747,6 +752,19 @@ class Repo:
                     self.by_id[doc.id] = doc
                 self.by_path[path] = doc
         self.docs.sort(key=Doc.sort_key)
+
+    def unknown_entry_step(self, where, is_dir, archived):
+        """The next step for an unknown entry of a docs root, the file or directory at repo-relative `where`."""
+        match = (FULL_ID_RE if is_dir else FILE_RE).match(where.rsplit("/", 1)[-1])
+        if match and well_formed_id(match):
+            return "move it into {}{}/".format("archived/" if archived else "", TYPES[match.group(1)]["dir"])
+        if archived:
+            return "move it out of archived/"
+        if not is_dir and where.endswith(".md"):
+            return "adopt it with `canon.py adopt {} TYPE` or move it into guides/".format(where)
+        if is_dir and any(f.startswith(where + "/") and f.endswith(".md") for f in self.files):
+            return "adopt its .md files with `canon.py adopt FILE TYPE` or move it into guides/"
+        return "move it into guides/ or assets/"
 
     def get(self, doc_id):
         docs = [d for d in self.docs if d.id == doc_id]
@@ -809,7 +827,7 @@ class Repo:
         """Paths of the files in a commit's tree."""
         listing = git(self.root, "ls-tree", "-r", "-z", "--name-only", ref)
         if listing is None:
-            sys.exit("canon: unknown ref " + ref)
+            sys.exit(unknown_ref(ref))
         return {rel for rel in listing.split("\0") if rel}
 
     def tree_ids(self, ref):
@@ -845,9 +863,14 @@ class Repo:
             return []
         deleted = []
         for rng in ["HEAD"] + ([base + "...HEAD"] if base else []):
-            out = git(self.root, "diff", "-z", "-M", "--name-status", "--diff-filter=D", rng, "--", DOCS_PATHSPEC)
-            if out is None:
-                sys.exit("canon: cannot diff against " + rng)
+            args = ("diff", "-z", "-M", "--name-status", "--diff-filter=D", rng, "--", DOCS_PATHSPEC)
+            if rng == "HEAD":
+                out = git_checked(self.root, *args).stdout
+            else:
+                result = git_run(self.root, *args)
+                if result is None or result.returncode != 0:
+                    sys.exit(diff_failure(base, result, "diff"))
+                out = result.stdout
             fields = out.split("\0")
             paths = sorted(path for status, path in zip(fields[::2], fields[1::2]) if status.startswith("D"))
             if paths:
@@ -865,9 +888,11 @@ class Repo:
         outs = [git_checked(self.root, "diff", "-z", "--name-only", "--no-renames", "HEAD").stdout,
                 git_checked(self.root, "ls-files", "-z", "-o", "--exclude-standard").stdout]
         if base:
-            outs.append(git(self.root, "diff", "-z", "--name-only", "--no-renames", base + "...HEAD"))
-            if outs[-1] is None:
-                sys.exit("canon: cannot diff against {}".format(base))
+            merge_base(self, base)
+            result = git_run(self.root, "diff", "-z", "--name-only", "--no-renames", base + "...HEAD")
+            if result is None or result.returncode != 0:
+                sys.exit(diff_failure(base, result, "diff"))
+            outs.append(result.stdout)
         return sorted({f for out in outs for f in (out or "").split("\0") if f})
 
     def is_doc(self, rel):
@@ -1435,16 +1460,38 @@ def linked_designs(repo, doc, text):
     return found
 
 
+def unknown_ref(ref):
+    return "canon: unknown ref {}; fetch it first or correct the name".format(ref)
+
+
+def require_commit(repo, ref):
+    """End the command when `ref`, a `--base` value, names no commit."""
+    if ref.startswith("-") or git(repo.root, "rev-parse", "--verify", "-q", ref + "^{commit}") is None:
+        sys.exit(unknown_ref(ref))
+
+
+def diff_failure(base, result, subcommand):
+    return "canon: cannot diff against {}...HEAD: {}".format(base, git_failure(result, subcommand))
+
+
+def merge_base(repo, base):
+    """The merge base of HEAD and `base`; else the end of the command with the `--base` error that applies."""
+    if not repo.has_head:
+        sys.exit("canon: no merge base with " + base)
+    require_commit(repo, base)
+    result = git_run(repo.root, "merge-base", "HEAD", base)
+    if result is not None and result.returncode == 0:
+        return result.stdout.strip()
+    if result is not None and result.returncode == 1:
+        if (git(repo.root, "rev-parse", "--is-shallow-repository") or "").strip() == "true":
+            sys.exit("canon: no merge base with {} in this shallow clone; fetch the full history with "
+                     "`git fetch --unshallow`".format(base))
+        sys.exit("canon: no merge base with " + base)
+    sys.exit(diff_failure(base, result, "merge-base"))
+
+
 def run_check(repo, base=None):
-    fork = None
-    if base:
-        result = git_run(repo.root, "merge-base", "HEAD", base)
-        if result is not None and result.returncode == 0:
-            fork = result.stdout.strip()
-        elif not repo.has_head or (result is not None and result.returncode == 1):
-            sys.exit("canon: no merge base with " + base)
-        else:
-            sys.exit("canon: cannot diff against {}...HEAD".format(base))
+    fork = merge_base(repo, base) if base else None
     changed = set(repo.changed_files()) if repo.has_head else set()
     for doc in repo.docs:
         check_doc(repo, doc, changed, strict=bool(base))
@@ -1785,10 +1832,11 @@ def cmd_new(repo, args):
 
 def new_doc(repo, args):
     letter = parse_type(args.type)
-    if not SLUG_RE.match(args.slug):
-        sys.exit("canon: slug must be kebab-case")
+    require_slug(args.slug)
     if args.design and letter != "P":
         sys.exit("canon: --from only applies to plans")
+    if letter == "P" and not args.design:
+        sys.exit("canon: a plan comes from an accepted or active design; pass its id with `--from`")
     if args.parent:
         if args.root:
             sys.exit("canon: --parent puts the sub-design beside its parent; drop --root")
@@ -1808,8 +1856,10 @@ def new_doc(repo, args):
     implements = ""
     if args.design:
         design = repo.get(args.design)
-        if design.type != "D" or design.status not in ("accepted", "active"):
-            sys.exit("canon: --from takes an accepted or active design")
+        if design.type != "D":
+            sys.exit("canon: --from takes an accepted or active design; {} is not a design".format(design.id))
+        if design.status not in ("accepted", "active"):
+            sys.exit("canon: --from takes an accepted or active design; {} is {}".format(design.id, design.status))
         fields.update(modules=design.as_list("modules"), refs=[design.id],
                       based_on=["{}@r{}".format(design.id, design.revision)])
         plan_dir = root.docs / TYPES["P"]["dir"]
@@ -1919,8 +1969,7 @@ def cmd_rename(repo, args):
     doc = repo.get(args.id)
     if doc.id == OVERVIEW_ID:
         sys.exit("canon: D000 keeps its file name, which the AGENTS.md block links")
-    if not SLUG_RE.match(args.slug):
-        sys.exit("canon: slug must be kebab-case")
+    require_slug(args.slug)
     title = None if args.title is None else args.title.strip()
     if title is not None and (not title or re.search(r"[\r\n\[\]]", title)):
         sys.exit("canon: title must be one line of text without [ or ]")
@@ -2139,6 +2188,11 @@ def slugify(text):
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "doc"
 
 
+def require_slug(slug):
+    if not SLUG_RE.match(slug):
+        sys.exit("canon: slug `{}` must be kebab-case, such as `{}`".format(slug, slugify(slug)))
+
+
 def cmd_adopt(repo, args):
     require_clean_merge(repo)
     require_intact_indexes(repo)
@@ -2149,6 +2203,8 @@ def cmd_adopt(repo, args):
 def adopt_doc(repo, args):
     letter = parse_type(args.type)
     src = Path(os.path.realpath(args.file))
+    if not os.path.lexists(args.file):
+        sys.exit("canon: {} does not exist".format(args.file))
     if not src.is_file() or src.suffix != ".md":
         sys.exit("canon: {} is not a markdown file".format(args.file))
     if src in repo.by_path:
@@ -2158,8 +2214,7 @@ def adopt_doc(repo, args):
     else:
         root = find_root(repo, str(project_dir(repo, src.parent)))
     slug = args.slug or slugify(src.stem)
-    if not SLUG_RE.match(slug):
-        sys.exit("canon: slug must be kebab-case")
+    require_slug(slug)
     doc_id = next_id(repo, letter)
     dest = root.docs / TYPES[letter]["dir"] / "{}-{}.md".format(doc_id, slug)
     old = src.read_text(encoding="utf-8")
@@ -2217,6 +2272,8 @@ def renumber_doc(repo, args):
     if doc.id == OVERVIEW_ID and not doc.root.rel:
         sys.exit("canon: D000 is the project overview every project keeps; renumber only a D000 in a module's docs")
     repo.require_readable()
+    if args.base:
+        require_commit(repo, args.base)
     on_base = repo.tree_files(args.base) if args.base else None
     new_id = renumbered_id(repo, doc, args.new, on_base)
     id_map, _moves, notes = move_doc(repo, doc, new_id, args.base, on_base, offer_base=True)
@@ -2557,7 +2614,9 @@ def cmd_show(repo, args):
         if doc.type == "D" and anchor == "known-issues":
             print("{} has no known issues".format(doc.id))
             return 0
-        sys.exit("canon: {} has no section #{}".format(doc.id, anchor))
+        slugs = [h.slug for h in doc.headings if h.level >= 2]
+        sys.exit("canon: {} has no section #{}{}".format(doc.id, anchor,
+                                                          "; sections: " + ", ".join(slugs) if slugs else ""))
     print(doc.rel)
     for line in doc.lines[1:max(doc.fm_end, 1)]:
         print(line)
@@ -2584,23 +2643,50 @@ def doc_line(doc):
     return "{} {} {} - {}{}".format(doc.id, doc.status, doc.rel, doc.get("summary", ""), design_notes(doc))
 
 
+def find_match(doc, words):
+    """Whether `doc` matches the lowercased `words`, and its matching headings unless its metadata holds them all."""
+    meta = " ".join([doc.id, doc.title, str(doc.get("summary", ""))] + doc.as_list("owns")
+                    + doc.as_list("modules")).lower()
+    if all(w in meta for w in words):
+        return True, []
+    hits = [h for h in doc.headings if h.level >= 2 and all(w in meta + " " + h.text.lower() for w in words)]
+    return bool(hits), hits
+
+
 def cmd_find(repo, args):
     words = [w.lower() for w in args.words]
     found = 0
     for doc in repo.docs:
         if doc.archived and not args.archived:
             continue
-        meta = " ".join([doc.id, doc.title, str(doc.get("summary", ""))] + doc.as_list("owns")
-                        + doc.as_list("modules")).lower()
-        hits = [h for h in doc.headings if h.level >= 2 and all(w in meta + " " + h.text.lower() for w in words)]
-        if all(w in meta for w in words) or hits:
+        matched, hits = find_match(doc, words)
+        if matched:
             found += 1
             print(doc_line(doc))
-            for h in hits if not all(w in meta for w in words) else []:
+            for h in hits:
                 print("  {}#{} {}".format(doc.id, h.slug, h.text))
-    if not found:
+    if found:
+        return 0
+    archived = 0 if args.archived else sum(1 for d in repo.docs if d.archived and find_match(d, words)[0])
+    if archived == 1:
+        print("no match; 1 archived doc matches with `--archived`")
+    elif archived:
+        print("no match; {} archived docs match with `--archived`".format(archived))
+    else:
         print("no match")
     return 0
+
+
+def is_missing(repo, path, rel):
+    """Whether nothing exists at `path`, repo-relative `rel`, and neither HEAD's tree nor the Git index holds it or a
+    file below it."""
+    if path.exists():
+        return False
+    if not repo.is_git:
+        return True
+    listings = [["ls-files", "-z", "--cached"]] + ([["ls-tree", "-r", "-z", "--name-only", "HEAD"]]
+                                                  if repo.has_head else [])
+    return not any(git(repo.root, "--literal-pathspecs", *listing, "--", rel) for listing in listings)
 
 
 def cmd_which(repo, args):
@@ -2608,11 +2694,12 @@ def cmd_which(repo, args):
         path = Path(os.path.realpath(name))
         hits = repo.designs_for(path)
         rel = posix_rel(path, repo.root)
+        label = rel + " (missing)" if is_missing(repo, path, rel) else rel
         if not hits:
             kind = "skill" if repo.is_installed_skill(rel) else "doc" if repo.is_doc(rel) else "no design"
-            print("{}: {}".format(rel, kind))
+            print("{}: {}".format(label, kind))
         for doc in hits:
-            print("{}: {} {} - {}{}".format(rel, doc.id, doc.rel, doc.get("summary", ""), design_notes(doc)))
+            print("{}: {} {} - {}{}".format(label, doc.id, doc.rel, doc.get("summary", ""), design_notes(doc)))
     return 0
 
 
@@ -3881,7 +3968,7 @@ def main(argv=None):
     p.add_argument("--title", help="title (default: the slug with spaces, capitalized)")
     p.add_argument("--root", help="project directory (with AGENTS.md); default: nearest to cwd")
     p.add_argument("--parent", help="top-level design to split, creates D00XA, D00XB, ...")
-    p.add_argument("--from", dest="design", help="design a plan implements; fills based_on")
+    p.add_argument("--from", dest="design", help="design a plan implements, required for plans; fills based_on")
     p.set_defaults(func=cmd_new)
 
     p = command(sub, "archive", help="set a terminal status, move to archived/, rewrite links")
@@ -3940,7 +4027,7 @@ def main(argv=None):
 
     p = command(sub, "which", help="list the designs whose `paths` govern the given files; `skill` for an installed "
                                    "skill file and `doc` for a project doc that no `paths` entry names exactly, "
-                                   "`no design` for other files")
+                                   "`no design` for other files; `(missing)` after a file neither on disk nor in Git")
     p.add_argument("files", nargs="+")
     p.set_defaults(func=cmd_which)
 
