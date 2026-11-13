@@ -2,13 +2,13 @@
 status: active
 created: 2026-11-10
 updated: 2026-11-13
-revision: 15
+revision: 16
 modules: [canon]
 summary: Doc types, ids, frontmatter, sections, statuses and archiving of canon docs, the templates of new, the doc rules check enforces and the writing rules.
 refs: [D000, D001, D002, D003, D004, D005, D007, D008, R003, D010]
 owns: [doc-model, doc-writing]
 paths: [skills/governance/canon/SKILL.md, skills/governance/canon/doc-types.md, skills/governance/canon/writing.md, skills/governance/canon/workflow.md, skills/execution/canon-design/SKILL.md, skills/governance/canon/scripts/canon.py, tests/test_canon.py]
-reviewed: 15
+reviewed: 16
 reviewers: [claude-opus-5.5]
 approved: 10
 implemented: 15
@@ -27,7 +27,7 @@ Out of scope: the generated index ([D005: Docs index](D005-docs-index.md)); D000
 
 ## Spec
 
-The agent-facing text of this spec is the `canon` skill: `SKILL.md` (Layout, Doc types, Frontmatter, Rules), `doc-types.md`, `writing.md` and the experiments of `workflow.md`'s docs step 5 in `skills/governance/canon/`, and `canon-design`'s Gate step 4, which sets a concept the design absorbed to `adopted` and an experiment the design links to `concluded` ([Doc types](#doc-types)).
+The agent-facing text of this spec is the `canon` skill: `SKILL.md` (Layout, Doc types, Frontmatter, Rules, and the Tool table's rows for `check`, `new`, `status` and `archive`), `doc-types.md`, `writing.md` and the experiments of `workflow.md`'s docs step 5 in `skills/governance/canon/`, and `canon-design`'s Gate step 4, which sets a concept the design absorbed to `adopted` and an experiment the design links to `concluded` ([Doc types](#doc-types)).
 
 ### Layout
 
@@ -53,7 +53,10 @@ The agent-facing text of this spec is the `canon` skill: `SKILL.md` (Layout, Doc
 
 `check` errors on entries that do not fit:
 
-- an entry directly in `docs/` or `docs/archived/` other than those above, `guides/` and `assets/` being allowed only outside `archived/`, once per entry: `ERROR <entry path>: unknown entry; allowed: README.md, archived/, guides/, assets/, concepts/, designs/, plans/, reviews/, experiments/, investigations/`, the list inside `archived/` being `README.md` and the six type directories;
+- an entry directly in `docs/` or `docs/archived/` other than those above, `guides/` and `assets/` being allowed only outside `archived/`, once per entry: `ERROR <entry path>: unknown entry; allowed: README.md, archived/, guides/, assets/, concepts/, designs/, plans/, reviews/, experiments/, investigations/`, the list inside `archived/` being `README.md` and the six type directories. The message ends with the next step, `TYPE` and `FILE` printed as they stand:
+  - for a file named `<id>-<slug>.md` or a directory named `<id>` ([Ids and file names](#ids-and-file-names)): `; move it into <type directory>/`, with the directory of the id's type, prefixed `archived/` inside `archived/`;
+  - for any other entry inside `archived/`: `; move it out of archived/`;
+  - outside `archived/`, for a file ending in `.md`: ``; adopt it with `canon.py adopt <entry path> TYPE` or move it into guides/``; for a directory holding such a file at any depth: ``; adopt its .md files with `canon.py adopt FILE TYPE` or move it into guides/``; for any other entry: `; move it into guides/ or assets/`;
 - a file in a type directory that is neither a doc file of that type ([Ids and file names](#ids-and-file-names)) nor inside a directory named like an id of that type: `ERROR <path>: invalid doc path; expected designs/DNNN-kebab-slug.md (D may add one A-Z suffix)`, naming the type's directory and letter, the suffix note for designs only;
 - a file in an attachment directory whose id no doc has in the same docs root and the same live or archived part: `ERROR <path>: attachment directory <id> has no matching doc beside it`, once per file.
 
@@ -61,6 +64,7 @@ The agent-facing text of this spec is the `canon` skill: `SKILL.md` (Layout, Doc
 
 - An id is a type letter (`C`, `D`, `P`, `R`, `E`, `I`), a number of at least 3 digits, zero-padded to 3 and with no other leading zero (`D012`, `D1000`, never `D0012`), and for a sub-design one letter `A` to `Z` (`D012A`).
 - A doc's file is `<id>-<slug>.md` in its type's directory, the slug kebab-case (`[a-z0-9]+(-[a-z0-9]+)*`). Its title is its only H1, `# <id>: <title>`.
+- The kebab form of a text is the text lowercased, each run of characters other than `a-z` and `0-9` replaced by one `-`, trimmed of `-`, and `doc` when nothing is left.
 - Ids are unique across the repository, over every docs root and archived docs included. The id is a doc's identity: docs are created with `new`, retired with `archive`, and given a new slug with `rename`; a doc is never deleted and an id never reused.
 - A new doc's number is one above the highest of its type among the docs of every docs root, archived docs and sub-designs included, and the ids history keeps taken ([D002§project-overview-d000: D000](D002-overview-and-as-built.md#project-overview-d000)). A sub-design gets the first letter, from `A`, not taken the same way.
 - Sub-designs have one level. `check` errors with `sub-design needs parent D012` when no doc, archived included, has the parent's id.
@@ -90,7 +94,7 @@ A doc may add other sections. `check` errors with ``missing section `## <name>` 
   - Goals: what the design must achieve, measurable where possible. Spec: the authoritative, precise specification of every topic in `owns`, interfaces given as code (signatures, schemas, CLI usage, config keys); user-visible behavior is specified here. Budgets, only when there are quantitative targets: each target with how it is measured; a target whose number needs a first measurement states what is measured and how, and takes its number from that measurement. Decisions: one line per key decision with its reason. Known issues: [below](#known-issues-findings-and-slices).
   - Status: `draft` until the review gate makes it `accepted` ([D007§gate-status: gate status](D007-change-tiers.md#gate-status)); `active` with `implemented` once an implementation has landed, or a revision that needs no code change has passed as that section states, and still `active` while a revision's spec leads the code. Archived as `superseded`, with the successor in `refs`, or `retired` when the feature is removed. An as-built revision's status: [D002§as-built-revisions: as-built](D002-overview-and-as-built.md#as-built-revisions).
   - Split: a design that outgrows one doc gets sub-designs with `new D <slug> --parent D012`; the sub-topic's spec, `owns` and `paths` move into the sub-design, and the parent keeps the overview and links its children. A sub-design that outgrows itself becomes a new top-level design. Whenever a topic moves to another design, by a split or otherwise, these move together: its spec, its `owns` entries, the `paths` entries no topic left behind governs, and its known issues, renumbered to the new design's ids with Source and Since kept and every citation of the old ids updated. Each restatement left behind, in the old design or elsewhere, becomes a link.
-- **Plans**: the implementation plan and log of one change, created only from an accepted or active design, with `new P <slug> --from D012`; `new` does not enforce this and creates a plan without `--from` too.
+- **Plans**: the implementation plan and log of one change, created only from an accepted or active design, with `new P <slug> --from D012`; `new` refuses a plan without `--from` ([Templates and `new`](#templates-and-new)). An existing plan that `adopt` turns into a doc ([D004§adopt: adopt](D004-project-setup.md#adopt)) gets its `based_on`, `refs` and link to its design by hand.
   - Current state, at the top: the current slice, the next action and paused slices with their reasons, updated at the end of every slice; a new session resumes from it.
   - Slices: ordered `### S1: <name>` subsections. Each starts with a `Status:` line, then a `Risk:` line naming the kinds when the slice involves complex logic, concurrency, performance, security or data migration (`Risk: concurrency, data migration`), then lists its changes and the test criteria that prove it done. Each criterion names its seam, the public interface the design's Spec defines where the test observes behavior; an accepted plan's seams are agreed with the user, and tests go only there.
   - Notes: risks and constraints for the implementer, findings about the plan the user left for later, and details the plan settled that its design leaves unstated, which the docs step writes into the design with the experiment links they carry. Log: decisions, results, evidence and deviations, appended as they happen.
@@ -218,10 +222,10 @@ A plan's slices are the `### ` headings of `## Slices` outside code fences. A sl
 canon.py new TYPE SLUG [--title T] [--root DIR] [--parent D012] [--from D012]
 ```
 
-- TYPE is a type letter in either case or a type's directory name, plural or singular (`designs`, `design`); else `canon: unknown type <type>; use one of C D P R E I`. A SLUG that is not kebab-case ends `new` with `canon: slug must be kebab-case`.
+- TYPE is a type letter in either case or a type's directory name, plural or singular (`designs`, `design`); else `canon: unknown type <type>; use one of C D P R E I`. A SLUG that is not kebab-case ends `new` with ``canon: slug `<SLUG>` must be kebab-case, such as `<kebab form of SLUG>` `` ([Ids and file names](#ids-and-file-names)).
 - The project is `--root`, a project directory or its `docs/`, else the nearest directory from the working directory up to the repo root that holds an `AGENTS.md` other than an installed skill file ([D004§install: install](D004-project-setup.md#install)); without one, ``canon: no AGENTS.md at <absolute path>; set the project up with `canon.py init` first``.
 - `--parent` takes a top-level design and TYPE D, else `canon: --parent takes a top-level design and only applies to designs`, and excludes `--root`: `canon: --parent puts the sub-design beside its parent; drop --root`. The sub-design goes into the parent's docs root, with the parent's id and its first free letter, else `canon: <id> has no free sub-design letter; create a new top-level design`. Without `--parent`, the doc gets the next free id ([Ids and file names](#ids-and-file-names)).
-- `--from` applies to TYPE P and takes an accepted or active design, else `canon: --from takes an accepted or active design`. The plan gets the design's `modules`, `refs: [<id>]`, `based_on: [<id>@r<revision>]` and, after its H1, the line `Implements [<id>: <title>](<relative path>).` With another TYPE, `new` ends with `canon: --from only applies to plans`.
+- TYPE P needs `--from`, else `new` ends with ``canon: a plan comes from an accepted or active design; pass its id with `--from` ``. `--from` takes an accepted or active design, else ``canon: --from takes an accepted or active design; <id> is <status>`` for a design and `canon: --from takes an accepted or active design; <id> is not a design` for another doc. The plan gets the design's `modules`, `refs: [<id>]`, `based_on: [<id>@r<revision>]` and, after its H1, the line `Implements [<id>: <title>](<relative path>).` With another TYPE, `new` ends with `canon: --from only applies to plans`.
 - The title is `--title`, else the slug with each `-` turned into a space and its first letter capitalized (`api-v2` gives `Api v2`).
 - `new` writes `<project>/docs/<type directory>/<id>-<slug>.md`, creating directories, and exits with `canon: <path> already exists` rather than overwrite a file. It then regenerates the indexes ([D005§regeneration: regeneration](D005-docs-index.md#regeneration)) and prints the path relative to the repo root.
 - It allocates the id under the lock `.canon/id.lock` at the repo root, which the OS releases when the holder ends and nothing breaks by age, and exits with `canon: another canon command has held .canon/id.lock for a minute; let it finish` after waiting 60 s. Parallel runs get distinct ids.
@@ -270,7 +274,12 @@ canon.py check [--fix] [--base REF]
 - Line limits: a file's lines are counted as `wc -l` counts them, plus a last line without a newline. `WARN` `<n> lines (max 500)` for a numbered doc outside `archived/` over 500, followed for a top-level design by `; split into sub-designs (<id>A, <id>B, ...)`, for a sub-design by `; make it a new top-level design`, for a concept by `; split it into several concepts`, and for any other doc by `; move detail into <path>/`, `<path>` being its attachment directory relative to the repo root; `WARN` `<n> lines (max 150); move detail into docs` for a project's `AGENTS.md` over 150.
 - `updated`: in a Git checkout with a HEAD commit, for a doc whose file differs from its version at HEAD under the same path, when the lines other than those starting with `implemented:` or `as_built:` differ, and `updated` equals HEAD's and is not today: ``content changed but `updated` was not bumped``, fixable with today's date.
 - `--fix` first exits on an index start marker without its end marker ([D005§regeneration: regeneration](D005-docs-index.md#regeneration)). It runs the checks and applies each fix, setting the field, in place or as a new line before the closing `---`, or deleting it, and prints `fixed <path>: set <field>` or `fixed <path>: deleted <field>` for each; it regenerates the indexes as D005 states, then checks again and prints that result. The fixes are `refs`, `updated`, `implemented`, `as_built` and the indexes.
-- `--base REF` makes the unfinished level and pending reviews errors and adds the deleted-doc and collision checks against the branch ([Ids and file names](#ids-and-file-names)). Before any fix, `check` ends with `canon: no merge base with <REF>` when REF shares no history with HEAD, and with `canon: cannot diff against <REF>...HEAD` when Git cannot diff against REF otherwise.
+- `--base REF` makes the unfinished level and pending reviews errors and adds the deleted-doc and collision checks against the branch ([Ids and file names](#ids-and-file-names)). Before any fix, `check` ends with the first of the `--base` errors that applies:
+  - `canon: no merge base with <REF>` without a HEAD commit, outside Git included;
+  - ``canon: unknown ref <REF>; fetch it first or correct the name`` when REF names no commit or starts with `-`;
+  - ``canon: no merge base with <REF> in this shallow clone; fetch the full history with `git fetch --unshallow` `` when REF shares no history with HEAD and the checkout is shallow (`git rev-parse --is-shallow-repository` prints `true`), as CI checkouts often are;
+  - `canon: no merge base with <REF>` when REF shares no history with HEAD;
+  - `canon: cannot diff against <REF>...HEAD: <reason>`, with Git's reason, when Git cannot diff against REF otherwise.
 - `check`, `new` and `archive` end with `canon: git <subcommand> failed in <dir>: <reason>` when Git fails to list the files, look HEAD up, diff the work tree against HEAD or list unmerged entries, rather than read the failure as an empty result.
 
 ### Writing rules
@@ -319,3 +328,4 @@ Agents and people read docs, usually after reaching them through a pointer: an `
 - Markdown in attachment directories gets the link checks of guides: reports and other Markdown live there, and sessions wrote their own link checkers for them ([R003§r003-f33-links-in-attachments: R003-F33](../archived/reviews/R003-silk-design-phase.md#r003-f33-links-in-attachments)).
 - A design with no `implemented` gets no warning for `paths` that match no file, as a planned module's Path gets none ([D002§project-overview-d000: project overview](D002-overview-and-as-built.md#project-overview-d000)): in a project still being designed, the same warnings for code not yet written buried new ones at every `check` ([R003§r003-f32-permanent-warnings: R003-F32](../archived/reviews/R003-silk-design-phase.md#r003-f32-permanent-warnings); the user's decision, 2026-11-11).
 - `status` moves non-terminal statuses forward and checks each move's condition, leaving every other field to the steps that set it: `draft`, `accepted` and `active` were hand edits sessions got wrong ([R003§r003-f36-no-status-command: R003-F36](../archived/reviews/R003-silk-design-phase.md#r003-f36-no-status-command); the user's decision, 2026-11-11).
+- `new` refuses a plan without `--from` rather than warn after creating it: a plan comes only from an accepted or active design, and one created without it takes an id for good and lacks `based_on` and the link to its design (the user's decision, 2026-11-13).

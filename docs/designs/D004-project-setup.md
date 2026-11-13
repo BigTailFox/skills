@@ -1,15 +1,15 @@
 ---
 status: active
 created: 2026-10-29
-updated: 2026-11-12
-revision: 5
+updated: 2026-11-13
+revision: 6
 modules: [canon]
 summary: canon installed in each project and its recorded version, setup and upgrades with canon.py init, migration of docs with adopt, and the canon-init flows.
 refs: [D000, D001, D002, D003, D005, D006, D007, E001]
 owns: [project-setup]
 paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md, skills/governance/canon/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-retro/SKILL.md, skills/execution/canon-grill/SKILL.md]
-reviewed: 5
-reviewers: [claude-opus-5.5, gemini-4-argon-high]
+reviewed: 6
+reviewers: [claude-opus-5.5]
 approved: 5
 implemented: 5
 ---
@@ -79,11 +79,11 @@ canon.py adopt FILE TYPE [--slug SLUG] [--title TITLE] [--root DIR]
 ```
 
 - TYPE is a letter of C, D, P, R, E and I in either case, or a type's directory name, plural or singular, such as `designs` or `design`.
-- The project is `--root`, a project directory or its `docs/`, else the nearest directory above FILE that holds an `AGENTS.md` other than an installed skill file, up to the repo root. The doc gets the next free id of its type, which history keeps taken as [D002§project-overview-d000: D000](D002-overview-and-as-built.md#project-overview-d000) states, allocated under the lock `.canon/id.lock`, and moves to `<project>/docs/<type directory>/<id>-<slug>.md`. SLUG defaults to FILE's name without `.md`, lowercased, each run of characters other than `a-z` and `0-9` replaced by one `-`, trimmed of `-`, and `doc` when nothing is left.
+- The project is `--root`, a project directory or its `docs/`, else the nearest directory above FILE that holds an `AGENTS.md` other than an installed skill file, up to the repo root. The doc gets the next free id of its type, which history keeps taken as [D002§project-overview-d000: D000](D002-overview-and-as-built.md#project-overview-d000) states, allocated under the lock `.canon/id.lock`, and moves to `<project>/docs/<type directory>/<id>-<slug>.md`. SLUG defaults to the kebab form of FILE's name without `.md` ([D006§ids-and-file-names: ids and file names](D006-doc-model.md#ids-and-file-names)).
 - Links to FILE, or into it with an anchor, follow the move, and FILE's own links are rewritten for its new directory, by the rule of [D006§statuses-and-archiving: statuses and archiving](D006-doc-model.md#statuses-and-archiving), except that a link to FILE, not an image, whose text is not a reference gets the text `<id>: <text>`, or `<id>§<anchor>: <text>` when it has an anchor, the text defaulting to the id when empty.
 - FILE's frontmatter is dropped, printing `dropped frontmatter fields: <names>`, and replaced with a new doc's frontmatter for the type: its first status, `created` and `updated` today, `revision: 1`, empty `modules`, `summary` and `refs`, and empty `owns` and `paths` for a design or `based_on` for a plan. FILE's first H1 becomes `# <id>: <title>`, where TITLE defaults to that H1's text, else to the slug with each `-` replaced by a space and the first letter capitalized; without an H1, that line is prepended. Each section the type requires that FILE lacks is appended as `## <name>` with a guidance comment asking for the matching adopted content.
 - In a Git checkout the move is a `git mv`, so history follows the file; outside Git, or when Git refuses the move, as for an untracked FILE, it is a plain rename. `adopt` then regenerates the indexes ([D005§regeneration: regeneration](D005-docs-index.md#regeneration)) and prints `<old path> -> <new path>`.
-- `adopt` exits without changing a file when FILE is not an existing `.md` file (`canon: <file> is not a markdown file`) or is already a canon doc (`canon: <file> is already a canon doc`), when SLUG is not kebab-case (`canon: slug must be kebab-case`), TYPE is unknown (`canon: unknown type <type>; use one of C D P R E I`) or the project has no `AGENTS.md` (``canon: no AGENTS.md at <absolute path>; set the project up with `canon.py init` first``), when the Git index has unmerged entries, and when another command holds the id lock for 60 s.
+- `adopt` exits without changing a file when nothing exists at FILE (`canon: <file> does not exist`), FILE is not a `.md` file (`canon: <file> is not a markdown file`) or is already a canon doc (`canon: <file> is already a canon doc`), when SLUG is not kebab-case (with the message `new` gives, [D006§templates-and-new: templates and new](D006-doc-model.md#templates-and-new)), TYPE is unknown (`canon: unknown type <type>; use one of C D P R E I`) or the project has no `AGENTS.md` (``canon: no AGENTS.md at <absolute path>; set the project up with `canon.py init` first``), when the Git index has unmerged entries, and when another command holds the id lock for 60 s.
 
 ### The canon-init skill
 

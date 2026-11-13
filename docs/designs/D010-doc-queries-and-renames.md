@@ -2,13 +2,13 @@
 status: active
 created: 2026-11-12
 updated: 2026-11-13
-revision: 5
+revision: 6
 modules: [canon]
 summary: Doc queries and renames with canon.py show, find, which and affected, and rename and renumber, with the references and id collisions renumber settles.
-refs: [D002, D004, D005, D006]
+refs: [D002, D004, D005, D006, R001]
 owns: [doc-queries, doc-renames, doc-renumbering]
 paths: [skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, tests/test_canon.py]
-reviewed: 5
+reviewed: 6
 reviewers: [claude-opus-5.5]
 approved: 2
 implemented: 5
@@ -59,7 +59,7 @@ canon.py show ID#SLUG
   ```
 
   That is the path relative to the repo root; the frontmatter lines as written, none for a doc without frontmatter; `# <id>: <title>`, the title empty when the H1 does not start with `<id>: `; and one line per heading of level 2 to 6 outside code fences, indented two spaces per level below 2: its text as written, two spaces and `#<slug>`, the slug as [D006§links-and-references: links and references](D006-doc-model.md#links-and-references) defines it.
-- With SLUG it prints `<path>#<SLUG>`, then the first heading, H1 included, whose slug equals SLUG exactly, through the line before the next heading of the same or a higher level, else through the end of the file, trailing blank lines dropped, and exits 0. Without such a heading, a design's `known-issues` prints `<id> has no known issues` and exits 0; any other SLUG exits with `canon: <id> has no section #<SLUG>`.
+- With SLUG it prints `<path>#<SLUG>`, then the first heading, H1 included, whose slug equals SLUG exactly, through the line before the next heading of the same or a higher level, else through the end of the file, trailing blank lines dropped, and exits 0. Without such a heading, a design's `known-issues` prints `<id> has no known issues` and exits 0; any other SLUG exits with `canon: <id> has no section #<SLUG>; sections: <slugs>`, the slugs of the outline's headings in its order, separated by `, `, and without `; sections: <slugs>` when the outline has no heading.
 
 ### find
 
@@ -70,7 +70,7 @@ canon.py find WORD... [--archived]
 - A doc's metadata is its id, title, summary, `owns` and `modules` joined by spaces. The doc matches when each WORD, ignoring case, is a substring of its metadata, or of its metadata, a space and the text of one heading of level 2 to 6 outside code fences, which is then a matching heading.
 - Archived docs take part only with `--archived`.
 - For each matching doc, ordered by type as the index groups are ([D005§format: format](D005-docs-index.md#format)), then by number and letter across docs roots, it prints the doc line and, unless every WORD is in the metadata, one line per matching heading: two spaces, `<id>#<slug> <heading text>`.
-- With no match it prints `no match`. It exits 0.
+- With no match it prints `no match`, followed, without `--archived` and when archived docs would match, by ``; 1 archived doc matches with `--archived` `` or ``; <n> archived docs match with `--archived` ``. It exits 0.
 
 ### which
 
@@ -80,6 +80,7 @@ canon.py which FILE...
 
 - Each FILE is resolved from the working directory, symlinks followed, and printed relative to the repo root. It need not exist; one outside the repository matches no design.
 - For each FILE in the order given, it prints one line per live design whose `paths` govern it, in id order: `<file>: <id> <path> - <summary><notes>`. With none: `<file>: skill` for an installed skill file ([D002§installed-skills: installed skills](D002-overview-and-as-built.md#installed-skills)), `<file>: doc` for a doc ([D002§project-docs: project docs](D002-overview-and-as-built.md#project-docs)), else `<file>: no design`. It exits 0.
+- A FILE is missing when nothing exists at its resolved path and, in a Git checkout, neither HEAD's tree nor the Git index holds that path or a file below it. Each line of a missing FILE starts `<file> (missing): ` instead of `<file>: `, such as `src/auht.py (missing): no design`.
 
 ### affected
 
@@ -88,7 +89,7 @@ canon.py affected [FILE...] [--base REF]
 ```
 
 - The files are the FILE arguments, resolved as for `which`. Without them, they are the changed files: in a Git checkout with a HEAD commit, the files `git diff --name-only HEAD` lists, staged or not, deletions included, and the untracked files Git does not ignore; with `--base REF`, also the files `git diff --name-only REF...HEAD` lists, the branch's changes since its merge base with REF. A renamed file counts under its old and its new path, whatever Git's rename detection pairs. On a branch with no commit, and outside Git, they are all the files `check` reads, and `--base` goes unread. `--base` is ignored with FILE arguments.
-- It exits with `canon: cannot diff against <REF>` when Git cannot diff against REF, and with `canon: git <subcommand> failed in <dir>: <reason>` when listing the changes or the untracked files fails.
+- With `--base` read, it exits with the `--base` errors of [D006§check: check](D006-doc-model.md#check), and with `canon: git <subcommand> failed in <dir>: <reason>` when listing the changes or the untracked files fails.
 - For each live design that governs one of the files, ordered by the first file it governs (the changed files in sorted order, FILE arguments as given), it prints the doc line, then `  <file>` for each file the design governs, in the same order. Then it prints `plan <doc line>` for each live plan whose `based_on` names one of these designs, in id order. With no such design it prints `no design governs the changed files`, also for FILE arguments. It exits 0.
 
 ### Moving docs
@@ -106,7 +107,7 @@ canon.py affected [FILE...] [--base REF]
 canon.py rename ID SLUG [--title TITLE]
 ```
 
-- ID names a doc of any type, live or archived, sub-designs included; an ID that no doc or several docs have exits with the messages [D006§ids-and-file-names: ids](D006-doc-model.md#ids-and-file-names) gives for `archive`. D000 then exits with `canon: D000 keeps its file name, which the AGENTS.md block links`, a SLUG that is not kebab-case with `canon: slug must be kebab-case`, and a TITLE that, once stripped of surrounding whitespace, is empty or holds a line break, `[` or `]`, which would break the link texts and index lines that carry it, with `canon: title must be one line of text without [ or ]`.
+- ID names a doc of any type, live or archived, sub-designs included; an ID that no doc or several docs have exits with the messages [D006§ids-and-file-names: ids](D006-doc-model.md#ids-and-file-names) gives for `archive`. D000 then exits with `canon: D000 keeps its file name, which the AGENTS.md block links`, a SLUG that is not kebab-case with the message `new` gives ([D006§templates-and-new: templates and new](D006-doc-model.md#templates-and-new)), and a TITLE that, once stripped of surrounding whitespace, is empty or holds a line break, `[` or `]`, which would break the link texts and index lines that carry it, with `canon: title must be one line of text without [ or ]`.
 - It moves the doc's file to `<ID>-<SLUG>.md`, and each file in its attachment directory, at any depth, whose name up to its first `.` is the doc's old slug to the same directory, SLUG in place of the old slug: `D001/skill-telemetry.zh.md` becomes `D001/telemetry.zh.md`. A file it would move to that exists ends it before any change with `canon: <path> already exists`. It prints `<old path> -> <new path>`, both relative to the repo root, for the doc and then for each attachment file in path order, and exits 0. A SLUG equal to the doc's own moves no file and prints only the doc's `<old path> -> <new path>` line, both paths the same.
 - With `--title`, it sets the doc's H1, the first heading of level 1 outside code fences, to `# <ID>: <TITLE>`, TITLE stripped of surrounding whitespace, and in every `.md` file the text of each link to the doc that reads exactly `<ID>: <old title>`, the old title being the H1's text after `<ID>: `, to `<ID>: <TITLE>`. Links to the H1's anchor follow it, as do links to the headings whose link texts it changes ([D006§statuses-and-archiving: statuses and archiving](D006-doc-model.md#statuses-and-archiving)), and in every doc the `§<slug>` after a citation follows the heading anchors of what it names, as in [renumber](#renumber). A doc without an H1 ends it before any change with `canon: <ID> has no H1`.
 - The other attachments keep their names and, without `--title`, the H1 and link texts stay as they are.
@@ -119,7 +120,7 @@ canon.py renumber ID|PATH [NEW] [--base REF]
 
 - It is run only when `check` asks for it, for an id collision ([D006§ids-and-file-names: ids](D006-doc-model.md#ids-and-file-names)) or a D000 in a module's docs ([D002§project-overview-d000: D000](D002-overview-and-as-built.md#project-overview-d000)), as `renumber -h` and the Tool table say. It checks for neither and renumbers any doc but the repo root's D000.
 - After the refusals of [Moving docs](#moving-docs), it holds the id lock until it ends, as `new` does ([D006§templates-and-new: templates and new](D006-doc-model.md#templates-and-new)).
-- The first argument is an id when it reads as one (`D012`, `D012A`), and names a doc, live or archived: `canon: unknown document <id>` when no doc has it, `canon: <id> is ambiguous; pass the file path of the doc to renumber` when several do. Otherwise it is the path of a doc file, resolved from the working directory, and any other path exits with `canon: <argument> is not a canon doc`. The repo root's D000 exits with `canon: D000 is the project overview every project keeps; renumber only a D000 in a module's docs`. With `--base`, a REF that names no commit exits with `canon: unknown ref <REF>`.
+- The first argument is an id when it reads as one (`D012`, `D012A`), and names a doc, live or archived: `canon: unknown document <id>` when no doc has it, `canon: <id> is ambiguous; pass the file path of the doc to renumber` when several do. Otherwise it is the path of a doc file, resolved from the working directory, and any other path exits with `canon: <argument> is not a canon doc`. The repo root's D000 exits with `canon: D000 is the project overview every project keeps; renumber only a D000 in a module's docs`. With `--base`, a REF that names no commit exits with the unknown-ref error of [D006§check: check](D006-doc-model.md#check).
 - A top-level doc gets a top-level id of its type, and a sub-design another letter of its parent: NEW, written with extra zeros normalized (`D0005` gives `D005`, `D0001B` gives `D001B`), else the next free one, the number one above the highest taken for the type or the first free letter from `A`. Taken are the ids of the doc files in the work tree, those HEAD's history has had ([D002§project-overview-d000: D000](D002-overview-and-as-built.md#project-overview-d000)) and, with `--base`, those of the doc files in REF's tree; a number is taken while any id of its type with that number is, a sub-design's included. A NEW that does not fit exits:
   - for a top-level doc, with `canon: new id must be a top-level <type letter> id` when NEW is of another type, a sub-design id or no id;
   - for a sub-design, with `canon: new id must be a sub-design of <parent>` when NEW, normalized, is not `<parent>` and a letter;
@@ -173,3 +174,4 @@ Without another doc of the id, everything follows the renumbered doc.
 - `rename` renames only the attachments whose name up to its first `.` is the old slug, as a doc's translations and exports are named (`D001/<slug>.zh.md`), and `--title` rewrites only link texts that read `<id>: <old title>`; other names and link texts are the author's choice (R003-F37, 2026-11-13).
 - `show <id>#known-issues` on a design without the section prints that it has none and exits 0: sessions run it for each design they work from, as the `canon` skill's Reading docs says (8f4f34c).
 - `find`, `which` and `affected` exit 0 whether or not anything matches (reason unknown, kept as found).
+- `which` marks a missing file but still answers for it: a design may list code not yet written, and sessions look a file up before creating it, while a typo or a path given from the wrong directory otherwise got a confident answer ([R001: Codebase review of the canon module](../archived/reviews/R001-canon-module.md), F19).
