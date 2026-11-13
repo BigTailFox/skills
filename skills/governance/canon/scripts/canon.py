@@ -29,7 +29,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "51"
+CANON_VERSION = "52"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -238,6 +238,8 @@ TEMPLATES = {
 }
 OVERVIEW_ID, OVERVIEW_SLUG, OVERVIEW_TITLE = "D000", "project-overview", "Project overview"
 OVERVIEW_SPEC = (
+    ("Glossary", "<!-- canon: Terms used across modules; a term one module uses belongs to the design that owns it. "
+                 "It comes first, since the subsections after it use its terms. -->"),
     ("Capabilities", """<!-- canon: One row per capability the project offers its users or callers, at the grain of a feature list. -->
 
 | Capability | Modules | Design |
@@ -246,11 +248,9 @@ OVERVIEW_SPEC = (
 
 | Module | Path | Purpose | Entry points | Design |
 |---|---|---|---|---|"""),
-    ("Dependencies", "<!-- canon: The allowed dependency directions between modules. Changing them, or an interface "
-                     "between modules, is L2. -->"),
-    ("Glossary", """<!-- canon: Terms used across modules; a term one module uses belongs to the design that owns it. -->
+    ("Dependencies", """<!-- canon: The allowed dependency directions between modules. Changing them, or an interface between modules, is L2. -->
 
-<!-- canon: Once a design owns a standard that applies across modules, such as error handling, add `### Standards` after Glossary with one row per standard and the design that owns it: `| Standard | Design |`. Leave it out while no design owns one. -->"""),
+<!-- canon: Once a design owns a standard that applies across modules, such as error handling, add `### Standards` after Dependencies with one row per standard and the design that owns it: `| Standard | Design |`. Leave it out while no design owns one. -->"""),
 )
 OVERVIEW_TEMPLATE = """
 ## Goals
@@ -1375,8 +1375,9 @@ def check_overview(repo):
     present = {overview.headings[i].text for i in overview.spec_subsections()}
     missing = ["`### {}`".format(name) for name, _body in OVERVIEW_SPEC if name not in present]
     if missing and overview.section("Spec") is not None:
-        repo.problem("ERROR", overview.rel, "`## Spec` lacks {}; D000's Spec holds the subsections Capabilities, "
-                     "Modules, Dependencies and Glossary".format(", ".join(missing)))
+        names = [name for name, _body in OVERVIEW_SPEC]
+        repo.problem("ERROR", overview.rel, "`## Spec` lacks {}; D000's Spec holds the subsections {} and {}".format(
+            ", ".join(missing), ", ".join(names[:-1]), names[-1]))
     for pattern in overview.as_list("paths"):
         entry = entry_path(pattern)
         if any(c in entry for c in "*?[") or entry.endswith("/") or (overview.root.project / entry).is_dir():

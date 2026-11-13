@@ -1754,15 +1754,16 @@ class ProjectOverviewTest(CanonTest):
                          ["status: draft", "created: " + canon.today(), "updated: " + canon.today(), "revision: 1",
                           "modules: []", "summary:", "refs: []", "owns: [architecture]", "paths: []"])
         headings = re.findall(r"(?m)^#+ .*$", text)
-        self.assertEqual(headings, ["# D000: Project overview", "## Goals", "## Spec", "### Capabilities",
-                                    "### Modules", "### Dependencies", "### Glossary", "## Decisions"])
+        self.assertEqual(headings, ["# D000: Project overview", "## Goals", "## Spec", "### Glossary",
+                                    "### Capabilities", "### Modules", "### Dependencies", "## Decisions"])
         sections = dict(zip(headings, re.split(r"(?m)^#+ .*$", text)[1:]))
         for heading in headings[1:]:
             self.assertIn("<!-- canon:", sections[heading], heading)
         self.assertIn("| Capability | Modules | Design |\n|---|---|---|\n", sections["### Capabilities"])
         self.assertIn(self.MODULES, sections["### Modules"])
-        self.assertIn("`### Standards`", sections["### Glossary"])
-        self.assertIn("`| Standard | Design |`", sections["### Glossary"])
+        self.assertIn("add `### Standards` after Dependencies", sections["### Dependencies"])
+        self.assertIn("`| Standard | Design |`", sections["### Dependencies"])
+        self.assertNotIn("Standards", sections["### Glossary"])
         self.assertEqual([line for line in self.ok("check").splitlines() if self.OVERVIEW in line],
                          ["WARN {}: `summary` is empty".format(self.OVERVIEW),
                           "WARN {}: template guidance `<!-- canon: ... -->` left in the doc".format(self.OVERVIEW)])
@@ -1885,8 +1886,8 @@ class OverviewMoveTest(CanonTest):
         path = self.root / self.OVERVIEW
         overview = path.read_text()
         self.assertEqual(re.findall(r"(?m)^#+ .*$", overview),
-                         ["# D000: Project overview", "## Goals", "## Spec", "### Modules", "### Capabilities",
-                          "### Dependencies", "### Glossary", "## Decisions", "## Known issues"])
+                         ["# D000: Project overview", "## Goals", "## Spec", "### Modules", "### Glossary",
+                          "### Capabilities", "### Dependencies", "## Decisions", "## Known issues"])
         spec = overview.split("\n## Spec\n", 1)[1].split("\n## Decisions\n", 1)[0]
         self.assertLess(spec.index("| base | src/ |"), spec.index("### Capabilities"))
         for name in ("Capabilities", "Dependencies", "Glossary"):
@@ -2513,9 +2514,9 @@ class OverviewCheckTest(CanonTest):
     def test_check_fails_when_d000_spec_lacks_one_of_its_four_subsections(self):
         path = self.root / self.OVERVIEW
         text = path.read_text()
-        lacks = ("ERROR {}: `## Spec` lacks `### {{}}`; D000's Spec holds the subsections Capabilities, Modules, "
-                 "Dependencies and Glossary").format(self.OVERVIEW)
-        for name in ("Capabilities", "Modules", "Dependencies", "Glossary"):
+        lacks = ("ERROR {}: `## Spec` lacks `### {{}}`; D000's Spec holds the subsections Glossary, Capabilities, "
+                 "Modules and Dependencies").format(self.OVERVIEW)
+        for name in ("Glossary", "Capabilities", "Modules", "Dependencies"):
             path.write_text(text.replace("\n### {}\n".format(name), "\n{}\n".format(name)))
             self.assertIn(lacks.format(name), self.problems(self.fails("check")))
         path.write_text(text.replace("\n### Glossary\n", "\n").replace("\n## Decisions\n", "\n## Decisions\n\n"

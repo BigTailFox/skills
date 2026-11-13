@@ -35,10 +35,10 @@ Every repository that follows canon has `designs/D000-project-overview.md`, titl
 
 - **Goals**: what the project is for, who uses it and what is out of scope.
 - **Spec** holds the first four subsections below, in this order, and after them `### Standards`, left out while no design owns a standard that applies across modules:
+  - `### Glossary`: terms used across modules; a term one module uses belongs to the design that owns it. It comes first, since the other subsections use its terms.
   - `### Capabilities`: one row per capability the project offers its users or callers, at the grain of a feature list.
   - `### Modules`: one row per module. Path lists the module's directories relative to the project directory, comma-separated, each ending with `/`; `./` is the project directory. In a monorepo, each module's row links that module's designs.
   - `### Dependencies`: the allowed dependency directions between modules.
-  - `### Glossary`: terms used across modules; a term one module uses belongs to the design that owns it.
   - `### Standards`: one row per standard that applies across modules, such as error handling, with the design that owns it: `| Standard | Design |`.
 
   ```markdown
@@ -53,7 +53,7 @@ Every repository that follows canon has `designs/D000-project-overview.md`, titl
   ```
 
 - A Design cell links every top-level design that owns the capability or standard, or that governs the module's code, or reads `none`. Rows name modules, capabilities and standards, never single docs: designs reach their sub-topics through their own links, and `docs/README.md` indexes every doc. Detail below the module level belongs to the module's designs.
-- The tables map the project, its planned modules included, each linking the designs that specify it; `check` does not warn about a missing Path while its row links designs and none of them has `implemented`; a row reading `none` still warns. A module that a revision of a design with `implemented` specifies gets its row once its directory exists, in the docs step. The change that adds or removes a module, capability or standard, or creates, moves or archives a top-level design, updates their rows in the same commit ([docs step](workflow.md#docs-step)). Rows change no meaning, so they take no revision bump and no gate. Goals, Dependencies and Glossary are spec: adding a module, changing the dependency directions or changing a cross-module interface is L2.
+- The tables map the project, its planned modules included, each linking the designs that specify it; `check` does not warn about a missing Path while its row links designs and none of them has `implemented`; a row reading `none` still warns. A module that a revision of a design with `implemented` specifies gets its row once its directory exists, in the docs step. The change that adds or removes a module, capability or standard, or creates, moves or archives a top-level design, updates their rows in the same commit ([docs step](workflow.md#docs-step)). Rows change no meaning, so they take no revision bump and no gate. A D000 in another order stays valid; putting its subsections in the order above changes no meaning either. Goals, Dependencies and Glossary are spec: adding a module, changing the dependency directions or changing a cross-module interface is L2.
 - `audit` reports the code no design covers only under the module Paths, each file in the module with the longest Path that holds it, so tooling, CI and configuration outside every Path go uncounted. A module whose Path is `./` counts them too, so a project with tooling at its root gives its modules narrower Paths.
 - `owns` includes `architecture`. `paths` lists only files that embody the architecture, such as dependency-boundary configuration and module wiring, never a directory or glob, which would make every file look governed; it is usually empty.
 - In a project with code, D000 is written as an [as-built](as-built.md) design. In a project without code, it is the project's first L2 design, written with the `canon-design` skill; it needs no plan, as a revision that needs no code change ([Gate status](workflow.md#gate-status)).

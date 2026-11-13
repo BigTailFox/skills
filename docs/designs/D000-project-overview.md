@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-10-23
-updated: 2026-11-12
+updated: 2026-11-13
 revision: 4
 modules: []
 summary: Agent skills built around canon, a documentation system kept in the repository; one module, its capabilities and the designs that own them.
@@ -23,6 +23,16 @@ implemented: 4
 3. Out of scope: installing, updating and removing skills, which the `skills` CLI (`npx skills`) does, and skills outside the canon documentation system.
 
 ## Spec
+
+### Glossary
+
+The module, `canon`, and the repository tooling, `scripts/validate.py`, share these terms. The Skill rules of [AGENTS.md](../../AGENTS.md) state what a skill must meet. The `canon` skill defines the documentation system's terms, such as tier, review gate and slice, and `canon-codebase-design` those of module design.
+
+- **Skill**: a directory `skills/<category>/<name>/` holding a `SKILL.md`; the directory name is the skill's name.
+- **Category**: `governance`, for skills that build and maintain the documentation system, or `execution`, for skills that do development work through it.
+- **Manual skill**: a skill that runs only as a command. An **auto skill** also loads when the context calls for it. The README's Skills tables give each skill's trigger mode.
+- **Ported skill**: a skill adapted from [mattpocock/skills](https://github.com/mattpocock/skills), whose directory holds the upstream `LICENSE` and a `NOTICE`.
+- **`CANON_VERSION`**: the decimal integer, written as a string, that `canon.py` carries. A project records the one it was last set up with, and every command compares it with its own ([D004§project-version: project version](D004-project-setup.md#project-version)).
 
 ### Capabilities
 
@@ -67,16 +77,6 @@ There is one module, so no direction between modules applies. These hold inside 
 - Execution skills read and write project docs only through the documentation system the governance skills define.
 - `canon.py` is a single file on the Python 3.8+ standard library, and runs `git` in a Git checkout.
 - The repository tooling, `scripts/validate.py`, checks each skill's layout, frontmatter, length and links, that every `SKILL.md` on disk that Git tracks or does not ignore is a skill's own, directly inside a non-hidden `skills/<category>/<name>/`, failing when Git cannot list the files, the links of the root's Markdown files, the Skills tables of `README.md`, `CANON_VERSION`, and [D001§budgets: budgets](D001-skill-telemetry.md#budgets) for skill text, failing when no paragraph of the `canon` skill starts as they say. That last check needs tiktoken and its `cl100k_base` encoding; when either fails to load, it prints why, with the `uv run` command that adds a missing tiktoken. It runs `tests/`, where `test_validate.py` tests it. Nothing under `skills/` depends on it.
-
-### Glossary
-
-The module and the repository tooling share these terms. The Skill rules of [AGENTS.md](../../AGENTS.md) state what a skill must meet. The `canon` skill defines the documentation system's terms, such as tier, review gate and slice, and `canon-codebase-design` those of module design.
-
-- **Skill**: a directory `skills/<category>/<name>/` holding a `SKILL.md`; the directory name is the skill's name.
-- **Category**: `governance`, for skills that build and maintain the documentation system, or `execution`, for skills that do development work through it.
-- **Manual skill**: a skill that runs only as a command. An **auto skill** also loads when the context calls for it. The README's Skills tables give each skill's trigger mode.
-- **Ported skill**: a skill adapted from [mattpocock/skills](https://github.com/mattpocock/skills), whose directory holds the upstream `LICENSE` and a `NOTICE`.
-- **`CANON_VERSION`**: the decimal integer, written as a string, that `canon.py` carries. A project records the one it was last set up with, and every command compares it with its own ([D004§project-version: project version](D004-project-setup.md#project-version)).
 
 ## Decisions
 

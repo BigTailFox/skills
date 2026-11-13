@@ -11,7 +11,7 @@ paths: [skills/governance/canon/as-built.md, skills/governance/canon/scripts/can
 reviewed: 11
 reviewers: [claude-opus-5.5]
 approved: 10
-implemented: 10
+implemented: 11
 ---
 
 # D002: Project overview and as-built designs

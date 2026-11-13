@@ -11,6 +11,7 @@ Agents and people both read these docs, usually after reaching them through a po
 - Keep a diagram's source with it: Mermaid in the doc, or the generating script in the attachments beside the image it renders, with how to install its dependencies. Keep its labels as text a reviewer can read, never outlines or a raster image, and change it in the commit that changes what it shows.
 - Write `summary` lines, titles and headings as pointers: lead with the words a reader would search for, since they feed `find` and the index.
 - Keep a topic's definition, rules and caveats under one heading so reading one brings the rest.
+- Order the sections a doc type leaves free, such as a design's Spec subsections, and the content within each from the whole to the parts and the core to the details, so a reader meets the frame before what fills it. Among those sections, define each term or name before the first one that uses it; where that cannot be, or another doc defines it, link the definition at its first use.
 - Record what the repository cannot tell: reasons, unwritten conventions, gotchas. Name the command or file for facts the environment already states (scripts, config, `--help`) instead of copying them.
 - Cut every sentence that changes nothing a capable reader would do anyway.
 - `AGENTS.md` holds only what every session needs: pointers and rules. Move detail into designs.
