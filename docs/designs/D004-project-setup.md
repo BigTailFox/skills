@@ -11,7 +11,7 @@ paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py, skills/go
 reviewed: 8
 reviewers: [claude-opus-5.5]
 approved: 7
-implemented: 7
+implemented: 8
 ---
 
 # D004: Project setup
@@ -59,7 +59,7 @@ canon.py init [--root DIR] [--hook]
 - A module run leaves the repo root's `AGENTS.md` alone. A module without an `AGENTS.md` gets one holding `# AGENTS.md` and a line that links the module's `docs/README.md` and says the repo root's `AGENTS.md` defines the docs rules; a module's existing `AGENTS.md` stays as it is.
 - **Docs index.** When the project's `docs/README.md` is missing, `init` creates it with an intro that names `canon.py find <words>` and an `## Index` heading. Each run then regenerates every index ([D005§regeneration: regeneration](D005-docs-index.md#regeneration)).
 - **D000.** At the repo root only, as [D002§project-overview-d000: D000](D002-overview-and-as-built.md#project-overview-d000) states.
-- **`--hook`.** In a Git checkout, `init` writes the pre-commit hook at the path `git rev-parse --git-path hooks/pre-commit` prints, with mode 755. The hook runs `check --staged`, which checks what the commit records ([D006§check: check](D006-doc-model.md#check)), with the `canon.py` of `.agents/skills/canon/scripts/`, where `npx skills` installs it, relative to the work tree's top, where Git runs hooks. Where that `canon.py` predates `--staged`, as on a branch or worktree whose install is older, the hook runs `check`. It holds, `<V>` being the first `CANON_VERSION` whose `check` takes `--staged`:
+- **`--hook`.** In a Git checkout, `init` writes the pre-commit hook at the path `git rev-parse --git-path hooks/pre-commit` prints, with mode 755 and lines ending in `\n` on every platform. The hook runs `check --staged`, which checks what the commit records ([D006§check: check](D006-doc-model.md#check)), with the `canon.py` of `.agents/skills/canon/scripts/`, where `npx skills` installs it, relative to the work tree's top, where Git runs hooks. Where that `canon.py` predates `--staged`, as on a branch or worktree whose install is older, the hook runs `check`. It holds, `<V>` being the first `CANON_VERSION` whose `check` takes `--staged`:
 
   ```sh
   #!/bin/sh

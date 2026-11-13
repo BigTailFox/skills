@@ -2714,12 +2714,23 @@ class InitTest(CanonTest):
                     self.assertEqual(hook.read_text(), self.HOOK)
         for other in (self.CHECK_ONLY_HOOK + "make lint\n", self.CHECK_ONLY_HOOK.rstrip("\n"),
                       self.CHECK_ONLY_HOOK.replace("exit 1", "  exit 1"),
-                      "#!/bin/sh\nexec python3 scripts/canon.py check\nmake lint\n"):
+                      "#!/bin/sh\nexec python3 scripts/canon.py check\nmake lint\n", self.HOOK.rstrip("\n"),
+                      self.HOOK + "make lint\n"):
             with self.subTest(other=other):
                 hook.write_text(other)
                 self.assertNotIn("pre-commit", self.ok("init"))
                 self.assertIn(self.KEPT, self.ok("init", "--hook"))
                 self.assertEqual(hook.read_text(), other)
+
+    def test_init_hook_prints_nothing_for_a_hook_that_holds_the_template(self):
+        hook = self.root / ".git/hooks/pre-commit"
+        self.init_module("mod")
+        self.ok("init", "--hook")
+        self.assertEqual(hook.read_bytes(), self.HOOK.encode())
+        for args in (("--hook",), ("--root", "mod", "--hook")):
+            with self.subTest(args=args):
+                self.assertEqual(self.ok("init", *args), "canon init: nothing to do\n")
+                self.assertEqual(hook.read_bytes(), self.HOOK.encode())
 
     def test_init_makes_a_hook_it_replaces_executable_so_that_git_commit_runs_it(self):
         hook = self.root / ".git/hooks/pre-commit"

@@ -30,7 +30,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "66"
+CANON_VERSION = "67"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -2433,21 +2433,25 @@ def cmd_init(repo, args):
     if (top or args.hook) and repo.is_git:
         found = git(repo.root, "rev-parse", "--git-path", "hooks/pre-commit")
         hook = repo.root / found.strip() if found else None
-        old = False
+        old = current = False
         try:
             if hook is None:
                 raise OSError("git rev-parse --git-path hooks/pre-commit failed")
             with contextlib.suppress(OSError):
-                old = top and hook.is_file() and OLD_HOOK_RE.fullmatch(hook.read_bytes()) is not None
+                if hook.is_file():
+                    data = hook.read_bytes()
+                    old = top and OLD_HOOK_RE.fullmatch(data) is not None
+                    current = data == PRE_COMMIT_HOOK.encode("utf-8")
             if old:
-                hook.write_text(PRE_COMMIT_HOOK, encoding="utf-8")
+                hook.write_bytes(PRE_COMMIT_HOOK.encode("utf-8"))
                 os.chmod(str(hook), 0o755)
                 note("updated", hook)
             elif args.hook and os.path.lexists(str(hook)):
-                print("kept the existing pre-commit hook; add `canon.py check --staged` to it")
+                if not current:
+                    print("kept the existing pre-commit hook; add `canon.py check --staged` to it")
             elif args.hook:
                 hook.parent.mkdir(parents=True, exist_ok=True)
-                hook.write_text(PRE_COMMIT_HOOK, encoding="utf-8")
+                hook.write_bytes(PRE_COMMIT_HOOK.encode("utf-8"))
                 os.chmod(str(hook), 0o755)
                 note("created", hook)
         except OSError as error:
