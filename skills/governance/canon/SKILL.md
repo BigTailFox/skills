@@ -122,7 +122,7 @@ based_on: [D003@r4]                  # P only
 - Each standard lives only in the design that owns its topic; everywhere else links to it.
 - A design or plan revision must pass the review gate before it is accepted or implemented: `reviewed` equals `revision`. Once a design or plan has been accepted, `check` warns while a later revision is pending; `check --base` fails.
 - Replace every `<!-- canon: ... -->` guidance comment with content. While a doc is unfinished (a design or plan before its review gate, a concept before it is adopted, an experiment before it is answered, any other doc before archiving), `check` only warns about guidance and an empty `summary`; `check --base` fails.
-- After a merge or rebase, run `check --fix`; generated indexes merge line by line and may need regenerating.
+- After a merge or rebase, run `check --fix`, unless another session uses the checkout ([Concurrent work](#concurrent-work)); generated indexes merge line by line and may need regenerating.
 
 ### Concurrent work
 

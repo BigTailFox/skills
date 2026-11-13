@@ -2947,6 +2947,13 @@ class InitTest(CanonTest):
                       "design's `paths` names and bumps no revision. Designs and plans pass the review gate defined by "
                       "the `canon` skill.\n", (self.root / "AGENTS.md").read_text())
 
+    def test_the_canon_block_sends_a_shared_checkout_and_a_partial_commit_to_concurrent_work(self):
+        self.repository_without_docs()
+        self.ok("init")
+        self.assertIn("(`-h` lists commands). Run `check --fix` before committing and after every merge or rebase; in "
+                      "a checkout another session also uses, or to commit only part of a checkout's changes, follow "
+                      "the `canon` skill's Concurrent work instead.\n", (self.root / "AGENTS.md").read_text())
+
 
 class AdoptTest(CanonTest):
     def test_a_rewritten_link_target_stays_percent_encoded(self):
