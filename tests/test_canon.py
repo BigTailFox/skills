@@ -1299,6 +1299,27 @@ class DocRulesTest(CanonTest):
         self.ok("archive", "E001", "concluded")
         self.assertEqual(self.experiment_problems(self.ok("check")), [])
 
+    def test_an_experiment_archived_as_concluded_warns_while_a_live_doc_cites_it(self):
+        self.doc("E", "bench", body=EXPERIMENT.format(RUN, "Fast enough."), status="concluded")
+        self.doc("E", "load", body=EXPERIMENT.format(RUN, "As [E001: Fixture](E001-bench.md)."), status="concluded")
+        self.doc("E", "old", body=EXPERIMENT.format(RUN, "Moot."), status="running")
+        self.commit()
+        self.ok("archive", "E001", "concluded")
+        self.ok("archive", "E002", "concluded")
+        self.ok("archive", "E003", "dropped")
+        self.doc("P", "work", body=PLAN.format("From [E001: Fixture](../archived/experiments/E001-bench.md) and "
+                                               "[E003: Fixture](../archived/experiments/E003-old.md)."))
+        self.doc("E", "next", body=EXPERIMENT.format(RUN, "As [E002: Fixture](../archived/experiments/E002-load.md)."),
+                 status="concluded")
+        warning = ("WARN docs/archived/experiments/{}: concluded, but linked by {}; a cited concluded experiment stays "
+                   "live, so move it and its attachment directory out of archived/ and fix the links, or remove the "
+                   "links that do not rest on its result")
+        self.assertEqual([p for p in self.problems(self.ok("check", "--fix")) if "archived/experiments" in p],
+                         [warning.format("E001-bench.md", "P001")])
+        self.doc("C", "idea", body=CONCEPT.format("[E004: Fixture](../experiments/E004-next.md)"))
+        self.assertEqual([p for p in self.problems(self.ok("check", "--fix")) if "archived/experiments" in p],
+                         [warning.format("E001-bench.md", "P001"), warning.format("E002-load.md", "E004")])
+
     def test_a_live_status_inside_archived_names_the_terminal_statuses(self):
         self.design()
         self.commit()

@@ -30,7 +30,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "54"
+CANON_VERSION = "55"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -773,11 +773,12 @@ class Repo:
         return self._design_linked
 
     def citations(self):
-        """For each live experiment's file a live doc cites, the docs whose links count, sorted as `docs` is: the body
-        of any doc outside archived/ other than the experiment, a concluded experiment's only while it is cited
-        itself."""
+        """For each file of an experiment, live or archived as `concluded`, that a live doc cites, the docs whose links
+        count, sorted as `docs` is: the body of any doc outside archived/ other than the experiment, a concluded
+        experiment's only while it is cited itself."""
         if self._citations is None:
-            experiments = {d.path: d for d in self.docs if d.type == "E" and not d.archived}
+            experiments = {d.path: d for d in self.docs
+                           if d.type == "E" and (not d.archived or d.status == "concluded")}
             citing = [d for d in self.docs if not d.archived and not (d.type == "E" and d.status == "concluded")]
             seen, citers = {d.path for d in citing}, {}
             while citing:
@@ -789,7 +790,7 @@ class Repo:
                             if path not in seen:
                                 seen.add(path)
                                 reached.append(experiments[path])
-                citing = reached
+                citing = [d for d in reached if not d.archived]
             self._citations = {path: sorted(docs, key=Doc.sort_key) for path, docs in citers.items()}
         return self._citations
 
@@ -1204,8 +1205,15 @@ def check_doc(repo, doc, changed, strict=False):
             err(msg)
         if doc.type == "C" and not doc.archived and doc.path not in repo.design_linked():
             repo.problem("WARN", rel, "adopted, but no design links it")
-        if doc.type == "E" and not doc.archived and doc.path not in repo.citations():
-            repo.problem("WARN", rel, "concluded, but no live doc cites it; link it or archive it as concluded")
+        if doc.type == "E" and status == "concluded":
+            citers = repo.citations().get(doc.path)
+            if not doc.archived and not citers:
+                repo.problem("WARN", rel, "concluded, but no live doc cites it; link it or archive it as concluded")
+            elif doc.archived and citers:
+                repo.problem("WARN", rel, "concluded, but linked by {}; a cited concluded experiment stays live, so "
+                                          "move it and its attachment directory out of archived/ and fix the links, or "
+                                          "remove the links that do not rest on its result"
+                             .format(", ".join(d.id for d in citers)))
     elif answered:
         for msg in terminal_problems(doc, "concluded"):
             err(msg)
