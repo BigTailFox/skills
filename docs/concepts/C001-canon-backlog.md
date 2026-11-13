@@ -1,8 +1,8 @@
 ---
 status: draft
 created: 2026-11-05
-updated: 2026-11-12
-revision: 5
+updated: 2026-11-13
+revision: 6
 modules: [canon]
 summary: Ideas for the canon module that no design tracks yet, from codebase reviews and deferred findings.
 refs: [D001, D002, D003, D004, D005, D006, D007, D008, R001, R003]
@@ -20,7 +20,7 @@ Findings that are not defects of code a design governs, and work that needs a ne
 - **A design for skill layout and invocation** (R001-F10, F11). AGENTS.md's Skill rules, `scripts/validate.py`, `agents/openai.yaml` and the trigger modes have no design; neither do the contracts other skills execute: `canon-grill`'s triage, `canon-tdd`'s definition of done and `canon-code-review/smells.md`. Backfill them before they next change. `canon-review/security.md` counts as a project doc by its name, so the design that takes on `canon-review` lists its exact path.
 - **One place for closing a workflow** (R001-F5). The retro end-check paragraph is copied into seven skills and the rule for routing a deferred finding into six; one section in `workflow.md` and one rule beside the known-issue format would replace them.
 - **Work-tree snapshots apart from trace** (R001-F6). `canon.py snapshot`, which every confirmation uses, is built from the opt-in trace subsystem's parts; a section of its own, with `trace start` and `snapshot` as its callers, would let either change alone.
-- **A faster test suite** (R001-F8). 172 tests take about 190 s and `validate.py` runs them after any skill change. Run `tests/` only when `canon.py` or `tests/` changed, and copy one initialized template repository per test.
+- **A faster test suite** (R001-F8). `validate.py` runs the 292 tests in parallel, slowest first, in about 7 s on 24 CPUs, no less than the 5 s three of them wait out canon's lock timeout; but they take over 100 s of CPU time, so a machine with few CPUs still waits. Copying one initialized template repository per test would save about a sixth of it, once the template outlives the single test whose module fixtures `validate.py` sets up for it alone.
 - **Check references between skill texts** (R001-F9). `validate.py` drops `#anchor` from links and checks no skill names or "workflow (Section)" references.
 - **One record per doc type in `canon.py`** (R001-F12). A type's rules are spread over `TYPES`, `TEMPLATES`, the field tables, `check_doc`'s branches and the id helpers. Speculative.
 - **Error messages that name the next step** (R001-F17, F18). `check`'s unknown entry, `new`'s slug and `--from` errors, `show`'s missing section, `find`'s miss of an archived doc, `adopt` of a missing file (whose wording D004 states) and the `--base` errors (missing ref or shallow history) stop short of the value or the command to run.

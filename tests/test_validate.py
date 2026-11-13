@@ -1,5 +1,6 @@
 """Regression tests for scripts/validate.py, run on a copy in a scratch repository with no tests of its own."""
 
+import json
 import os
 import shutil
 import subprocess
@@ -14,6 +15,34 @@ README = ("# skills\n\n## Skills\n\n### execution\n\n| Skill | Summary | Trigger
           "| `canon-x` | Does x. | Auto |\n")
 WORD_TOKENS = ("class Encoding:\n    def encode(self, text):\n        return text.split()\n\n\n"
                "def get_encoding(name):\n    assert name == 'cl100k_base'\n    return Encoding()\n")
+SUITE = '''import time, unittest
+from pathlib import Path
+
+
+def meet(mine, theirs):
+    """Pass only while the test that touches `theirs` runs at the same time."""
+    (Path(__file__).parent / mine).touch()
+    deadline = time.time() + 10
+    while not (Path(__file__).parent / theirs).exists():
+        if time.time() > deadline:
+            raise AssertionError("ran alone")
+        time.sleep(0.05)
+
+
+class T(unittest.TestCase):
+    def test_a(self):
+        meet("a", "b")
+
+    def test_b(self):
+        meet("b", "a")
+
+    def test_fails(self):
+        self.assertEqual(1, 2)
+
+    @unittest.skip("fixture")
+    def test_skipped(self):
+        pass
+'''
 
 
 class ScratchRepoTest(unittest.TestCase):
@@ -103,6 +132,37 @@ class TextBudgetTest(ScratchRepoTest):
         self.write("skills/governance/canon/SKILL.md", "---\nname: canon\n---\n\nWhen tracing, in `trace` calls, x.\n")
         self.assertIn("  - skills/governance/canon/SKILL.md: no paragraph starts with In `trace` calls\n",
                       self.validate(WORD_TOKENS).stdout)
+
+
+class RunTestsTest(ScratchRepoTest):
+    @unittest.skipIf((getattr(os, "process_cpu_count", os.cpu_count)() or 1) < 2,
+                     "two tests run at once only on two CPUs")
+    def test_tests_run_in_parallel_and_their_line_counts_skips_and_names_each_failure_and_broken_module(self):
+        self.write("tests/test_x.py", SUITE)
+        self.write("tests/test_broken.py", "raise ImportError('broken')\n")
+        out = self.validate().stdout
+        self.assertIn("FAIL tests (1 skipped)\n  - unittest.loader._FailedTest.test_broken\n"
+                      "ImportError: Failed to import test module: test_broken\n", out)
+        self.assertIn("ImportError: broken\n  - test_x.T.test_fails\nTraceback", out)
+        self.assertIn("AssertionError: 1 != 2\n", out)
+        self.assertNotIn("ran alone", out)
+
+    def test_a_run_records_each_tests_duration_over_an_unreadable_record(self):
+        self.write("tests/test_y.py", "import unittest\n\n\nclass T(unittest.TestCase):\n"
+                                      "    def test_one(self):\n        pass\n\n    def test_two(self):\n        pass\n")
+        for record in ("{", "[]"):
+            self.write(".tmp/test-durations.json", record)
+            self.assertIn("ok   tests\n", self.validate().stdout)
+            durations = json.loads((self.root / ".tmp/test-durations.json").read_text())
+            self.assertEqual(sorted(durations), ["test_y.T.test_one", "test_y.T.test_two"])
+            self.assertTrue(all(seconds >= 0 for seconds in durations.values()), durations)
+
+    def test_a_tests_directory_without_tests_fails_and_so_does_a_test_that_ends_its_worker_process(self):
+        self.write("tests/helper.py", "")
+        self.assertIn("FAIL tests\n  - no tests in tests/\n", self.validate().stdout)
+        self.write("tests/test_exit.py", "import os, unittest\n\n\nclass T(unittest.TestCase):\n"
+                                         "    def test_exit(self):\n        os._exit(3)\n")
+        self.assertIn("FAIL tests\n  - a worker process died: ", self.validate().stdout)
 
 
 if __name__ == "__main__":

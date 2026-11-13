@@ -2,18 +2,30 @@
 """Validate every skill under the category directories, that no SKILL.md lies elsewhere, the README skill list,
 the canon.py version and D001's text budgets, then run the tests in tests/.
 
+The tests run one at a time in each of a worker process per CPU, each with its own module and class fixtures, in any
+order and beside the others, so each must pass alone. Each run records their durations in .tmp/test-durations.json,
+from which the next starts the slowest first.
+
 Usage: python3 scripts/validate.py
 Exits non-zero if any check or test fails.
 """
 
+import json
+import math
 import re
 import subprocess
 import sys
+import time
+import unittest
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
+sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = ROOT / "skills"
 TESTS_DIR = ROOT / "tests"
+DURATIONS = ROOT / ".tmp" / "test-durations.json"
 CATEGORIES = ("execution", "governance")
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 BRAND = "canon"
@@ -287,15 +299,58 @@ def text_budgets():
     return errors, None
 
 
+TESTS = {}
+
+
+def discover_tests():
+    """Load the tests in tests/ into TESTS by id, a module that fails to import as a test that reports it, and return
+    their ids in order."""
+    def flatten(suite):
+        for test in suite:
+            yield from flatten(test) if isinstance(test, unittest.TestSuite) else [test]
+
+    TESTS.update((test.id(), test) for test in flatten(unittest.TestLoader().discover(str(TESTS_DIR))))
+    return list(TESTS)
+
+
+def run_test(test_id):
+    """Run one test, with its class and module fixtures, in a worker process: how many tests it skipped, its
+    failures, and its duration in seconds."""
+    start = time.perf_counter()
+    result = unittest.TestResult()
+    result.buffer = True
+    unittest.TestSuite([TESTS[test_id]]).run(result)
+    failed = result.errors + result.failures + [(test, "unexpected success") for test in result.unexpectedSuccesses]
+    failures = [f"{test.id()}\n{trace.rstrip()}" for test, trace in failed]
+    return len(result.skipped), failures, time.perf_counter() - start
+
+
 def run_tests():
-    """The label of the suite's line, counting skipped tests, and its failures."""
+    """The label of the suite's line, counting skipped tests, and its failures. The tests start with those the last
+    run did not time, then the rest slowest first by the durations it recorded in DURATIONS."""
     if not TESTS_DIR.is_dir():
         return "tests", []
-    result = subprocess.run([sys.executable, "-B", "-m", "unittest", "discover", "-s", str(TESTS_DIR)],
-                            cwd=ROOT, capture_output=True, text=True)
-    skipped = re.search(r"skipped=(\d+)", result.stderr.rstrip().rsplit("\n", 1)[-1])
-    label = f"tests ({skipped.group(1)} skipped)" if skipped else "tests"
-    return label, [] if result.returncode == 0 else [result.stderr.rstrip()]
+    ids = discover_tests()
+    if not ids:
+        return "tests", ["no tests in tests/"]
+    try:
+        recorded = json.loads(DURATIONS.read_text(encoding="utf-8"))
+        order = sorted(ids, key=lambda test_id: -recorded.get(test_id, math.inf))
+    except (OSError, ValueError, AttributeError, TypeError):
+        order = ids
+    try:
+        with ProcessPoolExecutor(initializer=discover_tests) as pool:
+            results = dict(zip(order, pool.map(run_test, order)))
+    except BrokenProcessPool as error:
+        return "tests", [f"a worker process died: {error}"]
+    durations, skipped, failures = {}, 0, []
+    for test_id in ids:
+        skips, errors, durations[test_id] = results[test_id]
+        skipped += skips
+        failures += errors
+    DURATIONS.parent.mkdir(exist_ok=True)
+    DURATIONS.write_text(json.dumps(durations), encoding="utf-8")
+    return f"tests ({skipped} skipped)" if skipped else "tests", failures
 
 
 def report(label, errors):

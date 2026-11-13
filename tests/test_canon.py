@@ -46,7 +46,8 @@ RUN_DIR = None
 
 
 def setUpModule():
-    """One directory per run under TMPDIR holds every test's directories, so a stray write to `../` stays in it."""
+    """One directory under TMPDIR per setup of this module, once per run, or once per test under validate.py, holds
+    the directories of the tests run with it, so a stray write to `../` stays in it."""
     global RUN_DIR
     run = tempfile.TemporaryDirectory(prefix="test_canon-")
     unittest.addModuleCleanup(run.cleanup)
