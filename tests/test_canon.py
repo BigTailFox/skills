@@ -1783,6 +1783,116 @@ class IndexTest(CanonTest):
             "# Docs\n\nA stray {} before any index.\n\n{}\n".format(canon.INDEX_END, canon.INDEX_START)))
         self.ok("check")
 
+    def index(self, path="docs/README.md"):
+        """The index in an index file: its text from the start marker through the end marker after it."""
+        text = (self.root / path).read_text()
+        start = text.index(canon.INDEX_START)
+        return text[start:text.index(canon.INDEX_END, start) + len(canon.INDEX_END)]
+
+    def test_the_index_groups_docs_by_type_in_order_and_joins_each_doc_line_s_parts(self):
+        for letter, slug in (("C", "idea"), ("E", "speed"), ("R", "audit"), ("I", "crash"), ("P", "work")):
+            self.doc(letter, slug)
+        area = self.design(modules=["auth", "gateway"], owns=["auth-token", "session"])
+        self.issues(area, "| D001-K1 | minor | Fixture | fixture | 2026-11-01 | fix |")
+        self.design("other")
+        sub = self.doc("D", "sub", parent="D001")
+        sub.write_text(sub.read_text().replace("status: draft\n", "").replace("summary: Fixture", "summary:")
+                       .replace("# D001A: ", "# "))
+        self.doc("D", "alpha", parent="D001")
+        self.ok("index")
+        self.assertEqual(self.index(), "\n".join([
+            canon.INDEX_START, "",
+            "### Designs", "",
+            "- [D000: Project overview](designs/D000-project-overview.md) · draft · ? · owns: architecture",
+            "- [D001: Area](designs/D001-area.md) · active · 1 known issue · Fixture · owns: auth-token, session · "
+            "modules: auth, gateway",
+            "- [D001A: ?](designs/D001A-sub.md) · ? · ?",
+            "- [D001B: Alpha](designs/D001B-alpha.md) · draft · Fixture",
+            "- [D002: Other](designs/D002-other.md) · active · Fixture · owns: other", "",
+            "### Plans", "",
+            "- [P001: Work](plans/P001-work.md) · draft · Fixture", "",
+            "### Investigations", "",
+            "- [I001: Crash](investigations/I001-crash.md) · open · Fixture", "",
+            "### Reviews", "",
+            "- [R001: Audit](reviews/R001-audit.md) · open · Fixture", "",
+            "### Experiments", "",
+            "- [E001: Speed](experiments/E001-speed.md) · planned · Fixture", "",
+            "### Concepts", "",
+            "- [C001: Idea](concepts/C001-idea.md) · draft · Fixture", "",
+            canon.INDEX_END]))
+
+    def test_an_index_with_no_doc_to_list_holds_no_documents(self):
+        self.init_module("mod")
+        self.assertEqual(self.index("mod/docs/README.md"),
+                         "{}\n\nNo documents.\n\n{}".format(canon.INDEX_START, canon.INDEX_END))
+
+    def test_an_archived_index_file_is_kept_up_to_date_while_it_exists(self):
+        archived = self.root / "docs/archived/README.md"
+        archived.parent.mkdir()
+        archived.write_text("# Archived docs\n\nHand-written.\n")
+        self.assertEqual(self.ok("index"), "wrote docs/archived/README.md\n")
+        self.assertEqual(archived.read_text(),
+                         "# Archived docs\n\n{}\n\nNo documents.\n\n{}\n".format(canon.INDEX_START, canon.INDEX_END))
+
+    def test_the_archived_index_is_written_whole_once_the_root_has_an_archived_doc(self):
+        archived = self.root / "docs/archived/README.md"
+        self.doc("C", "idea")
+        self.commit()
+        self.assertFalse(archived.exists())
+        self.ok("archive", "C001", "dropped")
+        expected = "# Archived docs\n\n{}\n\n### Concepts\n\n- [C001: Idea](concepts/C001-idea.md) · dropped · Fixture" \
+                   "\n\n{}\n".format(canon.INDEX_START, canon.INDEX_END)
+        self.assertEqual(archived.read_text(), expected)
+        archived.write_text("# Archived docs\n\nHand-written.\n")
+        self.assertEqual(self.ok("index"), "wrote docs/archived/README.md\n")
+        self.assertEqual(archived.read_text(), expected)
+
+    def test_check_reports_each_index_file_out_of_date_and_fix_rewrites_it(self):
+        self.doc("C", "idea")
+        self.ok("archive", "C001", "dropped")
+        self.doc("C", "other")
+        self.commit()
+        readme, archived = self.root / "docs/README.md", self.root / "docs/archived/README.md"
+        expected = readme.read_text(), archived.read_text()
+        readme.write_text(expected[0].replace("· draft · Fixture", "· draft · Stale"))
+        archived.unlink()
+        out = self.fails("check")
+        self.assertIn("ERROR docs/README.md: index out of date", out)
+        self.assertIn("ERROR docs/archived/README.md: index out of date", out)
+        out = self.ok("check", "--fix")
+        self.assertIn("fixed wrote docs/README.md", out)
+        self.assertIn("fixed wrote docs/archived/README.md", out)
+        self.assertEqual((readme.read_text(), archived.read_text()), expected)
+        readme.unlink()
+        self.assertIn("ERROR docs/README.md: index out of date", self.fails("check"))
+
+    def test_check_checks_an_index_file_s_links_only_while_it_is_up_to_date(self):
+        readme = self.root / "docs/README.md"
+        readme.write_text(readme.read_text().replace("# Docs\n", "# Docs\n\nSee [the guide](guides/missing.md).\n", 1))
+        self.assertIn("ERROR docs/README.md:3: broken link guides/missing.md", self.fails("check"))
+        readme.write_text(readme.read_text().replace(" · draft · ", " · stale · "))
+        out = self.fails("check")
+        self.assertIn("ERROR docs/README.md: index out of date", out)
+        self.assertNotIn("broken link", out)
+
+    def test_index_replaces_only_the_span_between_the_markers_and_writes_only_changed_files(self):
+        readme = self.root / "docs/README.md"
+        block = self.index()
+        readme.write_text("# Docs\n\nBefore.\n\n{}\nStale.\n{}\n\nAfter.\n".format(canon.INDEX_START, canon.INDEX_END))
+        self.assertEqual(self.ok("index"), "wrote docs/README.md\n")
+        self.assertEqual(readme.read_text(), "# Docs\n\nBefore.\n\n" + block + "\n\nAfter.\n")
+        self.assertEqual(self.ok("index"), "")
+
+    def test_index_appends_to_a_readme_without_a_start_marker_and_creates_a_missing_one(self):
+        readme = self.root / "docs/README.md"
+        block = self.index()
+        readme.write_text("# Notes\n\nHand-written.\n\n\n")
+        self.assertEqual(self.ok("index"), "wrote docs/README.md\n")
+        self.assertEqual(readme.read_text(), "# Notes\n\nHand-written.\n\n" + block + "\n")
+        readme.unlink()
+        self.assertEqual(self.ok("index"), "wrote docs/README.md\n")
+        self.assertEqual(readme.read_text(), "# Docs\n\n" + block + "\n")
+
 
 class InitTest(CanonTest):
     def refuses(self, message, *args):
@@ -2053,6 +2163,123 @@ class AdoptTest(CanonTest):
         self.assertEqual(index.read_text(), "# Index\n\n## See [D001: notes](docs/designs/D001-notes.md)\n\n"
                                             "Back to [it](#see-d001-notes).\n")
         self.assertEqual(guide.read_text(), "Read [the index](index.md#see-d001-notes).\n")
+
+    def test_adopt_moves_the_file_with_git_and_gives_it_a_new_doc_s_frontmatter_h1_and_missing_sections(self):
+        (self.root / "Release_Notes-V2.md").write_text(
+            "---\ntitle: Old\ntags: [a]\n---\n# Release notes\n\n## Slices\n\nText.\n")
+        self.commit()
+        self.assertEqual(self.ok("adopt", "Release_Notes-V2.md", "plans"),
+                         "dropped frontmatter fields: title, tags\n"
+                         "Release_Notes-V2.md -> docs/plans/P001-release-notes-v2.md\n")
+        tracked = self.git("ls-files").splitlines()
+        self.assertIn("docs/plans/P001-release-notes-v2.md", tracked)
+        self.assertNotIn("Release_Notes-V2.md", tracked)
+        today = datetime.date.today().isoformat()
+        text = re.sub(r"<!-- canon: [^\n]*-->", "<guidance>",
+                      (self.root / "docs/plans/P001-release-notes-v2.md").read_text())
+        self.assertEqual(text, "---\nstatus: draft\ncreated: {0}\nupdated: {0}\nrevision: 1\nmodules: []\nsummary: \n"
+                               "refs: []\nbased_on: []\n---\n\n# P001: Release notes\n\n## Slices\n\nText.\n\n"
+                               "## Current state\n\n<guidance>\n\n## Notes\n\n<guidance>\n\n## Log\n\n<guidance>\n"
+                         .format(today))
+        self.assertIn("- [P001: Release notes](plans/P001-release-notes-v2.md) · draft · ?",
+                      (self.root / "docs/README.md").read_text())
+        (self.root / "spec.md").write_text("# Spec\n")
+        self.ok("adopt", "spec.md", "design")
+        self.assertTrue((self.root / "docs/designs/D001-spec.md").read_text().startswith(
+            "---\nstatus: draft\ncreated: {0}\nupdated: {0}\nrevision: 1\nmodules: []\nsummary: \nrefs: []\n"
+            "owns: []\npaths: []\n---\n\n# D001: Spec\n".format(today)))
+
+    def test_adopt_moves_an_untracked_file_by_a_plain_rename(self):
+        (self.root / "notes.md").write_text("# Notes\n")
+        self.assertEqual(self.ok("adopt", "notes.md", "design"), "notes.md -> docs/designs/D001-notes.md\n")
+        self.assertFalse((self.root / "notes.md").exists())
+        self.assertTrue((self.root / "docs/designs/D001-notes.md").exists())
+        self.assertEqual(self.git("ls-files", "docs/designs/D001-notes.md", "notes.md"), "")
+
+    def test_adopt_outside_git_moves_the_file_by_a_plain_rename(self):
+        self.root = self.outside_checkouts()
+        self.ok("init")
+        (self.root / "notes.md").write_text("# Notes\n")
+        self.assertEqual(self.ok("adopt", "notes.md", "design"), "notes.md -> docs/designs/D001-notes.md\n")
+        self.assertFalse((self.root / "notes.md").exists())
+        self.assertTrue((self.root / "docs/designs/D001-notes.md").exists())
+
+    def test_adopt_gives_an_empty_link_text_the_id_and_keeps_image_and_reference_texts(self):
+        (self.root / "notes.md").write_text("# Notes\n")
+        index = self.root / "index.md"
+        index.write_text("[](notes.md), ![Diagram](notes.md), [D001: Mine](notes.md) and [Notes](notes.md).\n")
+        self.ok("adopt", "notes.md", "design")
+        self.assertEqual(index.read_text(), "[D001: D001](docs/designs/D001-notes.md), "
+                                            "![Diagram](docs/designs/D001-notes.md), "
+                                            "[D001: Mine](docs/designs/D001-notes.md) and "
+                                            "[D001: Notes](docs/designs/D001-notes.md).\n")
+
+    def test_adopt_derives_the_slug_and_title_from_the_file_unless_given(self):
+        (self.root / "___.md").write_text("No heading.\n")
+        (self.root / "My Notes (draft).md").write_text("Text.\n")
+        (self.root / "notes.md").write_text("Intro.\n\n# Notes\n")
+        self.assertEqual(self.ok("adopt", "___.md", "C"), "___.md -> docs/concepts/C001-doc.md\n")
+        self.assertEqual(self.ok("adopt", "My Notes (draft).md", "C"),
+                         "My Notes (draft).md -> docs/concepts/C002-my-notes-draft.md\n")
+        self.assertEqual(self.ok("adopt", "notes.md", "D", "--slug", "auth", "--title", "Auth and sessions"),
+                         "notes.md -> docs/designs/D001-auth.md\n")
+        self.assertTrue((self.root / "docs/concepts/C001-doc.md").read_text().split("---\n\n", 1)[1]
+                        .startswith("# C001: Doc\n\nNo heading.\n"))
+        self.assertIn("\n# C002: My notes draft\n", (self.root / "docs/concepts/C002-my-notes-draft.md").read_text())
+        self.assertIn("Intro.\n\n# D001: Auth and sessions\n", (self.root / "docs/designs/D001-auth.md").read_text())
+
+    def test_adopt_takes_a_type_as_a_letter_in_either_case_or_its_directory_name(self):
+        for i, (kind, path) in enumerate((("c", "concepts/C001"), ("D", "designs/D001"), ("plans", "plans/P001"),
+                                          ("review", "reviews/R001"), ("experiments", "experiments/E001"),
+                                          ("investigation", "investigations/I001"))):
+            (self.root / "f{}.md".format(i)).write_text("# F\n")
+            self.assertEqual(self.ok("adopt", "f{}.md".format(i), kind),
+                             "f{0}.md -> docs/{1}-f{0}.md\n".format(i, path), kind)
+
+    def test_adopt_puts_the_doc_in_the_project_nearest_the_file_or_the_one_root_names(self):
+        self.init_module("mod")
+        for name in ("mod/notes.md", "other.md", "more.md", "top.md"):
+            (self.root / name).write_text("# Notes\n")
+        self.assertEqual(self.ok("adopt", "mod/notes.md", "design"), "mod/notes.md -> mod/docs/designs/D001-notes.md\n")
+        self.assertEqual(self.ok("adopt", "other.md", "design", "--root", "mod"),
+                         "other.md -> mod/docs/designs/D002-other.md\n")
+        self.assertEqual(self.ok("adopt", "more.md", "design", "--root", "mod/docs"),
+                         "more.md -> mod/docs/designs/D003-more.md\n")
+        self.assertEqual(self.ok("adopt", "top.md", "concept"), "top.md -> docs/concepts/C001-top.md\n")
+        index = (self.root / "mod/docs/README.md").read_text()
+        self.assertIn("- [D001: Notes](designs/D001-notes.md) · draft · ?", index)
+        self.assertIn("- [D002: Notes](designs/D002-other.md) · draft · ?", index)
+        self.assertIn("- [D003: Notes](designs/D003-more.md) · draft · ?", index)
+
+    def test_adopt_refuses_while_the_git_index_has_unmerged_entries(self):
+        conflict = self.root / "conflict.txt"
+        conflict.write_text("base\n")
+        self.commit()
+        self.git("checkout", "-qb", "side")
+        conflict.write_text("side\n")
+        self.git("commit", "-qam", "side")
+        self.git("checkout", "-q", "main")
+        conflict.write_text("main\n")
+        self.git("commit", "-qam", "main")
+        self.assertNotEqual(self.run_here("git", "merge", "-q", "side").returncode, 0)
+        (self.root / "notes.md").write_text("# Notes\n")
+        status = self.git("status", "--porcelain")
+        self.assertEqual(self.fails("adopt", "notes.md", "D"), "canon: resolve the merge conflicts first\n")
+        self.assertEqual(self.git("status", "--porcelain"), status)
+
+    def test_adopt_refuses_without_changing_a_file(self):
+        (self.root / "notes.md").write_text("# Notes\n")
+        (self.root / "notes.txt").write_text("Notes.\n")
+        (self.root / "nomod").mkdir()
+        self.doc("C", "idea")
+        self.commit()
+        self.refuses("missing.md is not a markdown file", "adopt", "missing.md", "D")
+        self.refuses("notes.txt is not a markdown file", "adopt", "notes.txt", "D")
+        self.refuses("docs/concepts/C001-idea.md is already a canon doc", "adopt", "docs/concepts/C001-idea.md", "D")
+        self.refuses("slug must be kebab-case", "adopt", "notes.md", "D", "--slug", "Bad_Slug")
+        self.refuses("unknown type x; use one of C D P R E I", "adopt", "notes.md", "x")
+        self.refuses("no AGENTS.md at {}; set the project up with `canon.py init` first".format(self.root / "nomod"),
+                     "adopt", "notes.md", "D", "--root", "nomod")
 
 
 class ProjectOverviewTest(CanonTest):
