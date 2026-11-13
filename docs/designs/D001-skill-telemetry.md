@@ -10,7 +10,7 @@ owns: [skill-telemetry]
 paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py, skills/governance/canon/trace.md, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/execution/canon-blind-review/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-handoff/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-investigate/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-retro/SKILL.md, skills/execution/canon-review/SKILL.md]
 reviewed: 13
 reviewers: [claude-opus-5.5, gpt-5.6-sol-high]
-approved: 12
+approved: 13
 implemented: 12
 ---
 

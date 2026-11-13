@@ -10,7 +10,7 @@ owns: [project-setup]
 paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md, skills/governance/canon/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-retro/SKILL.md, skills/execution/canon-grill/SKILL.md]
 reviewed: 7
 reviewers: [claude-opus-5.5, gpt-5.6-sol-high]
-approved: 5
+approved: 7
 implemented: 6
 ---
 

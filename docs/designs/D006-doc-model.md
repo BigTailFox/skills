@@ -10,7 +10,7 @@ owns: [doc-model, doc-writing, concurrent-work]
 paths: [skills/governance/canon/SKILL.md, skills/governance/canon/doc-types.md, skills/governance/canon/writing.md, skills/governance/canon/workflow.md, skills/execution/canon-design/SKILL.md, skills/governance/canon/scripts/canon.py, tests/test_canon.py]
 reviewed: 18
 reviewers: [claude-opus-5.5, gpt-5.6-sol-high]
-approved: 10
+approved: 18
 implemented: 16
 ---
 

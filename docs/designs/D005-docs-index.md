@@ -10,7 +10,7 @@ owns: [docs-index]
 paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py]
 reviewed: 3
 reviewers: [claude-opus-5.5, gpt-5.6-sol-high]
-approved: 2
+approved: 3
 implemented: 2
 ---
 
