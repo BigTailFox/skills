@@ -14,5 +14,6 @@
 
 - [R001: Codebase review of the canon module](reviews/R001-canon-module.md) · closed · First codebase review of the canon module at release 0.3.1, from the architecture, usability and functional angles.
 - [R002: Open items from local retro and review records](reviews/R002-local-records.md) · closed · Open findings from the retro notes, canon friction log and blind-review outputs kept only in .canon/, and what to restore when moving machines. · modules: canon
+- [R003: Canon friction in Silk's design phase](reviews/R003-silk-design-phase.md) · closed · Canon friction in a docs-only bilingual project: review gates per doc, parallel sessions, archived experiments, translations, check gaps, tool drift. · modules: canon
 
 <!-- canon:index:end -->

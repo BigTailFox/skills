@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-10-15
-updated: 2026-11-12
+updated: 2026-11-13
 revision: 12
 modules: [canon]
 summary: Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions.
@@ -325,5 +325,5 @@ Calls and latency are measured in the pilot; `canon.py` enforces the sizes, and 
 - Delivery is staged and, until step 3 lands, `implemented` counts step 1 alone: the analysis is tested on the pilot's real records, which do not exist before it, and a spec lead for code not yet due would show beside every file the design governs (the user's decision; R001-F32).
 - Data is kept until the user prunes or deletes it: a baseline at personal volume can take months.
 - Evidence feeds human-reviewed experiments, never automatic skill changes.
-- A gate's review files go in a directory named by its target and revision, with each follow-up round in a subdirectory: saving D001 revision 8's reports overwrote revision 7's, and sessions invented layouts for joint gates and extra rounds ([R002: Open items from local retro and review records](../archived/reviews/R002-local-records.md), F3; [R003§r003-f10-gate-directory-layout: R003-F10](../reviews/R003-silk-design-phase.md#r003-f10-gate-directory-layout)).
+- A gate's review files go in a directory named by its target and revision, with each follow-up round in a subdirectory: saving D001 revision 8's reports overwrote revision 7's, and sessions invented layouts for joint gates and extra rounds ([R002: Open items from local retro and review records](../archived/reviews/R002-local-records.md), F3; [R003§r003-f10-gate-directory-layout: R003-F10](../archived/reviews/R003-silk-design-phase.md#r003-f10-gate-directory-layout)).
 - A follow-up round is a kind of its own, not a gate: its reviewers read only a diff after resuming, so counting it as a gate would skew the gate questions and replay its findings against a full review.

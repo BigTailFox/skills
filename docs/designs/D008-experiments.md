@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-11-10
-updated: 2026-11-12
+updated: 2026-11-13
 revision: 5
 modules: [canon]
 summary: Prototypes and research (canon-prototype, canon-research): quick answers, the research brief, logic, UI and spike prototypes, verdicts in E docs.
@@ -146,7 +146,7 @@ Once a prototype has answered its question, the session:
 - Recorded research runs in a background subagent so the main work continues while it reads (a06989b, the skill's first description).
 - The main session reserves the experiment's id before the subagent starts, which keeps ids unique while both sessions write docs (`canon-research`, step 2).
 - The researcher writes each finding as soon as it has its source, and the launching session keeps the brief and the subagent's id, so a stopped run loses nothing and can be resumed or rerun: a researcher that wrote only at the end lost its work when it stopped, and a resume from another session failed (R003-F15; the user's decision, 2026-11-11).
-- The research brief keeps the subagent's scratch files in `.canon/canon-research/<E00X>/` and says that search tools honoring `.gitignore` skip `.canon/`: subagents wrote scratch files to `/tmp`, and Cursor's Grep and Glob skipped the ignored `.canon/` ([R003: Silk design phase](../reviews/R003-silk-design-phase.md), F41; 80b9688).
+- The research brief keeps the subagent's scratch files in `.canon/canon-research/<E00X>/` and says that search tools honoring `.gitignore` skip `.canon/`: subagents wrote scratch files to `/tmp`, and Cursor's Grep and Glob skipped the ignored `.canon/` ([R003: Silk design phase](../archived/reviews/R003-silk-design-phase.md), F41; 80b9688).
 - A logic prototype is one self-contained file so a non-developer can open it with nothing to install, and its logic is a pure module so it lifts into the real codebase once validated (LOGIC.md).
 - A UI prototype goes on an existing page whenever one could host it: on an empty route every variant looks fine, hiding problems a populated page exposes. More than 5 variants stop being radically different (UI.md).
 - Code wired into the product stays on the prototype branch, since variant components and a switcher left on the main branch rot and confuse the next reader (UI.md, step 6).

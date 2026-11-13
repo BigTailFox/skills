@@ -1,5 +1,5 @@
 ---
-status: open
+status: closed
 created: 2026-11-10
 updated: 2026-11-13
 revision: 1
@@ -18,8 +18,8 @@ refs: [C001, D000, D001, D003, D005, R001, R002, D002, D006]
 - Evidence: 34 Cursor sessions on one machine from 2026-11-03 to 2026-11-10 with their reviewer subagents' transcripts, the 14 merged gate records in Silk's `.canon/canon-blind-review/`, and Silk's 68 commits since 2026-10-29. The work of 2026-10-29 to 2026-11-02 ran on another machine and left only its commits. A session on a machine without the skills installed is left out.
 - Sources name a session by the first 8 characters of its id and a 0-based line of its transcript, e.g. e56224b2 L237. The raw event lists stay untracked in Silk's `.canon/canon-retro/all-sessions/`.
 - Angles: usability, functional, architecture. Severity: the review's high-cost findings are major, the rest minor.
-- Left out as fixed after canon 24: the canon block naming how to install missing skills ([R001: Codebase review of the canon module](../archived/reviews/R001-canon-module.md), F21, fixed in `116798a`).
-- Tiers: no design owns the change tiers and their flow, the doc types and lifecycle, `check`, `show`, `rename` or the research and grill skills ([D000§capabilities: capabilities](../designs/D000-project-overview.md#capabilities) reads `none`). A change to an existing rule or command there needs an as-built revision of it first (backfill), after which the user decides on it as a design problem, unless it fixes a defect no caller could rely on (L0); a rule with nothing existing to record is a new topic (L2).
+- Left out as fixed after canon 24: the canon block naming how to install missing skills ([R001: Codebase review of the canon module](R001-canon-module.md), F21, fixed in `116798a`).
+- Tiers: no design owns the change tiers and their flow, the doc types and lifecycle, `check`, `show`, `rename` or the research and grill skills ([D000§capabilities: capabilities](../../designs/D000-project-overview.md#capabilities) reads `none`). A change to an existing rule or command there needs an as-built revision of it first (backfill), after which the user decides on it as a design problem, unless it fixes a defect no caller could rely on (L0); a rule with nothing existing to record is a new topic (L2).
 
 ## Findings
 
@@ -51,8 +51,8 @@ refs: [C001, D000, D001, D003, D005, R001, R002, D002, D006]
 | R003-F24 | minor | usability: Revision and approval bookkeeping around a gate is left to guesswork | fixed 564af98 |
 | R003-F25 | minor | usability: `fixed <commit>` takes an extra commit for a fix made in docs | fixed 18b7dcf |
 | R003-F26 | minor | usability: Sessions guess ids for docs not yet created and mislead the user | fixed 18b7dcf |
-| R003-F27 | major | usability: Translations double every edit and still drift; canon has no translation convention | open |
-| R003-F28 | minor | usability: Code shown in docs is kept twice by hand, so the project built its own `embed.py` | open |
+| R003-F27 | major | usability: Translations double every edit and still drift; canon has no translation convention | declined readers translate with their own tools, so canon maintains docs only in the project's documentation language (D006@r11) |
+| R003-F28 | minor | usability: Code shown in docs is kept twice by hand, so the project built its own `embed.py` | moved C001 |
 | R003-F29 | minor | usability: The 500-line limit forces cuts in concepts, goes unenforced on reviews and is escaped by long lines | fixed 0b25d98 |
 | R003-F30 | minor | usability: Diagram sources, tools and readability have no rules | fixed 18b7dcf |
 | R003-F31 | minor | architecture: `canon.py` runs from a project copy that lags the installed skills, with project helpers beside it | fixed d9f7390 |
@@ -66,13 +66,13 @@ refs: [C001, D000, D001, D003, D005, R001, R002, D002, D006]
 | R003-F39 | minor | usability: A stale index is an error, which blocks a subagent allowed to edit only its own files | moved C001 |
 | R003-F40 | minor | usability: The `canon` skill sends L1 revisions to `canon-design`, which the agent cannot invoke | fixed 18b7dcf |
 | R003-F41 | minor | usability: Shell and tool pitfalls (zsh, the ignored `.canon/`, `/tmp`) reach no subagent prompt | fixed 80b9688 (the `.canon/` and `/tmp` pitfalls; the user declined the zsh rules) |
-| R003-F42 | minor | usability: No rule orders concepts and designs from the whole to the parts with each term defined before use, and D000 puts its Glossary last | open |
+| R003-F42 | minor | usability: No rule orders concepts and designs from the whole to the parts with each term defined before use, and D000 puts its Glossary last | fixed 5470075 |
 
 ## Details
 
 ### R003-F1: One review gate per doc revision
 
-- Location: `canon/workflow.md`, Review gate ("Every design or plan revision passes this gate"); `canon-design/SKILL.md`, which sends a D000 glossary edit "through its own review gate at L1"; [D001§review-files: review files](../designs/D001-skill-telemetry.md#review-files) ("A gate's topic is its doc id"); `trace start gate <doc id>`.
+- Location: `canon/workflow.md`, Review gate ("Every design or plan revision passes this gate"); `canon-design/SKILL.md`, which sends a D000 glossary edit "through its own review gate at L1"; [D001§review-files: review files](../../designs/D001-skill-telemetry.md#review-files) ("A gate's topic is its doc id"); `trace start gate <doc id>`.
 - Problem: a change made mainly in `D002`, with follow-on edits to `D001` and `D003`, was set up as 3 gates with 6 reviewers until the user stopped it (e56224b2 L232, L237). A `D001` change that touched D000's glossary sent `D000` r5 through a gate of its own (01d9545f L5, L80). Gates were joined by hand three times (Silk `6e85abc`, `ede4da7`, `65cfacb`), so the records of `D003` r2 and r3 sit under `D002/r3/` and `D001/r4/`, and `D003`'s own merge record skips them.
 - Suggestion: gate a change instead of a doc: one gate with a main target and follow-on targets, `Changes since` covering every changed doc, one tier for the whole change, and every target's `reviewed` set when it passes. A follow-on edit that only replaces a restatement with a link, or follows a rename, bumps no revision, like D000's rows. L2; D001's review files and gate units follow.
 
@@ -84,19 +84,19 @@ refs: [C001, D000, D001, D003, D005, R001, R002, D002, D006]
 
 ### R003-F3: Cross-family reviewer without a reviewer file
 
-- Location: `canon-blind-review/SKILL.md`, Reviewers and Manual fallback; [D003§launch: launch](../designs/D003-subagents.md#launch) ("in the foreground"); [D003§reviewers: reviewers](../designs/D003-subagents.md#reviewers).
+- Location: `canon-blind-review/SKILL.md`, Reviewers and Manual fallback; [D003§launch: launch](../../designs/D003-subagents.md#launch) ("in the foreground"); [D003§reviewers: reviewers](../../designs/D003-subagents.md#reviewers).
 - Problem: Silk had no reviewer file until 2026-11-10. Before that, each L2 gate searched old transcripts for how Gemini had been run and asked the user again (01d9545f L4 to L17, 4714e84a L6); earlier still, the user ran Gemini in another tool and pasted its report (8ee6aa2c L0, 66923f0f L35). A Gemini host subagent that hit "region not available" never returned, and the session recovered its report from the subagent transcript only after the user typed "continue" (01d9545f L260 to L264).
-- Suggestion: when the file is missing, write it from the user's first answer, as Silk did by hand. Run every reviewer in the background; [C001: Canon backlog](../concepts/C001-canon-backlog.md)'s "Waiting on a background reviewer" weighs the other way. Let the file list fallback reviewers, tried in order when one stops twice. L1 revision of D003, with D003-K6 and D003-K7.
+- Suggestion: when the file is missing, write it from the user's first answer, as Silk did by hand. Run every reviewer in the background; [C001: Canon backlog](../../concepts/C001-canon-backlog.md)'s "Waiting on a background reviewer" weighs the other way. Let the file list fallback reviewers, tried in order when one stops twice. L1 revision of D003, with D003-K6 and D003-K7.
 
 ### R003-F4: Where reviewer reports live and their language
 
-- Location: [D003§input-and-reports: input and reports](../designs/D003-subagents.md#input-and-reports); `canon-blind-review/SKILL.md`, Reviewers: the session writes `<role>.md`.
+- Location: [D003§input-and-reports: input and reports](../../designs/D003-subagents.md#input-and-reports); `canon-blind-review/SKILL.md`, Reviewers: the session writes `<role>.md`.
 - Problem: a host subagent's report reaches the session only as the tool result. Sessions sometimes saved a translation or a summary, and after context compaction the original could be recovered only from the subagent transcript. The user's rule to reply in Simplified Chinese reached the reviewers, so some review files are in Chinese (01d9545f L29, L275; fce15e7b L132).
 - Suggestion: have the prompt ask for the report in the project's documentation language and let the reviewer write its own `<role>.md`, the one file it may write. L1 revision of D003.
 
 ### R003-F5: Reviewers read the live work tree
 
-- Location: `canon/workflow.md`, Reviewer prompt ("Judge it only from the repository"); [D003§review-snapshots: review snapshots](../designs/D003-subagents.md#review-snapshots), which serve only the confirmation diff.
+- Location: `canon/workflow.md`, Reviewer prompt ("Judge it only from the repository"); [D003§review-snapshots: review snapshots](../../designs/D003-subagents.md#review-snapshots), which serve only the confirmation diff.
 - Problem: authors held off editing while reviewers read (fce15e7b L82, 01d9545f L267). One author edited while Gemini was still reading, then counted its approve as covering those edits (e56224b2 L385). Other sessions' uncommitted edits entered gates: `D003` r1's snapshot held them, and `D002`'s reviewers read a `D001` that another session was changing (01d9545f L35).
 - Suggestion: check out the first snapshot into a worktree under `.canon/` and point the prompt at it. L1 revision of D003.
 
@@ -116,18 +116,18 @@ refs: [C001, D000, D001, D003, D005, R001, R002, D002, D006]
 
 - Location: `canon/SKILL.md`, Tool: "Unless a skill's first `start` prints `trace <id>`, skip its other trace calls"; the Tool table has no `trace` row.
 - Problem: every gate began with a `trace start` call only to learn that tracing was off (01d9545f L255).
-- Suggestion: add `trace` to the Tool table and say that tracing is on when `~/.config/canon/trace` exists and `.canon/canon/trace/off` does not ([D001§switch-and-storage: switch and storage](../designs/D001-skill-telemetry.md#switch-and-storage)). L0.
+- Suggestion: add `trace` to the Tool table and say that tracing is on when `~/.config/canon/trace` exists and `.canon/canon/trace/off` does not ([D001§switch-and-storage: switch and storage](../../designs/D001-skill-telemetry.md#switch-and-storage)). L0.
 
 ### R003-F9: Snapshot commit and HEAD
 
-- Location: [D003§review-snapshots: review snapshots](../designs/D003-subagents.md#review-snapshots): `refs/snapshots/<id>` per snapshot.
+- Location: [D003§review-snapshots: review snapshots](../../designs/D003-subagents.md#review-snapshots): `refs/snapshots/<id>` per snapshot.
 - Problem: the commit `snapshot` prints is not the HEAD of `.canon/canon/snapshots`, and sessions took the difference for a failed snapshot.
 - Suggestion: say in `canon-blind-review` that each snapshot is a ref, checked with `git -C .canon/canon/snapshots cat-file -e <commit>`. L0.
 
 ### R003-F10: Gate directory layout
 
-- Location: [D001§review-files: review files](../designs/D001-skill-telemetry.md#review-files); `canon-blind-review/SKILL.md`, Reviewers.
-- Problem: each session invented a layout for later revisions, joint gates and extra rounds: `r6a`, `post-gate`, `C001-r25`. [R002: Open items from local retro and review records](../archived/reviews/R002-local-records.md), F3, covers a revision's gate overwriting the previous one; joint gates (F1) and incremental rounds (F2) have no place either.
+- Location: [D001§review-files: review files](../../designs/D001-skill-telemetry.md#review-files); `canon-blind-review/SKILL.md`, Reviewers.
+- Problem: each session invented a layout for later revisions, joint gates and extra rounds: `r6a`, `post-gate`, `C001-r25`. [R002: Open items from local retro and review records](R002-local-records.md), F3, covers a revision's gate overwriting the previous one; joint gates (F1) and incremental rounds (F2) have no place either.
 - Suggestion: settle the layout with R002-F3: `<topic>/r<N>/` per revision, a joint gate under its main target, one subdirectory per extra round. L1 revision of D001.
 
 ### R003-F11: What reviewers may run and read
@@ -292,7 +292,7 @@ refs: [C001, D000, D001, D003, D005, R001, R002, D002, D006]
 
 ### R003-F39: Stale index as an error
 
-- Location: [D005: Docs index](../designs/D005-docs-index.md): `ERROR <path>: index out of date`.
+- Location: [D005: Docs index](../../designs/D005-docs-index.md): `ERROR <path>: index out of date`.
 - Problem: a subagent told to edit only its own files cannot regenerate the shared index, so its `check` fails on others' changes.
 - Suggestion: report a stale index as a warning, and as an error under `check --base`. L1 revision of D005.
 
@@ -309,8 +309,8 @@ refs: [C001, D000, D001, D003, D005, R001, R002, D002, D006]
 
 ### R003-F42: Section order in concepts and designs
 
-- Location: `canon/writing.md` and [D006§writing-rules: writing rules](../designs/D006-doc-model.md#writing-rules), which keep a topic under one heading but set no order between headings; `canon/doc-types.md`, Concepts ("adds or orders others as its ideas need") and Designs, which fix only Goals, Spec and Decisions; [D002§project-overview-d000: project overview](../designs/D002-overview-and-as-built.md#project-overview-d000) and the `new` template, which put D000's Glossary after Capabilities, Modules and Dependencies.
-- Problem: nothing tells a writer to lead with the overview or to define a term before the sections that use it, so a concept or design can open with details and use names a later section defines. Its reader meets details before the frame they belong to and names before their meaning, and has to read ahead to understand what came first. Canon's own D000 order breaks the rule: in this repository's [D000: Project overview](../designs/D000-project-overview.md), Capabilities, Modules and Dependencies use "skill" and "execution skills" before the Glossary defines skill and category.
+- Location: `canon/writing.md` and [D006§writing-rules: writing rules](../../designs/D006-doc-model.md#writing-rules), which keep a topic under one heading but set no order between headings; `canon/doc-types.md`, Concepts ("adds or orders others as its ideas need") and Designs, which fix only Goals, Spec and Decisions; [D002§project-overview-d000: project overview](../../designs/D002-overview-and-as-built.md#project-overview-d000) and the `new` template, which put D000's Glossary after Capabilities, Modules and Dependencies.
+- Problem: nothing tells a writer to lead with the overview or to define a term before the sections that use it, so a concept or design can open with details and use names a later section defines. Its reader meets details before the frame they belong to and names before their meaning, and has to read ahead to understand what came first. Canon's own D000 order breaks the rule: in this repository's [D000: Project overview](../../designs/D000-project-overview.md), Capabilities, Modules and Dependencies use "skill" and "execution skills" before the Glossary defines skill and category.
 - Suggestion: add a rule to `writing.md`: order a concept's or design's sections, and the content within each, from the whole to the parts, the important to the minor and the core to the details, and put the section that defines a term or name before the first section that uses it, or link the doc that defines it. L1 revision of D006. Make Glossary D000's first Spec subsection in D002, `doc-types.md` and the template; `check` tests only that the subsections exist, so existing D000s stay valid. L1 revision of D002.
 
 ## Priorities
