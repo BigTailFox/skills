@@ -317,3 +317,9 @@ Agents and people read docs, usually after reaching them through a pointer: an `
 - Markdown in attachment directories gets the link checks of guides: reports and other Markdown live there, and sessions wrote their own link checkers for them ([R003§r003-f33-links-in-attachments: R003-F33](../archived/reviews/R003-silk-design-phase.md#r003-f33-links-in-attachments)).
 - A design with no `implemented` gets no warning for `paths` that match no file, as a planned module's Path gets none ([D002§project-overview-d000: project overview](D002-overview-and-as-built.md#project-overview-d000)): in a project still being designed, the same warnings for code not yet written buried new ones at every `check` ([R003§r003-f32-permanent-warnings: R003-F32](../archived/reviews/R003-silk-design-phase.md#r003-f32-permanent-warnings); the user's decision, 2026-11-11).
 - `status` moves non-terminal statuses forward and checks each move's condition, leaving every other field to the steps that set it: `draft`, `accepted` and `active` were hand edits sessions got wrong ([R003§r003-f36-no-status-command: R003-F36](../archived/reviews/R003-silk-design-phase.md#r003-f36-no-status-command); the user's decision, 2026-11-11).
+
+## Known issues
+
+| ID | Severity | Issue | Source | Since | Next |
+|----|----------|-------|--------|-------|------|
+| D006-K1 | minor | `check` reports a live concluded experiment that no live doc cites, but not the reverse invalid state: an experiment already archived as `concluded` that a live doc still cites | L0 0433411 | 2026-11-13 | fix |
