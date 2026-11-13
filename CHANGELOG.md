@@ -2,6 +2,16 @@
 
 Notable changes in each release. Versions follow [Semantic Versioning](https://semver.org); while the major version is 0, a minor release may change how skills behave.
 
+## 0.7.1 - 2026-11-13
+
+`renumber` and `rename` leave no stale reference to a moved doc or a changed heading behind, and `check` catches a cited experiment archived as concluded.
+
+- `renumber`, and `init`'s move of a doc to D000, now rewrite every citation of a moved id outside code, not only links and `refs`: a review's `moved` and `fixed` dispositions, `summary`, prose and link texts. A citation in a link's text follows the doc or attachment directory the link points at, and a doc's citations of its own id stay with it. In an id collision, citations count as evidence of which doc they mean; one written more often than on the base is unclear, so `renumber` keeps it and names the doc for you to settle.
+- `rename` also moves the attachments named after the old slug, and refuses to overwrite an existing file. `rename ID SLUG --title T` sets the doc's H1 to `# <ID>: <T>` and rewrites the link texts that repeat the old `<ID>: <title>`.
+- References to a heading whose anchor a command changes now follow it. In every doc, the `§<slug>` after a citation follows the heading anchors of what it names: the linked file for a link text's citation of the doc the link points at, the doc itself for its own id, otherwise the one doc with the id after the command. In every `.md` file, guides included, links follow the headings whose link texts or citations the command changes, through chains of such headings. One rare case is left: after `renumber`, a citation in the middle of a doc's link text that points into the moved doc's attachment files keeps its old slug when that file's heading changes.
+- `check` warns of an experiment archived as `concluded` that a live doc still cites, naming the docs that link it: move it and its attachment directory back out of `archived/` and fix the links, or remove the links that do not rest on its result.
+- `canon.py` is now canon version 56: install this release in each project and run `/canon-init` to upgrade.
+
 ## 0.7.0 - 2026-11-13
 
 An experiment stays live while any live doc cites it, and docs define their terms before the sections that use them, D000's Glossary first.
