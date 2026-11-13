@@ -2,6 +2,18 @@
 
 Notable changes in each release. Versions follow [Semantic Versioning](https://semver.org); while the major version is 0, a minor release may change how skills behave.
 
+## 0.7.2 - 2026-11-13
+
+`canon.py`'s errors name the value at fault and the step to take, `which` flags files that exist nowhere, and `new` refuses a plan without its design.
+
+- `check`'s `unknown entry` ends with the step that fits the entry: move one named like a doc into its type directory, move anything else out of `archived/`, adopt a `.md` file with `canon.py adopt` or move it into `guides/`, and move any other entry into `guides/` or `assets/`.
+- `new`, `rename` and `adopt` refuse a slug that is not kebab-case with its kebab form as an example, and `adopt` of a path where nothing exists says the file does not exist.
+- `new P` refuses without `--from` instead of creating a plan no design backs. When `--from` names a doc that is no accepted or active design, the error gives its status or says it is not a design.
+- `show ID#slug` lists the doc's section slugs when the slug matches none, and `find` with no match says how many archived docs match with `--archived`.
+- The `--base` errors of `check`, `affected` and `renumber` tell an unknown ref, to fetch or correct, from history that shares no merge base, and in a shallow clone say to run `git fetch --unshallow`. `renumber --base` refuses a ref that names no commit.
+- `which` marks a file that exists neither on disk nor in Git as `(missing)` and still names the design that would govern it, so a mistyped path no longer passes for a real one.
+- `canon.py` is now canon version 57: install this release in each project and run `/canon-init` to upgrade.
+
 ## 0.7.1 - 2026-11-13
 
 `renumber` and `rename` leave no stale reference to a moved doc or a changed heading behind, and `check` catches a cited experiment archived as concluded.
