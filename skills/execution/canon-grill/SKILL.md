@@ -13,7 +13,7 @@ A calling skill's own rule comes before this skill's: the `canon` skill's as-bui
 
 For each open decision, take the first branch that applies:
 
-1. **A fact** about the code, docs, tools or environment: find it yourself, dispatching a subagent for broad searches. Never ask the user for something you could look up.
+1. **A fact** about the code, docs, tools or environment: find it yourself; for broad searches, dispatch a new subagent from the host's own tool, never a fork of this session. Never ask the user for something you could look up.
 2. **Settled by a design, plan or standard**: follow it and cite it, e.g. `D003§token-refresh`. When the work conflicts with a design's intent, the user decides; never resolve it yourself.
 3. **One option is clearly right**: the alternatives are plainly worse against the stated goals. Decide, and state the decision in one line where the user will see it.
 4. **Evidence would settle it**: a logic, state-model, UI or performance question goes to the `canon-prototype` skill; a question about an external system or library goes to the `canon-research` skill. Grill only about what the evidence leaves open.
@@ -39,7 +39,7 @@ Recommended: <your answer and its one-line reason>
 
 Word each question so "yes" accepts your recommendation. A question may ask the user to pick several items of a list, such as which review findings to fix now. Each batch of answers reshapes the tree: record the answers, recompute the frontier and ask the next batch.
 
-Facts are never the user's job. When a frontier question needs one, dispatch a subagent and keep going: only the questions downstream of that fact wait for it.
+Facts are never the user's job. When a frontier question needs one, dispatch a new subagent from the host's own tool, never a fork of this session, and keep going: only the questions downstream of that fact wait for it.
 
 ## Record
 

@@ -2,6 +2,7 @@ This skill is adapted from mattpocock/skills
 https://github.com/mattpocock/skills
 
 Upstream skills: diagnosing-bugs
+Compared with upstream commit: 5863806dd4e15c63174bee4e7515a4256792ecfa
 License: MIT, see LICENSE
 
 Modified: rewritten for the canon documentation system. Upstream document
