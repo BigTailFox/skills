@@ -15,7 +15,7 @@ Do not commit or leave untracked any `SKILL.md` other than a skill's own `skills
 `execution/` is mostly ported from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). When porting:
 
 - Keep upstream links, attribution and change notes out of `SKILL.md` and the files it references; they take up context and distract the agent.
-- Put provenance in the skill directory: `LICENSE` is the upstream license copied verbatim, and `NOTICE` names the upstream repository and skill and states that it was modified.
+- Put provenance in the skill directory: `LICENSE` is the upstream license copied verbatim, and `NOTICE` names the upstream repository and skill, the upstream commit the skill was last compared with, and states that it was modified. To sync, diff upstream from that commit, port what is worth keeping, and move the commit in every `NOTICE` compared.
 - Follow only the governance layer's doc conventions. Upstream conventions worth keeping (`GLOSSARY.md`, ADRs, the issue tracker, `setup-matt-pocock-skills` and so on) are absorbed into governance first and then referenced by skills; a ported skill no longer depends on or mentions upstream conventions.
 
 ## Skill rules
