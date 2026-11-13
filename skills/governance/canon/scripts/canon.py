@@ -30,7 +30,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "62"
+CANON_VERSION = "63"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -3305,18 +3305,65 @@ def trace_root():
     return cwd, False
 
 
+def worktree_main(root):
+    """The checkout whose trace directory the checkout at `root` shares as a worktree in .worktrees/, read without
+    running Git: <R> when `root`'s .git is a file whose gitdir: line names a directory directly inside one named
+    worktrees, a linked worktree's Git directory, and `root` lies under <R>/.worktrees/ where <R> holds .git; else
+    None."""
+    try:
+        with open(str(root / ".git"), "rb") as git_file:
+            line = git_file.readline()
+    except OSError:
+        return None
+    if not line.startswith(b"gitdir: "):
+        return None
+    git_dir = os.path.normpath(os.path.join(str(root), os.fsdecode(line[len(b"gitdir: "):].rstrip(b"\r\n"))))
+    if os.path.basename(os.path.dirname(git_dir)) != "worktrees":
+        return None
+    return next((path.parent for path in root.parents
+                 if path.name == ".worktrees" and (path.parent / ".git").exists()), None)
+
+
+def can_create_file(directory):
+    """Whether a file can be created in `directory`, created first when missing: a uniquely named file is created
+    there and deleted."""
+    probe = directory / ".write-test-{}-{}".format(os.getpid(), os.urandom(4).hex())
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        os.close(os.open(str(probe), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+    except OSError:
+        return False
+    with contextlib.suppress(OSError):
+        probe.unlink()
+    return True
+
+
+def trace_holder(root):
+    """The checkout whose trace directory the trace calls run in the checkout at `root` use, found without running
+    Git (D001#switch-and-storage): a worktree in .worktrees/ uses its main checkout's, found again from there, unless
+    tracing is on there and no file can be created in it; every other checkout uses its own."""
+    main, shared = root, worktree_main(root)
+    while shared:
+        main, shared = shared, worktree_main(shared)
+    if main != root and trace_state(main, root)[0] and not can_create_file(main / TRACE_DIR):
+        return root
+    return main
+
+
 def trace_switch_path():
     return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "canon" / "trace"
 
 
-def trace_state(root):
-    """Whether tracing is on in the checkout at `root`, and the status line that says why."""
-    switch, off = trace_switch_path(), TRACE_DIR + "/off"
+def trace_state(holder, root):
+    """Whether tracing is on in the checkout at `root`, whose calls use the trace directory of the checkout `holder`,
+    and the status line that says why."""
+    switch, off = trace_switch_path(), holder / TRACE_DIR / "off"
+    shown = TRACE_DIR + "/off" if holder == root else str(off)
     if not switch.exists():
         return False, "trace off: no machine switch {}; `canon.py trace on` creates it".format(switch)
-    if (root / off).exists():
-        return False, "trace off: this checkout opted out with {}; `canon.py trace on --here` deletes it".format(off)
-    return True, "trace on: the machine switch {} exists and this checkout has no {}".format(switch, off)
+    if off.exists():
+        return False, "trace off: this checkout opted out with {}; `canon.py trace on --here` deletes it".format(shown)
+    return True, "trace on: the machine switch {} exists and this checkout has no {}".format(switch, shown)
 
 
 def trace_doc_paths(root, is_git, names):
@@ -3844,7 +3891,8 @@ def new_id(now):
 
 def trace_start(args):
     root, is_git = trace_root()
-    if not trace_state(root)[0]:
+    holder = trace_holder(root)
+    if not trace_state(holder, root)[0]:
         print("trace off")
         return 0
     if (args.kind == "slice") != bool(args.slice) or (args.slice and not SLICE_RE.fullmatch(args.slice)):
@@ -3854,7 +3902,7 @@ def trace_start(args):
         raise TraceError("DOC arguments are doc ids such as D001, not {}".format(", ".join(map(repr, invalid))))
     if args.model is not None and not short_field(args.model):
         raise TraceError("--model must be a single-line string of 1 to {} characters".format(MAX_REVIEWER_FIELD))
-    trace_dir = root / TRACE_DIR
+    trace_dir = holder / TRACE_DIR
     parent = start_parent(trace_dir, args)
     host, conversation = trace_host()
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -3873,7 +3921,7 @@ def trace_start(args):
         model = args.model.lower() if args.model else None
         skill = os.path.abspath(args.skill) if args.skill else None
     manifest, files = skill_manifest(skill) if skill else (None, [])
-    ignore_trace_dir(root)
+    ignore_trace_dir(holder)
     gate_doc = paths.get(args.docs[0]) if args.kind == "gate" and args.docs and is_git else None
     as_built = as_built_commit(root, gate_doc) if gate_doc else None
     snapshot, skipped = record_snapshot(root, is_git, trace_dir, unit, base or head, manifest, files, as_built)
@@ -4017,10 +4065,11 @@ def archive_files(source, target, since):
 
 def trace_end(args):
     root, is_git = trace_root()
-    if not trace_state(root)[0]:
+    holder = trace_holder(root)
+    if not trace_state(holder, root)[0]:
         print("trace off")
         return 0
-    trace_dir = root / TRACE_DIR
+    trace_dir = holder / TRACE_DIR
     start = end_unit(trace_dir, args)
     kind = start.get("kind")
     dispositions = read_dispositions(kind, args.input) if args.input is not None else None
@@ -4050,10 +4099,11 @@ def trace_end(args):
 
 def trace_status(args):
     root, _is_git = trace_root()
-    print(trace_state(root)[1])
+    holder = trace_holder(root)
+    print(trace_state(holder, root)[1])
     now = datetime.datetime.now(datetime.timezone.utc)
     since = (now - datetime.timedelta(hours=24)).strftime(UNIT_TIME_FORMAT)
-    events = read_events(root / TRACE_DIR,
+    events = read_events(holder / TRACE_DIR,
                          *{prefix.encode() for prefix in (since[:9], now.strftime(UNIT_TIME_FORMAT)[:9])})
     ended = {event.get("id") for event in events if event.get("type") == "end"}
     units = [event for event in events if event.get("type") == "start" and event.get("kind") != "slice"
@@ -4066,16 +4116,17 @@ def trace_status(args):
         docs = "".join(" " + doc for doc in event.get("docs") or [])
         mine = " (this conversation)" if conversation and event.get("conversation") == conversation else ""
         print("  {} {}{} started {}{}".format(event["id"], event.get("kind"), docs, event.get("at"), mine))
-    print("\n".join(snapshot_summary(root / TRACE_DIR)))
+    print("\n".join(snapshot_summary(holder / TRACE_DIR)))
     return 0
 
 
 def trace_switch(args):
     root, _is_git = trace_root()
     if args.here:
-        off = root / TRACE_DIR / "off"
+        holder = trace_holder(root)
+        off = holder / TRACE_DIR / "off"
         if args.action == "off":
-            ignore_trace_dir(root)
+            ignore_trace_dir(holder)
             off.parent.mkdir(parents=True, exist_ok=True)
             off.touch()
         else:
@@ -4088,7 +4139,7 @@ def trace_switch(args):
             print(TRACE_NOTICE)
         else:
             switch.unlink(missing_ok=True)
-    print(trace_state(root)[1])
+    print(trace_state(trace_holder(root), root)[1])
     return 0
 
 
@@ -4152,8 +4203,7 @@ def remove_stale(directory, prefix, cutoff):
 def trace_prune(args):
     """Prune under snapshot.lock whenever the snapshot repository exists, so that no start's snapshot can reuse an
     object while the deletions and gc run."""
-    root, _is_git = trace_root()
-    trace_dir = root / TRACE_DIR
+    trace_dir = trace_holder(trace_root()[0]) / TRACE_DIR
     now = datetime.datetime.now(datetime.timezone.utc)
     cutoff = (now - datetime.timedelta(days=args.days)).strftime(UNIT_TIME_FORMAT)
     hour_ago = (now - datetime.timedelta(hours=1)).strftime(UNIT_TIME_FORMAT)

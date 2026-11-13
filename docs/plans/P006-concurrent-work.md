@@ -18,7 +18,7 @@ Implements [D006: Doc model and writing rules](../designs/D006-doc-model.md) r19
 
 ## Current state
 
-S1 to S5 done. Next: S6.
+S1 to S6 done. Next: S7.
 
 ## Slices
 
@@ -150,7 +150,7 @@ Test criteria; seam: `init`'s output and the files it writes, and real `git comm
 
 ### S6: Trace data of worktrees in `.worktrees/`
 
-Status: todo
+Status: done
 
 Risk: data location. A wrong rule splits a session's units across two trace directories, or keeps them where removing the worktree deletes them; the fallback's write test must leave no file behind, and locating must still run no Git command.
 
@@ -225,3 +225,4 @@ Test criteria; seam: the skill texts, checked by `validate.py` and by the code r
 - 2026-11-13: S3 done. `stage_indexes` writes through `git hash-object -w --stdin` and `git update-index --add --cacheinfo`; `git_run` and `git_checked` take stdin as bytes, so no newline translation or locale encoding changes an index. S1's test of every `--rev` read now takes `check --rev HEAD` on the checked-out commit as its baseline, since a stale index is a `WARN` on the work tree and an `ERROR` under `--rev`. For the docs step: whether a staged index entry holds other text is read as `check --staged` reads it, following symbolic links, which D005 leaves unsaid. `CANON_VERSION` 60.
 - 2026-11-13: S4 done. A problem between two docs records the other doc's path (`also`), so naming either reports it; with doc arguments the other docs, indexes, old copies and deleted docs go unchecked rather than checked and filtered, so the deleted-docs diff does not run. For the docs step: an argument of id form (`FULL_ID_RE` and `well_formed_id`) with no doc gets `archive`'s `unknown document`, any other argument resolves through `realpath`, so a link to a doc file names it, and the names-no-doc message covers the rest; argparse takes no doc argument after an option that follows another (`check D001 --fix D002`), so texts write `check <ids> --fix`. `CANON_VERSION` 61.
 - 2026-11-13: S5 done. `STAGED_SINCE` holds the hook's `<V>`, 59, apart from `CANON_VERSION`; `VERSION_57_HOOK` is version 57's hook frozen as bytes, so one without its final newline counts as edited and stays. canon-init's setup step 3 also names `.worktrees/`, which `init` now adds. For the docs step: D004 has `init --hook` print the kept message for any existing hook, so a hook already holding the current template gets the advice to add `check --staged` it already runs. `CANON_VERSION` 62.
+- 2026-11-13: S6 done. `worktree_main` reads the `.git` file without Git, and `trace_holder` follows it again from the main checkout; the write test runs only while tracing is on there. The read-only tests make `.canon/canon/` and every directory under it read-only, since an existing writable `trace/` would never fall back, and skip on Windows as well as root. For the docs step: `status` and `trace on` count as calls, so they may create the main checkout's empty `trace/`; with tracing off, `off --here` and `prune` use the main checkout's directory without a write test. This session's units had started in this worktree's own trace directory, which the main checkout lacked, so the directory moved there whole with `mv -T`; D001 says nothing of units a worktree started before the change. `CANON_VERSION` 63.

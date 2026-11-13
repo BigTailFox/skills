@@ -3993,6 +3993,27 @@ class TraceCase(CanonTest):
                 "refs": self.git("for-each-ref", "--format=%(refname) %(objectname)"),
                 "objects": files(git_dir / "objects"), "index": (git_dir / "index").read_bytes()}
 
+    def worktree(self, branch="b"):
+        """A linked worktree at .worktrees/<branch> on a new branch tracking main, as concurrent sessions take one."""
+        self.git("worktree", "add", "-q", "--track", "-b", branch, ".worktrees/" + branch, "main")
+        return self.root / ".worktrees" / branch
+
+    @contextlib.contextmanager
+    def read_only(self, top):
+        """Make the directory `top` and every directory under it read-only while the block runs."""
+        modes = {}
+        try:
+            for path, _dirs, _names in os.walk(str(top)):
+                modes[path] = stat.S_IMODE(os.stat(path).st_mode)
+                os.chmod(path, modes[path] & ~0o222)
+            yield
+        finally:
+            for path, mode in modes.items():
+                os.chmod(path, mode)
+
+    def file_contents(self, top):
+        return {path: path.read_bytes() for path in top.rglob("*") if path.is_file()}
+
     @contextlib.contextmanager
     def lock_held(self, name, directory=None):
         """Hold the lock `name` in `directory`, by default the trace directory, as a call does, so calls started
@@ -5118,35 +5139,41 @@ class PruneTest(TraceCase):
         self.commit()
         self.trace_dir = self.root / ".canon/canon/trace"
 
-    def backdate(self, unit, days):
-        """Turn `unit` into a unit started `days` days earlier, in the documented formats: its id and start time in
-        the events file, its snapshot ref and its archive; return its new id."""
+    def backdate(self, unit, days, trace_dir=None):
+        """Turn `unit` of the trace directory `trace_dir`, by default the test repository's, into a unit started
+        `days` days earlier, in the documented formats: its id and start time in the events file, its snapshot ref
+        and its archive; return its new id."""
+        trace_dir = trace_dir or self.trace_dir
         ago = datetime.timedelta(days=days)
         old = (self.started(unit) - ago).strftime(UNIT_TIME_FORMAT) + unit[16:]
-        lines = self.lines()
+        lines = self.lines(trace_dir / "events.jsonl")
         for line in lines:
             if line.get("id") == unit:
                 line.update(id=old, at=(datetime.datetime.fromisoformat(line["at"]) - ago).isoformat())
-        self.events.write_text("".join(json.dumps(line, separators=(",", ":")) + "\n" for line in lines),
-                               encoding="utf-8")
-        if self.snap("for-each-ref", "refs/trace/" + unit):
-            self.snap("update-ref", "refs/trace/" + old, "refs/trace/" + unit)
-            self.snap("update-ref", "-d", "refs/trace/" + unit)
-        if (self.trace_dir / unit).exists():
-            (self.trace_dir / unit).rename(self.trace_dir / old)
+        (trace_dir / "events.jsonl").write_text("".join(json.dumps(line, separators=(",", ":")) + "\n"
+                                                        for line in lines), encoding="utf-8")
+        if self.snapshot_refs(trace_dir, unit):
+            self.git("-C", str(trace_dir), "update-ref", "refs/trace/" + old, "refs/trace/" + unit)
+            self.git("-C", str(trace_dir), "update-ref", "-d", "refs/trace/" + unit)
+        if (trace_dir / unit).exists():
+            (trace_dir / unit).rename(trace_dir / old)
         return old
 
-    def snapshot_refs(self):
-        return sorted(self.snap("for-each-ref", "--format=%(refname)", "refs/trace/").splitlines())
+    def snapshot_refs(self, trace_dir=None, unit=""):
+        """The snapshot refs of the trace directory `trace_dir`, by default the test repository's, or `unit`'s."""
+        return sorted(self.git("-C", str(trace_dir or self.trace_dir), "for-each-ref", "--format=%(refname)",
+                               "refs/trace/" + unit).splitlines())
 
-    def reviewed_gate(self):
-        """Start a gate and end it with its review file archived; return its id."""
-        topic = self.root / ".canon/canon-blind-review/D001"
+    def reviewed_gate(self, top=None):
+        """Start a gate in the checkout `top`, by default the test repository, and end it with its review file
+        archived in `top`'s own trace directory, which its calls use; return its id."""
+        top = top or self.root
+        topic = top / ".canon/canon-blind-review/D001"
         topic.mkdir(parents=True, exist_ok=True)
-        unit = self.start("gate", "D001")
+        unit = self.start("gate", "D001", cwd=top)
         (topic / "same-model.md").write_text("### F1 [major] {}\n".format(unit))
-        self.trace("end", unit, "delivered", "--dir", ".canon/canon-blind-review/D001")
-        self.assertEqual(self.lines()[-1]["archive"], "ok")
+        self.trace("end", unit, "delivered", "--dir", ".canon/canon-blind-review/D001", cwd=top)
+        self.assertEqual(self.lines(top / ".canon/canon/trace/events.jsonl")[-1]["archive"], "ok")
         return unit
 
     def test_snapshots_and_archives_of_units_started_more_than_n_days_ago_go_and_lines_and_skills_stay(self):
@@ -5259,6 +5286,138 @@ class PruneTest(TraceCase):
         self.assertRegex(self.trace("prune", "--days", "7", cwd=outside),
                          r"^removed 0 snapshots and 1 archive of units started more than 7 days ago\n")
         self.assertEqual(list(archive.parent.iterdir()), [])
+
+    @unittest.skipIf(os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+                     "Windows ignores a directory's read-only mode, and root writes in any directory")
+    def test_prune_in_a_worktree_in_worktrees_deletes_from_the_trace_directory_its_calls_use(self):
+        tree = self.worktree()
+        own, canon_dir = tree / ".canon/canon/trace", self.root / ".canon/canon"
+        removed = r"^removed 1 snapshot and 1 archive of units started more than 7 days ago\n"
+        old = self.backdate(self.reviewed_gate(), 8)
+        with self.read_only(canon_dir):
+            own_old = self.backdate(self.reviewed_gate(tree), 8, own)
+        before = self.file_contents(own)
+        self.assertRegex(self.trace("prune", "--days", "7", cwd=tree), removed)
+        self.assertEqual(self.snapshot_refs(), [])
+        self.assertFalse((self.trace_dir / old).exists())
+        self.assertEqual(self.file_contents(own), before)
+        self.backdate(self.reviewed_gate(), 8)
+        before = self.file_contents(self.trace_dir)
+        with self.read_only(canon_dir):
+            self.assertRegex(self.trace("prune", "--days", "7", cwd=tree), removed)
+        self.assertEqual(self.snapshot_refs(own), [])
+        self.assertFalse((own / own_old).exists())
+        self.assertEqual(self.file_contents(self.trace_dir), before)
+
+
+class WorktreeTraceTest(TraceCase):
+    def setUp(self):
+        super().setUp()
+        self.trace("on")
+        self.commit()
+        self.tree = self.worktree()
+
+    def test_a_worktree_in_worktrees_records_its_own_files_in_the_main_checkouts_trace_directory(self):
+        tree, trace_dir = self.tree, self.events.parent
+        self.ok("new", "D", "branch", cwd=tree)
+        (tree / "src/base.py").write_text("value = 2\n")
+        subprocess.run(["git", "add", "src/base.py"], cwd=str(tree), check=True)
+        (self.root / "main-only.txt").write_text("main\n")
+        unit = self.start("design", "D001", cwd=tree)
+        self.assertFalse((tree / ".canon/canon").exists())
+        self.assertEqual((self.root / ".canon/canon/.gitignore").read_text(), "*\n")
+        [line] = self.lines()
+        self.assertEqual([line["id"], line["docs"]], [unit, ["D001@r1"]])
+        files = self.snap("ls-tree", "-r", "--name-only", line["snapshot"]).splitlines()
+        self.assertEqual([name in files for name in ("docs/designs/D001-branch.md", "main-only.txt")], [True, False])
+        self.assertEqual(self.snap("show", line["snapshot"] + ":src/base.py"), "value = 2")
+        self.assertIn("\n  {} design D001@r1 started ".format(unit), self.trace("status", cwd=tree))
+        for top, text in ((tree, "worktree\n"), (self.root, "main\n")):
+            (top / ".canon/x").mkdir(parents=True, exist_ok=True)
+            (top / ".canon/x/review.md").write_text(text)
+        self.trace("end", unit, "delivered", "--dir", ".canon/x", cwd=tree)
+        self.assertEqual([(line["type"], line["id"]) for line in self.lines()], [("start", unit), ("end", unit)])
+        self.assertEqual(self.lines()[-1]["archive"], "ok")
+        self.assertEqual((trace_dir / unit / "review.md").read_text(), "worktree\n")
+        self.assertEqual({path.name for path in trace_dir.iterdir()},
+                         {"events.jsonl", "events.lock", "snapshot.lock", ".git", unit})
+        self.assertFalse((tree / ".canon/canon").exists())
+
+    def test_the_main_checkouts_off_file_opts_the_worktree_out_and_here_in_the_worktree_switches_it(self):
+        off = self.events.parent / "off"
+        self.trace("off", "--here")
+        self.assertEqual(self.trace("start", "design", cwd=self.tree), "trace off\n")
+        self.assertTrue(self.trace("status", cwd=self.tree).startswith(
+            "trace off: this checkout opted out with {}; ".format(off)))
+        self.trace("on", "--here", cwd=self.tree)
+        self.assertFalse(off.exists())
+        unit = self.start("design", cwd=self.tree)
+        self.trace("off", "--here", cwd=self.tree)
+        self.assertTrue(off.is_file())
+        self.assertEqual(self.trace("end", unit, "delivered", cwd=self.tree), "trace off\n")
+        self.assertEqual([line["id"] for line in self.lines()], [unit])
+        self.assertFalse((self.tree / ".canon").exists())
+
+    @unittest.skipIf(os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+                     "Windows ignores a directory's read-only mode, and root writes in any directory")
+    def test_where_no_file_can_be_created_in_the_main_checkouts_trace_directory_the_worktree_uses_its_own(self):
+        trace_dir, own = self.events.parent, self.tree / ".canon/canon/trace"
+        main_unit = self.start("design")
+        before = self.file_contents(trace_dir)
+        with self.read_only(self.root / ".canon/canon"):
+            unit = self.start("design", cwd=self.tree)
+            [line] = self.lines(own / "events.jsonl")
+            self.assertEqual(line["id"], unit)
+            self.git("-C", str(own), "cat-file", "-e", line["snapshot"])
+            self.assertEqual((self.tree / ".canon/canon/.gitignore").read_text(), "*\n")
+            status = self.trace("status", cwd=self.tree)
+            self.assertEqual([unit in status, main_unit in status], [True, False])
+            self.trace("off", "--here", cwd=self.tree)
+            self.assertTrue((own / "off").is_file())
+            self.assertEqual(self.trace("start", "design", cwd=self.tree), "trace off\n")
+        self.assertEqual(self.file_contents(trace_dir), before)
+
+    def test_a_linked_worktree_outside_worktrees_and_a_submodule_in_one_inside_use_their_own_trace_directories(self):
+        origin = self.tmpdir()
+        (origin / "lib.txt").write_text("lib\n")
+        identity = ["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid"]
+        for args in (["init", "-q"], ["add", "-A"], [*identity, "commit", "-qm", "lib"]):
+            subprocess.run(["git", *args], cwd=str(origin), check=True, capture_output=True)
+        self.git("-C", str(self.tree), "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(origin), "sub")
+        elsewhere = self.tmpdir() / "c"
+        self.git("worktree", "add", "-q", "-b", "c", str(elsewhere), "main")
+        self.git("worktree", "add", "-q", "-b", "d", "trees/d", "main")
+        for top in (elsewhere, self.root / "trees/d", self.tree / "sub"):
+            with self.subTest(checkout=top):
+                unit = self.start("design", cwd=top)
+                self.assertEqual([line["id"] for line in self.lines(top / ".canon/canon/trace/events.jsonl")], [unit])
+        self.assertFalse(self.events.parent.exists())
+
+    def test_snapshot_in_the_worktree_records_into_the_worktrees_own_snapshots(self):
+        (self.tree / "draft.txt").write_text("draft\n")
+        commit = self.tool("snapshot", cwd=self.tree).stdout.strip()
+        self.assertEqual(self.git("-C", str(self.tree / ".canon/canon/snapshots"), "show", commit + ":draft.txt"),
+                         "draft")
+        self.assertFalse((self.root / ".canon/canon").exists())
+
+    @unittest.skipIf(os.name == "nt", "the recording git is a shell script")
+    def test_with_tracing_off_the_worktrees_calls_write_nothing_and_run_no_git(self):
+        bin_dir, log = self.config / "bin", self.config / "git.log"
+        bin_dir.mkdir()
+        (bin_dir / "git").write_text("#!/bin/sh\necho \"$@\" >> '{}'\n".format(log))
+        (bin_dir / "git").chmod(0o755)
+        path = str(bin_dir) + os.pathsep + os.environ["PATH"]
+        self.install(self.tree, True)
+        self.trace("off")
+        for opted_out in (False, True):
+            if opted_out:
+                self.trace("on")
+                self.trace("off", "--here")
+            files = self.files()
+            for args in (["start", "design", "D001"], ["end", "20261015T081502Z-3f9a1c", "delivered"]):
+                self.assertEqual(self.trace(*args, cwd=self.tree, PATH=path), "trace off\n")
+            self.assertEqual(self.files(), files)
+        self.assertFalse(log.exists())
 
 
 class OutsideCheckoutTest(CanonTest):
