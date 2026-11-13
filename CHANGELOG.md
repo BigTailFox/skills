@@ -2,6 +2,13 @@
 
 Notable changes in each release. Versions follow [Semantic Versioning](https://semver.org); while the major version is 0, a minor release may change how skills behave.
 
+## 0.8.2 - 2026-11-13
+
+Every subagent a canon skill launches starts as a new one, never a fork of your session.
+
+- `canon-review`'s angle reviewers, `canon-research`'s researcher and its rerun, `canon-grill`'s fact searches and the alternative designs of `canon-codebase-design`'s Design It Twice are now new subagents from the host's own tool, as reviewers and implementation workers already were. On hosts that fork by default, such as Codex, they no longer inherit your conversation, so parallel angles and alternative designs stay independent.
+- `canon.py` stays at canon version 67: install this release in each project; no `/canon-init` run is needed.
+
 ## 0.8.1 - 2026-11-13
 
 `init --hook` recognizes the hook it wrote, on every platform.
