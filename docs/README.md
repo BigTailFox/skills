@@ -23,5 +23,6 @@
 ### Concepts
 
 - [C001: Canon backlog](concepts/C001-canon-backlog.md) · draft · Ideas for the canon module that no design tracks yet, from codebase reviews and deferred findings. · modules: canon
+- [C002: Acceptance check of a finished change](concepts/C002-acceptance-check.md) · draft · Acceptance check of a finished change, a canon-acceptance skill whose fresh subagent runs the real artifact against the design's Goals before code review. · modules: canon
 
 <!-- canon:index:end -->
