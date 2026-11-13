@@ -15,9 +15,11 @@ Every first-round prompt is this template. The caller fills `{artifact}`, the Ta
 - **Code review**: as the `canon-code-review` skill says, with its briefs.
 - **Any other review**: `Target: {paths, or the diff command}`, the reading line `Read the target and whatever it links to or depends on.`, and criteria that fit the artifact, such as correctness against the code it describes; completeness, so a newcomer could act on it alone; consistency with the designs it touches; simplicity, nothing beyond its goals.
 
-`{documentation language}` is the language the project's docs are written in. The finding heading's `{location, ...}` stays as it is, for the reviewer.
+`{documentation language}` is the language the project's docs are written in. The finding heading's `{location, ...}` stays as it is, for the reviewer. Keep the first line, without its braces, only when you work in a linked worktree.
 
 ```text
+{Work in `{worktree root}`, a linked worktree of this repository: run every command from that directory and read every path relative to it.}
+
 You are reviewing {artifact} in this repository with no prior context. Judge it only from the repository.
 
 {Target lines}
@@ -45,7 +47,7 @@ End with one line: Verdict: approve | revise
 ## Reviewers
 
 - **Same-model reviewer**: a subagent on the session's model and effort.
-- **Cross-family reviewer**: the first reviewer the reviewer file lists for your model family that your host can run, run as the file says. The `canon` skill's workflow (Subagents) says where the file is and how to set it up, which you do before the review when it gives your family neither such a reviewer nor a `none` that covers your host. For a command, write the filled prompt to its prompt file, substitute `<prompt>` and `<out>` with the paths of its prompt and findings files ([Review files](#review-files)), run it from the repo root, read `<out>` when it finishes, and write its session id to its id file: where the entry says it is printed, else from a line of its output naming it, else leave the file empty. For a host subagent, launch it like the same-model reviewer with the named model.
+- **Cross-family reviewer**: the first reviewer the reviewer file lists for your model family that your host can run, run as the file says. The `canon` skill's workflow (Subagents) says where the file is and how to set it up, which you do before the review when it gives your family neither such a reviewer nor a `none` that covers your host. For a command, write the filled prompt to its prompt file, substitute `<prompt>` and `<out>` with the paths of its prompt and findings files ([Review files](#review-files)), run it from the repo root, the worktree's root when you work in a linked worktree, read `<out>` when it finishes, and write its session id to its id file: where the entry says it is printed, else from a line of its output naming it, else leave the file empty. For a host subagent, launch it like the same-model reviewer with the named model.
 
 The review gate and code review say when the cross-family reviewer runs; other reviews run the same-model reviewer, plus the cross-family reviewer when the user asks for another family.
 
@@ -85,7 +87,7 @@ Accept and fix each finding, decline it with a one-line reason for the user, or 
 
 ## Confirmation
 
-After the author fixes accepted blocker or major findings, the reviewers that raised them confirm the fixes in one round. Send only this prompt, with `{documentation language}` filled as in the template, never the author's reasoning:
+After the author fixes accepted blocker or major findings, the reviewers that raised them confirm the fixes in one round. Send only this prompt, started with the template's worktree line when the first round's prompt has one and with `{documentation language}` filled as in the template, never the author's reasoning:
 
 ```text
 The author revised the target after your review. Fixed findings: {F-ids, each with the location of its fix}. {Diff since your review: {diff command}, which reads the review snapshots in `.canon/`. | No diff is available; read each fix at its location.} Read nothing else in `.canon/`.

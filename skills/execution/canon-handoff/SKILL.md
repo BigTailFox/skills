@@ -25,7 +25,7 @@ Run `canon.py check --fix`. Commit only if the user asks; the handoff lists what
 Write `HANDOFF.md` to `.canon/canon-handoff/<id>-<topic>/` at the repository root, where `<id>` is the current conversation's id (`<YYYYMMDD-HHMM>` when unknown) and `<topic>` is a slug of the work. It holds:
 
 - **Goal**: the work and, when the user passed arguments, what the next session will focus on.
-- **Position**: tier, branch, `HEAD` commit, and `git status --short`.
+- **Position**: tier, the worktree's path when you work in a linked worktree, branch, `HEAD` commit, and `git status --short`.
 - **Resume from**: doc ids and sections in reading order, e.g. `P012#current-state`, then `D003#token-refresh`.
 - **Not in any doc**: instructions and preferences the user gave in conversation, options the user rejected that no doc records, open hunches, environment quirks (services that must run, commands needing special flags).
 - **Suggested skills**: which canon skills to use next and on what, e.g. `canon-implement` to resume P012.
@@ -38,4 +38,4 @@ End each unit you left open with `canon.py trace end <unit id> handoff`, as the 
 
 Run the `canon-retro` skill's end check only if this work hit concrete friction in the development infrastructure or the agent workflow that could recur, such as a correction to how you worked, a finding a check could have caught, a command that would not run, a check that failed after you thought you were done, a search that took far too long, or a canon step that got in the way. Use only evidence already in context; do not search for reasons to run it.
 
-Then give the user the file path and a one-line prompt for the next agent: `Read <path> and continue.`
+Then give the user the file path and a one-line prompt for the next agent: `Read <path> and continue.`, or in a linked worktree `In <worktree path>, read <path> and continue.`

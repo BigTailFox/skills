@@ -35,6 +35,7 @@ Rules:
 - `summary`: one line that leads with the question's subject and states the answer.
 - Put long excerpts worth keeping in {E00X attachment dir}/ and link them. Copy each verbatim except its link and image targets: resolve each relative or `/`-rooted one against the source's URL, since `check` checks the links there.
 - Replace every `<!-- canon: ... -->` comment. Write in {documentation language}.
+- Before you finish, run `canon.py check {E00X} --fix` and fix the errors it reports.
 - Modify nothing except that doc and its attachment directory; keep scratch files in .canon/canon-research/{E00X}/scratch/, never in the OS temp directory. Search tools that honor .gitignore skip .canon/: read its paths directly.
 ```
 

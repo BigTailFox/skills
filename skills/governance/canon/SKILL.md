@@ -45,6 +45,7 @@ In `trace` calls, `<skill>` is the path of the followed `SKILL.md`'s directory (
 
 ```text
 <project>/                  any directory with AGENTS.md (the repo root is one)
+├── .worktrees/<branch>/    repo root only, ignored like .canon/: a concurrent session's worktree
 ├── AGENTS.md
 ├── README.md               the project's intro for users, if it has one
 └── docs/
@@ -123,6 +124,23 @@ based_on: [D003@r4]                  # P only
 - Replace every `<!-- canon: ... -->` guidance comment with content. While a doc is unfinished (a design or plan before its review gate, a concept before it is adopted, an experiment before it is answered, any other doc before archiving), `check` only warns about guidance and an empty `summary`; `check --base` fails.
 - After a merge or rebase, run `check --fix`; generated indexes merge line by line and may need regenerating.
 
+### Concurrent work
+
+Sessions that work in one repository at the same time each work in a linked worktree on a branch of their own.
+
+- Take a worktree before your first edit when the user says another session works, or will work, in your checkout, unless the host started you in a linked worktree of your own. Before that edit, in a top-level session not yet in a worktree of your own, when `git status --porcelain` shows changes that neither the user nor a handoff you resume told you about, ask the user whether another session works in the checkout, and take a worktree if one does. A subagent takes no worktree.
+- To take one, run `git worktree add --track -b <branch> .worktrees/<branch> <base>` at the repo root of the checkout you started in, `<base>` being the branch checked out there, so that `<branch>@{upstream}` names the branch the change comes from. When `git check-ignore -q .worktrees/<branch>` fails, first add the line `.worktrees/` to the `info/exclude` file of the directory `git rev-parse --git-common-dir` prints, which changes no tracked file.
+- Then work in the worktree. It runs its own install of canon, so run its `canon.py`; in a project that commits only `skills-lock.json`, first run `npx skills experimental_install` at its root. Its `.canon/` and review snapshots are its own.
+- Every session in a checkout shares its uncommitted changes, its Git index and its `.canon/`, so your `check --fix`, `git add -A`, `git checkout -- <path>`, stash or review snapshot acts on another session's work too. Told only after you have edited that another session works in your checkout, stop editing, list the files you changed and ask the user whether the other session edits any of them; once the user settles that, finish the change in place, commit only your own changes as below, and take a worktree for your next change.
+- The change stays in its worktree until it is done: name the worktree's path in a handoff and beside a next-phase command ([Workflow](#workflow)), since a new session starts in the checkout its host opens. Before the branch goes back, update it from its upstream with a merge or rebase in the worktree, run `check --fix` there, settle with `renumber` each id both branches took, as above, and commit, so the branch merges back with no `check --fix` in a checkout another session uses. Merging it back, `git worktree remove .worktrees/<branch>` and deleting the branch are the user's to do, or yours when the user asks.
+- In a linked worktree, start every subagent prompt, in every round, with ``Work in `<worktree root>`, a linked worktree of this repository: run every command from that directory and read every path relative to it.``, and run a reviewer's command from that root, since the host starts subagents in the checkout you started in.
+- In one checkout, one session at a time stages and commits, since the Git index is shared; `archive`, `rename`, `renumber` and `adopt` stage too. A subagent that edits docs, such as a worker or a researcher, checks and fixes only those with `check <ids> [--fix]`, which leaves the other docs and the indexes alone; the session that commits checks the rest.
+- To commit part of a checkout's changes, such as your own beside another session's or one change of several:
+  1. When the commit holds numbered docs, run `check <ids> --fix` on them.
+  2. Check that `git diff --cached --name-status` lists nothing but your own changes, else ask the user. Stage the files by path with `git add <path>`. Of a file that also holds changes you do not commit, stage only your hunks, applying a patch of them with `git apply --cached`; when you cannot tell your hunks from the others, ask the user.
+  3. Run `index --staged`, which stages the index lines of the staged docs, then `check --staged`.
+  4. Commit with `git commit` and no paths: `git commit <paths>` and `git commit -a` commit the whole work-tree content of the files they take, others' changes in them included.
+
 ## Workflow
 
 Every change has a tier, except one that touches only docs that no design's `paths` names and bumps no revision; state it when starting and pick the higher one when unsure.
@@ -143,7 +161,7 @@ Behavior no design states is unspecified. Look for a statement with `which` for 
 
 A commit that touches a design's `paths`, in any tier, names the designs it was checked against in a `Refs:` trailer (`affected` lists them); `audit` treats commits without one as unchecked.
 
-The canon skills write each command they have you give the user in the form `/canon-plan D012`; give it in the host's form, such as `$canon-plan D012` in Codex.
+The canon skills write each command they have you give the user in the form `/canon-plan D012`; give it in the host's form, such as `$canon-plan D012` in Codex. In a linked worktree, name the worktree's path beside the command ([Concurrent work](#concurrent-work)).
 
 Flows, the blind-review gate with its reviewer prompt, code review, how workers launch (and the cross-family reviewer's local file), and the docs step before committing: [workflow.md](workflow.md).
 

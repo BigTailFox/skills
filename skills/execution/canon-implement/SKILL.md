@@ -33,20 +33,22 @@ This session orchestrates, and a fresh worker builds each slice, so every slice 
    - **blocked** on the plan or design: apply the workflow's deviation rules. For a plan problem with one clear fix, edit the plan, log it and resume the worker. Otherwise pause the slice. A slice that alters or extends behavior no design states takes [Backfill](#backfill).
    - **No report**, because the host stopped the run: give it one more run, as the workflow's Subagents says, replacing it as [Workers](#workers) says when it cannot be resumed. When that run stops too, pause the slice with the stopped runs as its problem.
 
-   To pause a slice, set `Status: paused`, stash the worker's changes, new files included but not the plan, under a message naming the slice, log the problem and the stash for whoever resumes it, and continue with slices that do not depend on it.
+   To pause a slice, set `Status: paused`, stash the worker's changes, new files included but not the plan, under a message that starts with `<P id> S<n>`, log the problem and that message for whoever resumes it, and continue with slices that do not depend on it. Find a stash by its message, never by its `stash@{<n>}` position, which other sessions' stashes shift.
 4. When the slice is done by the `canon-tdd` skill's definition, set `Status: done`, point Current state at the next action, and append results, decisions and deviations to the Log.
 5. Run `canon.py check --fix`, then commit the slice: code plus plan, Conventional Commits, and a `Refs:` trailer naming the plan and the designs the slice was checked against, as the `canon` skill says.
 
 ### Worker prompt
 
-Fill the placeholders and pass nothing else, except the answer a replacement worker gets ([Workers](#workers)); the plan carries the context.
+Fill the placeholders and pass nothing else, except the answer a replacement worker gets ([Workers](#workers)); the plan carries the context. Keep the first line, without its braces, only when this session works in a linked worktree.
 
 ```text
+{Work in `{worktree root}`, a linked worktree of this repository: run every command from that directory and read every path relative to it.}
+
 You are implementing one slice of a plan in this repository, with no prior context.
 
 Plan: {plan path}, slice {S<n>: name}. Read the plan's Current state and Log, the slice, and the design sections it builds on: {D00X#section, ...}.
 
-Build the slice test-first with the `canon-tdd` skill, at the seams its test criteria name, until those criteria pass and nothing green turned red. Settle unclear points with the `canon-grill` skill's triage. Keep scratch files in `.canon/canon-implement/{P id}/{S<n>}/`; search tools that honor `.gitignore` skip `.canon/`, so read its paths directly. Do not edit the plan or any design, and do not commit.
+Build the slice test-first with the `canon-tdd` skill, at the seams its test criteria name, until those criteria pass and nothing green turned red. Settle unclear points with the `canon-grill` skill's triage. Keep scratch files in `.canon/canon-implement/{P id}/{S<n>}/`; search tools that honor `.gitignore` skip `.canon/`, so read its paths directly. Do not edit the plan or any design, and do not commit. When you edit a numbered doc, check and fix only it, with `canon.py check <id> --fix`.
 
 You cannot reach the user. Stop and report instead when:
 - the plan or a design cannot be followed: say which, and the fix you would propose;
@@ -58,7 +60,7 @@ Your final message is your report: status (done | stuck | blocked), files change
 
 ### Workers
 
-A worker is a new general-purpose subagent from the host's own tool, never a fork of this session, launched without a model or effort so it runs on the session's (the `canon` skill's workflow, Subagents). Write its id to `.canon/canon-implement/<P id>/S<n>-id.txt` so you can resume it. A worker that cannot be resumed is replaced: stash its changes as a pause does, under a message naming the slice and the replacement, log the stash, and launch a new worker with the worker prompt, followed by the answer when it was blocked on a question.
+A worker is a new general-purpose subagent from the host's own tool, never a fork of this session, launched without a model or effort so it runs on the session's (the `canon` skill's workflow, Subagents). Write its id to `.canon/canon-implement/<P id>/S<n>-id.txt` so you can resume it. A worker that cannot be resumed is replaced: stash its changes as a pause does, under a message that starts with `<P id> S<n>` and names the replacement, log that message, and launch a new worker with the worker prompt, followed by the answer when it was blocked on a question.
 
 ## 3. Finish
 
