@@ -2,6 +2,17 @@
 
 Notable changes in each release. Versions follow [Semantic Versioning](https://semver.org); while the major version is 0, a minor release may change how skills behave.
 
+## 0.7.0 - 2026-11-13
+
+An experiment stays live while any live doc cites it, and docs define their terms before the sections that use them, D000's Glossary first.
+
+- A concluded experiment now stays in `experiments/` while any live doc links it: a concept, review, investigation or experiment counts as a design or plan does. A link from a concluded experiment counts only while that experiment is cited itself, so concluded experiments that link only one another are uncited, and an experiment's link to itself never counts. `check` warns `concluded, but no live doc cites it` for the rest, which the docs step archives as `concluded`, and `archive E00X concluded` refuses one a live doc cites, naming those docs. Setting `concluded` still needs a live design or plan that links the experiment.
+- A later run extends an `answered` experiment only while no live doc cites it, and `status E00X running` refuses the move back otherwise; `planned` and `running` experiments are extended as before.
+- `superseded`, `overturned` and `dropped` archive an experiment whatever links it. The session that finds a result wrong now names to the user every other live doc linking the experiment, not only draft designs and plans.
+- `writing.md` orders the sections a doc type leaves free, such as a design's Spec subsections, from the whole to the parts, and defines each term or name before the first section that uses it, or links its definition there.
+- D000's Spec leads with its Glossary, followed by Capabilities, Modules and Dependencies. `init`'s template and `check`'s message for a missing subsection follow the new order, and the template's hint for `### Standards` moves to the end of Dependencies. An existing D000 in the old order stays valid; reordering its subsections changes no meaning, so it takes no revision bump and no gate.
+- `canon.py` is now canon version 53: install this release in each project and run `/canon-init` to upgrade.
+
 ## 0.6.0 - 2026-11-12
 
 canon is installed in each project, pinned to a release, and projects keep no copy of `canon.py`.
