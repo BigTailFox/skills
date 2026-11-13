@@ -2,13 +2,13 @@
 status: active
 created: 2026-11-12
 updated: 2026-11-13
-revision: 4
+revision: 5
 modules: [canon]
 summary: Doc queries and renames with canon.py show, find, which and affected, and rename and renumber, with the references and id collisions renumber settles.
 refs: [D002, D004, D005, D006]
 owns: [doc-queries, doc-renames, doc-renumbering]
 paths: [skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, tests/test_canon.py]
-reviewed: 4
+reviewed: 5
 reviewers: [claude-opus-5.5]
 approved: 2
 implemented: 3
@@ -108,7 +108,7 @@ canon.py rename ID SLUG [--title TITLE]
 
 - ID names a doc of any type, live or archived, sub-designs included; an ID that no doc or several docs have exits with the messages [D006§ids-and-file-names: ids](D006-doc-model.md#ids-and-file-names) gives for `archive`. D000 then exits with `canon: D000 keeps its file name, which the AGENTS.md block links`, a SLUG that is not kebab-case with `canon: slug must be kebab-case`, and a TITLE that, once stripped of surrounding whitespace, is empty or holds a line break, `[` or `]`, which would break the link texts and index lines that carry it, with `canon: title must be one line of text without [ or ]`.
 - It moves the doc's file to `<ID>-<SLUG>.md`, and each file in its attachment directory, at any depth, whose name up to its first `.` is the doc's old slug to the same directory, SLUG in place of the old slug: `D001/skill-telemetry.zh.md` becomes `D001/telemetry.zh.md`. A file it would move to that exists ends it before any change with `canon: <path> already exists`. It prints `<old path> -> <new path>`, both relative to the repo root, for the doc and then for each attachment file in path order, and exits 0. A SLUG equal to the doc's own moves no file and prints only the doc's `<old path> -> <new path>` line, both paths the same.
-- With `--title`, it sets the doc's H1, the first heading of level 1 outside code fences, to `# <ID>: <TITLE>`, TITLE stripped of surrounding whitespace, and in every `.md` file the text of each link to the doc that reads exactly `<ID>: <old title>`, the old title being the H1's text after `<ID>: `, to `<ID>: <TITLE>`. Links to the H1's anchor follow it, as do links to the headings whose link texts it changes ([D006§statuses-and-archiving: statuses and archiving](D006-doc-model.md#statuses-and-archiving)), and in every doc the `§<slug>` after a citation ([renumber](#renumber)) of a doc whose heading anchors it changes follows them, when only that doc has the id. A doc without an H1 ends it before any change with `canon: <ID> has no H1`.
+- With `--title`, it sets the doc's H1, the first heading of level 1 outside code fences, to `# <ID>: <TITLE>`, TITLE stripped of surrounding whitespace, and in every `.md` file the text of each link to the doc that reads exactly `<ID>: <old title>`, the old title being the H1's text after `<ID>: `, to `<ID>: <TITLE>`. Links to the H1's anchor follow it, as do links to the headings whose link texts it changes ([D006§statuses-and-archiving: statuses and archiving](D006-doc-model.md#statuses-and-archiving)), and in every doc the `§<slug>` after a citation follows the heading anchors of what it names, as in [renumber](#renumber). A doc without an H1 ends it before any change with `canon: <ID> has no H1`.
 - The other attachments keep their names and, without `--title`, the H1 and link texts stay as they are.
 
 ### renumber
@@ -134,7 +134,7 @@ canon.py renumber ID|PATH [NEW] [--base REF]
   - in every doc, each other citation in `summary` and in the body outside code fences and inline code, link texts included and link targets not;
   - in each moved doc, also each `<old id>-F<n>` and `<old id>-K<n>` in code.
 
-  A citation is the id as a whole word in its case, so that `D012` matches neither `D012A`, `D0123` nor `d012`, with the `@r<n>`, `-F<n>` or `-K<n>` right after it, if any: a known issue's Source (`R004-F2`), a path (`D012-auth.md`) or a mention in prose. In every doc, a citation followed by `§<slug>` has its slug follow the heading anchors of the doc it names after the command, as a link's `§<anchor>` does: the moved doc when the citation takes its new id, the doc a link points at for a citation of that doc's id in the link's text, and otherwise the one doc with the id, when only one has it. A doc's citations of its own id are its own: they follow in a moved doc and stay in another doc that has the id. No other text changes: frontmatter fields other than `refs`, `based_on` and `summary`, and code outside a moved doc, keep the old id. A heading whose text changes gets a new anchor, which the links to it follow ([D006§statuses-and-archiving: statuses and archiving](D006-doc-model.md#statuses-and-archiving)).
+  A citation is the id as a whole word in its case, so that `D012` matches neither `D012A`, `D0123` nor `d012`, with the `@r<n>`, `-F<n>` or `-K<n>` right after it, if any: a known issue's Source (`R004-F2`), a path (`D012-auth.md`) or a mention in prose. In every doc, a citation followed by `§<slug>` has its slug follow the heading anchors of what it names after the command, as a link's `§<anchor>` does: a citation, in a link's text, of the doc the link points at names the linked file, the doc or a file in its attachment directory; any other names the moved doc when it takes its new id, the doc it is in when it is that doc's own id, and otherwise the one doc with the id, when only one has it. A doc's citations of its own id are its own: they follow in a moved doc and stay in another doc that has the id. No other text changes: frontmatter fields other than `refs`, `based_on` and `summary`, and code outside a moved doc, keep the old id. A heading whose text changes gets a new anchor, which the links to it follow ([D006§statuses-and-archiving: statuses and archiving](D006-doc-model.md#statuses-and-archiving)).
 - It prints `<old id> -> <new id>` for each moved doc, the doc first and then its sub-designs in letter order, then the notes of [Id collisions](#id-collisions), then ``run `canon.py check --fix` to finish``, and exits 0.
 
 ### Id collisions
