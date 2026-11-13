@@ -18,7 +18,7 @@ Implements [D006: Doc model and writing rules](../designs/D006-doc-model.md) r19
 
 ## Current state
 
-S1 to S4 done. Next: S5.
+S1 to S5 done. Next: S6.
 
 ## Slices
 
@@ -127,7 +127,7 @@ Test criteria; seam: the `check` command line with doc arguments:
 
 ### S5: `init`'s `.worktrees/` line and staged hook
 
-Status: todo
+Status: done
 
 Risk: Git runs one pre-commit hook for every worktree and branch of a repository, so a hook that fails on an older install, or a replaced hook the user wrote, blocks commits in all of them.
 
@@ -224,3 +224,4 @@ Test criteria; seam: the skill texts, checked by `validate.py` and by the code r
 - 2026-11-13: S2 done. `GitTree` takes its entries from `of_commit` (REV) or `staged` (`git ls-files -s -z` stage-0 entries); one `git diff --cached -z --name-status --no-renames` gives both the intent-to-add test and the `updated` changed set. An empty blob the diff leaves out needs HEAD's paths, read with one `git ls-tree -r -z --name-only --full-tree HEAD` only when such an entry exists, its failure ending the command like the plan's other Git calls; a whole listing, not the paths as arguments, keeps the command line short in repos full of empty `__init__.py`. Git 2.43 sets `GIT_INDEX_FILE` relative to the repo root for plain `git commit` (`.git/index`); `canon.py` runs Git at the root, so it resolves the same file. `check --staged` here takes about 0.1 s. `CANON_VERSION` 59, the hook's `<V>`.
 - 2026-11-13: S3 done. `stage_indexes` writes through `git hash-object -w --stdin` and `git update-index --add --cacheinfo`; `git_run` and `git_checked` take stdin as bytes, so no newline translation or locale encoding changes an index. S1's test of every `--rev` read now takes `check --rev HEAD` on the checked-out commit as its baseline, since a stale index is a `WARN` on the work tree and an `ERROR` under `--rev`. For the docs step: whether a staged index entry holds other text is read as `check --staged` reads it, following symbolic links, which D005 leaves unsaid. `CANON_VERSION` 60.
 - 2026-11-13: S4 done. A problem between two docs records the other doc's path (`also`), so naming either reports it; with doc arguments the other docs, indexes, old copies and deleted docs go unchecked rather than checked and filtered, so the deleted-docs diff does not run. For the docs step: an argument of id form (`FULL_ID_RE` and `well_formed_id`) with no doc gets `archive`'s `unknown document`, any other argument resolves through `realpath`, so a link to a doc file names it, and the names-no-doc message covers the rest; argparse takes no doc argument after an option that follows another (`check D001 --fix D002`), so texts write `check <ids> --fix`. `CANON_VERSION` 61.
+- 2026-11-13: S5 done. `STAGED_SINCE` holds the hook's `<V>`, 59, apart from `CANON_VERSION`; `VERSION_57_HOOK` is version 57's hook frozen as bytes, so one without its final newline counts as edited and stays. canon-init's setup step 3 also names `.worktrees/`, which `init` now adds. For the docs step: D004 has `init --hook` print the kept message for any existing hook, so a hook already holding the current template gets the advice to add `check --staged` it already runs. `CANON_VERSION` 62.

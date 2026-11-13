@@ -30,7 +30,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "61"
+CANON_VERSION = "62"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -116,13 +116,24 @@ This repo follows the canon documentation system, run from the `canon` skill ins
 - State each change's tier (L0, L1, L2) before starting, unless it touches only docs that no design's `paths` names and bumps no revision. Designs and plans pass the review gate defined by the `canon` skill.
 - Skip `docs/archived/` unless researching history.
 """ + AGENTS_END
+STAGED_SINCE = 59  # the first CANON_VERSION whose `check` takes --staged; fixed as CANON_VERSION moves on
 PRE_COMMIT_HOOK = """#!/bin/sh
 c={install}/canon/scripts/canon.py
+if [ ! -f "$c" ]; then
+  echo "canon: no canon skill installed in this checkout; install it as the canon block of AGENTS.md says" >&2
+  exit 1
+fi
+v=$(python3 "$c" --version) || exit 1
+[ "${{v#canon }}" -ge {staged} ] 2>/dev/null && exec python3 "$c" check --staged
+exec python3 "$c" check
+""".format(install=INSTALL_DIR, staged=STAGED_SINCE)
+VERSION_57_HOOK = b"""#!/bin/sh
+c=.agents/skills/canon/scripts/canon.py
 [ -f "$c" ] && exec python3 "$c" check
 echo "canon: no canon skill installed in this checkout; install it as the canon block of AGENTS.md says" >&2
 exit 1
-""".format(install=INSTALL_DIR)
-OLD_HOOK_RE = re.compile(rb"#!/bin/sh\nexec python3 \S+ check\n?")
+"""
+OLD_HOOK_RE = re.compile(re.escape(VERSION_57_HOOK) + rb"|#!/bin/sh\nexec python3 \S+ check\n?")
 OLD_COPY_WARNING = ("the project no longer keeps a copy of canon.py; remove {0} and replace `python3 {0}` where files still name "
             "it, such as CI and each `docs/README.md`")
 SUB_AGENTS = "Module docs: [docs/README.md](docs/README.md). The repo root `AGENTS.md` defines the docs rules.\n"
@@ -134,6 +145,7 @@ Engineering docs managed with canon. Designs (D) are the source of truth; plans 
 """
 GITATTRIBUTES = ("**/docs/README.md merge=union", "**/docs/archived/README.md merge=union")
 LOCAL_DIR = ".canon/"
+WORKTREES_DIR = ".worktrees/"
 DOCS_PATHSPEC = ":(glob)**/docs/**/*.md"
 DOC_NAMES = ("README", "AGENTS", "CLAUDE", "CHANGELOG", "CONTRIBUTING", "LICENSE", "NOTICE", "SECURITY",
              "CODE_OF_CONDUCT", "COPYING")
@@ -2362,8 +2374,10 @@ def cmd_init(repo, args):
 
     ignore = repo.root / ".gitignore"
     lines = ignore.read_text(encoding="utf-8").splitlines() if ignore.is_file() else []
-    if not any(line.strip().strip("/") == LOCAL_DIR.strip("/") for line in lines):
-        ignore.write_text("\n".join(lines + [LOCAL_DIR]) + "\n", encoding="utf-8")
+    named = {line.strip().strip("/") for line in lines}
+    missing = [entry for entry in (LOCAL_DIR, WORKTREES_DIR) if entry.strip("/") not in named]
+    if missing:
+        ignore.write_text("\n".join(lines + missing) + "\n", encoding="utf-8")
         note("updated" if lines else "created", ignore)
 
     agents = project / "AGENTS.md"
@@ -2422,7 +2436,7 @@ def cmd_init(repo, args):
                 hook.write_text(PRE_COMMIT_HOOK, encoding="utf-8")
                 note("updated", hook)
             elif args.hook and os.path.lexists(str(hook)):
-                print("kept the existing pre-commit hook; add `canon.py check` to it")
+                print("kept the existing pre-commit hook; add `canon.py check --staged` to it")
             elif args.hook:
                 hook.parent.mkdir(parents=True, exist_ok=True)
                 hook.write_text(PRE_COMMIT_HOOK, encoding="utf-8")
@@ -4304,7 +4318,7 @@ def main(argv=None):
 
     p = command(sub, "init", help="set up canon in a repo or module (idempotent)")
     p.add_argument("--root", help="module directory to set up (default: repo root)")
-    p.add_argument("--hook", action="store_true", help="install a git pre-commit hook running `check`")
+    p.add_argument("--hook", action="store_true", help="install a git pre-commit hook running `check --staged`")
     p.set_defaults(func=cmd_init)
 
     p = command(sub, "adopt", help="turn an existing markdown file into a canon doc, keeping history and links")

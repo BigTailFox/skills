@@ -2647,48 +2647,104 @@ class InitTest(CanonTest):
         self.refuses(message)
         self.refuses(message, "--root", "mod")
 
-    HOOK = ('#!/bin/sh\nc=.agents/skills/canon/scripts/canon.py\n[ -f "$c" ] && exec python3 "$c" check\n'
-            'echo "canon: no canon skill installed in this checkout; install it as the canon block of AGENTS.md says" '
-            '>&2\nexit 1\n')
+    def test_init_ignores_the_sessions_worktrees_unless_a_line_of_gitignore_names_them(self):
+        self.repository_without_docs()
+        self.assertIn("created .gitignore", self.ok("init").splitlines())
+        ignore = self.root / ".gitignore"
+        self.assertEqual(ignore.read_text(), ".canon/\n.worktrees/\n")
+        ignore.write_text("build/\n.canon/\n")
+        self.assertIn("updated .gitignore", self.ok("init").splitlines())
+        self.assertEqual(ignore.read_text(), "build/\n.canon/\n.worktrees/\n")
+        for text in ("/.worktrees\n.canon\n", "build/\n.worktrees/\n/.canon/\n"):
+            with self.subTest(text=text):
+                ignore.write_text(text)
+                self.assertNotIn(".gitignore", self.ok("init"))
+                self.assertEqual(ignore.read_text(), text)
 
-    def test_init_at_the_repo_root_replaces_the_hook_a_project_with_a_copy_had_and_keeps_any_other(self):
+    NO_INSTALL = "canon: no canon skill installed in this checkout; install it as the canon block of AGENTS.md says"
+    HOOK = ('#!/bin/sh\nc=.agents/skills/canon/scripts/canon.py\nif [ ! -f "$c" ]; then\n'
+            '  echo "{}" >&2\n  exit 1\nfi\nv=$(python3 "$c" --version) || exit 1\n'
+            '[ "${{v#canon }}" -ge 59 ] 2>/dev/null && exec python3 "$c" check --staged\nexec python3 "$c" check\n'
+            .format(NO_INSTALL))
+
+    KEPT = "kept the existing pre-commit hook; add `canon.py check --staged` to it\n"
+    VERSION_57_HOOK = ('#!/bin/sh\nc=.agents/skills/canon/scripts/canon.py\n[ -f "$c" ] && exec python3 "$c" check\n'
+                       'echo "{}" >&2\nexit 1\n'.format(NO_INSTALL))
+
+    def test_init_at_the_repo_root_replaces_the_hooks_earlier_versions_wrote_and_keeps_any_other(self):
         hook = self.root / ".git/hooks/pre-commit"
         self.init_module("mod")
-        for old in ("#!/bin/sh\nexec python3 scripts/canon.py check\n", "#!/bin/sh\nexec python3 tools/canon.py check"):
-            with self.subTest(old=old):
-                hook.write_text(old)
-                self.assertNotIn("pre-commit", self.ok("init", "--root", "mod"))
-                self.assertIn("kept the existing pre-commit hook", self.ok("init", "--root", "mod", "--hook"))
-                self.assertEqual(hook.read_text(), old)
-                self.assertIn("updated .git/hooks/pre-commit", self.ok("init").splitlines())
-                self.assertEqual(hook.read_text(), self.HOOK)
-        other = "#!/bin/sh\nexec python3 scripts/canon.py check\nmake lint\n"
-        hook.write_text(other)
-        self.assertNotIn("pre-commit", self.ok("init"))
-        self.assertIn("kept the existing pre-commit hook; add `canon.py check` to it\n", self.ok("init", "--hook"))
-        self.assertEqual(hook.read_text(), other)
+        for old in (self.VERSION_57_HOOK, "#!/bin/sh\nexec python3 scripts/canon.py check\n",
+                    "#!/bin/sh\nexec python3 tools/canon.py check"):
+            for args in ((), ("--hook",)):
+                with self.subTest(old=old, args=args):
+                    hook.write_text(old)
+                    self.assertNotIn("pre-commit", self.ok("init", "--root", "mod"))
+                    self.assertEqual(self.ok("init", "--root", "mod", "--hook"),
+                                     self.KEPT + "canon init: nothing to do\n")
+                    self.assertEqual(hook.read_text(), old)
+                    self.assertIn("updated .git/hooks/pre-commit", self.ok("init", *args).splitlines())
+                    self.assertEqual(hook.read_text(), self.HOOK)
+        for other in (self.VERSION_57_HOOK + "make lint\n", self.VERSION_57_HOOK.rstrip("\n"),
+                      self.VERSION_57_HOOK.replace("exit 1", "  exit 1"),
+                      "#!/bin/sh\nexec python3 scripts/canon.py check\nmake lint\n"):
+            with self.subTest(other=other):
+                hook.write_text(other)
+                self.assertNotIn("pre-commit", self.ok("init"))
+                self.assertIn(self.KEPT, self.ok("init", "--hook"))
+                self.assertEqual(hook.read_text(), other)
 
-    def test_init_hook_writes_a_hook_that_runs_check_through_the_installed_canon_py_or_says_to_install_it(self):
-        self.repository_without_docs()
-        self.ok("init", "--hook")
+    def test_init_hook_writes_a_hook_that_checks_what_the_commit_records_with_the_installed_canon_py(self):
+        self.assertEqual(self.ok("init", "--hook"), "created .git/hooks/pre-commit\n")
         hook = self.root / ".git/hooks/pre-commit"
         self.assertEqual(hook.read_text(), self.HOOK)
         self.assertEqual(stat.S_IMODE(hook.stat().st_mode), 0o755)
+        self.commit()
+        stray = "ERROR docs/stray: unknown entry"
         self.create("docs/stray/x.md")
-        self.git("add", "-A")
+        self.doc("C", "idea")
+        self.ok("index")
+        self.assertIn(stray, self.fails("check"))
+        self.git("add", "docs/concepts/C001-idea.md", "docs/README.md")
+        result = self.run_here("git", "commit", "-qm", "idea")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        head = self.git("rev-parse", "HEAD")
+        self.git("add", "docs/stray")
         result = self.run_here("git", "commit", "-qm", "stray")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("ERROR docs/stray: unknown entry", result.stderr)
-        self.git("rm", "-rq", "--cached", "docs/stray")
-        shutil.rmtree(str(self.root / "docs/stray"))
-        self.git("commit", "-qm", "setup")
-        (self.root / INSTALL).unlink()
-        self.create("src/a.py")
-        self.git("add", "-A")
-        result = self.run_here("git", "commit", "-qm", "without the link")
-        self.assertEqual((result.returncode, result.stderr),
-                         (1, "canon: no canon skill installed in this checkout; install it as the canon block of "
-                             "AGENTS.md says\n"))
+        self.assertIn(stray, result.stderr)
+        self.assertEqual(self.git("rev-parse", "HEAD"), head)
+
+    def test_the_hook_runs_check_where_the_install_predates_staged_and_stops_without_a_version_or_install(self):
+        self.ok("init", "--hook")
+        self.commit()
+        install, log = self.root / INSTALL, self.tmpdir() / "args"
+        stub = 'import sys\nwith open({!r}, "a") as f:\n    f.write(" ".join(sys.argv[1:]) + "\\n")\n'.format(str(log))
+
+        def commit(name, version):
+            """Commit a new file `name` through the hook, with the install replaced by a stub canon.py that logs its
+            arguments and runs `version` for `--version`; None for no install. Returns the commit and the log."""
+            if os.path.lexists(str(install)):
+                install.unlink()
+            if version is not None:
+                install.write_text(stub + 'if sys.argv[1:] == ["--version"]:\n    ' + version + "\n")
+            with contextlib.suppress(FileNotFoundError):
+                log.unlink()
+            head = self.git("rev-parse", "HEAD")
+            self.create(name)
+            self.git("add", name)
+            result = self.run_here("git", "commit", "-qm", name)
+            self.assertEqual(self.git("rev-parse", "HEAD") != head, result.returncode == 0)
+            return result, log.read_text() if log.exists() else ""
+
+        result, args = commit("src/a.py", 'print("canon 58")')
+        self.assertEqual((result.returncode, args), (0, "--version\ncheck\n"), result.stderr)
+        result, args = commit("src/b.py", 'print("canon 59")')
+        self.assertEqual((result.returncode, args), (0, "--version\ncheck --staged\n"), result.stderr)
+        result, args = commit("src/c.py", "sys.exit(3)")
+        self.assertEqual((result.returncode, args), (1, "--version\n"), result.stderr)
+        result, args = commit("src/d.py", None)
+        self.assertEqual((result.returncode, result.stderr, args), (1, self.NO_INSTALL + "\n", ""))
 
     def test_init_that_cannot_write_the_hook_finishes_and_says_how_to_add_it(self):
         self.repository_without_docs()
@@ -2728,7 +2784,7 @@ class InitTest(CanonTest):
         hook.write_text("#!/bin/sh\nexit 0\n")
         hook.chmod(0)
         out = self.ok("init", "--hook")
-        self.assertIn("kept the existing pre-commit hook; add `canon.py check` to it\n", out)
+        self.assertIn(self.KEPT, out)
         self.assertNotIn("warning", out)
 
     @unittest.skipIf(os.name == "nt", "the stand-in git is a shell script")
