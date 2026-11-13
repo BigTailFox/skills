@@ -11,7 +11,7 @@ paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py]
 reviewed: 3
 reviewers: [claude-opus-5.5, gpt-5.6-sol-high]
 approved: 3
-implemented: 2
+implemented: 3
 ---
 
 # D005: Docs index
@@ -69,9 +69,9 @@ canon.py index [--staged]
 `index --staged` regenerates the index files of the staged tree, which it reads as `check --staged` does ([D006§check: check](D006-doc-model.md#check)), and stages them, so a commit that holds only some of the work tree's docs gets the index of those docs:
 
 - It computes each index file's text by the rules above from the staged docs and the staged copy of each `docs/README.md`, a copy the staged tree lacks counting as a missing file.
-- For each index file whose staged entry is missing or holds other text, it writes the text as a blob with `git hash-object -w --stdin` and stages it with `git update-index --add --cacheinfo <mode>,<blob>,<path>`, keeping the staged entry's mode when it is `100644` or `100755`, else using `100644`, and prints `staged <path>`. It stages nothing else.
+- For each index file whose staged entry is missing or holds other text, read as `check --staged` reads it, through symbolic links, it writes the text as a blob with `git hash-object -w --stdin` and stages it with `git update-index --add --cacheinfo <mode>,<blob>,<path>`, keeping the staged entry's mode when it is `100644` or `100755`, else using `100644`, and prints `staged <path>`. It stages nothing else.
 - It then writes the work tree's index files whose text changes, as `index` does, printing `wrote <path>` for each, so the work tree's index lists every doc there, those left out of the commit included.
-- It ends before changing any file or staging anything, with `canon: index --staged needs a Git checkout` outside Git, `canon: resolve the merge conflicts first` when the Git index has unmerged entries, `canon: the staged <path> has an index start marker with no end marker after it; fix the markers, stage the file and rerun` when the staged copy of a `docs/README.md` has a first start marker with no end marker after it, and the message above when the work tree's copy has one.
+- It ends before changing any file or staging anything, with `canon: index --staged needs a Git checkout` outside Git, `canon: resolve the merge conflicts first` when the Git index has unmerged entries, `canon: the staged <path> has an index start marker with no end marker after it; fix the markers, stage the file and rerun` when the staged copy of a `docs/README.md` has a first start marker with no end marker after it, and the message above when the work tree's copy has one. When Git fails to list or read the staged tree, write the blob or stage it, it ends with D006's `canon: git <subcommand> failed in <dir>: <reason>` ([D006§check: check](D006-doc-model.md#check)).
 
 ### Check
 

@@ -9,6 +9,7 @@
 - [P003: Review gate redesign](plans/P003-review-gate-redesign.md) · done · canon.py status, approved and follow-up trace units; blind-review rules in one skill; joint gates, follow-up rounds and approval in the skill texts. · modules: canon
 - [P004: Live concluded experiments](plans/P004-live-experiments.md) · done · Experiment statuses answered, live concluded, superseded, overturned and dropped in canon.py, its tests and the skill texts that set and archive them. · modules: canon
 - [P005: Project install](plans/P005-project-install.md) · done · canon.py run only from the project's install, init without a copy, the version check, installed skill files as tooling, and the skill texts. · modules: canon
+- [P006: Concurrent work and staged checks](plans/P006-concurrent-work.md) · done · check --rev and --staged, index --staged and stale index levels, check of named docs, init's hook and .worktrees/, worktree trace data, concurrent-work texts. · modules: canon
 
 ### Reviews
 

@@ -63,6 +63,7 @@ The brief gives the subagent the experiment's path, the question, what answer wo
 - The subagent writes each finding into the experiment as soon as it has its source, so a run that stops loses nothing; a rerun keeps the findings the doc already holds and researches only what they leave open.
 - Long excerpts worth keeping go in the attachment directory, linked from the doc. Each link and image target in an excerpt that is relative or starts with `/` is resolved against the source's URL into an absolute URL, so the excerpt's text stays verbatim while its links pass `check` ([D006§links-and-references: links and references](D006-doc-model.md#links-and-references)).
 - Every `<!-- canon: ... -->` comment is replaced, and the doc is written in the documentation language.
+- Before finishing, the subagent runs `canon.py check <E00X> --fix` and fixes the errors it reports, checking only its own doc ([D006§concurrent-work: concurrent work](D006-doc-model.md#concurrent-work)).
 - The subagent modifies nothing but the experiment and its attachment directory, and keeps scratch files in `.canon/canon-research/<E00X>/scratch/`, never in the OS temp directory, reading paths there directly, since search tools that honor `.gitignore` skip `.canon/`.
 
 ### Prototype framing

@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 created: 2026-11-13
 updated: 2026-11-13
 revision: 1
@@ -14,11 +14,11 @@ approved: 1
 
 # P006: Concurrent work and staged checks
 
-Implements [D006: Doc model and writing rules](../designs/D006-doc-model.md) r19 and its follow-ons [D005: Docs index](../designs/D005-docs-index.md) r3, [D004: Project setup](../designs/D004-project-setup.md) r7, [D003: Subagents](../designs/D003-subagents.md) r8 and [D001: Skill telemetry with canon trace](../designs/D001-skill-telemetry.md) r13, which passed one gate together, D006 r19 through its follow-up round. Each design's `implemented` equals its revision at f9479a6, D006 16, D005 2, D004 6, D003 7 and D001 12, so the work is each design's Spec diff from f9479a6 to f37509b.
+Implements [D006: Doc model and writing rules](../../designs/D006-doc-model.md) r19 and its follow-ons [D005: Docs index](../../designs/D005-docs-index.md) r3, [D004: Project setup](../../designs/D004-project-setup.md) r7, [D003: Subagents](../../designs/D003-subagents.md) r8 and [D001: Skill telemetry with canon trace](../../designs/D001-skill-telemetry.md) r13, which passed one gate together, D006 r19 through its follow-up round. Each design's `implemented` equals its revision at f9479a6, D006 16, D005 2, D004 6, D003 7 and D001 12, so the work is each design's Spec diff from f9479a6 to f37509b.
 
 ## Current state
 
-All slices done. Next: the code review from 0083252, then the docs step.
+Done: all slices landed, the code review from 0083252 passed, and the docs step set `implemented` on D006, D005, D004, D003 and D001.
 
 ## Slices
 
@@ -230,3 +230,4 @@ Test criteria; seam: the skill texts, checked by `validate.py` and by the code r
 - 2026-11-13: Code review from 0083252 (L2: Spec, Standards, cross-family gpt-5.6-sol-high; `.canon/canon-blind-review/P006-code-review/`). Fixed: `GitTree.read_text` reads `\r\n` and `\r` as `\n`, so CRLF docs and indexes check under `--staged` and `--rev` as on the work tree; a plan behind its design and a cited archived experiment count as on each doc involved, so with doc arguments every doc is checked and the problems filtered; problems are a `Problem` named tuple whose `also` holds any number of docs; `init` makes a hook it replaces executable; `VERSION_57_HOOK` is `CHECK_ONLY_HOOK`, since versions 48 to 57 wrote it; `require_clean_merge` takes a root; `Repo.reads_work_tree`; the new tests share their helpers. The skill texts now say where a worktree's trace data goes, write D006's `check --fix <ids>`, and qualify canon-blind-review's snapshot root. Correcting the S4 and S7 entries: argparse takes `check --fix <ids>` as well; only doc arguments split around an option fail. Declined: moving the compared commit and diff arguments onto the tree readers, which would mix reading a tree with comparing it; and writing the new behavior's details into the designs before the docs step, which the workflow assigns to the docs step. `CANON_VERSION` 64. Design problem: D001's rule took any linked worktree under `<R>/.worktrees/` for `<R>`'s, another repository's included; the user chose to fix it now with D001 r14.
 - 2026-11-13: D001 r14 passed a follow-up round of the D006 r17 gate (L2; `.canon/canon-blind-review/D006-r17/followup-3/`; one minor finding, accepted: a relative `gitdir:` resolves from its `.git` file's directory and directories compare after resolving links) and the user approved it. `based_on` moves to D001@r14: only S6 builds on the changed rule, which now takes a worktree under `<R>/.worktrees/` for `<R>`'s only when its Git directory lies directly inside the `worktrees` directory of `<R>`'s common Git directory. `worktree_main` follows it as a code review fix.
 - 2026-11-13: `worktree_main` follows D001 r14 through `named_git_dir` and `common_git_dir`, taking the nearest qualifying `<R>`; tests cover another repository's worktree under `<R>/.worktrees/` and `<R>`'s under another's, a nested worktree, a submodule's worktree, relative `gitdir:` lines and a link on the `gitdir:` path. Git 2.43 lacks `worktree.useRelativePaths`, so the relative test rewrites the `.git` file. `CANON_VERSION` 65.
+- 2026-11-13: Docs step. D006, D005, D004 and D001 now state the details the code settled: how a symbolic link and a line ending read through Git, the problems that count on two docs, a named doc's error and the summary count, regeneration's Git failures, the replaced hook's mode and byte-exact match, and the write test of the worktree fallback; D008's research brief runs `check <E00X> --fix`, and D007 names the worktree's path beside a next-phase command. `implemented` is D006 19, D005 3, D004 7, D003 8, D001 14; D006's `paths` adds the canon-implement, canon-blind-review, canon-handoff and canon-research skills; D000's D006 row and README's Tracing paragraph follow.

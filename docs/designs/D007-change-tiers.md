@@ -55,7 +55,7 @@ L0: implement → code review → docs step → commit
 ### Phases
 
 - Design, plan and implementation are separate phases, and each can start in a fresh session because the docs carry the state.
-- A phase ends by giving the user the command that starts the next one, such as `/canon-plan D012`; the user runs it in this session or a new one. The canon skills write such commands in that form, and the agent gives each in the host's form, such as `$canon-plan D012` in Codex.
+- A phase ends by giving the user the command that starts the next one, such as `/canon-plan D012`; the user runs it in this session or a new one. The canon skills write such commands in that form, and the agent gives each in the host's form, such as `$canon-plan D012` in Codex, naming beside it the path of the linked worktree it works in, if any ([D006§concurrent-work: concurrent work](D006-doc-model.md#concurrent-work)).
 - L1 work is the exception: the session that revises the design, including one given L1 work through `canon-implement`, carries on to implementation after the gate, or gives `/canon-plan D012` when the work needs a plan. So does a [design problem](#design-problems) found while planning or implementing, unless its fix is L2.
 
 ### Design problems

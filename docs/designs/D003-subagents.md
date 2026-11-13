@@ -11,7 +11,7 @@ paths: [skills/governance/canon/workflow.md, skills/execution/canon-blind-review
 reviewed: 8
 reviewers: [claude-opus-5.5, gpt-5.6-sol-high]
 approved: 8
-implemented: 7
+implemented: 8
 ---
 
 # D003: Subagents

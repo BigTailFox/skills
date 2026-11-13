@@ -11,7 +11,7 @@ paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py, skills/go
 reviewed: 7
 reviewers: [claude-opus-5.5, gpt-5.6-sol-high]
 approved: 7
-implemented: 6
+implemented: 7
 ---
 
 # D004: Project setup
@@ -73,7 +73,7 @@ canon.py init [--root DIR] [--hook]
   exec python3 "$c" check
   ```
 
-  An existing hook stays, one `init` cannot read included, and `init --hook` prints ``kept the existing pre-commit hook; add `canon.py check --staged` to it``. The exceptions are the hooks earlier versions wrote: one holding exactly the lines `#!/bin/sh`, `c=.agents/skills/canon/scripts/canon.py`, `[ -f "$c" ] && exec python3 "$c" check`, then the hook's `echo` line unindented and `exit 1`, and one holding exactly `#!/bin/sh`, a newline and `exec python3 <path> check`, with any path free of whitespace and an optional final newline, as a project with a copy had. Every `init` at the repo root, with or without `--hook`, replaces either with the hook above and prints `updated <hook path>`. Outside Git, `--hook` does nothing.
+  An existing hook stays, one `init` cannot read included, and `init --hook` prints ``kept the existing pre-commit hook; add `canon.py check --staged` to it``. The exceptions are the hooks earlier versions wrote: one holding exactly the lines `#!/bin/sh`, `c=.agents/skills/canon/scripts/canon.py`, `[ -f "$c" ] && exec python3 "$c" check`, then the hook's `echo` line unindented and `exit 1`, each ending with a newline, as versions 48 to 57 wrote it, and one holding exactly `#!/bin/sh`, a newline and `exec python3 <path> check`, with any path free of whitespace and an optional final newline, as a project with a copy had. Every `init` at the repo root, with or without `--hook`, replaces either with the hook above, setting mode 755, and prints `updated <hook path>`. Outside Git, `--hook` does nothing.
 - When `init` cannot write or replace the hook, such as where `.git` is read-only, it still finishes every other step and prints ``warning: cannot write the pre-commit hook: <reason>; rerun `canon.py init --hook` where .git is writable``.
 
 ### adopt

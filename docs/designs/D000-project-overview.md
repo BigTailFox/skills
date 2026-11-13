@@ -38,7 +38,7 @@ The module, `canon`, and the repository tooling, `scripts/validate.py`, share th
 
 | Capability | Modules | Design |
 |---|---|---|
-| Docs that live in the repository: numbered docs with frontmatter, references, a lifecycle and archiving, created, checked and archived with `canon.py`, and the rules for writing them | canon | [D006: Doc model and writing rules](D006-doc-model.md) |
+| Docs that live in the repository: numbered docs with frontmatter, references, a lifecycle and archiving, created, checked (the work tree, what a commit records, or a commit) and archived with `canon.py`, sessions that work in one repository at the same time, each in a worktree, and the rules for writing them | canon | [D006: Doc model and writing rules](D006-doc-model.md) |
 | Queries of the docs and the code they govern (`canon.py show`, `find`, `which`, `affected`), and renaming and renumbering docs (`rename`, `renumber`) | canon | [D010: Doc queries and renames](D010-doc-queries-and-renames.md) |
 | The generated index of each docs root's docs in `docs/README.md` and `docs/archived/README.md` (`canon.py index`) | canon | [D005: Docs index](D005-docs-index.md) |
 | Change tiers and the flow each sets, the review gate, and design problems found while working from a design | canon | [D007: Change tiers and the review gate](D007-change-tiers.md) |
