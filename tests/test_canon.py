@@ -37,6 +37,7 @@ PLAN = "## Current state\n\nNext: S1.\n\n## Slices\n\n### S1: First\n\nStatus: t
 ISSUES = "\n## Known issues\n\n| ID | Severity | Issue | Source | Since | Next |\n|---|---|---|---|---|---|\n{}\n"
 EXPERIMENT = "## Question\n\nFast?\n\n## Setup\n\n{}\n\n## Results\n\nFast.\n\n## Conclusion\n\n{}\n"
 RUN = "- Commit: 3f9a1c2\n- Environment: x\n- Command: y"
+CONCEPT = "## Motivation\n\n{}\n\n## Ideas\n\nX.\n\n## Open questions\n\nNone.\n"
 NO_OVERVIEW = "ERROR docs: no D000, the project overview every project keeps; run `canon.py init` at the repo root"
 OUTSIDE_INSTALL = ("canon: canon runs only from an install inside the project, and this canon.py is {}; install canon in "
                    "the project as https://github.com/BigTailFox/skills#install says, and remove a user install of "
@@ -1075,21 +1076,44 @@ class DocRulesTest(CanonTest):
                                                  "E001-bench.md). <!-- canon: What"))
         self.assertEqual(self.experiment_problems(self.ok("check", "--fix")), [])
 
-    def test_a_concluded_experiment_warns_when_only_archived_docs_concepts_experiments_or_its_attachments_link_it(self):
+    def test_a_concluded_experiment_warns_when_only_archived_docs_or_its_attachments_link_it(self):
         self.doc("E", "bench", body=EXPERIMENT.format(RUN, "Fast enough."), status="concluded")
         link = "[E001: Fixture](../experiments/E001-bench.md)"
         self.design(body=DESIGN.format(link))
         self.doc("P", "work", body=PLAN.format("From " + link + "."))
-        self.doc("C", "idea", body="## Motivation\n\n{}\n\n## Ideas\n\nX.\n\n## Open questions\n\nNone.\n".format(link))
-        self.doc("E", "other", body=EXPERIMENT.format(RUN, "As [E001: Fixture](E001-bench.md)."))
+        self.doc("C", "idea", body=CONCEPT.format(link))
         self.create("docs/experiments/E001/raw.txt")
         self.doc("P", "data", body=PLAN.format("[Raw data](../experiments/E001/raw.txt)."))
         self.commit()
         self.ok("archive", "D001", "retired")
         self.ok("archive", "P001", "abandoned")
+        self.ok("archive", "C001", "dropped")
         self.assertEqual(self.experiment_problems(self.ok("check", "--fix")), [
-            "WARN docs/experiments/E001-bench.md: concluded, but no live design or plan links it; link it or archive "
-            "it as concluded"])
+            "WARN docs/experiments/E001-bench.md: concluded, but no live doc cites it; link it or archive it as "
+            "concluded"])
+
+    def test_a_live_concept_review_investigation_or_unfinished_experiment_keeps_a_concluded_experiment_live(self):
+        self.doc("E", "bench", body=EXPERIMENT.format(RUN, "Fast enough."), status="concluded")
+        link = "\n[E001: Fixture](../experiments/E001-bench.md)\n"
+        for letter, slug in (("C", "idea"), ("R", "audit"), ("I", "slow")):
+            path = self.doc(letter, slug)
+            path.write_text(path.read_text() + link)
+        self.doc("E", "load", body=EXPERIMENT.format(RUN, "As [E001: Fixture](E001-bench.md)."), status="running")
+        self.commit()
+        self.assertEqual(self.experiment_problems(self.ok("check")), [])
+        self.refuses("E001 is linked by I001, R001, E002, C001; it stays live while a live doc cites it",
+                     "archive", "E001", "concluded")
+
+    def test_concluded_experiments_that_link_only_one_another_are_uncited_until_a_live_doc_cites_one(self):
+        self.doc("E", "bench", body=EXPERIMENT.format(RUN, "As [E002: Fixture](E002-load.md)."), status="concluded")
+        self.doc("E", "load", body=EXPERIMENT.format(RUN, "As [E001: Fixture](E001-bench.md)."), status="concluded")
+        warning = "WARN docs/experiments/{}: concluded, but no live doc cites it; link it or archive it as concluded"
+        self.assertEqual([p for p in self.problems(self.ok("check", "--fix")) if "concluded" in p],
+                         [warning.format("E001-bench.md"), warning.format("E002-load.md")])
+        self.doc("C", "idea", body=CONCEPT.format("[E002: Fixture](../experiments/E002-load.md)"))
+        self.commit()
+        self.assertNotIn("concluded, but", self.ok("check"))
+        self.refuses("E001 is linked by E002; it stays live while a live doc cites it", "archive", "E001", "concluded")
 
     def test_an_archived_concluded_experiment_that_nothing_links_does_not_warn(self):
         self.doc("E", "bench", body=EXPERIMENT.format(RUN, "Fast enough."), status="concluded")
@@ -1194,7 +1218,7 @@ class DocRulesTest(CanonTest):
         design = self.design(body=DESIGN.format(link))
         self.doc("P", "work", body=PLAN.format("From " + link + "."))
         self.commit()
-        self.refuses("E001 is linked by D001, P001; it stays live while a live design or plan links it",
+        self.refuses("E001 is linked by D001, P001; it stays live while a live doc cites it",
                      "archive", "E001", "concluded")
         design.write_text(design.read_text().replace(link, "nothing"))
         self.ok("archive", "P001", "abandoned")
@@ -1362,6 +1386,23 @@ class StatusTest(CanonTest):
     def test_status_refuses_to_move_an_answered_experiment_a_live_plan_links_back_to_running(self):
         self.linked_experiment("bench", "answered")
         self.refused("E001 is linked by P001; a later run gets a new experiment that links it", "E001", "running")
+
+    def test_a_live_concept_link_blocks_the_move_back_to_running_but_concludes_nothing(self):
+        self.doc("E", "bench", body=EXPERIMENT.format(RUN, "Fast enough."), status="answered")
+        self.doc("C", "idea", body=CONCEPT.format("[E001: Fixture](../experiments/E001-bench.md)"))
+        self.commit()
+        self.refused("E001 is linked by C001; a later run gets a new experiment that links it", "E001", "running")
+        self.refused("E001 needs a live design or plan that links it to become concluded", "E001", "concluded")
+
+    def test_an_experiment_linking_its_own_file_cites_nothing(self):
+        own = "[E001§results: Results](E001-bench.md#results)"
+        path = self.doc("E", "bench", body=EXPERIMENT.format(RUN, "As " + own + "."), status="answered")
+        self.commit()
+        self.assertEqual(self.ok("status", "E001", "running"), "E001: answered -> running\n")
+        self.set(path, status="concluded")
+        self.doc("C", "idea", body=CONCEPT.format("[E001: Fixture](../experiments/E001-bench.md)"))
+        self.commit()
+        self.refuses("E001 is linked by C001; it stays live while a live doc cites it", "archive", "E001", "concluded")
 
     def test_status_refuses_an_unknown_or_archived_doc(self):
         self.design()

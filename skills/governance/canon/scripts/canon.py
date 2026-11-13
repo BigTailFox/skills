@@ -29,7 +29,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "52"
+CANON_VERSION = "53"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -650,7 +650,7 @@ class Repo:
         self.docs, self.problems, self.attachments = [], [], []
         self.index_files, self.scope_md = [], []
         self.by_id, self.by_path = {}, {}
-        self._slug_cache, self._design_linked, self._live_links = {}, None, None
+        self._slug_cache, self._design_linked, self._citations = {}, None, None
         self._scan()
 
     def _list_files(self):
@@ -757,16 +757,26 @@ class Repo:
             self._design_linked = set().union(*(doc_links(self, d) for d in self.docs if d.type == "D"))
         return self._design_linked
 
-    def live_links(self):
-        """For each file the body of a design or plan outside archived/ links to, the ids of those docs, sorted as
-        `docs` is."""
-        if self._live_links is None:
-            self._live_links = {}
-            for d in self.docs:
-                if d.type in ("D", "P") and not d.archived:
+    def citations(self):
+        """For each live experiment's file a live doc cites, the docs whose links count, sorted as `docs` is: the body
+        of any doc outside archived/ other than the experiment, a concluded experiment's only while it is cited
+        itself."""
+        if self._citations is None:
+            experiments = {d.path: d for d in self.docs if d.type == "E" and not d.archived}
+            citing = [d for d in self.docs if not d.archived and not (d.type == "E" and d.status == "concluded")]
+            seen, citers = {d.path for d in citing}, {}
+            while citing:
+                reached = []
+                for d in citing:
                     for path in doc_links(self, d):
-                        self._live_links.setdefault(path, []).append(d.id)
-        return self._live_links
+                        if path in experiments and path != d.path:
+                            citers.setdefault(path, set()).add(d)
+                            if path not in seen:
+                                seen.add(path)
+                                reached.append(experiments[path])
+                citing = reached
+            self._citations = {path: sorted(docs, key=Doc.sort_key) for path, docs in citers.items()}
+        return self._citations
 
     def resolve(self, src_dir, target):
         if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", target) or target.startswith("//"):
@@ -1179,9 +1189,8 @@ def check_doc(repo, doc, changed, strict=False):
             err(msg)
         if doc.type == "C" and not doc.archived and doc.path not in repo.design_linked():
             repo.problem("WARN", rel, "adopted, but no design links it")
-        if doc.type == "E" and not doc.archived and doc.path not in repo.live_links():
-            repo.problem("WARN", rel, "concluded, but no live design or plan links it; link it or archive it as "
-                                      "concluded")
+        if doc.type == "E" and not doc.archived and doc.path not in repo.citations():
+            repo.problem("WARN", rel, "concluded, but no live doc cites it; link it or archive it as concluded")
     elif answered:
         for msg in terminal_problems(doc, "concluded"):
             err(msg)
@@ -1771,10 +1780,10 @@ def cmd_archive(repo, args):
         if doc.status != "concluded":
             sys.exit("canon: {} is {}, not concluded; archive an experiment nothing absorbed as dropped"
                      .format(doc.id, doc.status))
-        linkers = repo.live_links().get(doc.path)
-        if linkers:
-            sys.exit("canon: {} is linked by {}; it stays live while a live design or plan links it"
-                     .format(doc.id, ", ".join(linkers)))
+        citers = repo.citations().get(doc.path)
+        if citers:
+            sys.exit("canon: {} is linked by {}; it stays live while a live doc cites it"
+                     .format(doc.id, ", ".join(d.id for d in citers)))
     live = [d.id for d in repo.docs if d.type == "D" and d.suffix and "D" + d.digits == doc.id and not d.archived]
     if live:
         sys.exit("canon: {} has live sub-designs {}; archive them first".format(doc.id, ", ".join(live)))
@@ -1817,19 +1826,19 @@ def cmd_status(repo, args):
             doc.id, doc.status, ", to " + ", ".join(later) if later else "", ", or back to " + back if back else ""))
     passed = later[:later.index(args.status) + 1] if args.status in later else []
     implemented = doc.get("implemented")
-    linkers = repo.live_links().get(doc.path)
+    citers = repo.citations().get(doc.path, []) if doc.type == "E" else []
     condition = None
     if {"accepted", "in-progress"} & set(passed) and not 1 <= doc.reviewed == doc.revision:
         condition = "`reviewed` equal to `revision`"
     elif args.status == "active" and not (isinstance(implemented, int) and 1 <= implemented <= doc.reviewed):
         condition = "`implemented` not above `reviewed`"
-    elif doc.type == "E" and args.status == "concluded" and not linkers:
+    elif doc.type == "E" and args.status == "concluded" and not any(d.type in ("D", "P") for d in citers):
         condition = "a live design or plan that links it"
     if condition:
         sys.exit("canon: {} needs {} to become {}".format(doc.id, condition, args.status))
-    if args.status == back and linkers:
+    if args.status == back and citers:
         sys.exit("canon: {} is linked by {}; a later run gets a new experiment that links it"
-                 .format(doc.id, ", ".join(linkers)))
+                 .format(doc.id, ", ".join(d.id for d in citers)))
     if doc.type == "E" and args.status in ("answered", "concluded"):
         if report_unmet_terminal(doc, "concluded"):
             return 1
