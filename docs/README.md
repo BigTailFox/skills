@@ -19,6 +19,7 @@
 ### Experiments
 
 - [E001: Precedence of project and user skills across hosts](experiments/E001-skill-scope-precedence.md) · concluded · Same-name user and project skills load both in Cursor and Codex, told apart by path; Claude Code runs the user's. npx skills project installs reach all three. · modules: canon
+- [E002: Ideas from popular agent skill libraries](experiments/E002-skill-library-survey.md) · answered · Ideas from popular skill libraries (mattpocock, superpowers, ECC, anthropics): skill evals against a baseline, trigger tests and review guards lead. · modules: canon
 
 ### Concepts
 
