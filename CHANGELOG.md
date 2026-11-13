@@ -2,6 +2,20 @@
 
 Notable changes in each release. Versions follow [Semantic Versioning](https://semver.org); while the major version is 0, a minor release may change how skills behave.
 
+## 0.8.0 - 2026-11-13
+
+Sessions that work in one repository at the same time each take a worktree of their own, and `check` checks what a commit records, so one session's uncommitted work no longer fails or gets rewritten by another's.
+
+- The `canon` skill gains a Concurrent work section. When another session works, or will work, in the checkout, the agent works in a linked worktree at `.worktrees/<branch>`, whose branch tracks the one it was made from; a session that finds uncommitted changes nobody told it about asks you before its first edit. The section also says how to finish a worktree's branch and how to commit only part of a checkout's changes, with `check --fix <ids>`, `index --staged` and `check --staged`.
+- `check --staged` checks the staged tree, what `git commit` records, and `check --rev REV` the tree of commit REV. Both read docs and indexes through Git, so changes outside the commit neither fail nor pass it. Neither takes `--fix` or the other, and `--staged` refuses while merge conflicts are unresolved.
+- `check ID|PATH ...` checks only the named docs, a problem between two docs counting on each, and with `--fix` fixes only those and leaves the indexes alone. Subagents that edit docs, such as workers and researchers, now check only their own.
+- `index --staged` regenerates the indexes of the staged tree from the staged docs and stages them, so a commit of some docs carries their index lines.
+- A stale index is now a warning in the work tree. It stays an error under `--staged`, `--rev` and `--base`, where the `--staged` message names `index --staged`.
+- `init` adds `.worktrees/` to `.gitignore`. The pre-commit hook `init --hook` writes runs `check --staged`, so it checks the commit rather than everything uncommitted, and every `init` at the repo root replaces the hook earlier versions wrote.
+- With tracing on, a project's own worktrees in `.worktrees/` keep their trace data in the main checkout's trace directory, so removing a worktree keeps its units; a worktree that cannot write there, as in a sandbox limited to it, keeps its own.
+- In a worktree, subagent prompts start with its path, and handoffs and next-phase commands name it. `canon-implement` starts a paused slice's stash message with the plan and slice and finds the stash by that message. The canon block in `AGENTS.md` sends a shared checkout and a partial commit to Concurrent work instead of a plain `check --fix`.
+- `canon.py` is now canon version 66: install this release in each project and run `/canon-init` to upgrade, which also replaces the old pre-commit hook.
+
 ## 0.7.2 - 2026-11-13
 
 `canon.py`'s errors name the value at fault and the step to take, `which` flags files that exist nowhere, and `new` refuses a plan without its design.
