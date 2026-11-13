@@ -491,17 +491,22 @@ class RenumberTest(CanonTest):
         self.create("docs/designs/D001/flow.svg")
         self.design("other")
         plan = self.doc("P", "work", body="See [D001: Area, after D001-K1](../designs/D001-area.md), [D002: Other, "
-                                          "unlike D001](../designs/D002-other.md) and [the D001 flow]"
-                                          "(../designs/D001/flow.svg).\n\n" + PLAN.format("None."))
+                                          "unlike D001](../designs/D002-other.md), [the D001 flow]"
+                                          "(../designs/D001/flow.svg) and [the guide](../guides/use.md#with-d001-area)"
+                                          ".\n\n" + PLAN.format("None."))
         guide = self.root / "docs/guides/use.md"
         guide.parent.mkdir()
-        guide.write_text("# Use\n\nRead [D001: Area, after D001-K1](../designs/D001-area.md); D001 is the area.\n")
+        guide.write_text("# Use\n\nRead [D001: Area, after D001-K1](../designs/D001-area.md); D001 is the area.\n\n"
+                         "## With [D001: Area](../designs/D001-area.md)\n\nBack to [it](#with-d001-area).\n")
         self.commit()
         self.ok("renumber", "D001", "D005")
         self.assertIn("See [D005: Area, after D005-K1](../designs/D005-area.md), [D002: Other, unlike D005]"
-                      "(../designs/D002-other.md) and [the D005 flow](../designs/D005/flow.svg).", plan.read_text())
+                      "(../designs/D002-other.md), [the D005 flow](../designs/D005/flow.svg) and [the guide]"
+                      "(../guides/use.md#with-d005-area).", plan.read_text())
         self.assertIn("![D005 flow](D005/flow.svg)", (self.root / "docs/designs/D005-area.md").read_text())
-        self.assertIn("Read [D005: Area, after D005-K1](../designs/D005-area.md); D001 is the area.", guide.read_text())
+        text = guide.read_text()
+        self.assertIn("Read [D005: Area, after D005-K1](../designs/D005-area.md); D001 is the area.", text)
+        self.assertIn("## With [D005: Area](../designs/D005-area.md)\n\nBack to [it](#with-d005-area).", text)
         self.ok("check", "--fix")
 
     def test_renumber_carries_the_anchors_of_headings_whose_citations_change(self):
@@ -509,14 +514,21 @@ class RenumberTest(CanonTest):
         plan = self.doc("P", "work", body="## Current state\n\nNext: S1.\n\n## Slices\n\n### S1: Fix D001\n\n"
                                           "Status: todo\n\n## Notes\n\nSee [S1](#s1-fix-d001) and "
                                           "D001§d001-k1-history.\n\n## Log\n\nStarted.\n")
-        concept = self.doc("C", "idea", body=CONCEPT.format(
-            "Waits for [P001§s1-fix-d001: S1](../plans/P001-work.md#s1-fix-d001)."))
+        concept = self.doc("C", "idea", body="## Motivation\n\nWaits for [P001§s1-fix-d001: S1](../plans/P001-work.md"
+                                             "#s1-fix-d001), P001§s1-fix-d001 and [D001: Fixture, as P001§s1-fix-d001 "
+                                             "says](../designs/D001-area.md).\n\n## Ideas\n\n### After P001§s1-fix-d001"
+                                             "\n\nX.\n\n## Open questions\n\nNone.\n")
+        later = self.doc("C", "later", body=CONCEPT.format("Builds on C001§after-p001s1-fix-d001."))
         self.commit()
         self.ok("renumber", "D001", "D005")
         text = plan.read_text()
         self.assertIn("### S1: Fix D005\n", text)
         self.assertIn("See [S1](#s1-fix-d005) and D005§d005-k1-history.", text)
-        self.assertIn("Waits for [P001§s1-fix-d005: S1](../plans/P001-work.md#s1-fix-d005).", concept.read_text())
+        text = concept.read_text()
+        self.assertIn("Waits for [P001§s1-fix-d005: S1](../plans/P001-work.md#s1-fix-d005), P001§s1-fix-d005 and "
+                      "[D005: Fixture, as P001§s1-fix-d005 says](../designs/D005-area.md).", text)
+        self.assertIn("### After P001§s1-fix-d005\n", text)
+        self.assertIn("Builds on C001§after-p001s1-fix-d005.", later.read_text())
         self.ok("check", "--fix")
 
     def test_collision_keeps_unclear_citations_and_leaves_the_other_doc_its_own(self):
@@ -533,6 +545,18 @@ class RenumberTest(CanonTest):
         self.assertIn("D001 is the other design, and D001-K1 its own issue.", theirs.read_text())
         self.assertIn("kept D001 in docs/concepts/C001-idea.md: another doc still has that id; change the references "
                       "there that mean D002\n", out)
+        self.ok("check", "--fix")
+
+    def test_collision_carries_the_slugs_after_the_id_the_other_doc_keeps(self):
+        ours = self.design()
+        theirs = ours.with_name("D001-other.md")
+        theirs.write_text(ours.read_text().replace("owns: [area]", "owns: [other]")
+                          + "\n## Unlike [D001: Area](D001-area.md)\n\nSee D001§unlike-d001-area.\n")
+        plan = self.doc("P", "work", body="Extends [D001: Area](../designs/D001-other.md) per D001§unlike-d001-area."
+                                          "\n\n" + PLAN.format("None."))
+        self.ok("renumber", str(ours.relative_to(self.root)))
+        self.assertIn("\n## Unlike [D002: Area](D002-area.md)\n\nSee D001§unlike-d002-area.\n", theirs.read_text())
+        self.assertIn("Extends [D001: Area](../designs/D001-other.md) per D001§unlike-d002-area.", plan.read_text())
         self.ok("check", "--fix")
 
     def test_a_moved_doc_renames_its_finding_ids_in_code_but_not_in_link_texts_of_the_other_doc(self):
@@ -621,7 +645,14 @@ class RenameTest(CanonTest):
                                   "## Decisions\n\nNone.\n")
         plan = self.doc("P", "work", body="Implements [D001: Fixture](../designs/D001-area.md), [D001: the design]"
                                           "(../designs/D001-area.md) and [D001§d001-fixture: top]"
-                                          "(../designs/D001-area.md#d001-fixture).\n\n" + PLAN.format("None."))
+                                          "(../designs/D001-area.md#d001-fixture).\n\n" + PLAN.format(
+                                              "See [C001§per-d001d001-fixture: per](../concepts/C001-idea.md"
+                                              "#per-d001d001-fixture).\n\n### Builds on [D001: Fixture]"
+                                              "(../designs/D001-area.md)\n\nX."))
+        concept = self.doc("C", "idea", body="## Motivation\n\nRests on [P001§builds-on-d001-fixture: basis]"
+                                             "(../plans/P001-work.md#builds-on-d001-fixture), "
+                                             "P001§builds-on-d001-fixture and D001§d001-fixture.\n\n## Ideas\n\n"
+                                             "### Per D001§d001-fixture\n\nX.\n\n## Open questions\n\nNone.\n")
         self.commit()
         self.assertEqual(self.ok("rename", "D001", "area", "--title", "  Zones and areas "),
                          "docs/designs/D001-area.md -> docs/designs/D001-area.md\n")
@@ -631,7 +662,35 @@ class RenameTest(CanonTest):
         self.assertIn("Implements [D001: Zones and areas](../designs/D001-area.md), [D001: the design]"
                       "(../designs/D001-area.md) and [D001§d001-zones-and-areas: top]"
                       "(../designs/D001-area.md#d001-zones-and-areas).", plan.read_text())
+        self.assertIn("See [C001§per-d001d001-zones-and-areas: per](../concepts/C001-idea.md"
+                      "#per-d001d001-zones-and-areas).\n\n### Builds on [D001: Zones and areas]"
+                      "(../designs/D001-area.md)\n", plan.read_text())
+        self.assertIn("Rests on [P001§builds-on-d001-zones-and-areas: basis](../plans/P001-work.md"
+                      "#builds-on-d001-zones-and-areas), P001§builds-on-d001-zones-and-areas and "
+                      "D001§d001-zones-and-areas.\n\n## Ideas\n\n### Per D001§d001-zones-and-areas\n",
+                      concept.read_text())
         self.assertIn("[D001: Zones and areas](designs/D001-area.md)", (self.root / "docs/README.md").read_text())
+        self.ok("check", "--fix")
+
+    def test_rename_with_a_title_carries_the_slugs_after_a_docs_own_id_that_another_doc_has(self):
+        design = self.design()
+        self.design("zone")
+        other = design.with_name("D001-other.md")
+        other.write_text(design.read_text().replace("owns: [area]", "owns: [other]")
+                         + "\n## Unlike [D002: Zone](D002-zone.md)\n\nSee D001§unlike-d002-zone.\n")
+        self.ok("rename", "D002", "zone", "--title", "Zones")
+        self.assertIn("\n## Unlike [D002: Zones](D002-zone.md)\n\nSee D001§unlike-d002-zones.\n", other.read_text())
+
+    def test_rename_with_a_title_carries_the_references_into_its_attachments(self):
+        self.design()
+        notes = self.root / "docs/designs/D001/notes.md"
+        notes.parent.mkdir()
+        notes.write_text("# Notes\n\n## About [D001: Area](../D001-area.md)\n\nX.\n")
+        plan = self.doc("P", "work", body="See [D001§about-d001-area: notes](../designs/D001/notes.md#about-d001-area)."
+                                          "\n\n" + PLAN.format("None."))
+        self.ok("rename", "D001", "area", "--title", "Zone")
+        self.assertIn("## About [D001: Zone](../D001-area.md)\n", notes.read_text())
+        self.assertIn("See [D001§about-d001-zone: notes](../designs/D001/notes.md#about-d001-zone).", plan.read_text())
         self.ok("check", "--fix")
 
     def test_rename_refuses_a_title_that_would_break_link_texts(self):
@@ -1983,6 +2042,17 @@ class AdoptTest(CanonTest):
                          "[D001§d001-usage: Top](docs/designs/D001-usage.md#d001-usage), "
                          "[D001§usage: Section](docs/designs/D001-usage.md#usage), "
                          "[D001: All](docs/designs/D001-usage.md), [D002: Star](docs/designs/D002-star.md).\n")
+
+    def test_adopt_carries_the_anchors_of_headings_whose_link_texts_it_changes(self):
+        (self.root / "notes.md").write_text("# Notes\n\nText.\n")
+        index = self.root / "index.md"
+        index.write_text("# Index\n\n## See [notes](notes.md)\n\nBack to [it](#see-notes).\n")
+        guide = self.root / "guide.md"
+        guide.write_text("Read [the index](index.md#see-notes).\n")
+        self.ok("adopt", "notes.md", "design")
+        self.assertEqual(index.read_text(), "# Index\n\n## See [D001: notes](docs/designs/D001-notes.md)\n\n"
+                                            "Back to [it](#see-d001-notes).\n")
+        self.assertEqual(guide.read_text(), "Read [the index](index.md#see-d001-notes).\n")
 
 
 class ProjectOverviewTest(CanonTest):

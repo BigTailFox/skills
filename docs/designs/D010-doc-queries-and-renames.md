@@ -11,7 +11,7 @@ paths: [skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.
 reviewed: 5
 reviewers: [claude-opus-5.5]
 approved: 2
-implemented: 3
+implemented: 5
 ---
 
 # D010: Doc queries and renames
@@ -163,7 +163,7 @@ Without another doc of the id, everything follows the renumbered doc.
 
 | ID | Severity | Issue | Source | Since | Next |
 |----|----------|-------|--------|-------|------|
-| D010-K9 | minor | Some references to a heading whose anchor `rename --title` or `renumber` changes keep the old anchor, since nothing makes them follow: after `rename --title`, a plain-text citation of the H1's anchor (`D001§d001-<old title>`), which goal 3 counts as a reference that must not break; after `renumber`, a plain-text `§<slug>` citation of a doc it does not move whose heading changed with the ids in it (`P001§s1-fix-d001`); and the links to a heading whose link text either command changes, when the heading is in a guide for `renumber` or in any file but the renamed doc for `rename --title`, which `check` then reports as a missing anchor that `check --fix` cannot fix | code review 8fb1ad3 | 2026-11-13 | L1 |
+| D010-K10 | minor | After `renumber`, a citation of the moved doc in a doc's link text, other than a reference's leading `<ID>§<anchor>`, keeps its old `§<slug>` when the link points at a file in the moved doc's attachment directory whose heading the command changes, since the docs' citations settle before the headings of other files do. | code review 3ccf260 | 2026-11-13 | L1 |
 
 ## Decisions
 

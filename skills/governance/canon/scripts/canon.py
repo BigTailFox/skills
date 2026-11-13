@@ -30,7 +30,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "55"
+CANON_VERSION = "56"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -1538,19 +1538,23 @@ def apply_edits(lines, edits):
     return lines
 
 
-def rewrite_for_moves(repo, moves, renamed=None, adopted=None, anchors=None, retitled=None):
+def rewrite_for_moves(repo, moves, renamed=None, adopted=None, anchors=None, retitled=None, citations=False):
     """Rewrite relative links in every markdown file so they survive `moves` (old path -> new path).
 
     `renamed` maps a moved doc's old path, and the old path of an attachment directory that moves with it, to
     (old id, new id); in files other than docs, which `move_doc` rewrites itself, the citations of the old id in the
     texts of links to them become the new id.
     `adopted` maps a file becoming a canon doc to its id; link texts to it get the reference format.
-    `anchors` maps a doc's old path to {old anchor: new anchor} for the headings the command changes; links into the
-    doc, its own `#<anchor>` links included, and a reference's `§<anchor>` follow.
+    `anchors` maps a file's old path to {old anchor: new anchor} for the headings the command changed before this
+    rewrite; links into the file, its own `#<anchor>` links included, and a reference's `§<anchor>` follow.
     `retitled` maps a doc's path to (old link text, new link text); the texts of links to it that read the old one
     become the new one.
+    With `citations`, the `§<slug>` after each citation in a doc (`id_citations`) follows the anchors of what it
+    names (`slug_follower`) instead.
+    The anchors settle: links and citations follow the headings this rewrite changes too.
     """
     renamed, adopted, anchors, retitled = renamed or {}, adopted or {}, anchors or {}, retitled or {}
+    owner, follow = doc_owner(repo, {}), slug_follower(repo)
 
     def mapped(p):
         for src, dst in moves.items():
@@ -1562,13 +1566,10 @@ def rewrite_for_moves(repo, moves, renamed=None, adopted=None, anchors=None, ret
                 continue
         return p
 
-    for rel in repo.files:
-        if not rel.endswith(".md"):
-            continue
-        path = repo.root / rel
-        lines = path.read_text(encoding="utf-8").split("\n")
+    def rewrite(path, lines, shifted):
+        """The edits to `lines`, the text of the file at `path`, with `shifted` as the anchors."""
         new_dir = mapped(path).parent
-        is_doc = path in repo.by_path
+        doc = repo.by_path.get(path)
         edits = {}
         for i, match in iter_links(lines):
             target = match.group(3)
@@ -1578,8 +1579,8 @@ def rewrite_for_moves(repo, moves, renamed=None, adopted=None, anchors=None, ret
             dest, anchor = resolved
             is_self = dest == "self"
             dest = path if is_self else dest
-            new_anchor = anchors.get(dest, {}).get(anchor, anchor) if anchor else anchor
-            ids = None if is_doc else \
+            new_anchor = shifted.get(dest, {}).get(anchor, anchor) if anchor else anchor
+            ids = None if doc else \
                 renamed.get(dest) or next((renamed[p] for p in dest.parents if p in renamed), None)
             for cited in CITATION_RE.finditer(match.group(2)) if ids else ():
                 if cited.group(1) == ids[0]:
@@ -1589,7 +1590,7 @@ def rewrite_for_moves(repo, moves, renamed=None, adopted=None, anchors=None, ret
             if link_texts and lines[i][match.start(2):match.end(2)] == link_texts[0]:
                 edits.setdefault(i, []).append((match.start(2), match.end(2), link_texts[1]))
             ref = REF_TEXT_RE.match(match.group(2))
-            if ref and anchor and ref.group(2) == anchor and new_anchor != anchor:
+            if ref and anchor and ref.group(2) == anchor and new_anchor != anchor and not (citations and doc):
                 start = match.start(2) + ref.start(2)
                 edits.setdefault(i, []).append((start, start + len(anchor), new_anchor))
             if dest in adopted and not is_self and not ref and not match.group(1):
@@ -1607,8 +1608,34 @@ def rewrite_for_moves(repo, moves, renamed=None, adopted=None, anchors=None, ret
                     new_target += "#" + new_anchor
             if new_target != target:
                 edits.setdefault(i, []).append((match.start(3), match.end(3), new_target))
-        if edits:
-            path.write_text("\n".join(apply_edits(lines, edits)), encoding="utf-8")
+        for citation in id_citations(repo, doc, owner, "\n".join(lines)) if citations and doc and shifted else ():
+            slug = follow(doc, citation, citation.id, shifted)
+            if slug:
+                edits.setdefault(citation.line, []).append((citation.slug.start, citation.slug.end, slug))
+        return edits
+
+    texts = {repo.root / rel: (repo.root / rel).read_text(encoding="utf-8") for rel in repo.files
+             if rel.endswith(".md")}
+
+    def step(shifted):
+        rewritten = {}
+        for path, text in texts.items():
+            lines = text.split("\n")
+            rewritten[path] = "\n".join(apply_edits(lines, rewrite(path, lines, shifted)))
+        settled = dict(anchors)
+        for path, text in rewritten.items():
+            changed = changed_anchors(texts[path], text)
+            if changed:
+                first = anchors.get(path, {})
+                both = {a: changed.get(first.get(a, a), first.get(a, a))
+                        for a in set(first) | (set(changed) - set(first.values()))}
+                settled[path] = {a: b for a, b in both.items() if a != b}
+        return rewritten, settled
+
+    rewritten = settle(step, anchors, sum(len(body_headings(text)) for text in texts.values()) + 1)[0]
+    for path, text in rewritten.items():
+        if text != texts[path]:
+            path.write_text(text, encoding="utf-8")
 
 
 def move_paths(repo, moves):
@@ -1919,7 +1946,7 @@ def cmd_rename(repo, args):
         if doc.title:
             retitled[doc.path] = ("{}: {}".format(doc.id, doc.title), "{}: {}".format(doc.id, title))
         doc.path.write_text(text, encoding="utf-8")
-    rewrite_for_moves(repo, moves, anchors=anchors, retitled=retitled)
+    rewrite_for_moves(repo, moves, anchors=anchors, retitled=retitled, citations=True)
     move_paths(repo, moves)
     write_indexes(Repo())
     print("{} -> {}".format(doc.rel, posix_rel(moves.get(doc.path, doc.path), repo.root)))
@@ -2276,14 +2303,22 @@ def move_doc(repo, doc, new_id, base=None, on_base=None, slug=None, title=None, 
     id_map = dict(renamed.values())
     holder = {old: repo.by_path[path] for path, (old, _new) in renamed.items()}
     others = {old: [d for d in repo.docs if d.id == old and d.path not in renamed] for old in id_map}
-    owner = doc_owner(repo, keepers)
+    owner, follow = doc_owner(repo, keepers), slug_follower(repo, renamed)
     kept = {}
 
     def picker(d):
         """`pick(field, key, old id)` for the references `d` makes: the new id, or None to keep the old one."""
-        now, before = id_entries(repo, d, owner), collections.Counter()
-        if on_base is not None and d.rel in on_base:
-            before = id_entries(repo, d, owner, git(repo.root, "show", "{}:{}".format(base, d.rel)) or "")
+        counts = None
+
+        def entry_counts():
+            """How many times `d` names each entry (`id_entries`), now and on the base."""
+            nonlocal counts
+            if counts is None:
+                before = collections.Counter()
+                if on_base is not None and d.rel in on_base:
+                    before = id_entries(repo, d, owner, git(repo.root, "show", "{}:{}".format(base, d.rel)) or "")
+                counts = id_entries(repo, d, owner), before
+            return counts
 
         def pick(field, key, old):
             if old not in id_map:
@@ -2292,6 +2327,7 @@ def move_doc(repo, doc, new_id, base=None, on_base=None, slug=None, title=None, 
                 return id_map[old] if d.path in renamed else None
             if not others[old]:
                 return id_map[old]
+            now, before = entry_counts()
             entry = (field, key, old)
             there = None if field == "cite" and 0 < before[entry] < now[entry] else before[entry] > 0
             whose = side(holder[old], others[old], there, linked(d, holder[old].path),
@@ -2303,21 +2339,19 @@ def move_doc(repo, doc, new_id, base=None, on_base=None, slug=None, title=None, 
 
     def remap(d, pick, shifted):
         """`d`'s text with the references to moved ids rewritten as `pick` chooses, a link text's citation of the doc
-        the link points at following that doc, and the `§<slug>` after a citation that comes to name a moved doc
-        following the anchors `shifted` maps that doc's path to."""
+        the link points at following that doc, and the `§<slug>` after a citation following the anchors `shifted` of
+        what it names (`slug_follower`)."""
         edits = {}
         for cited in id_citations(repo, d, owner):
             if cited.field == "link":
-                target = owner(cited.dest)
-                new = id_map[cited.id] if target.path in renamed else None
+                new = id_map[cited.id] if owner(cited.dest).path in renamed else None
             else:
-                target, new = holder.get(cited.id), pick(cited.field, cited.key, cited.id)
-            if not new:
-                continue
-            edits.setdefault(cited.line, []).append((cited.start, cited.end, new))
-            slug = cited.slug and shifted.get(target.path, {}).get(cited.slug.text)
+                new = pick(cited.field, cited.key, cited.id)
+            if new:
+                edits.setdefault(cited.line, []).append((cited.start, cited.end, new))
+            slug = follow(d, cited, new or cited.id, shifted)
             if slug:
-                edits[cited.line].append((cited.slug.start, cited.slug.end, slug))
+                edits.setdefault(cited.line, []).append((cited.slug.start, cited.slug.end, slug))
         lines = apply_edits(list(d.lines), edits)
         if d.path in renamed:
             lines = rename_finding_ids(lines, d.fm_end, *renamed[d.path])
@@ -2333,18 +2367,19 @@ def move_doc(repo, doc, new_id, base=None, on_base=None, slug=None, title=None, 
                     text = set_field(text, field, mapped)
         return retitle(text) if d is doc else text
 
-    picks = {d: picker(d) for d in repo.docs if any(old in d.text for old in id_map)}
-    drafts = {d: remap(d, pick, {}) for d, pick in picks.items()}
-    draft_anchors = {d.path: changed_anchors(d.text, text) for d, text in drafts.items()}
-    texts = {d: remap(d, pick, draft_anchors) for d, pick in picks.items()}
-    anchors = {d.path: changed_anchors(d.text, text) for d, text in texts.items()}
+    def step(shifted):
+        texts = {d: remap(d, pick, shifted) for d, pick in picks.items()}
+        settled = {d.path: changed_anchors(d.text, text) for d, text in texts.items()}
+        return texts, {path: anchors for path, anchors in settled.items() if anchors}
+
+    picks = {d: picker(d) for d in repo.docs if "§" in d.text or any(old in d.text for old in id_map)}
+    texts, settled = settle(step, {}, sum(len(body_headings(d.text)) for d in picks) + 1)
     for d, text in texts.items():
         if text != d.text:
             d.path.write_text(text, encoding="utf-8")
     renamed_paths = dict(renamed)
     renamed_paths.update((d.path.parent / d.id, renamed[d.path]) for d in group if d.path.parent / d.id in moves)
-    rewrite_for_moves(repo, moves, renamed_paths,
-                      anchors={path: shifted for path, shifted in anchors.items() if shifted})
+    rewrite_for_moves(repo, moves, renamed_paths, anchors=settled)
     move_paths(repo, moves)
     notes = ["kept {} in {}: another doc still has that id; change the references there that mean {}"
              .format(old, ", ".join(sorted(rels)), id_map[old]) for old, rels in sorted(kept.items())] + notes
@@ -2407,6 +2442,36 @@ def doc_owner(repo, keepers):
             return None
         return holders[directory][0] if len(holders[directory]) == 1 else keepers.get(directory)
     return owner
+
+
+def slug_follower(repo, renamed=None):
+    """A function giving the slug the `§<slug>` after a Citation in a doc becomes, or None when it keeps its own: the
+    slug follows `anchors` ({path: {old anchor: new anchor}}) of what the citation names once `renamed` (old path ->
+    (old id, new id)) has given docs their new ids, `cited_id` being the id it reads then: the linked file for a
+    citation, in a link's text, of the doc the link points at; else the doc it is in for that doc's own id, or the
+    one doc with the id."""
+    renamed = renamed or {}
+    ids = {d.path: renamed[d.path][1] if d.path in renamed else d.id for d in repo.docs}
+    holders = collections.Counter(ids.values())
+    sole = {i: path for path, i in ids.items() if holders[i] == 1}
+
+    def follow(doc, cited, cited_id, anchors):
+        if not cited.slug:
+            return None
+        path = cited.dest if cited.field == "link" else doc.path if cited_id == ids[doc.path] else sole.get(cited_id)
+        return anchors.get(path, {}).get(cited.slug.text)
+    return follow
+
+
+def settle(step, anchors, rounds):
+    """Apply `step`, which maps anchors ({path: {old anchor: new anchor}}) to (result, anchors after it), from
+    `anchors` until they stop changing, at most `rounds` times; returns the last (result, anchors)."""
+    for _ in range(rounds):
+        result, settled = step(anchors)
+        if settled == anchors:
+            break
+        anchors = settled
+    return result, settled
 
 
 Citation = collections.namedtuple("Citation", "line start end field key id slug dest")
