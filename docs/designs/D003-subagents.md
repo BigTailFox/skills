@@ -2,14 +2,14 @@
 status: active
 created: 2026-10-22
 updated: 2026-11-13
-revision: 8
+revision: 9
 modules: [canon]
-summary: How canon runs reviewers and workers as new subagents on the session's model, resumed by id, the review snapshots confirmations diff, and the reviewer file.
+summary: How canon runs every subagent as a new one, never a fork, reviewers and workers on the session's model, resumed by id, review snapshots, the reviewer file.
 refs: [D001, D004, R003, D000, D007, R001, D006]
 owns: [subagents]
-paths: [skills/governance/canon/workflow.md, skills/execution/canon-blind-review/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/governance/canon-init/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-review/SKILL.md, skills/governance/canon/scripts/canon.py, tests/test_canon.py]
-reviewed: 8
-reviewers: [claude-opus-5.5, gpt-5.6-sol-high]
+paths: [skills/governance/canon/workflow.md, skills/execution/canon-blind-review/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/governance/canon-init/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-research/SKILL.md, skills/execution/canon-grill/SKILL.md, skills/execution/canon-codebase-design/DESIGN-IT-TWICE.md, skills/governance/canon/scripts/canon.py, tests/test_canon.py]
+reviewed: 9
+reviewers: [claude-opus-5.5]
 approved: 8
 implemented: 8
 ---
@@ -18,23 +18,23 @@ implemented: 8
 
 ## Goals
 
-1. A reviewer or implementation worker starts with nothing from the session that launches it, so a review stays blind and every slice starts in an empty context window.
-2. Subagents run on the model and reasoning effort the user set for the session; only the cross-family reviewer names its own model.
+1. Every subagent a canon skill launches starts with nothing from the session that launches it, so a review stays blind, every slice starts in an empty context window, and subagents meant to differ, such as alternative interface designs, do not inherit the session's assumptions.
+2. Reviewers and workers run on the model and reasoning effort the user set for the session; only the cross-family reviewer names its own model.
 3. A subagent that the workflow continues is resumed whenever the host allows it, so it keeps its context: a reviewer judges the fixes against its own findings, a blocked worker continues with the answer, and a run that stopped finishes instead of starting over.
 4. The cross-family reviewer is set up once per user and machine, outside every checkout, so the tools and logins it needs never enter a repository and every clone and linked worktree finds it.
 
 ## Spec
 
-This design covers the subagents of the `canon` workflow, meaning the reviewers of the review gate, of code review and of any other blind review and the workers of `canon-implement`, the review snapshots their confirmations diff, and the setup of the cross-family reviewer. Subagents that other skills launch for their own steps, such as a codebase review's angles, research, broad searches or alternative interface designs, follow those skills. What a review assesses, and how its findings are merged, belong to the review gate and code review.
+This design covers the subagents of the `canon` workflow, meaning the reviewers of the review gate, of code review and of any other blind review and the workers of `canon-implement`, the review snapshots their confirmations diff, and the setup of the cross-family reviewer. Subagents that other skills launch for their own steps, such as a codebase review's angles, research, broad searches or alternative interface designs, follow those skills, except that each is a new subagent ([Launch](#launch)). What a review assesses, and how its findings are merged, belong to the review gate and code review.
 
 ### Launch
 
-- Same-model reviewers, workers, and a cross-family reviewer that runs as a host subagent are new subagents from the host's own tool: the Task tool in Cursor, the Agent tool in Claude Code, multi-agent subagents in Codex. None is a fork of the session. A cross-family reviewer can instead run as a command ([Reviewers](#reviewers)).
-- Subagents are launched without a model or effort, so they run on the session's, which the user sets. Only a cross-family reviewer that runs as a host subagent gets a model, the one the reviewer file names. Since every worker runs at the session's effort, `canon-plan` names a plan's slices that carry a `Risk:` line beside its closing command and suggests high reasoning effort for the implementation session.
+- Every subagent a canon skill launches is a new subagent from the host's own tool: the Task tool in Cursor, the Agent tool in Claude Code, multi-agent subagents in Codex. None is a fork of the session. This covers same-model reviewers, workers and a cross-family reviewer that runs as a host subagent, which can instead run as a command ([Reviewers](#reviewers)), and the subagents other skills launch for their own steps. Each skill says so where it launches one: the `canon` workflow, `canon-blind-review` and `canon-implement` for reviewers and workers, `canon-review` for its angles, `canon-research` for its researcher, `canon-grill` for its searches, and `canon-codebase-design`'s Design It Twice for its alternative designs.
+- Reviewers and workers are launched without a model or effort, so they run on the session's, which the user sets. Only a cross-family reviewer that runs as a host subagent gets a model, the one the reviewer file names. Since every worker runs at the session's effort, `canon-plan` names a plan's slices that carry a `Risk:` line beside its closing command and suggests high reasoning effort for the implementation session.
 - In Claude Code a reviewer is a `general-purpose` or custom subagent, since the built-in Explore and Plan agents cannot be resumed. A worker is a general-purpose subagent.
 - A gate launches its first-round reviewers in parallel, and code review issues its reviewers together. A reviewer that runs as a host subagent runs in the foreground unless the session has other work to do meanwhile, such as another review; one that runs as a command runs in the background ([Reviewers](#reviewers)), started before the others. While a review's reviewers read, in any round, the session edits nothing in the work tree outside `.canon/`, so each reads what the review snapshot records; it fixes findings once the reports are in. Workers run one at a time, in plan order; work without a plan has no worker.
 - A session working in a linked worktree launches its subagents there, a reviewer's command included, as [D006§concurrent-work: concurrent work](D006-doc-model.md#concurrent-work) says.
-- The launching session keeps each subagent's id: a reviewer's agent id, or the session id its command reports, in its review files ([D001§review-files: review files](D001-skill-telemetry.md#review-files)), and a worker's agent id in `.canon/canon-implement/<P id>/S<n>-id.txt`.
+- The launching session keeps each reviewer's and worker's id: a reviewer's agent id, or the session id its command reports, in its review files ([D001§review-files: review files](D001-skill-telemetry.md#review-files)), and a worker's agent id in `.canon/canon-implement/<P id>/S<n>-id.txt`.
 
 ### Input and reports
 
@@ -79,7 +79,7 @@ This design covers the subagents of the `canon` workflow, meaning the reviewers 
 
 ## Decisions
 
-- Subagents are new, never forks of the session: a fork carries the conversation, which would unblind a reviewer and fill a worker's context window (`canon-blind-review`'s definition of a blind reviewer; e71dae1).
+- Subagents are new, never forks of the session: a fork carries the conversation, which would unblind a reviewer and fill a worker's context window (`canon-blind-review`'s definition of a blind reviewer; e71dae1). The rule covers the subagents other skills launch too, since a fork would carry the session's assumptions into a researcher, a search or designs meant to differ, and some hosts fork by default, Codex for one (mattpocock/skills 7739eae).
 - Subagents run on the session's model and effort, which the user sets: in Cursor a Task subagent runs on the session's model unless the user asks for another, from a fixed list whose names fix the effort, so workers and same-model reviewers need no setup (README, Host verification). It replaced per-role effort tables and the Reviewers and Workers lines (3c560ed).
 - A confirmation resumes a reviewer that runs as a host subagent, so it judges the fixes against its own findings (3c94281), and reruns a cross-family reviewer that runs as a command with its first-round findings, which needs no per-tool session handling (6ac41ad). Findings whose reviewer cannot confirm them, a manual-fallback reviewer's included, go to the resumed same-model reviewer, so the user relays nothing a second time (`canon-blind-review`).
 - A confirmation diffs two snapshots of the work tree, taken before the review and after its fixes: work not yet committed has no commit to diff from, and a `git diff` from HEAD mixes the change under review with its fixes. The gates of D001, P001, P002 and D000 each needed an ad-hoc copy or a full reread instead (2026-10-15 to 2026-10-23), and copies of each reviewed file (r3) needed their own rules for untracked, created and deleted files. The snapshots reuse trace's, which record untracked files and add no file to the project's `.git`, read-only in Codex's sandbox, and live outside the trace directory, which tracing off leaves untouched (2026-10-29).

@@ -23,7 +23,7 @@ implemented: 6
 3. Recorded research runs beside the main work, every finding traces to a primary source, and a researcher that stops loses no finding it has made.
 4. Prototype code wired into the product stays off the main branch, which keeps the decision, the experiment and its self-contained files.
 
-Out of scope: the E doc type, its sections, statuses and archiving ([D006: Doc model](D006-doc-model.md)); the subagents of the canon workflow ([D003: Subagents](D003-subagents.md)); grill triage, which routes questions to these skills ([D009§triage: Triage](D009-settling-decisions.md#triage)).
+Out of scope: the E doc type, its sections, statuses and archiving ([D006: Doc model](D006-doc-model.md)); the subagents of the canon workflow and the rule that every subagent is new, never a fork of the session ([D003: Subagents](D003-subagents.md)); grill triage, which routes questions to these skills ([D009§triage: Triage](D009-settling-decisions.md#triage)).
 
 ## Spec
 
@@ -46,7 +46,7 @@ A fact one or two primary sources settle, such as a signature, a default, a limi
 
 1. **Frame**: the session writes the question, the answer that would settle it, and the doc that will absorb the answer, usually the design being written or revised.
 2. **Reserve**: in the main session, before any subagent starts, it looks for experiments on the same question with `canon.py find --archived`. It extends one it finds that is `planned` or `running`, or `answered` and cited by no live doc, as [D006§doc-types: doc types](D006-doc-model.md#doc-types) states, setting a `planned` or `answered` one `running` with `canon.py status`; otherwise it runs `canon.py new E <slug>`, fills Question, links each earlier experiment it found on the question, and sets it `running` with `canon.py status`.
-3. **Launch**: it starts a background subagent with the [research brief](#research-brief) where the host supports one, and otherwise does the research inline under the brief's rules. For a subagent it keeps the filled brief and the subagent's id in `.canon/canon-research/<E00X>/` as `brief.md` and `id.txt`; inline research keeps neither. It keeps working on what does not depend on the answer. The skill names no model.
+3. **Launch**: it starts a background subagent, new as [D003§launch: launch](D003-subagents.md#launch) states, with the [research brief](#research-brief) where the host supports one, and otherwise does the research inline under the brief's rules. For a subagent it keeps the filled brief and the subagent's id in `.canon/canon-research/<E00X>/` as `brief.md` and `id.txt`; inline research keeps neither. It keeps working on what does not depend on the answer. The skill names no model.
 4. **Recover**, when the host reports that the researcher stopped before finishing: the launching session resumes it once by its id where the host allows, and otherwise reruns `brief.md` once in a new subagent; a second stop goes to the user. Another session finding an experiment still `running` reruns `brief.md` only once the user confirms that no other session is running it.
 5. **Absorb**, when the subagent finishes: the session opens the sources behind the findings its decision depends on and confirms they say what the experiment claims, sets the experiment `answered` with `canon.py status`, then absorbs the conclusion as [Absorbing a conclusion](#absorbing-a-conclusion) states.
 

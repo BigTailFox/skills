@@ -1,11 +1,11 @@
 ---
 status: active
 created: 2026-11-11
-updated: 2026-11-11
+updated: 2026-11-13
 revision: 2
 modules: [canon]
 summary: Settling open decisions with the user (canon-grill): triage before asking, open decisions kept in the doc, and small batches of related questions.
-refs: [D000, D007, D008, D002]
+refs: [D000, D007, D008, D002, D003]
 owns: [settling-decisions]
 paths: [skills/execution/canon-grill/SKILL.md, skills/execution/canon-handoff/SKILL.md]
 reviewed: 2
@@ -35,7 +35,7 @@ Out of scope: the prototypes and research that triage routes questions to ([D008
 
 For each open decision, the session takes the first branch that applies:
 
-1. **A fact** about the code, docs, tools or environment: the session finds it, dispatching a subagent for broad searches, and never asks the user.
+1. **A fact** about the code, docs, tools or environment: the session finds it, dispatching a subagent for broad searches, new as [D003§launch: launch](D003-subagents.md#launch) states, and never asks the user.
 2. **Settled by a design, plan or standard**: the session follows it and cites it, e.g. `D003§token-refresh`. When the work conflicts with a design's intent, the user decides ([D007§design-problems: Design problems](D007-change-tiers.md#design-problems)).
 3. **One option is clearly right**, the alternatives plainly worse against the stated goals: the session decides and states the decision in one line where the user sees it.
 4. **Evidence would settle it**: a logic, state-model, UI or performance question goes to `canon-prototype`, a question about an external system or library to `canon-research`; the session grills only about what the evidence leaves open.
