@@ -1,5 +1,5 @@
 ---
-status: draft
+status: accepted
 created: 2026-11-13
 updated: 2026-11-13
 revision: 1
@@ -9,6 +9,7 @@ refs: [D006, D005, D004, D003, D001]
 based_on: [D006@r19, D005@r3, D004@r7, D003@r8, D001@r13]
 reviewed: 1
 reviewers: [claude-opus-5.5, gpt-5.6-sol-high]
+approved: 1
 ---
 
 # P006: Concurrent work and staged checks

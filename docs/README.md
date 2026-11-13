@@ -18,7 +18,7 @@
 
 ### Plans
 
-- [P006: Concurrent work and staged checks](plans/P006-concurrent-work.md) · draft · check --rev and --staged, index --staged and stale index levels, check of named docs, init's hook and .worktrees/, worktree trace data, concurrent-work texts. · modules: canon
+- [P006: Concurrent work and staged checks](plans/P006-concurrent-work.md) · accepted · check --rev and --staged, index --staged and stale index levels, check of named docs, init's hook and .worktrees/, worktree trace data, concurrent-work texts. · modules: canon
 
 ### Experiments
 
