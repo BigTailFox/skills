@@ -11,7 +11,7 @@ paths: [skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.
 reviewed: 3
 reviewers: [claude-opus-5.5]
 approved: 2
-implemented: 2
+implemented: 3
 ---
 
 # D010: Doc queries and renames
@@ -107,7 +107,7 @@ canon.py rename ID SLUG [--title TITLE]
 ```
 
 - ID names a doc of any type, live or archived, sub-designs included; an ID that no doc or several docs have exits with the messages [D006§ids-and-file-names: ids](D006-doc-model.md#ids-and-file-names) gives for `archive`. D000 then exits with `canon: D000 keeps its file name, which the AGENTS.md block links`, a SLUG that is not kebab-case with `canon: slug must be kebab-case`, and a TITLE that, once stripped of surrounding whitespace, is empty or holds a line break, `[` or `]`, which would break the link texts and index lines that carry it, with `canon: title must be one line of text without [ or ]`.
-- It moves the doc's file to `<ID>-<SLUG>.md`, and each file in its attachment directory, at any depth, whose name up to its first `.` is the doc's old slug to the same directory, SLUG in place of the old slug: `D001/skill-telemetry.zh.md` becomes `D001/telemetry.zh.md`. A file it would move to that exists ends it before any change with `canon: <path> already exists`. It prints `<old path> -> <new path>`, both relative to the repo root, for the doc and then for each attachment file in path order, and exits 0. A SLUG equal to the doc's own moves no file and prints the doc's line.
+- It moves the doc's file to `<ID>-<SLUG>.md`, and each file in its attachment directory, at any depth, whose name up to its first `.` is the doc's old slug to the same directory, SLUG in place of the old slug: `D001/skill-telemetry.zh.md` becomes `D001/telemetry.zh.md`. A file it would move to that exists ends it before any change with `canon: <path> already exists`. It prints `<old path> -> <new path>`, both relative to the repo root, for the doc and then for each attachment file in path order, and exits 0. A SLUG equal to the doc's own moves no file and prints only the doc's `<old path> -> <new path>` line, both paths the same.
 - With `--title`, it sets the doc's H1, the first heading of level 1 outside code fences, to `# <ID>: <TITLE>`, TITLE stripped of surrounding whitespace, and in every `.md` file the text of each link to the doc that reads exactly `<ID>: <old title>`, the old title being the H1's text after `<ID>: `, to `<ID>: <TITLE>`. Links to the H1's anchor follow it ([D006§statuses-and-archiving: statuses and archiving](D006-doc-model.md#statuses-and-archiving)). A doc without an H1 ends it before any change with `canon: <ID> has no H1`.
 - The other attachments keep their names and, without `--title`, the H1 and link texts stay as they are.
 
@@ -163,8 +163,7 @@ Without another doc of the id, everything follows the renumbered doc.
 
 | ID | Severity | Issue | Source | Since | Next |
 |----|----------|-------|--------|-------|------|
-| D010-K1 | minor | `renumber` and `init`'s move of a design to D000 rewrite `moved <id>` dispositions but no other plain-text citation of the moved doc's ids, such as `fixed <id>@r<n>`, a known issue's Source (`R004-F2`) or a finding id in prose, so after a conflict renumber they name the old id: they point unnoticed at the other branch's doc with that id, or else `check` reports a disposition fixed in an unknown doc | code review e122546 | 2026-11-11 | L1 |
-| D010-K8 | minor | `rename` leaves the H1 title, link texts that repeat the old title, and attachments named after the old slug, such as `D001/<slug>.zh.md`, with the old name; it could rewrite the H1 with a `--title` and rename the attachments whose names start with the old slug | R003-F37 | 2026-11-10 | L1 |
+| D010-K9 | minor | Some references to a heading whose anchor `rename --title` or `renumber` changes keep the old anchor, since nothing makes them follow: after `rename --title`, a plain-text citation of the H1's anchor (`D001§d001-<old title>`), which goal 3 counts as a reference that must not break; after `renumber`, a plain-text `§<slug>` citation of a doc it does not move whose heading changed with the ids in it (`P001§s1-fix-d001`); and the links to a heading whose link text either command changes, when the heading is in a guide for `renumber` or in any file but the renamed doc for `rename --title`, which `check` then reports as a missing anchor that `check --fix` cannot fix | code review 8fb1ad3 | 2026-11-13 | L1 |
 
 ## Decisions
 

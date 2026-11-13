@@ -468,6 +468,184 @@ class RenumberTest(CanonTest):
         ours.with_name("D001-other.md").write_text(ours.read_text().replace("owns: [area]", "owns: [other]"))
         self.assertIn("D001 is the id of", self.fails("new", "P", "work", "--from", "D001"))
 
+    def test_renumber_rewrites_citations_in_summaries_dispositions_and_prose_but_not_in_code(self):
+        self.design()
+        self.issues(self.design("other"), "| D002-K1 | minor | A gap | D001-K2 | 2020-10-01 | fix |")
+        review = self.doc("R", "audit", body=FINDINGS.format("| R001-F1 | major | D001 lacks a spec | fixed D001@r1 |"))
+        concept = self.doc("C", "idea", body=CONCEPT.format(
+            "D001, D001-K1 and D001@r1, see D001§goals; not D001A, D0010, d001 or `D001`. 见D001的设计。\n\n"
+            "```\nD001\n```"))
+        self.set(concept, summary="Ideas after D001")
+        self.commit()
+        self.ok("renumber", "D001", "D005")
+        self.assertIn("| R001-F1 | major | D005 lacks a spec | fixed D005@r1 |", review.read_text())
+        text = concept.read_text()
+        self.assertIn("summary: Ideas after D005", text)
+        self.assertIn("D005, D005-K1 and D005@r1, see D005§goals; not D001A, D0010, d001 or `D001`. 见D005的设计。\n\n"
+                      "```\nD001\n```", text)
+        self.assertIn("| D002-K1 | minor | A gap | D005-K2 |", (self.root / "docs/designs/D002-other.md").read_text())
+        self.ok("check", "--fix")
+
+    def test_renumber_rewrites_the_citations_in_link_texts(self):
+        self.design(body="## Goals\n\n![D001 flow](D001/flow.svg)\n\n## Spec\n\nX.\n\n## Decisions\n\nNone.\n")
+        self.create("docs/designs/D001/flow.svg")
+        self.design("other")
+        plan = self.doc("P", "work", body="See [D001: Area, after D001-K1](../designs/D001-area.md), [D002: Other, "
+                                          "unlike D001](../designs/D002-other.md) and [the D001 flow]"
+                                          "(../designs/D001/flow.svg).\n\n" + PLAN.format("None."))
+        guide = self.root / "docs/guides/use.md"
+        guide.parent.mkdir()
+        guide.write_text("# Use\n\nRead [D001: Area, after D001-K1](../designs/D001-area.md); D001 is the area.\n")
+        self.commit()
+        self.ok("renumber", "D001", "D005")
+        self.assertIn("See [D005: Area, after D005-K1](../designs/D005-area.md), [D002: Other, unlike D005]"
+                      "(../designs/D002-other.md) and [the D005 flow](../designs/D005/flow.svg).", plan.read_text())
+        self.assertIn("![D005 flow](D005/flow.svg)", (self.root / "docs/designs/D005-area.md").read_text())
+        self.assertIn("Read [D005: Area, after D005-K1](../designs/D005-area.md); D001 is the area.", guide.read_text())
+        self.ok("check", "--fix")
+
+    def test_renumber_carries_the_anchors_of_headings_whose_citations_change(self):
+        self.design(body="## Goals\n\nX.\n\n## Spec\n\n### D001-K1 history\n\nX.\n\n## Decisions\n\nNone.\n")
+        plan = self.doc("P", "work", body="## Current state\n\nNext: S1.\n\n## Slices\n\n### S1: Fix D001\n\n"
+                                          "Status: todo\n\n## Notes\n\nSee [S1](#s1-fix-d001) and "
+                                          "D001§d001-k1-history.\n\n## Log\n\nStarted.\n")
+        concept = self.doc("C", "idea", body=CONCEPT.format(
+            "Waits for [P001§s1-fix-d001: S1](../plans/P001-work.md#s1-fix-d001)."))
+        self.commit()
+        self.ok("renumber", "D001", "D005")
+        text = plan.read_text()
+        self.assertIn("### S1: Fix D005\n", text)
+        self.assertIn("See [S1](#s1-fix-d005) and D005§d005-k1-history.", text)
+        self.assertIn("Waits for [P001§s1-fix-d005: S1](../plans/P001-work.md#s1-fix-d005).", concept.read_text())
+        self.ok("check", "--fix")
+
+    def test_collision_keeps_unclear_citations_and_leaves_the_other_doc_its_own(self):
+        ours = self.design()
+        theirs = ours.with_name("D001-other.md")
+        theirs.write_text(ours.read_text().replace("owns: [area]", "owns: [other]")
+                          + "\nD001 is the other design, and D001-K1 its own issue.\n")
+        linked = self.doc("P", "work", body="Implements [D001: Area](../designs/D001-area.md); D001 needs work.\n\n"
+                                            + PLAN.format("None."))
+        unlinked = self.doc("C", "idea", body=CONCEPT.format("D001 may need a split."))
+        out = self.ok("renumber", str(ours.relative_to(self.root)))
+        self.assertIn("D002 needs work.", linked.read_text())
+        self.assertIn("D001 may need a split.", unlinked.read_text())
+        self.assertIn("D001 is the other design, and D001-K1 its own issue.", theirs.read_text())
+        self.assertIn("kept D001 in docs/concepts/C001-idea.md: another doc still has that id; change the references "
+                      "there that mean D002\n", out)
+        self.ok("check", "--fix")
+
+    def test_a_moved_doc_renames_its_finding_ids_in_code_but_not_in_link_texts_of_the_other_doc(self):
+        ours = self.design()
+        ours.with_name("D001-other.md").write_text(ours.read_text().replace("owns: [area]", "owns: [other]"))
+        ours.write_text(ours.read_text().replace("# D001: Area\n", "# D001: Area\n\nUnlike [D001: Area, see D001-K1]"
+                                                 "(D001-other.md), `D001-K2` is ours.\n\n```\nD001-K3\n```\n"))
+        self.ok("renumber", str(ours.relative_to(self.root)))
+        self.assertIn("Unlike [D001: Area, see D001-K1](D001-other.md), `D002-K2` is ours.\n\n```\nD002-K3\n```\n",
+                      (self.root / "docs/designs/D002-area.md").read_text())
+        self.ok("check", "--fix")
+
+    def test_collision_leaves_a_link_text_citation_into_an_attachment_directory_the_other_doc_keeps(self):
+        ours = self.design()
+        ours.with_name("D001-other.md").write_text(ours.read_text().replace("owns: [area]", "owns: [other]")
+                                                   + "\n![The D001 flow](D001/flow.svg)\n")
+        self.create("docs/designs/D001/flow.svg")
+        plan = self.doc("P", "work", body="Implements [D001: Area](../designs/D001-area.md). See [the D001 flow]"
+                                          "(../designs/D001/flow.svg).\n\n" + PLAN.format("None."))
+        self.ok("renumber", str(ours.relative_to(self.root)))
+        self.assertIn("Implements [D002: Area](../designs/D002-area.md). See [the D001 flow]"
+                      "(../designs/D001/flow.svg).", plan.read_text())
+        self.ok("check", "--fix")
+
+    def test_collision_carries_a_link_text_citation_into_the_attachment_directory_that_moves(self):
+        ours = self.design()
+        ours.with_name("D001-other.md").write_text(ours.read_text().replace("owns: [area]", "owns: [other]"))
+        ours.write_text(ours.read_text() + "\n![The D001 flow](D001/flow.svg)\n")
+        self.create("docs/designs/D001/flow.svg")
+        plan = self.doc("P", "work", body="See [the D001 flow](../designs/D001/flow.svg) among [the D001 files]"
+                                          "(../designs/D001/).\n\n" + PLAN.format("None."))
+        out = self.ok("renumber", str(ours.relative_to(self.root)))
+        self.assertIn("See [the D002 flow](../designs/D002/flow.svg) among [the D002 files](../designs/D002",
+                      plan.read_text())
+        self.assertNotIn("kept D001", out)
+        self.ok("check", "--fix")
+
+    def test_with_a_base_a_citation_written_more_often_than_on_the_base_is_unclear(self):
+        self.commit()
+        self.git("checkout", "-q", "-b", "other")
+        self.design("other")
+        mixed = self.doc("C", "mixed", body=CONCEPT.format("D001 is theirs."))
+        kept = self.doc("C", "kept", body=CONCEPT.format("D001 is theirs."))
+        self.commit()
+        self.git("checkout", "-q", "main")
+        target = str(self.design().relative_to(self.root))
+        self.commit()
+        self.git("merge", "-q", "--no-edit", "other")
+        mixed.write_text(mixed.read_text().replace("D001 is theirs.", "D001 is theirs. D001 is ours too."))
+        plan = self.doc("P", "work", body="D001 needs work.\n\n" + PLAN.format("None."))
+        out = self.ok("renumber", target, "--base", "other")
+        self.assertIn("D001 is theirs. D001 is ours too.", mixed.read_text())
+        self.assertIn("D001 is theirs.", kept.read_text())
+        self.assertIn("D002 needs work.", plan.read_text())
+        self.assertIn("kept D001 in docs/concepts/C001-mixed.md: another doc still has that id", out)
+        self.ok("check", "--fix")
+
+
+class RenameTest(CanonTest):
+    def test_rename_moves_the_attachments_named_after_the_slug(self):
+        self.design(body="## Goals\n\nRead [the translation](D001/area.zh.md) and [the flow](D001/flow.svg).\n\n"
+                         "## Spec\n\nX.\n\n## Decisions\n\nNone.\n")
+        self.create("docs/designs/D001/area.zh.md", "docs/designs/D001/flow.svg", "docs/designs/D001/sub/area.png",
+                    "docs/designs/D001/areas.txt")
+        self.commit()
+        out = self.ok("rename", "D001", "zone")
+        self.assertEqual(out.splitlines(), ["docs/designs/D001-area.md -> docs/designs/D001-zone.md",
+                                            "docs/designs/D001/area.zh.md -> docs/designs/D001/zone.zh.md",
+                                            "docs/designs/D001/sub/area.png -> docs/designs/D001/sub/zone.png"])
+        self.assertIn("Read [the translation](D001/zone.zh.md) and [the flow](D001/flow.svg).",
+                      (self.root / "docs/designs/D001-zone.md").read_text())
+        self.assertTrue((self.root / "docs/designs/D001/areas.txt").is_file())
+        self.ok("check", "--fix")
+
+    def test_rename_refuses_to_overwrite_a_file(self):
+        self.design()
+        self.create("docs/designs/D001/area.svg", "docs/designs/D001/zone.svg", "docs/designs/D001-place.md")
+        with (self.root / ".gitignore").open("a") as ignore:
+            ignore.write("docs/designs/D001-place.md\n")
+        self.commit()
+        self.refuses("docs/designs/D001/zone.svg already exists", "rename", "D001", "zone")
+        self.refuses("docs/designs/D001-place.md already exists", "rename", "D001", "place")
+
+    def test_rename_with_a_title_rewrites_the_h1_and_the_link_texts_that_repeat_it(self):
+        design = self.design(body="## Goals\n\nBack to [the top](#d001-fixture).\n\n## Spec\n\nX.\n\n"
+                                  "## Decisions\n\nNone.\n")
+        plan = self.doc("P", "work", body="Implements [D001: Fixture](../designs/D001-area.md), [D001: the design]"
+                                          "(../designs/D001-area.md) and [D001§d001-fixture: top]"
+                                          "(../designs/D001-area.md#d001-fixture).\n\n" + PLAN.format("None."))
+        self.commit()
+        self.assertEqual(self.ok("rename", "D001", "area", "--title", "  Zones and areas "),
+                         "docs/designs/D001-area.md -> docs/designs/D001-area.md\n")
+        text = design.read_text()
+        self.assertIn("\n# D001: Zones and areas\n", text)
+        self.assertIn("Back to [the top](#d001-zones-and-areas).", text)
+        self.assertIn("Implements [D001: Zones and areas](../designs/D001-area.md), [D001: the design]"
+                      "(../designs/D001-area.md) and [D001§d001-zones-and-areas: top]"
+                      "(../designs/D001-area.md#d001-zones-and-areas).", plan.read_text())
+        self.assertIn("[D001: Zones and areas](designs/D001-area.md)", (self.root / "docs/README.md").read_text())
+        self.ok("check", "--fix")
+
+    def test_rename_refuses_a_title_that_would_break_link_texts(self):
+        self.design()
+        self.commit()
+        for title in ("  ", "Two\nlines", "Area [draft]", "Area]"):
+            self.refuses("title must be one line of text without [ or ]", "rename", "D001", "zone", "--title", title)
+
+    def test_rename_with_a_title_refuses_a_doc_without_an_h1(self):
+        design = self.design()
+        design.write_text(design.read_text().replace("# D001: Area\n", ""))
+        self.commit(check=False)
+        self.refuses("D001 has no H1", "rename", "D001", "zone", "--title", "Zone")
+
 
 class IdAllocationTest(CanonTest):
     def parallel_new(self, slugs):

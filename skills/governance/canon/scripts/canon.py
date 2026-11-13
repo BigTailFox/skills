@@ -5,6 +5,7 @@ Single file, Python 3.8+ standard library only. Run `canon.py -h` for commands.
 """
 
 import argparse
+import collections
 import contextlib
 import datetime
 import difflib
@@ -29,7 +30,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "53"
+CANON_VERSION = "54"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -91,7 +92,10 @@ FENCE_RE = re.compile(r"^\s*(```|~~~)")
 INLINE_CODE_RE = re.compile(r"`[^`]*`")
 LINK_UNSAFE_RE = re.compile(r"[\s%#?()]")
 STATUS_LINE_RE = re.compile(r"^\s*(?:-\s+)?Status:\s*(.*?)\s*$")
-MOVED_RE = re.compile(r"(?m)^(\s*\|\s*)([^|\s]+)(\s*\|.*\|\s*moved\s+)([CDPREI]\d{3,}[A-Z]?)(\s*\|\s*)$")
+DISPOSITION_ID_RE = re.compile(r"^\s*\|\s*(?P<finding>[^|\s]+)\s*\|.*\|\s*(?:moved\s+(?P<moved>[CDPREI]\d{3,}[A-Z]?)"
+                               r"|fixed\s+(?P<fixed>[CDPREI]\d{3,}[A-Z]?)@r\d+)\s*\|\s*$")
+CITATION_RE = re.compile(r"(?<![A-Za-z0-9_])([CDPREI][0-9]{3,}[A-Z]?)(?![A-Za-z0-9_])"
+                         r"((?:@r[0-9]+|-[FK][0-9]+)(?![A-Za-z0-9_]))?(?:§([\w-]+))?")
 LABEL_RE = re.compile(r"^\s*(?:-\s+)?([A-Za-z ]+?):\s*(.*?)\s*$")
 GUIDANCE = "<!-- canon:"
 GUIDANCE_RE = re.compile(re.escape(GUIDANCE) + r".*?-->", re.S)
@@ -414,24 +418,35 @@ def scan_headings(lines, start=0):
     return headings
 
 
-def heading_anchors(old_text, new_text, own=None):
-    """{old anchor: new anchor} for each heading whose anchor a command changes when it rewrites a doc from `old_text`
-    to `new_text`. Headings pair in order, the H1 with the H1 and a heading whose finding ids `own` = (old id, new id)
-    renames with its rewritten text; a heading the command adds pairs with none."""
-    def keyed(text, rename):
-        lines = text.split("\n")
-        headings = scan_headings(lines, parse_frontmatter(lines)[1] + 1)
-        h1 = next((h for h in headings if h.level == 1), None)
-        return headings, [(0, "") if h is h1 else (h.level, rename(h.text)) for h in headings]
+def body_headings(text):
+    lines = text.split("\n")
+    return scan_headings(lines, parse_frontmatter(lines)[1] + 1)
 
-    old, old_keys = keyed(old_text, lambda text: rename_finding_ids(text, *own) if own else text)
-    new, new_keys = keyed(new_text, lambda text: text)
+
+def heading_anchors(old_text, new_text):
+    """{old anchor: new anchor} for each heading whose anchor a command changes when it rewrites a doc from `old_text`
+    to `new_text`. Headings pair in order, the H1 with the H1 and any other heading with one of the same level and
+    text; a heading the command adds pairs with none."""
+    def keyed(text):
+        headings = body_headings(text)
+        h1 = next((h for h in headings if h.level == 1), None)
+        return headings, [(0, "") if h is h1 else (h.level, h.text) for h in headings]
+
+    old, old_keys = keyed(old_text)
+    new, new_keys = keyed(new_text)
     anchors = {}
     for a, b, size in difflib.SequenceMatcher(None, old_keys, new_keys, autojunk=False).get_matching_blocks():
         for k in range(size):
             if old[a + k].slug != new[b + k].slug:
                 anchors[old[a + k].slug] = new[b + k].slug
     return anchors
+
+
+def changed_anchors(old_text, new_text):
+    """{old anchor: new anchor} for each heading whose anchor changes when a command rewrites headings of a doc in
+    place, adding and removing none, so the headings of the two texts pair in order."""
+    return {old.slug: new.slug for old, new in zip(body_headings(old_text), body_headings(new_text))
+            if old.slug != new.slug}
 
 
 def iter_links(lines, start=0):
@@ -1507,15 +1522,27 @@ def print_problems(repo):
 
 # ---------------------------------------------------------------- moves
 
-def rewrite_for_moves(repo, moves, renamed=None, adopted=None, anchors=None):
+def apply_edits(lines, edits):
+    """`lines`, changed in place, with the (start, end, value) spans that `edits` maps each line index to replaced."""
+    for i, spans in edits.items():
+        for start, end, value in sorted(spans, reverse=True):
+            lines[i] = lines[i][:start] + value + lines[i][end:]
+    return lines
+
+
+def rewrite_for_moves(repo, moves, renamed=None, adopted=None, anchors=None, retitled=None):
     """Rewrite relative links in every markdown file so they survive `moves` (old path -> new path).
 
-    `renamed` maps a moved doc's old path to (old id, new id); link texts naming it are rewritten too.
+    `renamed` maps a moved doc's old path, and the old path of an attachment directory that moves with it, to
+    (old id, new id); in files other than docs, which `move_doc` rewrites itself, the citations of the old id in the
+    texts of links to them become the new id.
     `adopted` maps a file becoming a canon doc to its id; link texts to it get the reference format.
     `anchors` maps a doc's old path to {old anchor: new anchor} for the headings the command changes; links into the
     doc, its own `#<anchor>` links included, and a reference's `§<anchor>` follow.
+    `retitled` maps a doc's path to (old link text, new link text); the texts of links to it that read the old one
+    become the new one.
     """
-    renamed, adopted, anchors = renamed or {}, adopted or {}, anchors or {}
+    renamed, adopted, anchors, retitled = renamed or {}, adopted or {}, anchors or {}, retitled or {}
 
     def mapped(p):
         for src, dst in moves.items():
@@ -1533,6 +1560,7 @@ def rewrite_for_moves(repo, moves, renamed=None, adopted=None, anchors=None):
         path = repo.root / rel
         lines = path.read_text(encoding="utf-8").split("\n")
         new_dir = mapped(path).parent
+        is_doc = path in repo.by_path
         edits = {}
         for i, match in iter_links(lines):
             target = match.group(3)
@@ -1543,10 +1571,16 @@ def rewrite_for_moves(repo, moves, renamed=None, adopted=None, anchors=None):
             is_self = dest == "self"
             dest = path if is_self else dest
             new_anchor = anchors.get(dest, {}).get(anchor, anchor) if anchor else anchor
-            ids = renamed.get(dest)
+            ids = None if is_doc else \
+                renamed.get(dest) or next((renamed[p] for p in dest.parents if p in renamed), None)
+            for cited in CITATION_RE.finditer(match.group(2)) if ids else ():
+                if cited.group(1) == ids[0]:
+                    start = match.start(2) + cited.start(1)
+                    edits.setdefault(i, []).append((start, start + len(ids[0]), ids[1]))
+            link_texts = retitled.get(dest)
+            if link_texts and lines[i][match.start(2):match.end(2)] == link_texts[0]:
+                edits.setdefault(i, []).append((match.start(2), match.end(2), link_texts[1]))
             ref = REF_TEXT_RE.match(match.group(2))
-            if ids and ref and ref.group(1) == ids[0]:
-                edits.setdefault(i, []).append((match.start(2), match.start(2) + len(ids[0]), ids[1]))
             if ref and anchor and ref.group(2) == anchor and new_anchor != anchor:
                 start = match.start(2) + ref.start(2)
                 edits.setdefault(i, []).append((start, start + len(anchor), new_anchor))
@@ -1566,12 +1600,7 @@ def rewrite_for_moves(repo, moves, renamed=None, adopted=None, anchors=None):
             if new_target != target:
                 edits.setdefault(i, []).append((match.start(3), match.end(3), new_target))
         if edits:
-            for i, spans in edits.items():
-                line = lines[i]
-                for start, end, value in sorted(spans, reverse=True):
-                    line = line[:start] + value + line[end:]
-                lines[i] = line
-            path.write_text("\n".join(lines), encoding="utf-8")
+            path.write_text("\n".join(apply_edits(lines, edits)), encoding="utf-8")
 
 
 def move_paths(repo, moves):
@@ -1857,11 +1886,38 @@ def cmd_rename(repo, args):
         sys.exit("canon: D000 keeps its file name, which the AGENTS.md block links")
     if not SLUG_RE.match(args.slug):
         sys.exit("canon: slug must be kebab-case")
-    moves = {doc.path: doc.path.with_name("{}-{}.md".format(doc.id, args.slug))}
-    rewrite_for_moves(repo, moves)
+    title = None if args.title is None else args.title.strip()
+    if title is not None and (not title or re.search(r"[\r\n\[\]]", title)):
+        sys.exit("canon: title must be one line of text without [ or ]")
+    moves = {}
+    if args.slug != doc.slug:
+        moves[doc.path] = doc.path.with_name("{}-{}.md".format(doc.id, args.slug))
+        attachment = doc.path.parent / doc.id
+        for path in sorted(attachment.rglob("*")) if attachment.is_dir() else ():
+            if path.is_file() and path.name.split(".", 1)[0] == doc.slug:
+                moves[path] = path.with_name(args.slug + path.name[len(doc.slug):])
+    for dest in moves.values():
+        if os.path.lexists(str(dest)):
+            sys.exit("canon: {} already exists".format(posix_rel(dest, repo.root)))
+    anchors, retitled = {}, {}
+    if title is not None:
+        h1 = next((h for h in doc.headings if h.level == 1), None)
+        if h1 is None:
+            sys.exit("canon: {} has no H1".format(doc.id))
+        lines = list(doc.lines)
+        lines[h1.line] = "# {}: {}".format(doc.id, title)
+        text = "\n".join(lines)
+        anchors[doc.path] = changed_anchors(doc.text, text)
+        if doc.title:
+            retitled[doc.path] = ("{}: {}".format(doc.id, doc.title), "{}: {}".format(doc.id, title))
+        doc.path.write_text(text, encoding="utf-8")
+    rewrite_for_moves(repo, moves, anchors=anchors, retitled=retitled)
     move_paths(repo, moves)
     write_indexes(Repo())
-    print("{} -> {}".format(doc.rel, posix_rel(moves[doc.path], repo.root)))
+    print("{} -> {}".format(doc.rel, posix_rel(moves.get(doc.path, doc.path), repo.root)))
+    for src, dest in moves.items():
+        if src != doc.path:
+            print("{} -> {}".format(posix_rel(src, repo.root), posix_rel(dest, repo.root)))
     return 0
 
 
@@ -2138,7 +2194,7 @@ def renumber_doc(repo, args):
 
 def move_doc(repo, doc, new_id, base=None, on_base=None, slug=None, title=None, offer_base=False):
     """Give `doc` the id `new_id`, and its sub-designs that id with their letters: move their files and attachment
-    directories, and rewrite the links, `refs`, `based_on` and `moved` entries naming them. `slug` and `title` replace
+    directories, and rewrite the links, entries, dispositions and citations naming them. `slug` and `title` replace
     the doc's own. `base` is the branch merged or rebased onto, and `on_base` the files of its tree; `offer_base`
     suggests `--base` when it is missing, for a command that has one. Returns the id map, the moves and notes for the
     user."""
@@ -2152,10 +2208,13 @@ def move_doc(repo, doc, new_id, base=None, on_base=None, slug=None, title=None, 
     def side(ours, theirs, there, ours_linked, theirs_linked):
         """Whose a sub-design, attachment or reference is when `ours` shares its id with `theirs`: 'ours',
         'theirs', or None when nothing tells or the evidence conflicts. It belongs to the doc on its side of the
-        base (`there`: it exists on the base), when only one of them exists there, and to the doc links alone reach.
+        base (`there`: it exists on the base, None when the base holds it only in part), when only one of them exists
+        there, and to the doc links alone reach.
         """
         votes = set()
         if on_base is not None and all((t.rel in on_base) != (ours.rel in on_base) for t in theirs):
+            if there is None:
+                return None
             votes.add("ours" if there == (ours.rel in on_base) else "theirs")
         if ours_linked != theirs_linked:
             votes.add("ours" if ours_linked else "theirs")
@@ -2167,12 +2226,12 @@ def move_doc(repo, doc, new_id, base=None, on_base=None, slug=None, title=None, 
         if doc.type != "D" or doc.suffix or child.type != "D" or not child.suffix or child.number != doc.number \
                 or child.root is not doc.root:
             continue
-        owner = side(doc, rivals, on_base is not None and child.rel in on_base,
+        whose = side(doc, rivals, on_base is not None and child.rel in on_base,
                      linked(child, doc.path) or linked(doc, child.path),
                      any(linked(child, r.path) or linked(r, child.path) for r in rivals)) if rivals else "ours"
-        if owner == "ours":
+        if whose == "ours":
             group.append(child)
-        elif owner is None:
+        elif whose is None:
             unclear.append(child.rel)
     if unclear:
         sys.exit("canon: cannot tell which {} owns {}; link each sub-design from its parent design{}, then rerun"
@@ -2180,7 +2239,7 @@ def move_doc(repo, doc, new_id, base=None, on_base=None, slug=None, title=None, 
     if len({d.id for d in group}) < len(group):
         sys.exit("canon: sub-designs of {} share an id; renumber the one this branch added first".format(doc.id))
 
-    renamed, moves, notes = {}, {}, []
+    renamed, moves, notes, keepers = {}, {}, [], {}
     for d in group:
         new = new_id if d is doc else new_id + d.suffix
         renamed[d.path] = (d.id, new)
@@ -2194,7 +2253,10 @@ def move_doc(repo, doc, new_id, base=None, on_base=None, slug=None, title=None, 
             if others else {"ours"}
         if owners <= {"ours"}:
             moves[attachment] = d.path.parent / new
-        elif owners != {"theirs"}:
+            keepers[attachment] = d
+            continue
+        keepers[attachment] = others[0]
+        if owners != {"theirs"}:
             notes.append("kept {}: it also holds attachments of another {}; move this doc's files to {} and fix "
                          "their links".format(posix_rel(attachment, repo.root), d.id,
                                               posix_rel(d.path.parent / new, repo.root)))
@@ -2203,39 +2265,80 @@ def move_doc(repo, doc, new_id, base=None, on_base=None, slug=None, title=None, 
         return re.sub(r"(?m)^# {}:.*$".format(re.escape(new_id)), lambda m: "# {}: {}".format(new_id, title), text,
                       count=1) if title else text
 
-    anchors = {}
-    for d in group:
-        text = d.path.read_text(encoding="utf-8")
-        after = remap_ids(d, text, lambda *_: None, renamed[d.path])
-        anchors[d.path] = heading_anchors(text, retitle(after) if d is doc else after, renamed[d.path])
-    rewrite_for_moves(repo, moves, renamed, anchors=anchors)
-
     id_map = dict(renamed.values())
     holder = {old: repo.by_path[path] for path, (old, _new) in renamed.items()}
     others = {old: [d for d in repo.docs if d.id == old and d.path not in renamed] for old in id_map}
+    owner = doc_owner(repo, keepers)
     kept = {}
-    for d in repo.docs:
-        before = set()
+
+    def picker(d):
+        """`pick(field, key, old id)` for the references `d` makes: the new id, or None to keep the old one."""
+        now, before = id_entries(repo, d, owner), collections.Counter()
         if on_base is not None and d.rel in on_base:
-            before = id_entries(d.type, git(repo.root, "show", "{}:{}".format(base, d.rel)) or "")
+            before = id_entries(repo, d, owner, git(repo.root, "show", "{}:{}".format(base, d.rel)) or "")
 
-        def pick(field, key, old, d=d, before=before):
-            if old not in id_map or not others[old]:
-                return id_map.get(old)
-            owner = side(holder[old], others[old], (field, key, old) in before, linked(d, holder[old].path),
+        def pick(field, key, old):
+            if old not in id_map:
+                return None
+            if field == "cite" and old == d.id:
+                return id_map[old] if d.path in renamed else None
+            if not others[old]:
+                return id_map[old]
+            entry = (field, key, old)
+            there = None if field == "cite" and 0 < before[entry] < now[entry] else before[entry] > 0
+            whose = side(holder[old], others[old], there, linked(d, holder[old].path),
                          any(linked(d, x.path) for x in others[old]))
-            if owner is None:
+            if whose is None:
                 kept.setdefault(old, set()).add(d.rel)
-            return id_map[old] if owner == "ours" else None
+            return id_map[old] if whose == "ours" else None
+        return pick
 
-        text = d.path.read_text(encoding="utf-8")
-        new_text = remap_ids(d, text, pick, renamed.get(d.path))
-        if d is doc:
-            new_text = retitle(new_text)
-        if new_text != text:
-            d.path.write_text(new_text, encoding="utf-8")
+    def remap(d, pick, shifted):
+        """`d`'s text with the references to moved ids rewritten as `pick` chooses, a link text's citation of the doc
+        the link points at following that doc, and the `§<slug>` after a citation that comes to name a moved doc
+        following the anchors `shifted` maps that doc's path to."""
+        edits = {}
+        for cited in id_citations(repo, d, owner):
+            if cited.field == "link":
+                target = owner(cited.dest)
+                new = id_map[cited.id] if target.path in renamed else None
+            else:
+                target, new = holder.get(cited.id), pick(cited.field, cited.key, cited.id)
+            if not new:
+                continue
+            edits.setdefault(cited.line, []).append((cited.start, cited.end, new))
+            slug = cited.slug and shifted.get(target.path, {}).get(cited.slug.text)
+            if slug:
+                edits[cited.line].append((cited.slug.start, cited.slug.end, slug))
+        lines = apply_edits(list(d.lines), edits)
+        if d.path in renamed:
+            lines = rename_finding_ids(lines, d.fm_end, *renamed[d.path])
+        text = "\n".join(lines)
+        for field in ("refs", "based_on"):
+            values = d.get(field)
+            if isinstance(values, list):
+                mapped = []
+                for value in values:
+                    head, sep, tail = value.partition("@")
+                    mapped.append((pick(field, value, head) or head) + sep + tail)
+                if mapped != values:
+                    text = set_field(text, field, mapped)
+        return retitle(text) if d is doc else text
+
+    picks = {d: picker(d) for d in repo.docs if any(old in d.text for old in id_map)}
+    drafts = {d: remap(d, pick, {}) for d, pick in picks.items()}
+    draft_anchors = {d.path: changed_anchors(d.text, text) for d, text in drafts.items()}
+    texts = {d: remap(d, pick, draft_anchors) for d, pick in picks.items()}
+    anchors = {d.path: changed_anchors(d.text, text) for d, text in texts.items()}
+    for d, text in texts.items():
+        if text != d.text:
+            d.path.write_text(text, encoding="utf-8")
+    renamed_paths = dict(renamed)
+    renamed_paths.update((d.path.parent / d.id, renamed[d.path]) for d in group if d.path.parent / d.id in moves)
+    rewrite_for_moves(repo, moves, renamed_paths,
+                      anchors={path: shifted for path, shifted in anchors.items() if shifted})
     move_paths(repo, moves)
-    notes = ["kept {} in {}: another doc still has that id; change the entries there that mean {}"
+    notes = ["kept {} in {}: another doc still has that id; change the references there that mean {}"
              .format(old, ", ".join(sorted(rels)), id_map[old]) for old, rels in sorted(kept.items())] + notes
     return id_map, moves, notes
 
@@ -2281,48 +2384,81 @@ def doc_links(repo, doc):
     return {dest for _match, dest in link_targets(repo, doc.path, doc.lines, doc.fm_end + 1)}
 
 
-def id_entries(doc_type, text):
-    """(field, key, id) for each id a doc's text names in `refs`, `based_on` and `moved` dispositions; the key is
-    the entry, or for `moved` the finding id."""
-    fm = parse_frontmatter(text.split("\n"))[0] or {}
-    entries = {(field, value, value.partition("@")[0]) for field in ("refs", "based_on")
-               for value in (fm.get(field) if isinstance(fm.get(field), list) else [])}
-    if doc_type == "R":
-        entries |= {("moved", m.group(2), m.group(4)) for m in MOVED_RE.finditer(text)}
+def doc_owner(repo, keepers):
+    """A function giving the doc whose file a path is or whose attachment directory holds it: for a directory several
+    docs have, the doc `keepers` maps it to; None when no doc has the directory or `keepers` names none for it."""
+    holders = {}
+    for doc in repo.docs:
+        holders.setdefault(doc.path.parent / doc.id, []).append(doc)
+
+    def owner(path):
+        if path in repo.by_path:
+            return repo.by_path[path]
+        directory = next((p for p in (path, *path.parents) if p in holders), None)
+        if directory is None:
+            return None
+        return holders[directory][0] if len(holders[directory]) == 1 else keepers.get(directory)
+    return owner
+
+
+Citation = collections.namedtuple("Citation", "line start end field key id slug dest")
+Span = collections.namedtuple("Span", "start end text")
+
+
+def id_citations(repo, doc, owner, text=None):
+    """Each id cited in `summary` and, outside code, in the body of `doc`, or of `text` read as its text, as a
+    Citation: `field` is `moved` or `fixed` for a review's disposition, keyed by its finding id; `link` for a citation,
+    in a link's text, of the doc the link points at (`dest`), which `owner` gives; and `cite` for any other, keyed as
+    written. `start` and `end` span the id, and `slug` is the Span of a `§<slug>` after it."""
+    lines = doc.lines if text is None else text.split("\n")
+    fm_end = doc.fm_end if text is None else parse_frontmatter(lines)[1]
+    summary = [(i, lines[i]) for i in range(1, fm_end) if lines[i].startswith("summary:")]
+    for i, line in summary + list(code_mask(lines, fm_end + 1)):
+        masked = INLINE_CODE_RE.sub(lambda m: " " * len(m.group(0)), line)
+        texts, skipped = [], []
+        for match in LINK_RE.finditer(masked):
+            resolved = repo.resolve(doc.path.parent, match.group(3))
+            dest = None if resolved is None else doc.path if resolved[0] == "self" else resolved[0]
+            texts.append((match.start(2), match.end(2), dest))
+            skipped += [(match.start(), match.start(2)), (match.end(2), match.end())]
+        disposition = DISPOSITION_ID_RE.match(masked) if doc.type == "R" else None
+        if disposition:
+            field = "moved" if disposition.group("moved") else "fixed"
+            yield Citation(i, disposition.start(field), disposition.end(field), field, disposition.group("finding"),
+                           disposition.group(field), None, None)
+            skipped.append(disposition.span(field))
+        for match in CITATION_RE.finditer(masked):
+            if any(start <= match.start() < end for start, end in skipped):
+                continue
+            dest = next((d for start, end, d in texts if start <= match.start() < end), None)
+            target = owner(dest) if dest else None
+            yield Citation(i, match.start(1), match.end(1),
+                           "link" if target is not None and target.id == match.group(1) else "cite",
+                           match.group(1) + (match.group(2) or ""), match.group(1),
+                           Span(*match.span(3), match.group(3)) if match.group(3) else None, dest)
+
+
+def id_entries(repo, doc, owner, text=None):
+    """How many times `doc`, or `text` read as its text, names each (field, key, id): its `refs` and `based_on`
+    entries, keyed by the entry, and its citations other than links, as `id_citations` keys them."""
+    fm = parse_frontmatter((doc.text if text is None else text).split("\n"))[0] or {}
+    entries = collections.Counter((field, value, value.partition("@")[0]) for field in ("refs", "based_on")
+                                  for value in (fm[field] if isinstance(fm.get(field), list) else []))
+    entries.update((cited.field, cited.key, cited.id) for cited in id_citations(repo, doc, owner, text)
+                   if cited.field != "link")
     return entries
 
 
-def remap_ids(doc, text, pick, own=None):
-    """Rewrite each id in `refs`, `based_on` and `moved` dispositions for which `pick(field, key, id)` returns a new
-    id (keys as in `id_entries`); when the doc itself is renumbered (`own` = (old, new)), also its H1 and its
-    finding ids."""
-    fm = parse_frontmatter(text.split("\n"))[0] or {}
-    for field in ("refs", "based_on"):
-        values = fm.get(field)
-        if isinstance(values, list):
-            mapped = []
-            for value in values:
-                head, sep, tail = value.partition("@")
-                mapped.append((pick(field, value, head) or head) + sep + tail)
-            if mapped != values:
-                text = set_field(text, field, mapped)
+def rename_finding_ids(lines, fm_end, old, new):
+    """`lines` with doc `old`'s finding and known-issue ids (`<old>-F<n>`, `<old>-K<n>`) renamed to doc `new`'s in
+    the code of the body after `fm_end`, its fenced blocks and inline code spans."""
+    def rename(code):
+        return CITATION_RE.sub(lambda m: new + m.group(0)[len(old):] if m.group(1) == old
+                               and (m.group(2) or "").startswith("-") else m.group(0), code)
 
-    def moved(m):
-        return m.group(1) + m.group(2) + m.group(3) + (pick("moved", m.group(2), m.group(4)) or m.group(4)) \
-            + m.group(5)
-
-    if doc.type == "R":
-        text = MOVED_RE.sub(moved, text)
-    if own:
-        old, new = own
-        text = re.sub(r"^# {}:".format(re.escape(old)), "# {}:".format(new), text, count=1, flags=re.M)
-        text = rename_finding_ids(text, old, new)
-    return text
-
-
-def rename_finding_ids(text, old, new):
-    """`text` with doc `old`'s finding and known-issue ids (`<old>-F<n>`, `<old>-K<n>`) renamed to doc `new`'s."""
-    return re.sub(r"\b{}-([FK])(\d+)\b".format(re.escape(old)), new + r"-\1\2", text)
+    prose = dict(code_mask(lines, fm_end + 1))
+    return lines[:fm_end + 1] + [INLINE_CODE_RE.sub(lambda m: rename(m.group(0)), line) if i in prose else rename(line)
+                                 for i, line in enumerate(lines[fm_end + 1:], fm_end + 1)]
 
 
 def cmd_index(repo, args):
@@ -3701,9 +3837,11 @@ def main(argv=None):
     p.add_argument("--root", help="project directory (default: nearest AGENTS.md above the file)")
     p.set_defaults(func=cmd_adopt)
 
-    p = command(sub, "rename", help="change a doc's file slug and rewrite every link to it")
+    p = command(sub, "rename", help="change a doc's file slug, the attachments named after it and, with --title, its "
+                                    "title, and rewrite every link to it")
     p.add_argument("id")
     p.add_argument("slug", help="new kebab-case file slug")
+    p.add_argument("--title", help="new title for the H1 and for link texts reading `<id>: <old title>`")
     p.set_defaults(func=cmd_rename)
 
     p = command(sub, "renumber", help="give a doc a new id, which its sub-designs follow, or a sub-design a new "

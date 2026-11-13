@@ -19,7 +19,7 @@ When `canon.py` says it runs only from an install inside the project, as when th
 | `new TYPE SLUG [--title T] [--from D00X] [--parent D00X] [--root DIR]` | Create a doc from its template with the next free id. `--from` links a plan to its design; `--parent` creates a sub-design. |
 | `status ID STATUS` | Move a doc's status forward and check the move; a concept may move to a live `adopted`, an experiment to a live `concluded`, and an answered experiment back to `running` for a later run. |
 | `archive ID STATUS` | Set a terminal status, move the doc to `archived/`, rewrite every link to it. Refuses D000. |
-| `rename ID SLUG` | Change a doc's file slug and rewrite every link to it. |
+| `rename ID SLUG [--title T]` | Change a doc's file slug, the attachments named after it and, with `--title`, its title, and rewrite every link to it. |
 | `renumber ID\|PATH [NEW] [--base REF]` | Give a doc a new id, NEW or the next free one, which its sub-designs follow, or a sub-design a new letter, and rewrite the links and references to them. Only when `check` asks for it: for an id collision, with REF the branch merged or rebased onto, or for a D000 in a module's docs. |
 | `index` | Regenerate the indexes in `docs/README.md` and `docs/archived/README.md`. |
 | `show ID` / `show ID#slug` | Print a doc's frontmatter and outline, or one section. |
