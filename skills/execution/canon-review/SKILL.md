@@ -23,7 +23,7 @@ Run `canon.py new R <slug>`. Scope records the commit (`git rev-parse HEAD`), th
 
 ## 3. Review each angle
 
-Spawn one subagent per angle, in parallel, in the foreground. Each brief carries:
+In parallel and in the foreground, spawn one new subagent per angle from the host's own tool, never a fork of this session. Each brief carries:
 
 - The scope: commit, module paths, the source areas `audit` lists in them that no design covers, and the governing designs (`which`, `show`), D000 and the relevant `AGENTS.md` files to read.
 - The angle's reference pasted in full: [architecture.md](architecture.md), [performance.md](performance.md), [security.md](security.md), [functional.md](functional.md), [usability.md](usability.md).

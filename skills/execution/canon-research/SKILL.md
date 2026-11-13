@@ -17,7 +17,7 @@ In the main session, look for experiments on the same question with `canon.py fi
 
 ## 3. Launch
 
-Start a background subagent where the host supports one, and keep the brief you pass it and the subagent's id in `.canon/canon-research/<E00X>/` as `brief.md` and `id.txt`. Otherwise do the research inline under the brief's rules, keeping neither file. The brief, with the placeholders filled:
+Where the host supports background subagents, start a new one from the host's own tool, never a fork of this session, and keep the brief you pass it and the subagent's id in `.canon/canon-research/<E00X>/` as `brief.md` and `id.txt`. Otherwise do the research inline under the brief's rules, keeping neither file. The brief, with the placeholders filled:
 
 ```text
 Research this question and record the findings in {path to E00X}.
@@ -43,7 +43,7 @@ Keep working on what does not depend on the answer.
 
 ## 4. Recover
 
-When the subagent stops before finishing, resume it once by the id in `id.txt` where the host allows; otherwise rerun `brief.md` once in a new subagent. After a second stop, take it to the user. An experiment you find still `running` from another session gets its `brief.md` rerun only once the user confirms that no other session is running it.
+When the subagent stops before finishing, resume it once by the id in `id.txt` where the host allows; otherwise rerun `brief.md` once in a new subagent, launched as [Launch](#3-launch) says. After a second stop, take it to the user. An experiment you find still `running` from another session gets its `brief.md` rerun only once the user confirms that no other session is running it.
 
 ## 5. Absorb
 
