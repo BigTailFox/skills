@@ -2,14 +2,14 @@
 status: active
 created: 2026-10-29
 updated: 2026-11-13
-revision: 7
+revision: 8
 modules: [canon]
 summary: canon installed in each project and its recorded version, setup and upgrades with canon.py init, migration of docs with adopt, and the canon-init flows.
 refs: [D000, D001, D002, D003, D005, D006, D007, E001]
 owns: [project-setup]
 paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md, skills/governance/canon/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-retro/SKILL.md, skills/execution/canon-grill/SKILL.md]
-reviewed: 7
-reviewers: [claude-opus-5.5, gpt-5.6-sol-high]
+reviewed: 8
+reviewers: [claude-opus-5.5]
 approved: 7
 implemented: 7
 ---
@@ -73,7 +73,7 @@ canon.py init [--root DIR] [--hook]
   exec python3 "$c" check
   ```
 
-  An existing hook stays, one `init` cannot read included, and `init --hook` prints ``kept the existing pre-commit hook; add `canon.py check --staged` to it``. The exceptions are the hooks earlier versions wrote: one holding exactly the lines `#!/bin/sh`, `c=.agents/skills/canon/scripts/canon.py`, `[ -f "$c" ] && exec python3 "$c" check`, then the hook's `echo` line unindented and `exit 1`, each ending with a newline, as versions 48 to 57 wrote it, and one holding exactly `#!/bin/sh`, a newline and `exec python3 <path> check`, with any path free of whitespace and an optional final newline, as a project with a copy had. Every `init` at the repo root, with or without `--hook`, replaces either with the hook above, setting mode 755, and prints `updated <hook path>`. Outside Git, `--hook` does nothing.
+  An existing hook stays, one `init` cannot read included. One that holds exactly the hook above is current, and `init --hook` prints nothing for it; for any other, `init --hook` prints ``kept the existing pre-commit hook; add `canon.py check --staged` to it``. The exceptions are the hooks earlier versions wrote: one holding exactly the lines `#!/bin/sh`, `c=.agents/skills/canon/scripts/canon.py`, `[ -f "$c" ] && exec python3 "$c" check`, then the hook's `echo` line unindented and `exit 1`, each ending with a newline, as versions 48 to 57 wrote it, and one holding exactly `#!/bin/sh`, a newline and `exec python3 <path> check`, with any path free of whitespace and an optional final newline, as a project with a copy had. Every `init` at the repo root, with or without `--hook`, replaces either with the hook above, setting mode 755, and prints `updated <hook path>`. Outside Git, `--hook` does nothing.
 - When `init` cannot write or replace the hook, such as where `.git` is read-only, it still finishes every other step and prints ``warning: cannot write the pre-commit hook: <reason>; rerun `canon.py init --hook` where .git is writable``.
 
 ### adopt
