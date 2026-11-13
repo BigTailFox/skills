@@ -1588,6 +1588,113 @@ class StagedCheckTest(CanonTest):
         return [p for p in self.problems(out) if re.search(r" docs/designs/D00[1-9]", p)]
 
 
+class NamedDocsCheckTest(CanonTest):
+    """`check ID|PATH ...` checks the work tree but reports only the problems on the named docs."""
+
+    MISSING = "ERROR docs/designs/D001-area.md: missing section `## Decisions`"
+
+    def test_named_docs_report_only_their_own_and_their_attachments_problems(self):
+        first = self.design()
+        second = self.design("other", paths=["lib/**"])
+        self.design("clean", paths=["etc/**"])
+        self.design("gone", paths=["var/**"])
+        self.create("lib/a.py", "etc/a.py", "var/a.py")
+        notes, guide = self.root / "docs/designs/D001/notes.md", self.root / "docs/guides/use.md"
+        for path in (notes, guide):
+            path.parent.mkdir(parents=True)
+            path.write_text("# Notes\n")
+        self.commit()
+        for doc in (first, second):
+            doc.write_text(doc.read_text().replace("## Decisions", "## Choices"))
+        notes.write_text("# Notes\n\nSee [y](gone.md).\n")
+        guide.write_text("# Use\n\nSee [x](gone.md).\n")
+        agents = self.root / "AGENTS.md"
+        agents.write_text(agents.read_text() + "\nSee [z](nowhere.md).\n")
+        (self.root / "docs/designs/D004-gone.md").unlink()
+        everything = self.problems(self.fails("check"))
+        for problem in ("ERROR docs/designs/D002-other.md: missing section `## Decisions`",
+                        "ERROR docs/guides/use.md:3: broken link gone.md",
+                        "ERROR docs/designs/D004-gone.md: D004 was deleted; restore it and archive it instead",
+                        "WARN docs/README.md: index out of date"):
+            self.assertIn(problem, everything)
+        self.assertTrue(any(p.startswith("ERROR AGENTS.md:") and "broken link nowhere.md" in p for p in everything))
+        own = [self.MISSING, "ERROR docs/designs/D001/notes.md:3: broken link gone.md"]
+        for args in (("D001",), ("D001", "docs/designs/D001-area.md")):
+            with self.subTest(args):
+                self.assertEqual(self.fails("check", *args),
+                                 "\n".join(own + ["canon check: 1 docs, 2 errors, 0 warnings\n"]))
+        self.assertEqual(self.ok("check", "D003"), "canon check: 1 docs, 0 errors, 0 warnings\n")
+        agents.write_text(agents.read_text().replace("canon version {} or".format(canon.CANON_VERSION),
+                                                     "canon version 1 or"))
+        self.assertEqual(self.problems(self.fails("check", "D001")),
+                         ["WARN AGENTS.md: this project is set up for canon version 1; run `/canon-init` to upgrade "
+                          "it to version {}".format(canon.CANON_VERSION)] + own)
+
+    def test_a_duplicate_owned_topic_or_id_counts_as_on_each_doc_it_involves(self):
+        self.design()
+        self.design("other", owns=["area"])
+        idea = self.doc("C", "idea")
+        self.commit(check=False)
+        twin = idea.with_name("C001-twin.md")
+        twin.write_text(idea.read_text())
+        owned = "ERROR docs/designs/D002-other.md: topic `area` is already owned by D001"
+        duplicate = ("ERROR docs/concepts/C001-twin.md: duplicate id C001, also docs/concepts/C001-idea.md; run "
+                     "`canon.py renumber <path> --base <ref>` on the doc this branch added, with the branch it merged "
+                     "or rebased onto")
+        for name in ("D001", "D002"):
+            with self.subTest(name):
+                self.assertEqual(self.problems(self.fails("check", name)), [owned])
+        for name in ("docs/concepts/C001-idea.md", "docs/concepts/C001-twin.md"):
+            with self.subTest(name):
+                self.assertEqual(self.problems(self.fails("check", name)), [duplicate])
+        self.assertEqual(self.fails("check", "C001"), "canon: C001 is the id of docs/concepts/C001-idea.md and "
+                                                      "docs/concepts/C001-twin.md; renumber one of them first\n")
+
+    def test_fix_with_a_doc_argument_fixes_only_that_doc_and_touches_no_index(self):
+        self.design()
+        idea = self.doc("C", "idea", body=CONCEPT.format("First."), created="2020-01-01", updated="2020-01-01")
+        other = self.doc("C", "other", body=CONCEPT.format("Second."))
+        self.commit()
+        link = "Extends [D001: Area](../designs/D001-area.md)."
+        idea.write_text(idea.read_text().replace("First.", link))
+        other.write_text(other.read_text().replace("Second.", link))
+        readme = self.root / "docs/README.md"
+        readme.write_text(readme.read_text().replace(" · draft · Fixture", " · draft · Stale"))
+        self.assertRegex(self.fails("check", "C001"),
+                         r"\ncanon check: 1 docs, 2 errors, 0 warnings; 2 fixable with --fix\n$")
+        untouched = other.read_text(), readme.read_text()
+        self.assertEqual(self.ok("check", "--fix", "C001"),
+                         "fixed docs/concepts/C001-idea.md: set refs\nfixed docs/concepts/C001-idea.md: set updated\n"
+                         "canon check: 1 docs, 0 errors, 0 warnings\n")
+        self.assertEqual(canon.parse_frontmatter(idea.read_text().split("\n"))[0]["refs"], ["D001"])
+        self.assertEqual(canon.parse_frontmatter(idea.read_text().split("\n"))[0]["updated"],
+                         datetime.date.today().isoformat())
+        self.assertEqual((other.read_text(), readme.read_text()), untouched)
+        self.assertIn("WARN docs/README.md: index out of date", self.fails("check"))
+        readme.write_text(readme.read_text().split(canon.INDEX_END)[0])
+        broken = readme.read_text()
+        self.assertEqual(self.ok("check", "--fix", "C002"),
+                         "fixed docs/concepts/C002-other.md: set refs\ncanon check: 1 docs, 0 errors, 0 warnings\n")
+        self.assertEqual(readme.read_text(), broken)
+
+    def test_a_path_names_a_doc_from_the_working_directory_and_other_arguments_end_check(self):
+        design = self.design()
+        self.commit()
+        for name in ("nosuch", "src/base.py"):
+            self.refuses("{} names no doc; give a doc id or the path of a doc file".format(name), "check", name)
+        self.refuses("unknown document D009", "check", "D009")
+        only = "check with doc arguments checks only those docs in the work tree; drop --base, --staged and --rev"
+        for flags in (("--staged",), ("--rev", "HEAD"), ("--base", "main")):
+            with self.subTest(flags):
+                self.refuses(only, "check", "D001", *flags)
+        self.refuses("--fix edits the work tree, which --staged and --rev do not check; drop one of them",
+                     "check", "D001", "--staged", "--fix")
+        design.write_text(design.read_text().replace("## Decisions", "## Choices"))
+        result = self.canon("check", "D001-area.md", cwd=self.root / "docs/designs")
+        self.assertEqual((result.returncode, result.stdout + result.stderr),
+                         (1, self.MISSING + "\ncanon check: 1 docs, 1 errors, 0 warnings\n"))
+
+
 class KnownIssuesTest(CanonTest):
     K1 = "| D001-K1 | major | Retry contradicts the queue limit | P001 gate | 2020-10-01 | decide |"
     K2 = "| D001-K2 | minor | Log lines lack the unit id | code review 3f9a1c2 | 2020-10-02 | fix |"
