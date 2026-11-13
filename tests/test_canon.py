@@ -5361,6 +5361,15 @@ class WorktreeTraceTest(TraceCase):
         self.commit()
         self.tree = self.worktree()
 
+    def repository(self):
+        """A new repository outside the test repository, with one commit."""
+        top = self.tmpdir()
+        (top / "lib.txt").write_text("lib\n")
+        identity = ["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid"]
+        for args in (["init", "-q"], ["add", "-A"], [*identity, "commit", "-qm", "lib"]):
+            subprocess.run(["git", *args], cwd=str(top), check=True, capture_output=True)
+        return top
+
     def test_a_worktree_in_worktrees_records_its_own_files_in_the_main_checkouts_trace_directory(self):
         tree, trace_dir = self.tree, self.events.parent
         self.ok("new", "D", "branch", cwd=tree)
@@ -5422,12 +5431,8 @@ class WorktreeTraceTest(TraceCase):
         self.assertEqual(self.file_contents(trace_dir), before)
 
     def test_a_linked_worktree_outside_worktrees_and_a_submodule_in_one_inside_use_their_own_trace_directories(self):
-        origin = self.tmpdir()
-        (origin / "lib.txt").write_text("lib\n")
-        identity = ["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid"]
-        for args in (["init", "-q"], ["add", "-A"], [*identity, "commit", "-qm", "lib"]):
-            subprocess.run(["git", *args], cwd=str(origin), check=True, capture_output=True)
-        self.git("-C", str(self.tree), "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(origin), "sub")
+        self.git("-C", str(self.tree), "-c", "protocol.file.allow=always", "submodule", "add", "-q",
+                 str(self.repository()), "sub")
         elsewhere = self.tmpdir() / "c"
         self.git("worktree", "add", "-q", "-b", "c", str(elsewhere), "main")
         self.git("worktree", "add", "-q", "-b", "d", "trees/d", "main")
@@ -5435,6 +5440,63 @@ class WorktreeTraceTest(TraceCase):
             with self.subTest(checkout=top):
                 unit = self.start("design", cwd=top)
                 self.assertEqual([line["id"] for line in self.lines(top / ".canon/canon/trace/events.jsonl")], [unit])
+        self.assertFalse(self.events.parent.exists())
+
+    def test_a_linked_worktree_in_the_worktrees_of_a_checkout_of_another_repository_uses_its_own_trace_directory(self):
+        other = self.repository()
+        foreign, mine = self.root / ".worktrees/other", other / ".worktrees/c"
+        subprocess.run(["git", "worktree", "add", "-q", "-b", "other", str(foreign)], cwd=str(other), check=True,
+                       capture_output=True)
+        self.git("worktree", "add", "-q", "-b", "c", str(mine), "main")
+        for top in (foreign, mine):
+            with self.subTest(checkout=top):
+                unit = self.start("design", cwd=top)
+                self.assertEqual([line["id"] for line in self.lines(top / ".canon/canon/trace/events.jsonl")], [unit])
+        self.assertFalse(self.events.parent.exists())
+        self.assertFalse((other / ".canon").exists())
+
+    def test_a_worktree_in_the_worktrees_of_a_worktree_in_worktrees_uses_the_main_checkouts_trace_directory(self):
+        nested = self.tree / ".worktrees/n"
+        self.git("worktree", "add", "-q", "-b", "n", str(nested), "main")
+        unit = self.start("design", cwd=nested)
+        self.assertEqual([line["id"] for line in self.lines()], [unit])
+        self.assertEqual([(top / ".canon").exists() for top in (self.tree, nested)], [False, False])
+
+    def test_worktrees_in_worktrees_whose_gitdir_lines_are_relative_use_the_main_checkouts_trace_directory(self):
+        nested = self.tree / ".worktrees/n"
+        self.git("worktree", "add", "-q", "-b", "n", str(nested), "main")
+        for top in (self.tree, nested):
+            git_dir = (top / ".git").read_text().split("gitdir: ", 1)[1].rstrip("\n")
+            (top / ".git").write_text("gitdir: {}\n".format(Path(os.path.relpath(git_dir, str(top))).as_posix()))
+        units = [self.start("design", cwd=top / "src") for top in (self.tree, nested)]
+        self.assertEqual([line["id"] for line in self.lines()], units)
+        self.assertEqual([(top / ".canon").exists() for top in (self.tree, nested)], [False, False])
+
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_a_worktree_in_worktrees_whose_gitdir_line_crosses_a_link_uses_the_main_checkouts_trace_directory(self):
+        alias = self.tmpdir() / "alias"
+        alias.symlink_to(self.root, target_is_directory=True)
+        (self.tree / ".git").write_text("gitdir: {}\n".format(alias / ".git/worktrees/b"))
+        unit = self.start("design", cwd=self.tree)
+        self.assertEqual([line["id"] for line in self.lines()], [unit])
+        self.assertFalse((self.tree / ".canon").exists())
+
+    def test_a_worktree_in_another_repositorys_worktree_in_worktrees_uses_the_main_checkouts_trace_directory(self):
+        foreign = self.root / ".worktrees/other"
+        subprocess.run(["git", "worktree", "add", "-q", "-b", "other", str(foreign)], cwd=str(self.repository()),
+                       check=True, capture_output=True)
+        nested = foreign / ".worktrees/m"
+        self.git("worktree", "add", "-q", "-b", "m", str(nested), "main")
+        unit = self.start("design", cwd=nested)
+        self.assertEqual([line["id"] for line in self.lines()], [unit])
+        self.assertEqual([(top / ".canon").exists() for top in (foreign, nested)], [False, False])
+
+    def test_a_submodules_worktree_in_its_worktrees_uses_the_submodules_trace_directory(self):
+        self.git("-c", "protocol.file.allow=always", "submodule", "add", "-q", str(self.repository()), "sub")
+        sub = self.root / "sub"
+        self.git("-C", str(sub), "worktree", "add", "-q", "-b", "s", ".worktrees/s")
+        unit = self.start("design", cwd=sub / ".worktrees/s")
+        self.assertEqual([line["id"] for line in self.lines(sub / ".canon/canon/trace/events.jsonl")], [unit])
         self.assertFalse(self.events.parent.exists())
 
     def test_snapshot_in_the_worktree_records_into_the_worktrees_own_snapshots(self):

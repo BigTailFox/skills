@@ -30,7 +30,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "64"
+CANON_VERSION = "65"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -3313,23 +3313,41 @@ def trace_root():
     return cwd, False
 
 
-def worktree_main(root):
-    """The checkout whose trace directory the checkout at `root` shares as a worktree in .worktrees/, read without
-    running Git: <R> when `root`'s .git is a file whose gitdir: line names a directory directly inside one named
-    worktrees, a linked worktree's Git directory, and `root` lies under <R>/.worktrees/ where <R> holds .git; else
-    None."""
+def named_git_dir(top):
+    """The Git directory that the gitdir: line of the .git file of the checkout at `top` names, a relative path
+    resolved from `top`, with symbolic links resolved; None when `top`'s .git is no such file."""
     try:
-        with open(str(root / ".git"), "rb") as git_file:
+        with open(str(top / ".git"), "rb") as git_file:
             line = git_file.readline()
     except OSError:
         return None
     if not line.startswith(b"gitdir: "):
         return None
-    git_dir = os.path.normpath(os.path.join(str(root), os.fsdecode(line[len(b"gitdir: "):].rstrip(b"\r\n"))))
-    if os.path.basename(os.path.dirname(git_dir)) != "worktrees":
+    return Path(os.path.realpath(os.path.join(str(top), os.fsdecode(line[len(b"gitdir: "):].rstrip(b"\r\n")))))
+
+
+def common_git_dir(top):
+    """The common Git directory of the checkout at `top`, read without running Git: top/.git when that is a directory,
+    else the directory its .git file names, or for a linked worktree, whose named directory lies directly inside one
+    named worktrees, the directory two levels above it; None when top/.git is neither."""
+    if (top / ".git").is_dir():
+        return top / ".git"
+    git_dir = named_git_dir(top)
+    return git_dir.parent.parent if git_dir is not None and git_dir.parent.name == "worktrees" else git_dir
+
+
+def worktree_main(root):
+    """The checkout whose trace directory the checkout at `root` shares as a worktree in .worktrees/, read without
+    running Git: the nearest <R> with `root` under <R>/.worktrees/ whose common Git directory's worktrees directory
+    directly holds the directory `root`'s .git file names, one of <R>'s linked worktrees; else None."""
+    git_dir = named_git_dir(root)
+    if git_dir is None:
         return None
-    return next((path.parent for path in root.parents
-                 if path.name == ".worktrees" and (path.parent / ".git").exists()), None)
+    for path in root.parents:
+        common = common_git_dir(path.parent) if path.name == ".worktrees" else None
+        if common is not None and str(git_dir.parent) == os.path.realpath(str(common / "worktrees")):
+            return path.parent
+    return None
 
 
 def can_create_file(directory):
