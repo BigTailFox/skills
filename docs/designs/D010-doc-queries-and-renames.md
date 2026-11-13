@@ -1,15 +1,15 @@
 ---
 status: active
 created: 2026-11-12
-updated: 2026-11-12
-revision: 2
+updated: 2026-11-13
+revision: 3
 modules: [canon]
 summary: Doc queries and renames with canon.py show, find, which and affected, and rename and renumber, with the references and id collisions renumber settles.
 refs: [D002, D004, D005, D006]
 owns: [doc-queries, doc-renames, doc-renumbering]
 paths: [skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, tests/test_canon.py]
-reviewed: 2
-reviewers: [claude-opus-5.5, gemini-4-argon-high]
+reviewed: 3
+reviewers: [claude-opus-5.5]
 approved: 2
 implemented: 2
 ---
@@ -20,7 +20,7 @@ implemented: 2
 
 1. A session finds the docs on a topic with one `find` call and reads one section of a doc with one `show` call, without opening the file.
 2. Before editing a file, one `which` call names every live design that governs it; before committing, one `affected` call names every live design the changes touch, which the commit's `Refs:` trailer lists, and the live plans based on them. Both flag a design whose spec leads its code and count its known issues.
-3. After `rename` or `renumber` and `check --fix`, no link, `refs`, `based_on` or `moved` entry that named the doc is broken or names an unknown doc.
+3. After `rename` or `renumber` and `check --fix`, no reference that named the doc, whether a link, a `refs` or `based_on` entry, a disposition or a citation of its ids in a doc outside code, is broken or names an unknown doc. After `rename`, no attachment named after the old slug keeps that name, and with `--title` neither the H1 nor a link text reading `<id>: <old title>` keeps the old title.
 4. After a merge or rebase leaves two docs with one id, `renumber` on the doc the branch added settles the collision without guessing: whatever neither the branch merged onto nor the links attribute is kept and listed for the user, or, for a sub-design, stops `renumber` before any change.
 
 Out of scope: `paths` and the files a design governs ([D006§frontmatter: frontmatter](D006-doc-model.md#frontmatter)); docs by their name and installed skill files, which designs govern only through an exact entry ([D002§project-docs: project docs](D002-overview-and-as-built.md#project-docs), [D002§installed-skills: installed skills](D002-overview-and-as-built.md#installed-skills)); ids, file names and the `check` errors that ask for `renumber` ([D006§ids-and-file-names: ids and file names](D006-doc-model.md#ids-and-file-names)); ids that history keeps taken, and `init`'s move of a design to D000, which moves it as `renumber` does ([D002§project-overview-d000: D000](D002-overview-and-as-built.md#project-overview-d000)); the link rewriting that every moving command shares ([D006§statuses-and-archiving: statuses and archiving](D006-doc-model.md#statuses-and-archiving)); index regeneration ([D005§regeneration: regeneration](D005-docs-index.md#regeneration)); `adopt` ([D004§adopt: adopt](D004-project-setup.md#adopt)).
@@ -103,12 +103,13 @@ canon.py affected [FILE...] [--base REF]
 ### rename
 
 ```text
-canon.py rename ID SLUG
+canon.py rename ID SLUG [--title TITLE]
 ```
 
-- ID names a doc of any type, live or archived, sub-designs included; an ID that no doc or several docs have exits with the messages [D006§ids-and-file-names: ids](D006-doc-model.md#ids-and-file-names) gives for `archive`. D000 then exits with `canon: D000 keeps its file name, which the AGENTS.md block links`, and a SLUG that is not kebab-case with `canon: slug must be kebab-case`.
-- It moves the doc's file to `<ID>-<SLUG>.md`, prints `<old path> -> <new path>`, both relative to the repo root, and exits 0. A SLUG equal to the doc's own changes no file and prints the same line.
-- The H1, link texts, and the attachment directory with the names of its files stay as they are.
+- ID names a doc of any type, live or archived, sub-designs included; an ID that no doc or several docs have exits with the messages [D006§ids-and-file-names: ids](D006-doc-model.md#ids-and-file-names) gives for `archive`. D000 then exits with `canon: D000 keeps its file name, which the AGENTS.md block links`, a SLUG that is not kebab-case with `canon: slug must be kebab-case`, and a TITLE that, once stripped of surrounding whitespace, is empty or holds a line break, `[` or `]`, which would break the link texts and index lines that carry it, with `canon: title must be one line of text without [ or ]`.
+- It moves the doc's file to `<ID>-<SLUG>.md`, and each file in its attachment directory, at any depth, whose name up to its first `.` is the doc's old slug to the same directory, SLUG in place of the old slug: `D001/skill-telemetry.zh.md` becomes `D001/telemetry.zh.md`. A file it would move to that exists ends it before any change with `canon: <path> already exists`. It prints `<old path> -> <new path>`, both relative to the repo root, for the doc and then for each attachment file in path order, and exits 0. A SLUG equal to the doc's own moves no file and prints the doc's line.
+- With `--title`, it sets the doc's H1, the first heading of level 1 outside code fences, to `# <ID>: <TITLE>`, TITLE stripped of surrounding whitespace, and in every `.md` file the text of each link to the doc that reads exactly `<ID>: <old title>`, the old title being the H1's text after `<ID>: `, to `<ID>: <TITLE>`. Links to the H1's anchor follow it ([D006§statuses-and-archiving: statuses and archiving](D006-doc-model.md#statuses-and-archiving)). A doc without an H1 ends it before any change with `canon: <ID> has no H1`.
+- The other attachments keep their names and, without `--title`, the H1 and link texts stay as they are.
 
 ### renumber
 
@@ -126,11 +127,14 @@ canon.py renumber ID|PATH [NEW] [--base REF]
 
   Without NEW, a sub-design whose parent has no free letter exits with `canon: <parent> has no free sub-design letter`.
 - A top-level design's sub-designs in its docs root follow it: `<old id>B` becomes `<new id>B`. Each moved doc's file becomes `<new id>-<slug>.md` and its attachment directory `<old id>/` becomes `<new id>/`.
-- Besides links, it rewrites:
-  - in every doc, live or archived, each `refs` and `based_on` entry naming a moved id, `@r<n>` kept, and in reviews each table line whose last cell is `moved <id>`;
-  - in each moved doc, the id of its H1 and each `<old id>-F<n>` and `<old id>-K<n>` in its text.
+- Besides links, it rewrites the references to a moved id:
+  - in every doc, live or archived, each `refs` and `based_on` entry, `@r<n>` kept;
+  - in reviews, each disposition, the last cell of a table line, that reads `moved <id>` or `fixed <id>@r<n>`;
+  - in every `.md` file, in the text of each link or image outside code, each citation of the id of the doc it points at, or into whose attachment directory it points, a reference's leading id included: it follows that doc, taking its new id when the doc moves and staying otherwise;
+  - in every doc, each other citation in `summary` and in the body outside code fences and inline code, link texts included and link targets not;
+  - in each moved doc, also each `<old id>-F<n>` and `<old id>-K<n>` in code.
 
-  No other text changes: elsewhere, a moved id or one of its finding or known issue ids in prose or in another table cell, such as `fixed <id>@r<n>` or a known issue's Source, keeps the old id.
+  A citation is the id as a whole word in its case, so that `D012` matches neither `D012A`, `D0123` nor `d012`, with the `@r<n>`, `-F<n>` or `-K<n>` right after it, if any: a known issue's Source (`R004-F2`), a path (`D012-auth.md`) or a mention in prose. A citation followed by `§<slug>` that comes to name a moved doc has its slug follow that doc's heading anchors, as a link's `§<anchor>` does. A doc's citations of its own id are its own: they follow in a moved doc and stay in another doc that has the id. No other text changes: frontmatter fields other than `refs`, `based_on` and `summary`, and code outside a moved doc, keep the old id. A heading whose text changes gets a new anchor, which the links to it follow ([D006§statuses-and-archiving: statuses and archiving](D006-doc-model.md#statuses-and-archiving)).
 - It prints `<old id> -> <new id>` for each moved doc, the doc first and then its sub-designs in letter order, then the notes of [Id collisions](#id-collisions), then ``run `canon.py check --fix` to finish``, and exits 0.
 
 ### Id collisions
@@ -139,19 +143,19 @@ While other docs have the renumbered doc's id, `renumber` gives each of these to
 
 - a sub-design of the same number in its docs root, while another doc of the id is in that docs root;
 - each file in its attachment directory, while another doc of the id is in the same directory;
-- each `refs`, `based_on` and `moved` entry, in any doc, that names a moved id another doc also has.
+- each reference of [renumber](#renumber), in any doc, that names a moved id another doc also has, other than a doc's citation of its own id and a link text's citation of the doc the link points at, which follow those docs.
 
 The evidence:
 
-- With `--base`, REF's tree, when it holds the path of the renumbered doc and of no other doc with the id, or the reverse: a sub-design or attachment file whose path is in REF's tree belongs to the side whose doc is there, any other to the other side; an entry belongs to the side on REF when REF's version of the doc holding it already has it, else to the other side. A `refs` or `based_on` entry matches as written, `@r<n>` included, and a `moved` entry by its finding id and the id it names.
-- Links, when only one side has them: a sub-design belongs to the doc it links or that links it, an attachment file to the doc whose body links it, and an entry to the doc that the body of the doc holding it links.
+- With `--base`, REF's tree, when it holds the path of the renumbered doc and of no other doc with the id, or the reverse: a sub-design or attachment file whose path is in REF's tree belongs to the side whose doc is there, any other to the other side; a reference belongs to the side on REF when REF's version of the doc holding it already has it, else to the other side. A `refs` or `based_on` entry matches as written, `@r<n>` included, and a disposition by its finding id and the id it names. A doc's citations written alike count as one reference, which REF's version of the doc has when it holds that citation at least as many times as the doc does now; when it holds it fewer times but at least once, the reference is unclear.
+- Links, when only one side has them: a sub-design belongs to the doc it links or that links it, an attachment file to the doc whose body links it, and a reference to the doc that the body of the doc holding it links.
 - No evidence, or evidence that disagrees, leaves it unclear.
 
 The results:
 
 - A sub-design follows when it is the renumbered doc's and stays when it is another's. An unclear one ends `renumber` before any change with `canon: cannot tell which <id> owns <paths>; link each sub-design from its parent design or pass --base <ref>, then rerun`, without ` or pass --base <ref>` when `--base` was given. Sub-designs that follow and share an id end it with `canon: sub-designs of <id> share an id; renumber the one this branch added first`.
 - The attachment directory moves when each file in it is the renumbered doc's, stays when each is another's, and otherwise stays with the note `kept <directory>: it also holds attachments of another <id>; move this doc's files to <new directory> and fix their links`.
-- An entry is rewritten when it is the renumbered doc's, kept when it is another's, and kept when unclear with the note `kept <old id> in <paths>: another doc still has that id; change the entries there that mean <new id>`: one note per id, in id order, its paths sorted and comma-separated, before the attachment notes.
+- A reference is rewritten when it is the renumbered doc's, kept when it is another's, and kept when unclear with the note `kept <old id> in <paths>: another doc still has that id; change the references there that mean <new id>`: one note per id, in id order, its paths sorted and comma-separated, before the attachment notes.
 
 Without another doc of the id, everything follows the renumbered doc.
 
@@ -166,5 +170,7 @@ Without another doc of the id, everything follows the renumbered doc.
 
 - `renumber` renumbers any doc it is given but the repo root's D000, with or without a collision, and its `-h` and the Tool table limit its use to what `check` asks for (R001-F23, settled in 4d74020 by the help text); the repo root's D000 is refused, since a project keeps it (the user's decision, 2026-11-12).
 - After an id collision, `renumber` gives a sub-design, attachment file or reference to one of the docs sharing the id only when REF's tree or the links show whose it is, stops before any change on an unclear sub-design, and keeps and lists unclear references (550068a).
+- `renumber` rewrites the citations of a moved id in a doc's text by the same evidence as its other references, since a citation left behind after a collision points unnoticed at the other doc with the id, and keeps the ids in code, which holds examples and literal text (code review e122546, 2026-11-13).
+- `rename` renames only the attachments whose name up to its first `.` is the old slug, as a doc's translations and exports are named (`D001/<slug>.zh.md`), and `--title` rewrites only link texts that read `<id>: <old title>`; other names and link texts are the author's choice (R003-F37, 2026-11-13).
 - `show <id>#known-issues` on a design without the section prints that it has none and exits 0: sessions run it for each design they work from, as the `canon` skill's Reading docs says (8f4f34c).
 - `find`, `which` and `affected` exit 0 whether or not anything matches (reason unknown, kept as found).
