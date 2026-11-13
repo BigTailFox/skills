@@ -1156,11 +1156,249 @@ class GitFailureTest(CanonTest):
         self.commit()
         self.assertEqual(self.fails_with_git("log", "audit"), self.message("log"))
 
+    def test_a_failing_tree_listing_blob_read_or_commit_lookup_ends_check_rev_instead_of_finding_nothing(self):
+        self.design()
+        self.commit()
+        for subcommand in ("ls-tree", "cat-file", "log"):
+            with self.subTest(subcommand):
+                self.assertEqual(self.fails_with_git(subcommand, "check", "--rev", "HEAD"), self.message(subcommand))
+        self.assertEqual(self.fails_with_git("merge-base", "check", "--rev", "main", "--base", "main"),
+                         "canon: cannot diff against main...main: fatal: boom\n")
+
+    def test_a_missing_blob_of_the_commit_ends_check_rev(self):
+        self.design()
+        self.commit()
+        blob = self.git("rev-parse", "HEAD:docs/designs/D001-area.md")
+        (self.root / ".git/objects" / blob[:2] / blob[2:]).unlink()
+        result = self.canon("check", "--rev", "HEAD")
+        self.assertEqual((result.returncode, result.stdout + result.stderr),
+                         (1, "canon: git cat-file failed in {}: {} missing\n".format(self.root.resolve(), blob)))
+
     def test_audit_in_a_checkout_git_cannot_read_ends_instead_of_reporting_nothing(self):
         self.design()
         self.commit()
         self.assertEqual(self.fails_with_git("", "audit"),
                          "canon: cannot read the history of HEAD in {}: fatal: boom\n".format(self.root.resolve()))
+
+
+class RevCheckTest(CanonTest):
+    """`check --rev REV` checks the tree of commit REV, whatever the work tree holds."""
+
+    def checked(self, *args):
+        """The exit status and output of `check args`, the output without its fixable tail."""
+        result = self.canon("check", *args)
+        self.assertEqual(result.stderr, "")
+        return result.returncode, re.sub(r"; \d+ fixable with --fix\n$", "\n", result.stdout)
+
+    def kinds(self, out):
+        """The problems of `check`'s output, without their line numbers."""
+        return {re.sub(r":\d+: ", ": ", p) for p in self.problems(out)}
+
+    def commit_dated(self, author, committer):
+        """Commit every tracked file's change with these author and committer dates; the commit's full name."""
+        result = subprocess.run(["git", "commit", "-qam", "dated"], cwd=str(self.root), capture_output=True, text=True,
+                                env=dict(os.environ, GIT_AUTHOR_DATE=author, GIT_COMMITTER_DATE=committer))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return self.git("rev-parse", "HEAD")
+
+    def test_updated_compares_the_commit_with_its_only_parent_on_its_author_or_committer_day(self):
+        design = self.design(created="2020-01-01", updated="2020-01-01")
+        self.commit()
+        root = self.git("rev-parse", "HEAD")
+        stale = "ERROR docs/designs/D001-area.md: content changed but `updated` was not bumped"
+        late, day = "2021-01-02 12:00:00 +0000", "2020-01-01 23:30:00 -1000"
+        commits = []
+        for author, committer in ((late, late), (day, late), (late, day)):
+            design.write_text(design.read_text() + "\nMore.\n")
+            commits.append(self.commit_dated(author, committer))
+        self.assertIn(stale, self.problems(self.fails("check", "--rev", commits[0])))
+        for commit in commits[1:] + [root]:
+            self.assertNotIn(stale, self.problems(self.canon("check", "--rev", commit).stdout))
+        self.git("checkout", "-qb", "side")
+        design.write_text(design.read_text() + "\nSide.\n")
+        side = self.commit_dated(late, late)
+        self.assertIn(stale, self.problems(self.fails("check", "--rev", side)))
+        self.git("checkout", "-q", "main")
+        self.edit_commit("src/base.py")
+        self.git("merge", "-q", "--no-edit", "side")
+        self.assertNotIn(stale, self.problems(self.canon("check", "--rev", "HEAD").stdout))
+
+    def test_a_doc_deleted_by_the_commit_fails_and_one_renamed_by_it_or_dropped_by_a_merge_does_not(self):
+        self.design()
+        self.design("other", paths=["lib/**"])
+        self.design("third", paths=["etc/**"])
+        self.commit()
+        self.git("rm", "-q", "docs/designs/D002-other.md")
+        self.commit(check=False)
+        deletion = self.git("rev-parse", "HEAD")
+        self.git("mv", "docs/designs/D003-third.md", "docs/designs/D003-renamed.md")
+        self.commit(check=False)
+        self.assertNotIn("was deleted", self.canon("check", "--rev", "HEAD").stdout)
+        self.assertIn("ERROR docs/designs/D002-other.md: D002 was deleted; restore it and archive it instead",
+                      self.problems(self.fails("check", "--rev", deletion)))
+        self.assertNotIn("was deleted", self.canon("check").stdout)
+        self.git("checkout", "-qb", "drop")
+        self.git("rm", "-q", "docs/designs/D001-area.md")
+        self.commit(check=False)
+        self.git("checkout", "-q", "main")
+        self.edit_commit("src/base.py")
+        self.git("merge", "-q", "--no-edit", "drop")
+        self.assertNotIn("was deleted", self.canon("check", "--rev", "HEAD").stdout)
+
+    def test_base_takes_the_commit_as_the_tip_of_the_branch(self):
+        self.design()
+        old = self.design("old", paths=["lib/**"])
+        old.write_text(old.read_text() + "".join("\nOld line {}.\n".format(n) for n in range(40)))
+        self.commit()
+        self.git("checkout", "-qb", "feature")
+        self.git("rm", "-q", "docs/designs/D002-old.md")
+        self.commit(check=False)
+        self.design("ours", paths=["etc/**"])
+        self.commit()
+        self.git("checkout", "-q", "main")
+        self.design("theirs", paths=["var/**"])
+        self.commit()
+        expected = ["ERROR docs/designs/D002-old.md: D002 was deleted; restore it and archive it instead",
+                    "ERROR docs/designs/D003-ours.md: D003 was also added on main as docs/designs/D003-theirs.md; run "
+                    "`canon.py renumber docs/designs/D003-ours.md --base main`"]
+        problems = self.problems(self.fails("check", "--rev", "feature", "--base", "main"))
+        self.assertEqual([p for p in problems if "deleted" in p or "also added" in p], expected)
+        self.git("checkout", "-q", "--orphan", "unborn")
+        problems = self.problems(self.fails("check", "--rev", "feature", "--base", "main"))
+        self.assertEqual([p for p in problems if "deleted" in p or "also added" in p], expected)
+
+    def test_every_read_of_rev_reads_the_commit_and_none_reads_the_work_tree(self):
+        design = self.design(paths=["src/**", "lib/new.py"])
+        design.write_text(design.read_text() + "\nUse [the guide](../guides/use.md#later) and [new](../guides/new.md).\n")
+        self.create("docs/guides/new.md", "lib/new.py")
+        (self.root / "docs/guides/use.md").write_text("# Use\n\n## Later\n\nText.\n")
+        notes = self.root / "docs/designs/D001/notes.md"
+        notes.parent.mkdir()
+        notes.write_text("# Notes\n\nSee [use](../../guides/use.md).\n")
+        self.modules("lib/")
+        self.set(self.root / self.OVERVIEW, paths=["tools"])
+        self.commit()
+        commits = {"clean": self.git("rev-parse", "HEAD")}
+        self.git("rm", "-q", "lib/new.py")
+        self.create("scripts/canon.py")
+        (self.root / "scripts/canon.py").write_text('CANON_VERSION = "18"\n')
+        self.git("add", "-A")
+        self.git("commit", "-qm", "warnings")
+        commits["warnings"] = self.git("rev-parse", "HEAD")
+        design.write_text(design.read_text().replace("## Decisions", "## Choices"))
+        self.set(design, summary="Changed")
+        self.git("rm", "-q", "docs/guides/new.md")
+        (self.root / "docs/guides/use.md").write_text("# Use\n\nSee [x](gone.md).\n")
+        notes.write_text(notes.read_text() + "See [y](gone.md).\n")
+        (self.root / "AGENTS.md").write_text((self.root / "AGENTS.md").read_text() + "\nSee [z](nowhere.md).\n")
+        self.create("tools/run.sh")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "errors")
+        commits["errors"] = self.git("rev-parse", "HEAD")
+
+        warnings = {"WARN docs/designs/D001-area.md: `paths` entry `lib/new.py` matches no file",
+                    "WARN {}: Modules Path `lib/` is not a directory of the project".format(self.OVERVIEW),
+                    "WARN scripts/canon.py: " + InitTest.OLD_COPY_WARNING.format("scripts/canon.py")}
+        errors = {"ERROR docs/designs/D001-area.md: missing section `## Decisions`",
+                  "ERROR docs/designs/D001-area.md: broken link ../guides/new.md",
+                  "ERROR docs/designs/D001-area.md: missing anchor #later in docs/guides/use.md",
+                  "ERROR docs/README.md: index out of date",
+                  "ERROR AGENTS.md: broken link nowhere.md",
+                  "ERROR docs/guides/use.md: broken link gone.md",
+                  "ERROR docs/designs/D001/notes.md: broken link gone.md",
+                  "ERROR {}: `paths` entry `tools` names a glob or directory; D000's `paths` list only files, since a "
+                  "glob or directory makes every file under it look governed".format(self.OVERVIEW)}
+        results = {}
+        for name, commit in commits.items():
+            self.git("checkout", "-q", commit)
+            results[name] = self.checked()
+        self.assertEqual((results["clean"][0], self.kinds(results["clean"][1]) & (warnings | errors)), (0, set()))
+        self.assertEqual((results["warnings"][0], self.kinds(results["warnings"][1]) & (warnings | errors)),
+                         (0, warnings))
+        self.assertEqual((results["errors"][0], self.kinds(results["errors"][1]) & (warnings | errors)),
+                         (1, warnings | errors))
+
+        loose = self.root / "docs/designs/D009-loose.md"
+        loose.write_text("# D009: Loose\n")
+        for name, commit in commits.items():
+            for other in commits.values():
+                if other != commit:
+                    with self.subTest(rev=name, work_tree=other):
+                        self.git("checkout", "-q", other)
+                        self.assertIn("ERROR docs/designs/D009-loose.md: missing or unterminated `---` frontmatter",
+                                      self.checked()[1])
+                        self.assertEqual(self.checked("--rev", commit), results[name])
+
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_rev_follows_committed_links_within_the_tree_and_finds_no_file_beyond_it_or_in_a_submodule(self):
+        self.commit()
+        guides, assets = self.root / "docs/guides", self.root / "docs/assets"
+        guides.mkdir()
+        (assets / "chain").mkdir(parents=True)
+        (guides / "real.md").write_text("# Real\n\n## Part\n\nText.\n")
+        (assets / "pic.md").write_text("# Pic\n")
+        (guides / "to-file.md").symlink_to("real.md")
+        (guides / "linked").symlink_to("../assets")
+        outside = self.tmpdir() / "outside.md"
+        outside.write_text("# Outside\n")
+        (guides / "outside.md").symlink_to(os.path.relpath(str(outside), str(guides)))
+        (guides / "missing.md").symlink_to("nothing.md")
+        (assets / "chain/41").symlink_to("../pic.md")
+        for n in range(1, 41):
+            (assets / "chain" / str(n)).symlink_to(str(n + 1))
+        (guides / "links.md").write_text("# Links\n\n[a](to-file.md#part)\n[b](linked/pic.md)\n[c](outside.md)\n"
+                                         "[d](missing.md)\n[e](../assets/chain/2)\n[f](../assets/chain/1)\n"
+                                         "[g](../../sub)\n")
+        self.git("add", "-A")
+        self.git("update-index", "--add", "--cacheinfo", "160000,{},sub".format(self.git("rev-parse", "HEAD")))
+        self.git("commit", "-qm", "links")
+        (guides / "to-file.md").unlink()
+        (guides / "linked").unlink()
+        broken = ["ERROR docs/guides/links.md:{}: broken link {}".format(line, target) for line, target in
+                  ((5, "outside.md"), (6, "missing.md"), (8, "../assets/chain/1"), (9, "../../sub"))]
+        self.assertEqual([p for p in self.problems(self.fails("check", "--rev", "HEAD")) if "links.md" in p], broken)
+        problems = self.problems(self.fails("check"))
+        self.assertIn("ERROR docs/guides/links.md:3: broken link to-file.md#part", problems)
+        self.assertNotIn(broken[0], problems)
+
+    def test_the_flag_errors_end_check_before_any_doc_is_read_and_change_no_file(self):
+        self.design()
+        self.doc("C", "idea", body=CONCEPT.format("Extends [D001: Area](../designs/D001-area.md)."))
+        self.commit(check=False)
+        self.edit_commit("src/base.py")
+        fix = "--fix edits the work tree, which --staged and --rev do not check; drop one of them"
+        self.refuses(fix, "check", "--fix", "--rev", "HEAD")
+        self.refuses(fix, "check", "--fix", "--rev", "nosuch")
+        self.refuses("unknown ref nosuch; fetch it first or correct the name", "check", "--rev", "nosuch")
+        self.refuses("unknown ref -x; fetch it first or correct the name", "check", "--rev=-x")
+        clone = self.tmpdir() / "clone"
+        self.git("clone", "-q", "--depth", "1", self.root.resolve().as_uri(), str(clone))
+        result = self.canon_process("check", "--rev", "HEAD", cwd=clone)
+        self.assertEqual((result.returncode, result.stdout + result.stderr),
+                         (1, "canon: HEAD is a shallow commit, whose parents this clone lacks; fetch them with "
+                             "`git fetch --deepen=1`\n"))
+        self.assertEqual(self.git("-C", str(clone), "status", "--porcelain"), "")
+
+    def test_rev_prints_no_fixable_tail_and_warns_of_the_version_the_work_tree_records(self):
+        self.design()
+        self.doc("C", "idea", body=CONCEPT.format("Extends [D001: Area](../designs/D001-area.md)."))
+        self.commit(check=False)
+        self.assertRegex(self.fails("check"), r"; 1 fixable with --fix\n$")
+        out = self.fails("check", "--rev", "HEAD")
+        self.assertIn("ERROR docs/concepts/C001-idea.md: linked docs missing from `refs`: D001\n", out)
+        self.assertRegex(out, r"\ncanon check: 3 docs, 1 errors, \d+ warnings\n$")
+        agents = self.root / "AGENTS.md"
+        agents.write_text(agents.read_text().replace("canon version {} or".format(canon.CANON_VERSION),
+                                                     "canon version 1 or"))
+        self.assertIn("WARN AGENTS.md: this project is set up for canon version 1; run `/canon-init` to upgrade it to "
+                      "version {}".format(canon.CANON_VERSION), self.problems(self.fails("check", "--rev", "HEAD")))
+
+    def test_outside_git_rev_ends_check_and_changes_no_file(self):
+        top = self.outside_checkouts()
+        result = self.canon_process("check", "--rev", "HEAD", cwd=top)
+        self.assertEqual((result.returncode, result.stdout + result.stderr),
+                         (1, "canon: --staged and --rev read Git; run check in a Git checkout\n"))
+        self.assertEqual([p for p in top.rglob("*") if not within(p, top / ".agents")], [])
 
 
 class KnownIssuesTest(CanonTest):
@@ -2895,6 +3133,14 @@ class CommittedInstalledSkillsTest(InstalledSkillsTest):
         link = self.root / INSTALL
         link.unlink()
         link.symlink_to(target)
+
+    def test_an_agents_md_among_the_installed_skills_makes_no_project_under_rev(self):
+        self.install_skills(".agents/skills/canon/AGENTS.md", ".agents/skills/canon/docs/x.md")
+        for args in ((), ("--rev", "HEAD")):
+            with self.subTest(args=args):
+                result = self.canon("check", *args)
+                self.assertEqual([p for p in self.problems(result.stdout) if ".agents/" in p or ".claude/" in p], [])
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_a_commit_changing_only_an_installed_skill_file_is_no_unchecked_commit_of_a_design_globbing_it(self):
         self.create("src/a.py")

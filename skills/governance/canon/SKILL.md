@@ -15,7 +15,7 @@ When `canon.py` says it runs only from an install inside the project, as when th
 
 | Command | Purpose |
 |---|---|
-| `check [--fix] [--base REF]` | Validate all docs. `--fix` applies mechanical fixes (`refs`, `updated`, indexes, `implemented` of an active design never revised, and deleting an `as_built` left on a reviewed revision). `--base origin/main` also checks the branch against that ref: deleted docs, id collisions, revisions pending review and unfinished docs fail. |
+| `check [--fix] [--base REF] [--rev REV]` | Validate all docs. `--fix` applies mechanical fixes (`refs`, `updated`, indexes, `implemented` of an active design never revised, and deleting an `as_built` left on a reviewed revision). `--base origin/main` also checks the branch against that ref: deleted docs, id collisions, revisions pending review and unfinished docs fail. `--rev REV` checks commit REV's tree instead of the work tree. |
 | `new TYPE SLUG [--title T] [--from D00X] [--parent D00X] [--root DIR]` | Create a doc from its template with the next free id. A plan needs `--from`, which links it to its accepted or active design; `--parent` creates a sub-design. |
 | `status ID STATUS` | Move a doc's status forward and check the move; a concept may move to a live `adopted`, an experiment to a live `concluded`, and an answered experiment back to `running` for a later run. |
 | `archive ID STATUS` | Set a terminal status, move the doc to `archived/`, rewrite every link to it. Refuses D000. |

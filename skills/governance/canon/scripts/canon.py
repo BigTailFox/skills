@@ -30,7 +30,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "57"
+CANON_VERSION = "58"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -76,6 +76,7 @@ MAX_DOC_LINES = 500
 MAX_AGENTS_LINES = 150
 MAX_SUMMARY = 160
 MAX_AREAS = 10
+MAX_LINKS = 40
 
 FILE_RE = re.compile(r"^([CDPREI])(\d{3,})([A-Z]?)-([a-z0-9]+(?:-[a-z0-9]+)*)\.md$")
 FULL_ID_RE = re.compile(r"^([CDPREI])(\d{3,})([A-Z]?)$")
@@ -518,6 +519,149 @@ def parse_date(value):
         return None
 
 
+# ---------------------------------------------------------------- trees
+
+class WorkTree:
+    """The work tree, read from disk: the files Git tracks or would add that exist on disk, or outside Git the files
+    a walk of the directory finds."""
+
+    def __init__(self, root, is_git):
+        self.root, self.is_git = root, is_git
+
+    def files(self):
+        if self.is_git:
+            out = git_checked(self.root, "ls-files", "-z", "-co", "--exclude-standard").stdout
+            return sorted({f for f in out.split("\0") if f and (self.root / f).is_file()})
+        found = []
+        for dirpath, dirnames, filenames in os.walk(str(self.root)):
+            dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in ("node_modules", "venv")]
+            for name in filenames:
+                found.append(posix_rel(Path(dirpath) / name, self.root))
+        return sorted(found)
+
+    def tracked(self, name):
+        """The paths Git tracks whose last component is `name`."""
+        if not self.is_git:
+            return []
+        out = git_checked(self.root, "ls-files", "-z", "--", ":(glob)**/" + name).stdout
+        return [rel for rel in out.split("\0") if rel]
+
+    def is_file(self, path):
+        return path.is_file()
+
+    def is_dir(self, path):
+        return path.is_dir()
+
+    def exists(self, path):
+        return path.exists()
+
+    def read_bytes(self, path):
+        return path.read_bytes()
+
+    def read_text(self, path, errors="strict"):
+        return path.read_text(encoding="utf-8", errors=errors)
+
+    def realpath(self, path):
+        return Path(os.path.realpath(str(path)))
+
+
+class GitTree:
+    """The tree of a commit, read through Git and never from disk: its entries listed once with `git ls-tree`, its
+    blobs read through one `git cat-file --batch` process. Paths are absolute under the repo root, as on disk."""
+
+    def __init__(self, root, commit):
+        self.root, self.entries, self.dirs = root, {}, set()
+        for item in git_checked(root, "ls-tree", "-r", "-z", "--full-tree", commit).stdout.split("\0"):
+            if item:
+                meta, _, rel = item.partition("\t")
+                mode, _kind, name = meta.split(" ")
+                self.entries[rel] = mode, name
+                self.dirs.update(rel[:i] for i, c in enumerate(rel) if c == "/")
+        self.batch, self.blobs = None, {}
+
+    def blob(self, name):
+        """The content of the blob with object name `name`; a failure, a `missing` reply included, ends the command."""
+        if name not in self.blobs:
+            if self.batch is None:
+                self.batch = subprocess.Popen(["git", "cat-file", "--batch"], cwd=str(self.root),
+                                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            with contextlib.suppress(OSError):
+                self.batch.stdin.write(name.encode() + b"\n")
+                self.batch.stdin.flush()
+            reply = self.batch.stdout.readline().decode().split()
+            size = int(reply[2]) if reply[1:2] == ["blob"] else None
+            data = self.batch.stdout.read(size + 1)[:-1] if size is not None else None
+            if data is None or len(data) != size:
+                reason = " ".join(reply) if reply and size is None else self.stopped()
+                sys.exit("canon: git cat-file failed in {}: {}".format(self.root, reason))
+            self.blobs[name] = data
+        return self.blobs[name]
+
+    def stopped(self):
+        """Why the `git cat-file --batch` process stopped answering, once it has exited."""
+        err = self.batch.communicate()[1].decode().strip()
+        return err or "git cat-file exited {}".format(self.batch.returncode)
+
+    def resolve(self, path):
+        """The path from the repo root that `path` names in the tree, each symbolic link on it followed component by
+        component as `realpath` follows it, its blob a path relative to the link's directory; None when the path or a
+        link's target leaves the tree, or it takes more than MAX_LINKS links."""
+        rel = posix_rel(path, self.root)
+        if rel == ".." or rel.startswith("../"):
+            return None
+        done, todo, links = [], [] if rel == "." else rel.split("/"), 0
+        while todo:
+            part = todo.pop(0)
+            if part in ("", "."):
+                continue
+            if part == "..":
+                if not done:
+                    return None
+                done.pop()
+                continue
+            mode, name = self.entries.get("/".join(done + [part]), (None, None))
+            if mode != "120000":
+                done.append(part)
+                continue
+            links += 1
+            target = self.blob(name).decode("utf-8", "surrogateescape")
+            if links > MAX_LINKS or target.startswith("/"):
+                return None
+            todo = target.split("/") + todo
+        return "/".join(done)
+
+    def files(self):
+        return sorted(rel for rel, (mode, _name) in self.entries.items()
+                      if mode.startswith("100") or mode == "120000" and self.is_file(self.root / rel))
+
+    def tracked(self, name):
+        """The paths of the tree whose last component is `name`."""
+        return [rel for rel in self.entries if rel.rsplit("/", 1)[-1] == name]
+
+    def is_file(self, path):
+        entry = self.entries.get(self.resolve(path))
+        return entry is not None and entry[0].startswith("100")
+
+    def is_dir(self, path):
+        rel = self.resolve(path)
+        return rel == "" or rel in self.dirs
+
+    def exists(self, path):
+        return self.is_file(path) or self.is_dir(path)
+
+    def read_bytes(self, path):
+        if not self.is_file(path):
+            raise FileNotFoundError(errno.ENOENT, "no file in the tree", str(path))
+        return self.blob(self.entries[self.resolve(path)][1])
+
+    def read_text(self, path, errors="strict"):
+        return self.read_bytes(path).decode("utf-8", errors)
+
+    def realpath(self, path):
+        rel = self.resolve(path)
+        return None if rel is None else self.root / rel
+
+
 # ---------------------------------------------------------------- model
 
 class Root:
@@ -530,13 +674,13 @@ class Root:
 
 
 class Doc:
-    def __init__(self, root, path, rel, match, archived):
+    def __init__(self, root, path, rel, match, archived, text):
         self.root, self.path, self.rel, self.archived = root, path, rel, archived
         self.type = match.group(1)
         self.digits, self.suffix, self.slug = match.group(2), match.group(3), match.group(4)
         self.number = int(self.digits)
         self.id = self.type + self.digits + self.suffix
-        self.text = path.read_text(encoding="utf-8")
+        self.text = text
         self.lines = self.text.split("\n")
         self.fm, self.fm_end, self.fm_bad = parse_frontmatter(self.lines)
         self.headings = scan_headings(self.lines, self.fm_end + 1)
@@ -655,7 +799,9 @@ class Doc:
 
 
 class Repo:
-    def __init__(self, start=None):
+    def __init__(self, start=None, rev=None, tip="HEAD"):
+        """The repository around `start`, read from the work tree, or from the tree of commit `rev`, a full object
+        name, when given; `tip` names the branch's tip, HEAD or `rev`, in messages."""
         start = Path(start or os.getcwd())
         top = git(start, "rev-parse", "--show-toplevel")
         self.is_git = top is not None
@@ -663,7 +809,18 @@ class Repo:
         self.root = Path(os.path.realpath(top.strip() if top else str(start)))
         self.has_head = self.is_git and git_checked(self.root, "rev-parse", "--verify", "-q", "HEAD",
                                                     ok=(0, 1)).returncode == 0
-        self.files = self._list_files()
+        self.rev, self.tip, self.head = rev, tip, rev or "HEAD"
+        if rev:
+            self.tree = GitTree(self.root, rev)
+            out = git_checked(self.root, "log", "-1", "--format=%P%n%ad%n%cd", "--date=short", rev).stdout
+            parents, *days = out.split("\n")[:3]
+            self.compared = parents if len(parents.split()) == 1 else None
+            self.days = set(days)
+        else:
+            self.tree = WorkTree(self.root, self.is_git)
+            self.compared = "HEAD" if self.has_head else None
+            self.days = {today()}
+        self.files = self.tree.files()
         parents = [f.rsplit("/", 1)[0] if "/" in f else "" for f in self.files
                    if f.rsplit("/", 1)[-1] == "AGENTS.md" and not self.is_installed_skill(f)]
         self.roots = [Root(self, rel) for rel in parents]
@@ -672,17 +829,6 @@ class Repo:
         self.by_id, self.by_path = {}, {}
         self._slug_cache, self._design_linked, self._citations = {}, None, None
         self._scan()
-
-    def _list_files(self):
-        if self.is_git:
-            out = git_checked(self.root, "ls-files", "-z", "-co", "--exclude-standard").stdout
-            return sorted({f for f in out.split("\0") if f and (self.root / f).is_file()})
-        found = []
-        for dirpath, dirnames, filenames in os.walk(str(self.root)):
-            dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in ("node_modules", "venv")]
-            for name in filenames:
-                found.append(posix_rel(Path(dirpath) / name, self.root))
-        return sorted(found)
 
     def require_readable(self):
         """End the command when Git finds no checkout around a directory that `.git` puts in one (`unreadable`)."""
@@ -696,7 +842,7 @@ class Repo:
         for root in self.roots:
             agents = root.project / "AGENTS.md"
             self.scope_md.append(agents)
-            if not root.docs.is_dir():
+            if not self.tree.is_dir(root.docs):
                 continue
             prefix = root.docs_rel + "/"
             reported = set()
@@ -742,7 +888,7 @@ class Repo:
                     self.problem("ERROR", rel, "invalid doc path; expected {}/{}NNN-kebab-slug.md{}".format(
                         TYPES[letter]["dir"], letter, " (D may add one A-Z suffix)" if letter == "D" else ""))
                     continue
-                doc = Doc(root, path, rel, match, archived)
+                doc = Doc(root, path, rel, match, archived, self.tree.read_text(path))
                 self.docs.append(doc)
                 if doc.id in self.by_id:
                     self.problem("ERROR", rel, "duplicate id {}, also {}; run `canon.py renumber <path> --base <ref>` "
@@ -780,7 +926,7 @@ class Repo:
         if doc:
             return {h.slug for h in doc.headings}
         if path not in self._slug_cache:
-            lines = path.read_text(encoding="utf-8").split("\n")
+            lines = self.tree.read_text(path).split("\n")
             self._slug_cache[path] = {h.slug for h in scan_headings(lines)}
         return self._slug_cache[path]
 
@@ -857,26 +1003,40 @@ class Repo:
         return {d.id for d in self.docs} | self.history_ids()
 
     def deleted_docs(self, base=None):
-        """(path, commit) for each doc file deleted, not renamed: in uncommitted changes, where the commit compared
-        with is HEAD, and on this branch since `base`, where it is the merge base with `base`."""
-        if not self.has_head:
-            return []
+        """(path, commit) for each doc file deleted, not renamed: between the commit compared and the tree checked,
+        where the commit is the one compared, and on this branch since `base` up to its tip, where it is the merge
+        base with `base`."""
+        ranges = []
+        if self.compared:
+            ranges.append(((self.compared, self.rev) if self.rev else (self.compared,), self.compared))
+        if base and (self.rev or self.has_head):
+            ranges.append(((base + "..." + self.head,), None))
         deleted = []
-        for rng in ["HEAD"] + ([base + "...HEAD"] if base else []):
-            args = ("diff", "-z", "-M", "--name-status", "--diff-filter=D", rng, "--", DOCS_PATHSPEC)
-            if rng == "HEAD":
+        for revs, commit in ranges:
+            args = ("diff", "-z", "-M", "--name-status", "--diff-filter=D", *revs, "--", DOCS_PATHSPEC)
+            if commit:
                 out = git_checked(self.root, *args).stdout
             else:
                 result = git_run(self.root, *args)
                 if result is None or result.returncode != 0:
-                    sys.exit(diff_failure(base, result, "diff"))
+                    sys.exit(diff_failure(self, base, result, "diff"))
                 out = result.stdout
             fields = out.split("\0")
             paths = sorted(path for status, path in zip(fields[::2], fields[1::2]) if status.startswith("D"))
             if paths:
-                commit = "HEAD" if rng == "HEAD" else git(self.root, "merge-base", "HEAD", base).strip()
+                commit = commit or git(self.root, "merge-base", self.head, base).strip()
                 deleted += [(path, commit) for path in paths]
         return deleted
+
+    def checked_changes(self):
+        """The files the tree checked changes against the commit compared: for the work tree its changes against
+        HEAD, under `rev` the files `rev` changes against its only parent; none without that commit."""
+        if self.compared is None:
+            return set()
+        if self.rev is None:
+            return set(self.changed_files())
+        out = git_checked(self.root, "diff", "-z", "--name-only", "--no-renames", self.compared, self.rev).stdout
+        return {f for f in out.split("\0") if f}
 
     def project_files(self, root):
         prefix = root.rel + "/" if root.rel else ""
@@ -889,9 +1049,9 @@ class Repo:
                 git_checked(self.root, "ls-files", "-z", "-o", "--exclude-standard").stdout]
         if base:
             merge_base(self, base)
-            result = git_run(self.root, "diff", "-z", "--name-only", "--no-renames", base + "...HEAD")
+            result = git_run(self.root, "diff", "-z", "--name-only", "--no-renames", base + "..." + self.head)
             if result is None or result.returncode != 0:
-                sys.exit(diff_failure(base, result, "diff"))
+                sys.exit(diff_failure(self, base, result, "diff"))
             outs.append(result.stdout)
         return sorted({f for out in outs for f in (out or "").split("\0") if f})
 
@@ -912,13 +1072,13 @@ class Repo:
 
     def is_installed_skill(self, rel):
         """Whether a repo-relative path is an installed skill file: the repo root's `skills-lock.json`, INSTALL_DIR or
-        a path under it, or a link whose real path in the work tree is INSTALL_DIR or lies under it. INSTALL_DIR stays
+        a path under it, or a link whose real path in the tree read is INSTALL_DIR or lies under it. INSTALL_DIR stays
         unresolved, so that when it is itself a link, the files it points to keep their own kind."""
         if rel in ("skills-lock.json", INSTALL_DIR) or rel.startswith(INSTALL_DIR + "/"):
             return True
         skills = self.root / INSTALL_DIR
-        real = Path(os.path.realpath(str(self.root / rel)))
-        return real == skills or skills in real.parents
+        real = self.tree.realpath(self.root / rel)
+        return real is not None and (real == skills or skills in real.parents)
 
     def designs_for(self, abs_path):
         """The non-archived designs whose `paths` govern a file."""
@@ -970,7 +1130,7 @@ def broken_indexes(repo, project=None):
     readmes = [root.docs / "README.md" for root in repo.roots] + ([project / "docs/README.md"] if project else [])
     broken = []
     for readme in readmes:
-        span = marker_span(readme.read_text(encoding="utf-8"), INDEX_START, INDEX_END) if readme.is_file() else None
+        span = marker_span(repo.tree.read_text(readme), INDEX_START, INDEX_END) if repo.tree.is_file(readme) else None
         if span and span[1] is None:
             broken.append(readme)
     return broken
@@ -989,10 +1149,10 @@ def expected_indexes(repo):
     """Return {path: expected_text} for every docs root, leaving out each `broken_indexes` file."""
     out = {}
     for root in repo.roots:
-        if not root.docs.is_dir():
+        if not repo.tree.is_dir(root.docs):
             continue
         readme = root.docs / "README.md"
-        current = readme.read_text(encoding="utf-8") if readme.is_file() else None
+        current = repo.tree.read_text(readme) if repo.tree.is_file(readme) else None
         span = marker_span(current, INDEX_START, INDEX_END) if current is not None else None
         block = index_block(repo, root, False, root.docs)
         if current is None:
@@ -1002,7 +1162,7 @@ def expected_indexes(repo):
         elif span[1] is not None:
             out[readme] = current[:span[0]] + block + current[span[1]:]
         archive_dir = root.docs / "archived"
-        if any(d.root is root and d.archived for d in repo.docs) or (archive_dir / "README.md").is_file():
+        if any(d.root is root and d.archived for d in repo.docs) or repo.tree.is_file(archive_dir / "README.md"):
             out[archive_dir / "README.md"] = "# Archived docs\n\n" + index_block(repo, root, True, archive_dir) + "\n"
     return out
 
@@ -1033,7 +1193,7 @@ def check_links(repo, path, lines, start, doc=None):
             if anchor and anchor not in own:
                 repo.problem("ERROR", rel, "missing anchor #" + anchor, i + 1)
             continue
-        if not dest.exists():
+        if not repo.tree.exists(dest):
             repo.problem("ERROR", rel, "broken link " + target, i + 1)
             continue
         target_doc = repo.by_path.get(dest)
@@ -1195,7 +1355,7 @@ def check_doc(repo, doc, changed, strict=False):
     if fm is None:
         err("missing or unterminated `---` frontmatter")
         return
-    old = git(repo.root, "show", "HEAD:" + rel) if rel in changed and repo.has_head else None
+    old = git(repo.root, "show", "{}:{}".format(repo.compared, rel)) if rel in changed else None
     old_lines = old.split("\n") if old is not None else None
     old_fm = (parse_frontmatter(old_lines)[0] or {}) if old_lines else {}
     for line in doc.fm_bad:
@@ -1381,7 +1541,7 @@ def check_doc(repo, doc, changed, strict=False):
                     err("{} fixed in unknown doc `{}`".format(fid, match.group(1)))
 
     if old_lines is not None and content_lines(old_lines) != content_lines(doc.lines) \
-            and old_fm.get("updated") == fm.get("updated") != today():
+            and old_fm.get("updated") == fm.get("updated") not in repo.days:
         err("content changed but `updated` was not bumped", fix=(doc, "updated", today()))
 
 
@@ -1437,7 +1597,7 @@ def check_overview(repo):
             ", ".join(missing), ", ".join(names[:-1]), names[-1]))
     for pattern in overview.as_list("paths"):
         entry = entry_path(pattern)
-        if any(c in entry for c in "*?[") or entry.endswith("/") or (overview.root.project / entry).is_dir():
+        if any(c in entry for c in "*?[") or entry.endswith("/") or repo.tree.is_dir(overview.root.project / entry):
             repo.problem("ERROR", overview.rel, "`paths` entry `{}` names a glob or directory; D000's `paths` list "
                          "only files, since a glob or directory makes every file under it look governed"
                          .format(pattern))
@@ -1446,7 +1606,7 @@ def check_overview(repo):
         if linked and not any(d.implemented for d in linked):
             continue
         for entry in entries:
-            if module_dir(overview, entry) is None:
+            if module_dir(repo, overview, entry) is None:
                 repo.problem("WARN", overview.rel, "Modules Path `{}` is not a directory of the project".format(entry))
 
 
@@ -1470,16 +1630,17 @@ def require_commit(repo, ref):
         sys.exit(unknown_ref(ref))
 
 
-def diff_failure(base, result, subcommand):
-    return "canon: cannot diff against {}...HEAD: {}".format(base, git_failure(result, subcommand))
+def diff_failure(repo, base, result, subcommand):
+    return "canon: cannot diff against {}...{}: {}".format(base, repo.tip, git_failure(result, subcommand))
 
 
 def merge_base(repo, base):
-    """The merge base of HEAD and `base`; else the end of the command with the `--base` error that applies."""
-    if not repo.has_head:
+    """The merge base of the branch's tip and `base`; else the end of the command with the `--base` error that
+    applies."""
+    if not (repo.rev or repo.has_head):
         sys.exit("canon: no merge base with " + base)
     require_commit(repo, base)
-    result = git_run(repo.root, "merge-base", "HEAD", base)
+    result = git_run(repo.root, "merge-base", repo.head, base)
     if result is not None and result.returncode == 0:
         return result.stdout.strip()
     if result is not None and result.returncode == 1:
@@ -1487,12 +1648,12 @@ def merge_base(repo, base):
             sys.exit("canon: no merge base with {} in this shallow clone; fetch the full history with "
                      "`git fetch --unshallow`".format(base))
         sys.exit("canon: no merge base with " + base)
-    sys.exit(diff_failure(base, result, "merge-base"))
+    sys.exit(diff_failure(repo, base, result, "merge-base"))
 
 
 def run_check(repo, base=None):
     fork = merge_base(repo, base) if base else None
-    changed = set(repo.changed_files()) if repo.has_head else set()
+    changed = repo.checked_changes()
     for doc in repo.docs:
         check_doc(repo, doc, changed, strict=bool(base))
 
@@ -1510,9 +1671,9 @@ def run_check(repo, base=None):
             repo.problem("ERROR", rel, "attachment directory {} has no matching doc beside it".format(name))
 
     for path in repo.scope_md:
-        if not path.is_file():
+        if not repo.tree.is_file(path):
             continue
-        lines = path.read_text(encoding="utf-8").split("\n")
+        lines = repo.tree.read_text(path).split("\n")
         check_links(repo, path, lines, 0)
         if path.name == "AGENTS.md" and line_count(lines) > MAX_AGENTS_LINES:
             repo.problem("WARN", posix_rel(path, repo.root), "{} lines (max {}); move detail into docs".format(
@@ -1522,7 +1683,7 @@ def run_check(repo, base=None):
         repo.problem("ERROR", posix_rel(path, repo.root),
                      "index start marker with no end marker after it; fix the markers")
     for path, text in expected_indexes(repo).items():
-        current = path.read_text(encoding="utf-8") if path.is_file() else None
+        current = repo.tree.read_text(path) if repo.tree.is_file(path) else None
         if current != text:
             repo.problem("ERROR", posix_rel(path, repo.root), "index out of date", fix=("index",))
         elif current:
@@ -1765,6 +1926,28 @@ def find_root(repo, root_arg):
     return Root(repo, rel)
 
 
+def check_repo(args):
+    """The repository `check` reads, the work tree or under `--rev` commit REV's tree, once its flags pass: a flag
+    error ends the command before any doc is read."""
+    if args.rev is None:
+        return Repo()
+    if args.fix:
+        sys.exit("canon: --fix edits the work tree, which --staged and --rev do not check; drop one of them")
+    top = git(os.getcwd(), "rev-parse", "--show-toplevel")
+    if top is None:
+        sys.exit("canon: --staged and --rev read Git; run check in a Git checkout")
+    root = Path(os.path.realpath(top.strip()))
+    commit = None if args.rev.startswith("-") else git(root, "rev-parse", "--verify", "-q", args.rev + "^{commit}")
+    if commit is None:
+        sys.exit(unknown_ref(args.rev))
+    commit = commit.strip()
+    shallow = root / git_checked(root, "rev-parse", "--git-path", "shallow").stdout.strip()
+    if shallow.is_file() and commit in shallow.read_text().split():
+        sys.exit("canon: {} is a shallow commit, whose parents this clone lacks; fetch them with "
+                 "`git fetch --deepen=1`".format(args.rev))
+    return Repo(rev=commit, tip=args.rev)
+
+
 def cmd_check(repo, args):
     if args.fix:
         require_intact_indexes(repo)
@@ -1782,7 +1965,7 @@ def cmd_check(repo, args):
         repo.problem("WARN", "AGENTS.md", args.version_notice)
     errors, warnings = print_problems(repo)
     fixable = sum(1 for p in repo.problems if p[4])
-    tail = "; {} fixable with --fix".format(fixable) if fixable and not args.fix else ""
+    tail = "; {} fixable with --fix".format(fixable) if fixable and not args.fix and not repo.rev else ""
     print("canon check: {} docs, {} errors, {} warnings{}".format(len(repo.docs), errors, warnings, tail))
     return 1 if errors else 0
 
@@ -2018,20 +2201,18 @@ def canon_block_span(text):
 def old_copies(repo):
     """The tracked files named canon.py that hold a `CANON_VERSION` line, copies kept from when projects held one,
     other than installed skill files and the `<dir>/scripts/canon.py` whose `<dir>/SKILL.md` names the `canon` skill."""
-    if not repo.is_git:
-        return []
     found = []
-    for rel in git_checked(repo.root, "ls-files", "-z", "--", ":(glob)**/canon.py").stdout.split("\0"):
+    for rel in repo.tree.tracked("canon.py"):
         path = repo.root / rel
-        if not rel or not path.is_file() or repo.is_installed_skill(rel):
+        if not repo.tree.is_file(path) or repo.is_installed_skill(rel):
             continue
         skill = path.parent.parent / "SKILL.md"
-        if rel.split("/")[-2:-1] == ["scripts"] and skill.is_file():
-            fields = parse_frontmatter(skill.read_text(encoding="utf-8", errors="replace").split("\n"))[0]
+        if rel.split("/")[-2:-1] == ["scripts"] and repo.tree.is_file(skill):
+            fields = parse_frontmatter(repo.tree.read_text(skill, errors="replace").split("\n"))[0]
             if fields and fields.get("name") == "canon":
                 continue
         with contextlib.suppress(OSError):
-            if re.search(rb'^CANON_VERSION = "\d+"', path.read_bytes(), re.M):
+            if re.search(rb'^CANON_VERSION = "\d+"', repo.tree.read_bytes(path), re.M):
                 found.append(rel)
     return found
 
@@ -2100,7 +2281,8 @@ def cmd_init(repo, args):
             actions += ["moved {} -> {}".format(posix_rel(src, repo.root), posix_rel(dst, repo.root))
                         for src, dst in moves.items()] + notes
             path = moves[source.path]
-            overview = Doc(source.root, path, posix_rel(path, repo.root), FILE_RE.match(path.name), False)
+            overview = Doc(source.root, path, posix_rel(path, repo.root), FILE_RE.match(path.name), False,
+                           path.read_text(encoding="utf-8"))
             added = add_overview_sections(overview)
             shifted = heading_anchors(overview.text, path.read_text(encoding="utf-8"))
             if shifted:
@@ -2781,13 +2963,13 @@ def root_overview(repo, archived=False):
                 None)
 
 
-def module_dir(overview, entry):
+def module_dir(repo, overview, entry):
     """The directory an entry of a Path cell of D000's Modules table names, read with or without its trailing `/`,
-    relative to the project directory with "" for `./`; None when it is no existing directory of the project, which
-    then holds no file."""
+    relative to the project directory with "" for `./`; None when it is no existing directory of the project in the
+    tree read, which then holds no file."""
     project = str(overview.root.project)
     target = os.path.normpath(os.path.join(project, entry))
-    if not ((target == project or target.startswith(project + os.sep)) and os.path.isdir(target)):
+    if not ((target == project or target.startswith(project + os.sep)) and repo.tree.is_dir(Path(target))):
         return None
     rel = posix_rel(target, project)
     return "" if rel == "." else rel
@@ -2797,7 +2979,7 @@ def coverage_report(repo, overview):
     """`audit`'s source areas: the tracked files under D000's module Paths, docs and installed skill files aside, that
     no design's `paths` match, grouped by directory within their module and ranked by the commits of the last 90
     days."""
-    modules = sorted({module_dir(overview, entry) for entry in overview.module_entries()} - {None}, key=len,
+    modules = sorted({module_dir(repo, overview, entry) for entry in overview.module_entries()} - {None}, key=len,
                      reverse=True)
     designs = [doc for doc in repo.docs if doc.type == "D" and not doc.archived and doc.as_list("paths")]
     uncovered, covered_dirs, files_directly_in = {}, set(), {}
@@ -3960,6 +4142,7 @@ def main(argv=None):
                    help="apply mechanical fixes (refs, updated, implemented, as_built, indexes)")
     p.add_argument("--base", help="also check this branch against a ref, e.g. origin/main: deleted docs, id "
                                   "collisions, revisions pending review and unfinished docs fail")
+    p.add_argument("--rev", metavar="REV", help="check the tree of commit REV instead of the work tree")
     p.set_defaults(func=cmd_check)
 
     p = command(sub, "new", help="create a doc from its template with the next free id")
@@ -4096,7 +4279,7 @@ def main(argv=None):
         return cmd_trace(args)
     if args.command == "snapshot":
         return cmd_snapshot(args)
-    return args.func(Repo(), args)
+    return args.func(check_repo(args) if args.command == "check" else Repo(), args)
 
 
 if __name__ == "__main__":
