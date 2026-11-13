@@ -21,7 +21,7 @@ When `canon.py` says it runs only from an install inside the project, as when th
 | `archive ID STATUS` | Set a terminal status, move the doc to `archived/`, rewrite every link to it. Refuses D000. |
 | `rename ID SLUG [--title T]` | Change a doc's file slug, the attachments named after it and, with `--title`, its title, and rewrite every link to it. |
 | `renumber ID\|PATH [NEW] [--base REF]` | Give a doc a new id, NEW or the next free one, which its sub-designs follow, or a sub-design a new letter, and rewrite the links and references to them. Only when `check` asks for it: for an id collision, with REF the branch merged or rebased onto, or for a D000 in a module's docs. |
-| `index` | Regenerate the indexes in `docs/README.md` and `docs/archived/README.md`. |
+| `index [--staged]` | Regenerate the indexes in `docs/README.md` and `docs/archived/README.md`. `--staged` first regenerates the staged tree's from the staged docs and stages them, so a commit of some docs gets their index. |
 | `show ID` / `show ID#slug` | Print a doc's frontmatter and outline, or one section. |
 | `find WORDS [--archived]` | Search ids, titles, summaries, owned topics, modules and headings. |
 | `which FILE...` | List the designs whose `paths` govern the files, `skill` for an installed skill file and `doc` for a [project doc](#layout) that no `paths` entry names exactly, and `no design` for any other file; a file neither on disk nor in Git is marked `(missing)`. |

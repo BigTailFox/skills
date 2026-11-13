@@ -1174,6 +1174,15 @@ class GitFailureTest(CanonTest):
             with self.subTest(failing):
                 self.assertEqual(self.fails_with_git(failing, "check", "--staged"), self.message(subcommand))
 
+    def test_a_failing_blob_write_or_index_update_ends_index_staged(self):
+        self.commit()
+        self.doc("C", "idea")
+        self.git("add", "docs/concepts/C001-idea.md")
+        for subcommand in ("hash-object", "update-index"):
+            with self.subTest(subcommand):
+                self.assertEqual(self.fails_with_git(subcommand, "index", "--staged"), self.message(subcommand))
+        self.assertEqual(self.git("diff", "--cached", "--name-only"), "docs/concepts/C001-idea.md")
+
     def test_a_missing_blob_of_the_commit_ends_check_rev(self):
         self.design()
         self.commit()
@@ -1320,7 +1329,7 @@ class RevCheckTest(CanonTest):
         results = {}
         for name, commit in commits.items():
             self.git("checkout", "-q", commit)
-            results[name] = self.checked()
+            results[name] = self.checked("--rev", "HEAD")
         self.assertEqual((results["clean"][0], self.kinds(results["clean"][1]) & (warnings | errors)), (0, set()))
         self.assertEqual((results["warnings"][0], self.kinds(results["warnings"][1]) & (warnings | errors)),
                          (0, warnings))
@@ -2368,23 +2377,40 @@ class IndexTest(CanonTest):
         expected = readme.read_text(), archived.read_text()
         readme.write_text(expected[0].replace("· draft · Fixture", "· draft · Stale"))
         archived.unlink()
-        out = self.fails("check")
-        self.assertIn("ERROR docs/README.md: index out of date", out)
-        self.assertIn("ERROR docs/archived/README.md: index out of date", out)
+        out = self.ok("check")
+        self.assertIn("WARN docs/README.md: index out of date", out)
+        self.assertIn("WARN docs/archived/README.md: index out of date", out)
+        self.assertRegex(out, r", 0 errors, \d+ warnings; 2 fixable with --fix\n$")
         out = self.ok("check", "--fix")
         self.assertIn("fixed wrote docs/README.md", out)
         self.assertIn("fixed wrote docs/archived/README.md", out)
         self.assertEqual((readme.read_text(), archived.read_text()), expected)
         readme.unlink()
-        self.assertIn("ERROR docs/README.md: index out of date", self.fails("check"))
+        self.assertIn("WARN docs/README.md: index out of date", self.fails("check"))
+
+    def test_a_stale_index_fails_staged_rev_and_base_and_staged_names_the_next_step(self):
+        readme = self.root / "docs/README.md"
+        self.doc("C", "idea")
+        self.commit()
+        self.git("checkout", "-qb", "b")
+        readme.write_text(readme.read_text().replace("· draft · Fixture", "· draft · Stale"))
+        self.assertNotIn("index out of date", self.ok("check", "--staged"))
+        self.git("add", "docs/README.md")
+        self.assertIn("ERROR docs/README.md: index out of date; stage the commit's files, run canon.py index --staged "
+                      "and commit with no paths", self.problems(self.fails("check", "--staged")))
+        self.git("commit", "-qm", "stale")
+        for args in (("--rev", "HEAD"), ("--base", "main"), ("--rev", "HEAD", "--base", "main")):
+            with self.subTest(args):
+                self.assertIn("ERROR docs/README.md: index out of date", self.problems(self.fails("check", *args)))
+        self.assertIn("WARN docs/README.md: index out of date", self.problems(self.ok("check")))
 
     def test_check_checks_an_index_file_s_links_only_while_it_is_up_to_date(self):
         readme = self.root / "docs/README.md"
         readme.write_text(readme.read_text().replace("# Docs\n", "# Docs\n\nSee [the guide](guides/missing.md).\n", 1))
         self.assertIn("ERROR docs/README.md:3: broken link guides/missing.md", self.fails("check"))
         readme.write_text(readme.read_text().replace(" · draft · ", " · stale · "))
-        out = self.fails("check")
-        self.assertIn("ERROR docs/README.md: index out of date", out)
+        out = self.ok("check")
+        self.assertIn("WARN docs/README.md: index out of date", out)
         self.assertNotIn("broken link", out)
 
     def test_index_replaces_only_the_span_between_the_markers_and_writes_only_changed_files(self):
@@ -2404,6 +2430,94 @@ class IndexTest(CanonTest):
         readme.unlink()
         self.assertEqual(self.ok("index"), "wrote docs/README.md\n")
         self.assertEqual(readme.read_text(), "# Docs\n\n" + block + "\n")
+
+
+class StagedIndexTest(CanonTest):
+    """`index --staged` regenerates the index files of the staged tree and stages them, then the work tree's."""
+
+    def test_staged_indexes_only_the_staged_docs_and_a_commit_with_no_paths_records_that_index(self):
+        self.commit()
+        self.doc("C", "idea")
+        self.doc("C", "other")
+        self.git("add", "docs/concepts/C001-idea.md")
+        self.assertEqual(self.ok("index", "--staged"), "staged docs/README.md\nwrote docs/README.md\n")
+        idea, other = "- [C001: Idea](concepts/C001-idea.md) · draft · Fixture", "- [C002: Other]("
+        staged, work = self.git("show", ":docs/README.md"), (self.root / "docs/README.md").read_text()
+        self.assertEqual((idea in staged, other in staged, idea in work, other in work), (True, False, True, True))
+        self.ok("check", "--staged")
+        self.git("commit", "-qm", "idea")
+        self.ok("check", "--rev", "HEAD")
+
+    def test_staged_stages_only_the_index_files_keeping_their_staged_mode_and_a_second_run_does_nothing(self):
+        self.commit()
+        self.git("update-index", "--chmod=+x", "docs/README.md")
+        self.doc("C", "idea")
+        self.doc("C", "other")
+        self.ok("archive", "C002", "dropped")
+        (self.root / "src/base.py").write_text("value = 2\n")
+        self.git("add", "docs/concepts/C001-idea.md", "docs/archived/concepts/C002-other.md")
+        self.assertEqual(self.ok("index", "--staged"), "staged docs/README.md\nstaged docs/archived/README.md\n")
+        self.assertEqual(self.git("diff", "--cached", "--name-only").split("\n"),
+                         ["docs/README.md", "docs/archived/README.md", "docs/archived/concepts/C002-other.md",
+                          "docs/concepts/C001-idea.md"])
+        modes = [line.split()[0] for line in self.git("ls-files", "-s", "docs/README.md",
+                                                      "docs/archived/README.md").split("\n")]
+        self.assertEqual(modes, ["100755", "100644"])
+        self.assertFalse(os.access(str(self.root / "docs/README.md"), os.X_OK))
+        self.assertIn("- [C002: Other](concepts/C002-other.md) · dropped", self.git("show", ":docs/archived/README.md"))
+        self.ok("check", "--staged")
+        entries = self.git("ls-files", "-s")
+        self.assertEqual(self.ok("index", "--staged"), "")
+        self.assertEqual(self.git("ls-files", "-s"), entries)
+
+    def test_each_refusal_ends_staged_before_it_stages_or_writes_anything(self):
+        self.commit()
+        self.git("checkout", "-qb", "side")
+        self.edit_commit("src/base.py")
+        self.git("checkout", "-q", "main")
+        readme = self.root / "docs/README.md"
+        intact = readme.read_text()
+        broken = intact.split(canon.INDEX_END)[0]
+        self.doc("C", "idea")
+        self.git("add", "docs/concepts/C001-idea.md")
+        staged_broken = ("the staged docs/README.md has an index start marker with no end marker after it; fix the "
+                         "markers, stage the file and rerun")
+        work_broken = "docs/README.md has an index start marker with no end marker after it; fix the markers and rerun"
+        for staged, work, message in ((broken, intact, staged_broken), (intact, broken, work_broken),
+                                      (broken, broken, staged_broken)):
+            with self.subTest(staged=staged is broken, work=work is broken):
+                readme.write_text(staged)
+                self.git("add", "docs/README.md")
+                readme.write_text(work)
+                self.leaves_unchanged(message, "index", "--staged")
+        readme.write_text(intact)
+        self.git("reset", "-q")
+        (self.root / "src/base.py").write_text("value = 2\n")
+        self.git("commit", "-qam", "conflicting")
+        self.assertEqual(self.run_here("git", "merge", "-q", "side").returncode, 1)
+        self.git("add", "docs/concepts/C001-idea.md")
+        self.leaves_unchanged("resolve the merge conflicts first", "index", "--staged")
+
+    def test_outside_git_staged_ends_index_before_it_writes_anything(self):
+        top = self.outside_checkouts()
+        self.ok("init", cwd=top)
+        readme = top / "docs/README.md"
+        readme.write_text("# Docs\n")
+        result = self.canon_process("index", "--staged", cwd=top)
+        self.assertEqual((result.returncode, result.stdout + result.stderr),
+                         (1, "canon: index --staged needs a Git checkout\n"))
+        self.assertEqual(readme.read_text(), "# Docs\n")
+
+    def leaves_unchanged(self, message, *args):
+        """`canon.py args` exits 1 with `canon: message` and changes neither a work-tree file nor the Git index."""
+        def state():
+            return self.git("ls-files", "-s"), {
+                path: path.read_bytes() for path in self.root.rglob("*")
+                if path.is_file() and ".git" not in path.relative_to(self.root).parts}
+
+        before = state()
+        self.assertEqual(self.fails(*args), "canon: {}\n".format(message))
+        self.assertEqual(state(), before)
 
 
 class InitTest(CanonTest):

@@ -30,7 +30,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "59"
+CANON_VERSION = "60"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -296,12 +296,17 @@ def path_id(rel):
     return None
 
 
-def git_run(cwd, *args, env=None):
-    """The finished `git <args>` run in `cwd`; None when Git is not on PATH."""
+def git_run(cwd, *args, env=None, data=None):
+    """The finished `git <args>` run in `cwd`, the bytes `data` on its standard input when given, so that no newline
+    or locale encoding changes them; None when Git is not on PATH."""
     try:
-        return subprocess.run(["git", *args], cwd=str(cwd), env=env, capture_output=True, text=True)
+        result = subprocess.run(["git", *args], cwd=str(cwd), env=env, input=data, capture_output=True,
+                                text=data is None)
     except FileNotFoundError:
         return None
+    if data is not None:
+        result.stdout, result.stderr = result.stdout.decode(), result.stderr.decode(errors="replace")
+    return result
 
 
 def git(cwd, *args, env=None):
@@ -316,10 +321,10 @@ def git_failure(result, subcommand):
     return result.stderr.strip() or "git {} exited {}".format(subcommand, result.returncode)
 
 
-def git_checked(cwd, *args, ok=(0,)):
+def git_checked(cwd, *args, ok=(0,), data=None):
     """The finished `git <args>` run in `cwd`, for a call whose failure must not read as an empty result: an exit
     code outside `ok` ends the command with Git's reason."""
-    result = git_run(cwd, *args)
+    result = git_run(cwd, *args, data=data)
     if result is None or result.returncode not in ok:
         sys.exit("canon: git {} failed in {}: {}".format(args[0], cwd, git_failure(result, args[0])))
     return result
@@ -1220,6 +1225,22 @@ def write_indexes(repo):
     return written
 
 
+def stage_indexes(repo):
+    """Stage each index file of the staged tree `repo` whose staged entry is missing or holds other text, keeping a
+    staged mode of 100644 or 100755; the paths staged."""
+    staged = []
+    for path, text in expected_indexes(repo).items():
+        if repo.tree.is_file(path) and repo.tree.read_text(path) == text:
+            continue
+        rel = posix_rel(path, repo.root)
+        mode = repo.tree.entries.get(rel, ("100644",))[0]
+        blob = git_checked(repo.root, "hash-object", "-w", "--stdin", data=text.encode("utf-8")).stdout.strip()
+        git_checked(repo.root, "update-index", "--add", "--cacheinfo", "{},{},{}".format(
+            mode if mode in ("100644", "100755") else "100644", blob, rel))
+        staged.append(rel)
+    return staged
+
+
 # ---------------------------------------------------------------- check
 
 def check_links(repo, path, lines, start, doc=None):
@@ -1725,10 +1746,13 @@ def run_check(repo, base=None):
     for path in broken_indexes(repo):
         repo.problem("ERROR", posix_rel(path, repo.root),
                      "index start marker with no end marker after it; fix the markers")
+    stale = "index out of date" + ("; stage the commit's files, run canon.py index --staged and commit with no paths"
+                                   if repo.staged else "")
     for path, text in expected_indexes(repo).items():
         current = repo.tree.read_text(path) if repo.tree.is_file(path) else None
         if current != text:
-            repo.problem("ERROR", posix_rel(path, repo.root), "index out of date", fix=("index",))
+            repo.problem("ERROR" if base or repo.staged or repo.rev else "WARN", posix_rel(path, repo.root), stale,
+                         fix=("index",))
         elif current:
             check_links(repo, path, current.split("\n"), 0)
 
@@ -2823,8 +2847,25 @@ def rename_finding_ids(lines, fm_end, old, new):
                                  for i, line in enumerate(lines[fm_end + 1:], fm_end + 1)]
 
 
+def staged_index_repo(repo):
+    """The staged tree whose indexes `index --staged` stages, once its refusals pass, from the work tree's `repo`: each
+    ends the command before it changes any file or stages anything."""
+    if not repo.is_git:
+        sys.exit("canon: index --staged needs a Git checkout")
+    require_clean_merge(repo)
+    staged = Repo(staged=True)
+    broken = broken_indexes(staged)
+    if broken:
+        sys.exit("canon: the staged {} has an index start marker with no end marker after it; fix the markers, stage "
+                 "the file and rerun".format(posix_rel(broken[0], staged.root)))
+    return staged
+
+
 def cmd_index(repo, args):
+    staged = staged_index_repo(repo) if args.staged else None
     require_intact_indexes(repo)
+    for rel in stage_indexes(staged) if staged else ():
+        print("staged " + rel)
     for rel in write_indexes(repo):
         print("wrote " + rel)
     return 0
@@ -4249,6 +4290,8 @@ def main(argv=None):
     p.set_defaults(func=cmd_renumber)
 
     p = command(sub, "index", help="regenerate docs/README.md and docs/archived/README.md indexes")
+    p.add_argument("--staged", action="store_true",
+                   help="first regenerate the staged tree's indexes from the staged docs and stage them")
     p.set_defaults(func=cmd_index)
 
     p = command(sub, "show", help="print a doc's outline, or one section with ID#slug")

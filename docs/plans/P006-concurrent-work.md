@@ -18,7 +18,7 @@ Implements [D006: Doc model and writing rules](../designs/D006-doc-model.md) r19
 
 ## Current state
 
-S1 and S2 done. Next: S3.
+S1 to S3 done. Next: S4.
 
 ## Slices
 
@@ -81,7 +81,7 @@ Test criteria; seam: the `check --staged` command line, and a pre-commit hook th
 
 ### S3: Index levels and `index --staged`
 
-Status: todo
+Status: done
 
 Risk: `index --staged` writes the Git index, so staging any file but the index files, or a work-tree blob or mode, puts work the commit leaves out into it.
 
@@ -222,3 +222,4 @@ Test criteria; seam: the skill texts, checked by `validate.py` and by the code r
 - 2026-11-13: Started at 0083252.
 - 2026-11-13: S1 done. `canon.py` reads through `WorkTree` or `GitTree`, which lists REV with one `git ls-tree -r -z --full-tree` and reads blobs through one `git cat-file --batch` process; `Doc` takes its text from the caller and `module_dir` takes the repo. `check --rev HEAD` here takes about 0.2 s. Deviations: criterion 1's D000 `paths` directory is the `ERROR` D002 and the code give, not a `WARN`, which the plan had wrong; REV's parents and dates come from one `git log -1 --format=%P%n%ad%n%cd --date=short`. For the docs step: the compared version of a changed doc is still read with `git show <commit>:<path>`, a failure skipping the `updated` check as on the work tree; a symbolic link with an absolute target leaves the tree. `CANON_VERSION` 58.
 - 2026-11-13: S2 done. `GitTree` takes its entries from `of_commit` (REV) or `staged` (`git ls-files -s -z` stage-0 entries); one `git diff --cached -z --name-status --no-renames` gives both the intent-to-add test and the `updated` changed set. An empty blob the diff leaves out needs HEAD's paths, read with one `git ls-tree -r -z --name-only --full-tree HEAD` only when such an entry exists, its failure ending the command like the plan's other Git calls; a whole listing, not the paths as arguments, keeps the command line short in repos full of empty `__init__.py`. Git 2.43 sets `GIT_INDEX_FILE` relative to the repo root for plain `git commit` (`.git/index`); `canon.py` runs Git at the root, so it resolves the same file. `check --staged` here takes about 0.1 s. `CANON_VERSION` 59, the hook's `<V>`.
+- 2026-11-13: S3 done. `stage_indexes` writes through `git hash-object -w --stdin` and `git update-index --add --cacheinfo`; `git_run` and `git_checked` take stdin as bytes, so no newline translation or locale encoding changes an index. S1's test of every `--rev` read now takes `check --rev HEAD` on the checked-out commit as its baseline, since a stale index is a `WARN` on the work tree and an `ERROR` under `--rev`. For the docs step: whether a staged index entry holds other text is read as `check --staged` reads it, following symbolic links, which D005 leaves unsaid. `CANON_VERSION` 60.
