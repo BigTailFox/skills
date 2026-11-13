@@ -18,7 +18,7 @@ Implements [D006: Doc model and writing rules](../designs/D006-doc-model.md) r19
 
 ## Current state
 
-S1 done. Next: S2.
+S1 and S2 done. Next: S3.
 
 ## Slices
 
@@ -54,7 +54,7 @@ Test criteria; seam: the `check` command line, its output and exit status, in a 
 
 ### S2: Check the staged tree with `--staged`
 
-Status: todo
+Status: done
 
 Risk: in a pre-commit hook, Git points `GIT_INDEX_FILE` at a temporary index or at `index.lock`, so a read of the default index, or a Git call that drops the variable, checks something other than the commit.
 
@@ -221,3 +221,4 @@ Test criteria; seam: the skill texts, checked by `validate.py` and by the code r
 - 2026-11-13: Drafted against D006 r18 and its follow-ons. Found that `git ls-files -s` lists an intent-to-add entry as a stage-0 empty blob that `git commit` does not record, and that `git diff --cached` omits it, or lists it as deleted over a path HEAD holds (a scratch repository under `.tmp/`). Read literally, `D006#check`'s "stage-0 entries" would make `check --staged` and `index --staged` take such a doc for an empty file the commit does not hold, against the design's aim of checking what the commit records. The user chose to fix the design: D006 r19 leaves intent-to-add entries out of the staged tree, through a follow-up round of its gate, and `based_on` moved to D006@r19; its diff touches only S2's reader, which S3 reads through.
 - 2026-11-13: Started at 0083252.
 - 2026-11-13: S1 done. `canon.py` reads through `WorkTree` or `GitTree`, which lists REV with one `git ls-tree -r -z --full-tree` and reads blobs through one `git cat-file --batch` process; `Doc` takes its text from the caller and `module_dir` takes the repo. `check --rev HEAD` here takes about 0.2 s. Deviations: criterion 1's D000 `paths` directory is the `ERROR` D002 and the code give, not a `WARN`, which the plan had wrong; REV's parents and dates come from one `git log -1 --format=%P%n%ad%n%cd --date=short`. For the docs step: the compared version of a changed doc is still read with `git show <commit>:<path>`, a failure skipping the `updated` check as on the work tree; a symbolic link with an absolute target leaves the tree. `CANON_VERSION` 58.
+- 2026-11-13: S2 done. `GitTree` takes its entries from `of_commit` (REV) or `staged` (`git ls-files -s -z` stage-0 entries); one `git diff --cached -z --name-status --no-renames` gives both the intent-to-add test and the `updated` changed set. An empty blob the diff leaves out needs HEAD's paths, read with one `git ls-tree -r -z --name-only --full-tree HEAD` only when such an entry exists, its failure ending the command like the plan's other Git calls; a whole listing, not the paths as arguments, keeps the command line short in repos full of empty `__init__.py`. Git 2.43 sets `GIT_INDEX_FILE` relative to the repo root for plain `git commit` (`.git/index`); `canon.py` runs Git at the root, so it resolves the same file. `check --staged` here takes about 0.1 s. `CANON_VERSION` 59, the hook's `<V>`.

@@ -30,7 +30,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "58"
+CANON_VERSION = "59"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -77,6 +77,7 @@ MAX_AGENTS_LINES = 150
 MAX_SUMMARY = 160
 MAX_AREAS = 10
 MAX_LINKS = 40
+EMPTY_BLOBS = {hashlib.sha1(b"blob 0\0").hexdigest(), hashlib.sha256(b"blob 0\0").hexdigest()}
 
 FILE_RE = re.compile(r"^([CDPREI])(\d{3,})([A-Z]?)-([a-z0-9]+(?:-[a-z0-9]+)*)\.md$")
 FULL_ID_RE = re.compile(r"^([CDPREI])(\d{3,})([A-Z]?)$")
@@ -566,18 +567,51 @@ class WorkTree:
 
 
 class GitTree:
-    """The tree of a commit, read through Git and never from disk: its entries listed once with `git ls-tree`, its
-    blobs read through one `git cat-file --batch` process. Paths are absolute under the repo root, as on disk."""
+    """A tree read through Git and never from disk: `entries` maps the path of each of its entries from the repo root
+    to their mode and object name, and its blobs are read through one `git cat-file --batch` process. Paths are
+    absolute under the repo root, as on disk."""
 
-    def __init__(self, root, commit):
-        self.root, self.entries, self.dirs = root, {}, set()
+    def __init__(self, root, entries):
+        self.root, self.entries, self.dirs = root, entries, set()
+        for rel in entries:
+            self.dirs.update(rel[:i] for i, c in enumerate(rel) if c == "/")
+        self.batch, self.blobs = None, {}
+
+    @classmethod
+    def of_commit(cls, root, commit):
+        """The tree of `commit`, its entries listed once with `git ls-tree`."""
+        entries = {}
         for item in git_checked(root, "ls-tree", "-r", "-z", "--full-tree", commit).stdout.split("\0"):
             if item:
                 meta, _, rel = item.partition("\t")
                 mode, _kind, name = meta.split(" ")
-                self.entries[rel] = mode, name
-                self.dirs.update(rel[:i] for i, c in enumerate(rel) if c == "/")
-        self.batch, self.blobs = None, {}
+                entries[rel] = mode, name
+        return cls(root, entries)
+
+    @classmethod
+    def staged(cls, root, changes, has_head):
+        """The staged tree: the stage-0 entries of the Git index, the file `GIT_INDEX_FILE` names when it is set,
+        listed once with `git ls-files -s`, other than intent-to-add entries, which no commit records. `git ls-files`
+        lists such an entry as the empty blob, and `changes`, the `git diff --cached` status of each path the staged
+        tree changes against HEAD, or against the empty tree without HEAD, lists it as deleted over a path HEAD holds
+        and leaves it out elsewhere: an empty blob `changes` leaves out is a file only where HEAD holds the path."""
+        entries, unlisted = {}, []
+        for item in git_checked(root, "ls-files", "-s", "-z").stdout.split("\0"):
+            if not item:
+                continue
+            meta, _, rel = item.partition("\t")
+            mode, name, stage = meta.split(" ")
+            if stage != "0" or name in EMPTY_BLOBS and changes.get(rel) == "D":
+                continue
+            if name in EMPTY_BLOBS and rel not in changes:
+                unlisted.append(rel)
+            entries[rel] = mode, name
+        if unlisted:
+            held = git_checked(root, "ls-tree", "-r", "-z", "--name-only", "--full-tree", "HEAD").stdout.split("\0") \
+                if has_head else []
+            for rel in set(unlisted) - set(held):
+                del entries[rel]
+        return cls(root, entries)
 
     def blob(self, name):
         """The content of the blob with object name `name`; a failure, a `missing` reply included, ends the command."""
@@ -799,9 +833,9 @@ class Doc:
 
 
 class Repo:
-    def __init__(self, start=None, rev=None, tip="HEAD"):
-        """The repository around `start`, read from the work tree, or from the tree of commit `rev`, a full object
-        name, when given; `tip` names the branch's tip, HEAD or `rev`, in messages."""
+    def __init__(self, start=None, rev=None, tip="HEAD", staged=False):
+        """The repository around `start`, read from the work tree, from the tree of commit `rev`, a full object name,
+        when given, or from the staged tree when `staged`; `tip` names the branch's tip, HEAD or `rev`, in messages."""
         start = Path(start or os.getcwd())
         top = git(start, "rev-parse", "--show-toplevel")
         self.is_git = top is not None
@@ -809,17 +843,23 @@ class Repo:
         self.root = Path(os.path.realpath(top.strip() if top else str(start)))
         self.has_head = self.is_git and git_checked(self.root, "rev-parse", "--verify", "-q", "HEAD",
                                                     ok=(0, 1)).returncode == 0
-        self.rev, self.tip, self.head = rev, tip, rev or "HEAD"
+        self.rev, self.staged, self.tip, self.head = rev, staged, tip, rev or "HEAD"
+        self.compared, self.days = "HEAD" if self.has_head else None, {today()}
         if rev:
-            self.tree = GitTree(self.root, rev)
+            self.tree = GitTree.of_commit(self.root, rev)
             out = git_checked(self.root, "log", "-1", "--format=%P%n%ad%n%cd", "--date=short", rev).stdout
             parents, *days = out.split("\n")[:3]
             self.compared = parents if len(parents.split()) == 1 else None
-            self.days = set(days)
+            self.diff_args, self.days = (self.compared, rev), set(days)
+        elif staged:
+            out = git_checked(self.root, "diff", "--cached", "-z", "--name-status", "--no-renames").stdout
+            fields = out.split("\0")
+            self.staged_changes = dict(zip(fields[1::2], fields[::2]))
+            self.tree = GitTree.staged(self.root, self.staged_changes, self.has_head)
+            self.diff_args = ("--cached", "HEAD")
         else:
             self.tree = WorkTree(self.root, self.is_git)
-            self.compared = "HEAD" if self.has_head else None
-            self.days = {today()}
+            self.diff_args = ("HEAD",)
         self.files = self.tree.files()
         parents = [f.rsplit("/", 1)[0] if "/" in f else "" for f in self.files
                    if f.rsplit("/", 1)[-1] == "AGENTS.md" and not self.is_installed_skill(f)]
@@ -1008,7 +1048,7 @@ class Repo:
         base with `base`."""
         ranges = []
         if self.compared:
-            ranges.append(((self.compared, self.rev) if self.rev else (self.compared,), self.compared))
+            ranges.append((self.diff_args, self.compared))
         if base and (self.rev or self.has_head):
             ranges.append(((base + "..." + self.head,), None))
         deleted = []
@@ -1030,12 +1070,15 @@ class Repo:
 
     def checked_changes(self):
         """The files the tree checked changes against the commit compared: for the work tree its changes against
-        HEAD, under `rev` the files `rev` changes against its only parent; none without that commit."""
+        HEAD, under `staged` the staged tree's, under `rev` the files `rev` changes against its only parent; none
+        without that commit."""
         if self.compared is None:
             return set()
+        if self.staged:
+            return set(self.staged_changes)
         if self.rev is None:
             return set(self.changed_files())
-        out = git_checked(self.root, "diff", "-z", "--name-only", "--no-renames", self.compared, self.rev).stdout
+        out = git_checked(self.root, "diff", "-z", "--name-only", "--no-renames", *self.diff_args).stdout
         return {f for f in out.split("\0") if f}
 
     def project_files(self, root):
@@ -1927,9 +1970,11 @@ def find_root(repo, root_arg):
 
 
 def check_repo(args):
-    """The repository `check` reads, the work tree or under `--rev` commit REV's tree, once its flags pass: a flag
-    error ends the command before any doc is read."""
-    if args.rev is None:
+    """The repository `check` reads, the work tree, the staged tree under `--staged` or commit REV's tree under
+    `--rev`, once its flags pass: a flag error ends the command before any doc is read."""
+    if args.staged and args.rev is not None:
+        sys.exit("canon: --staged and --rev check different trees; give one of them")
+    if not args.staged and args.rev is None:
         return Repo()
     if args.fix:
         sys.exit("canon: --fix edits the work tree, which --staged and --rev do not check; drop one of them")
@@ -1937,6 +1982,10 @@ def check_repo(args):
     if top is None:
         sys.exit("canon: --staged and --rev read Git; run check in a Git checkout")
     root = Path(os.path.realpath(top.strip()))
+    if args.staged:
+        if git_checked(root, "ls-files", "-u").stdout:
+            sys.exit("canon: resolve the merge conflicts first")
+        return Repo(staged=True)
     commit = None if args.rev.startswith("-") else git(root, "rev-parse", "--verify", "-q", args.rev + "^{commit}")
     if commit is None:
         sys.exit(unknown_ref(args.rev))
@@ -1965,7 +2014,8 @@ def cmd_check(repo, args):
         repo.problem("WARN", "AGENTS.md", args.version_notice)
     errors, warnings = print_problems(repo)
     fixable = sum(1 for p in repo.problems if p[4])
-    tail = "; {} fixable with --fix".format(fixable) if fixable and not args.fix and not repo.rev else ""
+    tail = "; {} fixable with --fix".format(fixable) if fixable and isinstance(repo.tree, WorkTree) and not args.fix \
+        else ""
     print("canon check: {} docs, {} errors, {} warnings{}".format(len(repo.docs), errors, warnings, tail))
     return 1 if errors else 0
 
@@ -4142,6 +4192,8 @@ def main(argv=None):
                    help="apply mechanical fixes (refs, updated, implemented, as_built, indexes)")
     p.add_argument("--base", help="also check this branch against a ref, e.g. origin/main: deleted docs, id "
                                   "collisions, revisions pending review and unfinished docs fail")
+    p.add_argument("--staged", action="store_true",
+                   help="check the staged tree, what `git commit` records, instead of the work tree")
     p.add_argument("--rev", metavar="REV", help="check the tree of commit REV instead of the work tree")
     p.set_defaults(func=cmd_check)
 

@@ -1165,6 +1165,15 @@ class GitFailureTest(CanonTest):
         self.assertEqual(self.fails_with_git("merge-base", "check", "--rev", "main", "--base", "main"),
                          "canon: cannot diff against main...main: fatal: boom\n")
 
+    def test_a_failing_index_listing_diff_or_head_listing_ends_check_staged_instead_of_finding_nothing(self):
+        self.design()
+        (self.root / "src/__init__.py").write_text("")
+        self.commit()
+        for failing, subcommand in (("ls-files -u", "ls-files"), ("ls-files -s", "ls-files"), ("diff", "diff"),
+                                    ("ls-tree", "ls-tree")):
+            with self.subTest(failing):
+                self.assertEqual(self.fails_with_git(failing, "check", "--staged"), self.message(subcommand))
+
     def test_a_missing_blob_of_the_commit_ends_check_rev(self):
         self.design()
         self.commit()
@@ -1399,6 +1408,175 @@ class RevCheckTest(CanonTest):
         self.assertEqual((result.returncode, result.stdout + result.stderr),
                          (1, "canon: --staged and --rev read Git; run check in a Git checkout\n"))
         self.assertEqual([p for p in top.rglob("*") if not within(p, top / ".agents")], [])
+
+
+class StagedCheckTest(CanonTest):
+    """`check --staged` checks the staged tree, what `git commit` records, whatever the work tree holds."""
+
+    MISSING = "ERROR docs/designs/D001-area.md: missing section `## Decisions`"
+
+    def test_staged_reports_the_errors_the_index_holds_and_not_those_only_the_work_tree_holds(self):
+        design = self.design()
+        self.commit()
+        clean = design.read_text()
+        design.write_text(clean.replace("## Decisions", "## Choices"))
+        self.assertIn(self.MISSING, self.problems(self.fails("check")))
+        self.assertNotIn(self.MISSING, self.problems(self.ok("check", "--staged")))
+        self.git("add", "-A")
+        design.write_text(clean)
+        self.assertNotIn(self.MISSING, self.problems(self.ok("check")))
+        self.assertIn(self.MISSING, self.problems(self.fails("check", "--staged")))
+
+    def test_a_pre_commit_hook_running_staged_checks_what_each_form_of_git_commit_records(self):
+        self.design()
+        self.design("other", paths=["lib/**"])
+        self.commit()
+        hook = self.root / self.git("rev-parse", "--git-path", "hooks/pre-commit")
+        hook.parent.mkdir(parents=True, exist_ok=True)
+        hook.write_text('#!/bin/sh\nexec "{}" -B {} check --staged\n'.format(sys.executable, INSTALL))
+        hook.chmod(0o755)
+        self.git("worktree", "add", "-q", "--track", "-b", "b", ".worktrees/b", "main")
+        for name in (".", ".worktrees/b"):
+            top = self.root / name
+            with self.subTest(checkout=name):
+                self.install(top, True)
+                self.commits_through_the_hook(top)
+
+    def commits_through_the_hook(self, top):
+        def git(*args):
+            return subprocess.run(["git", *args], cwd=str(top), capture_output=True, text=True)
+
+        def rejected(*args):
+            head = git("rev-parse", "HEAD").stdout
+            result = git("commit", "-qm", "x", *args)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn(missing, result.stderr)
+            self.assertEqual(git("rev-parse", "HEAD").stdout, head)
+
+        area, other = top / "docs/designs/D001-area.md", top / "docs/designs/D002-other.md"
+        missing = "ERROR docs/designs/D002-other.md: missing section `## Decisions`"
+        clean = other.read_text()
+        other.write_text(clean.replace("## Decisions", "## Choices"))
+        git("add", "docs/designs/D002-other.md")
+        area.write_text(area.read_text() + "\nMore.\n")
+        result = git("commit", "-qm", "x", "docs/designs/D001-area.md")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(git("show", "--name-only", "--format=", "HEAD").stdout, "docs/designs/D001-area.md\n")
+        self.assertEqual(git("diff", "--cached", "--name-only").stdout, "docs/designs/D002-other.md\n")
+        other.write_text(clean)
+        rejected()
+        git("reset", "-q")
+        other.write_text(clean.replace("## Decisions", "## Choices"))
+        self.ok("check", "--staged", cwd=top)
+        rejected("-a")
+        other.write_text(clean)
+
+    def test_updated_and_deleted_docs_compare_the_staged_tree_with_head(self):
+        design = self.design(created="2020-01-01", updated="2020-01-01")
+        self.design("other", paths=["lib/**"])
+        self.design("third", paths=["etc/**"])
+        self.commit()
+        stale = "ERROR docs/designs/D001-area.md: content changed but `updated` was not bumped"
+        deleted = "ERROR docs/designs/D002-other.md: D002 was deleted; restore it and archive it instead"
+        clean = design.read_text()
+        design.write_text(clean + "\nMore.\n")
+        self.git("add", "-A")
+        self.assertIn(stale, self.problems(self.fails("check", "--staged")))
+        design.write_text(clean)
+        self.assertNotIn(stale, self.problems(self.canon("check").stdout))
+        self.assertIn(stale, self.problems(self.fails("check", "--staged")))
+        self.git("reset", "-q", "--hard")
+        self.git("rm", "-q", "docs/designs/D002-other.md")
+        self.assertIn(deleted, self.problems(self.fails("check", "--staged")))
+        self.git("reset", "-q", "--hard")
+        self.git("rm", "-q", "--cached", "docs/designs/D002-other.md")
+        self.assertNotIn("was deleted", self.canon("check").stdout)
+        self.assertIn(deleted, self.problems(self.fails("check", "--staged")))
+        self.git("reset", "-q", "--hard")
+        self.git("mv", "docs/designs/D003-third.md", "docs/designs/D003-renamed.md")
+        self.assertNotIn("was deleted", self.canon("check", "--staged").stdout)
+        self.git("reset", "-q", "--hard")
+        self.git("checkout", "-q", "--orphan", "unborn")
+        design.write_text(clean + "\nMore.\n")
+        self.git("rm", "-qf", "docs/designs/D002-other.md")
+        self.git("add", "-A")
+        out = self.canon("check", "--staged").stdout
+        self.assertNotIn(stale, self.problems(out))
+        self.assertNotIn("was deleted", out)
+
+    def test_intent_to_add_entries_are_no_files_and_staged_empty_docs_are(self):
+        design = self.design()
+        self.design("gone", paths=["lib/**"])
+        self.design("emptied", paths=["etc/**"])
+        (self.root / "docs/designs/D004-held.md").write_text("")
+        self.commit(check=False)
+        link_line = len(design.read_text().split("\n")) + 1
+        design.write_text(design.read_text() + "\nSee [the draft](D005-draft.md).\n")
+        (self.root / "docs/designs/D005-draft.md").write_text("# D005: Draft\n")
+        (self.root / "docs/designs/D003-emptied.md").write_text("")
+        (self.root / "docs/designs/D006-fresh.md").write_text("")
+        self.git("add", "-A")
+        self.git("reset", "-q", "docs/designs/D005-draft.md")
+        self.git("add", "-N", "docs/designs/D005-draft.md")
+        self.git("rm", "-q", "--cached", "docs/designs/D002-gone.md")
+        self.git("add", "-N", "docs/designs/D002-gone.md")
+        frontmatter = "missing or unterminated `---` frontmatter"
+        expected = [
+            "ERROR docs/designs/D001-area.md:{}: broken link D005-draft.md".format(link_line),
+            "ERROR docs/designs/D002-gone.md: D002 was deleted; restore it and archive it instead",
+            "ERROR docs/designs/D003-emptied.md: " + frontmatter,
+            "ERROR docs/designs/D004-held.md: " + frontmatter,
+            "ERROR docs/designs/D006-fresh.md: " + frontmatter]
+        self.assertEqual(self.design_problems(self.fails("check", "--staged")), expected)
+        self.git("checkout", "-q", "--orphan", "unborn")
+        self.assertEqual(self.design_problems(self.fails("check", "--staged")), expected[:1] + expected[2:])
+
+    def test_the_flag_errors_end_staged_before_any_doc_is_read_and_change_no_file_or_index_entry(self):
+        self.design()
+        self.doc("C", "idea", body=CONCEPT.format("Extends [D001: Area](../designs/D001-area.md)."))
+        self.commit(check=False)
+        self.git("checkout", "-qb", "side")
+        self.edit_commit("src/base.py")
+        self.git("checkout", "-q", "main")
+        (self.root / "src/base.py").write_text("value = 2\n")
+        self.git("add", "src/base.py")
+        both = "--staged and --rev check different trees; give one of them"
+        fix = "--fix edits the work tree, which --staged and --rev do not check; drop one of them"
+        self.leaves_unchanged(both, "check", "--staged", "--rev", "HEAD")
+        self.leaves_unchanged(both, "check", "--fix", "--staged", "--rev", "nosuch")
+        self.leaves_unchanged(fix, "check", "--fix", "--staged")
+        self.git("commit", "-qm", "conflicting")
+        self.assertEqual(self.run_here("git", "merge", "-q", "side").returncode, 1)
+        self.assertEqual(self.git("ls-files", "-u").count("src/base.py"), 3)
+        self.leaves_unchanged("resolve the merge conflicts first", "check", "--staged")
+        self.leaves_unchanged(fix, "check", "--fix", "--staged")
+
+    def test_staged_prints_no_fixable_tail(self):
+        self.design()
+        self.doc("C", "idea", body=CONCEPT.format("Extends [D001: Area](../designs/D001-area.md)."))
+        self.ok("index")
+        self.git("add", "-A")
+        self.assertRegex(self.fails("check"), r"; 1 fixable with --fix\n$")
+        out = self.fails("check", "--staged")
+        self.assertIn("ERROR docs/concepts/C001-idea.md: linked docs missing from `refs`: D001\n", out)
+        self.assertRegex(out, r"\ncanon check: 3 docs, 1 errors, \d+ warnings\n$")
+
+    def test_outside_git_staged_ends_check_and_changes_no_file(self):
+        top = self.outside_checkouts()
+        result = self.canon_process("check", "--staged", cwd=top)
+        self.assertEqual((result.returncode, result.stdout + result.stderr),
+                         (1, "canon: --staged and --rev read Git; run check in a Git checkout\n"))
+        self.assertEqual([p for p in top.rglob("*") if not within(p, top / ".agents")], [])
+
+    def leaves_unchanged(self, message, *args):
+        """`canon.py args` exits 1 with `canon: message` and changes neither a file nor the Git index."""
+        before = self.git("status", "--porcelain"), self.git("ls-files", "-s")
+        self.assertEqual(self.fails(*args), "canon: {}\n".format(message))
+        self.assertEqual((self.git("status", "--porcelain"), self.git("ls-files", "-s")), before)
+
+    def design_problems(self, out):
+        """The problems of `check`'s output on the designs other than D000."""
+        return [p for p in self.problems(out) if re.search(r" docs/designs/D00[1-9]", p)]
 
 
 class KnownIssuesTest(CanonTest):
