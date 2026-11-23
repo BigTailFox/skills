@@ -33,7 +33,7 @@ When `canon.py` says it runs only from an install inside the project, as when th
 | `snapshot` | Record the work tree, untracked files included, and print the snapshot commit, for the diffs of a review's confirmation and follow-up rounds (the `canon-blind-review` skill). |
 | `init`, `adopt` | Project setup, upgrades and migration; the user runs them through the `canon-init` skill. |
 
-In `trace` calls, `<skill>` is the followed skill directory (`canon-blind-review` for gates and follow-ups, otherwise `canon`), `<model>` your host's model ID, and `<parent>` the invoking workflow's open unit ID, if any. When a workflow's first `start` prints `trace <id>`, use that ID and follow [trace.md](trace.md). Otherwise skip its remaining calls. A separately requested recheck uses the saved review ID.
+In `trace` calls, `<skill>` is the followed skill's directory path (`canon-blind-review`'s for gates and follow-ups, `canon`'s otherwise). Use your host's model ID for `<model>` and the invoking workflow's open unit ID, if any, for `<parent>`. When the first `start` prints `trace <id>`, use it and follow [trace.md](trace.md). Otherwise skip the workflow's remaining calls. A separately requested recheck uses the saved review ID.
 
 ## Reading docs
 

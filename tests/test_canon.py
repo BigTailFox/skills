@@ -4443,23 +4443,25 @@ class HistoryTest(TraceCase):
         reversed_time = self.start_record("design", 5)
         missing = self.start_record("design", 20)
         missing.pop("at")
+        naive = self.start_record("design", 22, at="2025-01-01T00:00:22")
         valid = self.start_record("design", 40)
         orphan = self.end_record(self.start_record("retro", 60), 70)
         review = self.start_record("gate", 80)
         records = [{"v": 1, "type": "manifest", "digest": "a" * 64, "skills": {}}, reversed_time,
-                   self.end_record(reversed_time, 4), missing, self.end_record(missing, 25),
+                   self.end_record(reversed_time, 4), missing, self.end_record(missing, 25), naive,
                    [], {"v": True}, {"v": 1, "type": "start", "id": []}, {"v": 2, "type": "start"},
                    self.start_record("slice", 50, valid, slice=["broken"]), orphan, valid, self.end_record(valid, 44),
-                   review, self.end_record(review, 85, dispositions={"reviewers": [[]]})]
+                   self.start_record("slice", 57, slice="S4"), review,
+                   self.end_record(review, 85, dispositions={"reviewers": [[]]})]
         self.write_log(records)
         with self.events.open("ab") as events:
             events.write(b'\xff\n{"v":1\n')
         out = self.trace("history")
-        self.assertIn("7 malformed, 1 unsupported", out)
+        self.assertIn("8 malformed, 1 unsupported", out)
         self.assertIn("orphan end " + orphan["id"], out)
-        for start in (reversed_time, missing):
+        for start in (reversed_time, missing, naive):
             self.assertIn("wall=unknown", self.row(out, start))
-        self.assertIn("design: 3 units, 4 measured wall seconds", out)
+        self.assertIn("design: 4 units, 4 measured wall seconds", out)
         self.assertIn("wall=4s", self.row(self.trace("history", valid["id"]), valid))
         damaged = self.trace("history", review["id"])
         self.assertIn("wall=5s", self.row(damaged, review))
@@ -4500,15 +4502,78 @@ class HistoryTest(TraceCase):
         self.write_log([closed, self.end_record(closed, 1, dispositions=DispositionsTest.GATE), pending, design,
                         self.end_record(design, 5), record, dict(record, id=pending["id"]), dict(record, id=absent["id"]),
                         dict(record, id=design["id"]), dict(record, snapshot="bad"),
-                        dict(record, finding="same-model:F1", report="known")])
+                        dict(record, kind="design"), dict(record, finding="same-model:F1", report="wrong-author"),
+                        dict(record, finding="same-model:F1", model="claude-opus-5.5", report="known")])
         out = self.trace("history")
         for start in (closed, pending, absent, design):
             self.assertIn("orphan recheck {} gate finding=same-model:F9".format(start["id"]), out)
         self.assertIn("4 orphan rechecks", out)
-        self.assertIn("1 malformed, 0 unsupported", out)
+        self.assertIn("3 malformed, 0 unsupported", out)
         detail = self.trace("history", closed["id"])
-        self.assertIn("model=X report=known archive=missing", detail)
+        self.assertIn("model=claude-opus-5.5 report=known archive=missing", detail)
+        self.assertNotIn("wrong-author", detail)
         self.assertNotIn("report=import", detail)
+
+    def test_conflicting_imports_cannot_choose_a_latest_verdict_by_file_order(self):
+        closed = self.start_record("gate", 0)
+        initial = [closed, self.end_record(closed, 1, dispositions=DispositionsTest.GATE)]
+        good = dict(v=1, type="recheck", id=closed["id"], kind="gate", at=self.at(6).isoformat(),
+                    finding="same-model:F1", reviewer="same-model", model="claude-opus-5.5",
+                    snapshot="a" * 40, report="first", result="resolved", order=1)
+        higher = dict(good, report="next", order=2, result="not-resolved")
+        for conflict in (dict(higher, report="other", result="resolved"),
+                         dict(higher, order=3, result="resolved")):
+            for pair in ([higher, conflict], [conflict, higher]):
+                self.write_log(initial + [good] + pair)
+                out = self.trace("history", closed["id"])
+                self.assertIn("highest verified order=1 result=resolved", out)
+                self.assertIn("latest=unknown (conflicting evidence)", out)
+                self.assertIn("2 malformed", out)
+
+    def test_history_uses_the_plan_slice_completion_commit_before_an_event_boundary(self):
+        plan = self.plan_file("delivery")
+        header = plan.read_text().split("\n# ", 1)[0]
+        plan.write_text(header + "\n# P001: Delivery\n\n" + PLAN.format("fixture"))
+        self.commit(check=False)
+        self.trace("on")
+        parent = self.start("implement", "P001")
+        unit = self.start("slice", "P001", "--slice", "S1", "--parent", parent)
+        plan.write_text(plan.read_text().replace("### S1: First", "### S1: Implement delivery"))
+        self.commit(check=False)
+        self.assertIn("outcome=open", self.trace("history", unit))
+        plan.write_text(plan.read_text().replace("Status: todo", "Status: done"))
+        self.commit(check=False)
+        commit = self.git("rev-parse", "HEAD")
+        self.assertIn("commit=" + commit, self.trace("history", unit))
+        self.start("code-review", "P001", "--parent", parent)
+        records = self.lines()
+        started = next(record for record in records if record.get("id") == unit)
+        completed_at = datetime.datetime.fromisoformat(self.git("show", "-s", "--format=%cI", commit))
+        started["at"] = (completed_at - datetime.timedelta(seconds=13)).isoformat()
+        self.write_log(records)
+        out = self.trace("history")
+        self.assertIn("commit=" + commit, self.row(out, started))
+        self.assertIn("outcome=committed wall=13s", self.row(out, started))
+        self.assertIn("slice: 1 unit, 13 measured wall seconds", out)
+
+    def test_slice_history_rejects_another_plan_revision_and_ambiguous_branch_completions(self):
+        plan = self.plan_file("delivery")
+        header = plan.read_text().split("\n# ", 1)[0]
+        plan.write_text(header + "\n# P001: Delivery\n\n" + PLAN.format("fixture"))
+        self.commit(check=False)
+        base = self.git("rev-parse", "HEAD")
+        self.trace("on")
+        parent = self.start("implement", "P001")
+        unit = self.start("slice", "P001", "--slice", "S1", "--parent", parent)
+        content = plan.read_text().replace("Status: todo", "Status: done")
+        plan.write_text(content.replace("revision: 1", "revision: 2"))
+        self.commit(check=False)
+        self.assertIn("outcome=open", self.trace("history", unit))
+        for branch in ("one", "two"):
+            self.git("checkout", "-qb", branch, base)
+            plan.write_text(content + "\n" + branch + "\n")
+            self.commit(check=False)
+        self.assertIn("outcome=open", self.trace("history", unit))
 
     def test_scoped_open_reviews_and_legacy_reviewers_findings_and_confirmations(self):
         self.trace("on")
@@ -5602,9 +5667,10 @@ class ReviewContinuationTest(TraceCase):
                     "findings": [{"by": ["same-model:F1"], "severity": "major", "disposition": "accepted",
                                   "confirmed": "resolved"}], "new_blockers": 0}
         self.trace("end", first, "handoff", "--dir", str(topic), "--input", "-", stdin=json.dumps(evidence))
-        time.sleep(max(0, created + 1 - time.time()))
         second = self.start("gate", "D000", "--continues", first)
-        self.assertLess(report.stat().st_mtime, self.started(second).timestamp())
+        # The reused file predates the continuation, inside the same displayed wall-clock second.
+        same_second = int(self.started(second).timestamp()) * 10 ** 9
+        os.utime(report, ns=(same_second, same_second))
         evidence["reviewers"].append({"role": "cross-family", "model": "Reviewer-B", "id": "b", "targets": ["D000@r1"]})
         (topic / "cross-family.md").write_text("Verdict: approve\n")
         self.trace("end", second, "delivered", "--dir", str(topic), "--input", "-", stdin=json.dumps(evidence))
@@ -5629,13 +5695,20 @@ class RecheckTest(TraceCase):
         return ["recheck", unit, finding, "--reviewer", reviewer, "--snapshot", snapshot, "--result", result,
                 "--report", report, "--order", order] + (["--model", model] if model is not None else [])
 
+    def test_unknown_unit_creates_no_trace_directory_or_lock(self):
+        self.rejects(*self.arguments("20250101T000000Z-000001"))
+        self.assertFalse(self.events.parent.exists())
+
     def test_concurrent_alias_retries_append_one_canonical_event_and_preserve_the_original_end(self):
         unit = self.start("gate")
         self.trace("end", unit, "delivered", "--input", "-", stdin=json.dumps(DispositionsTest.GATE))
         before = self.events.read_bytes()
         with ThreadPoolExecutor(max_workers=2) as pool:
-            results = list(pool.map(lambda alias: self.trace(*self.arguments(unit, alias)),
-                                    ("same-model:F1", "cross-family:F2")))
+            with self.lock_held("events.lock"):
+                calls = [pool.submit(self.trace, *self.arguments(unit, alias))
+                         for alias in ("same-model:F1", "cross-family:F2")]
+                time.sleep(1)
+            results = [call.result() for call in calls]
         self.assertEqual(results, ["trace {} rechecked\n".format(unit)] * 2)
         self.assertTrue(self.events.read_bytes().startswith(before))
         [record] = [line for line in self.lines() if line["type"] == "recheck"]
@@ -5757,6 +5830,7 @@ class RecheckTest(TraceCase):
         main_unit = close_gate()
         with self.read_only(self.events.parent):
             refused(main_unit, "store")
+            self.assertFalse(fallback.parent.exists())
             local_unit = close_gate()
             self.assertEqual(self.trace(*self.arguments(local_unit), cwd=tree), "trace {} rechecked\n".format(local_unit))
         refused(local_unit, "store")

@@ -69,11 +69,13 @@ At launch, record the absolute checkout, round, report path, provider, model and
 
 Keep each reviewer's files in `.canon/canon-blind-review/<topic>/`. A gate's topic is its target's id and the revision it reviews, `<id>-r<N>` such as `D007-r4`, a gate with follow-on targets too, so a later gate never overwrites it; a code review's is the one the `canon-code-review` skill names; any other review's is a slug of what it reviews. Each [follow-up round](#follow-up-round) of a gate keeps its files, named the same way, in `<topic>/followup-<k>/`, numbered from 1.
 
-Give each independently numbered report a key. Start with the role (`same-model`, `cross-family`, or the caller's axis) and number further reports in that role from 2, e.g. `cross-family-2`. Before launch write `<key>-prompt.md`. Only a complete terminal report from this run goes in `<key>.md`. Write the ID of the run whose report you merged to `<key>-id.txt`. Leave that file empty when the merged run has no ID, including after a fallback. A confirmation uses `<key>-confirm-prompt.md` and `<key>-confirm.md`. Write each fresh confirmation's ID to `<key>-confirm-id.txt`, preserving the original report and ID.
+Give each independently numbered report a key. Start with the role (`same-model`, `cross-family`, or the caller's axis) and number further reports in that role from 2, e.g. `cross-family-2`. Before launch write `<key>-prompt.md`. Only a complete terminal report from this run goes in `<key>.md`. Write the ID of the run whose report you merged to `<key>-id.txt`. Leave it empty when the merged run has no ID, including after a fallback.
+
+For a source with one confirmer, save its prompt, report and fresh run ID under `<key>-confirm-prompt.md`, `<key>-confirm.md` and `<key>-confirm-id.txt`. If one source goes to multiple confirmers, use a separate stem for each pair, e.g. `cross-family-confirm-spec` and `cross-family-confirm-standards`. Each gets its own `<stem>-prompt.md`, `<stem>.md`, `<stem>-id.txt` and `<stem>-snapshot.txt`. Preserve the original report and ID.
 
 Save a host subagent's terminal report verbatim and merge it in its original language. Once that report is saved and newer than its prompt, ignore repeated or late completion notices for that run.
 
-Before the first launch in each round, run `canon.py snapshot` from the checkout root and keep its output in the round's `snapshot.txt`. Preserve it through a handoff. Save the input snapshot for each report in `<key>-snapshot.txt`. Take a fresh snapshot for a late or supplemental pass. Save each confirmation's fixed snapshot in `<key>-snapshot-confirm.txt` and the round's latest fixed snapshot in `snapshot-confirm.txt`. Check a snapshot with `git -C .canon/canon/snapshots cat-file -e <commit>`. When tracing supplies an ID, keep it with the round's evidence as the `canon` skill's `trace.md` directs.
+Before the first launch in each round, run `canon.py snapshot` from the checkout root and keep its output in the round's `snapshot.txt`. Preserve it through a handoff. Save the input snapshot for each report in `<key>-snapshot.txt`. Take a fresh snapshot for a late or supplemental pass. For a single confirmer save the fixed snapshot in `<key>-snapshot-confirm.txt`. Keep the round's latest fixed snapshot in `snapshot-confirm.txt`. Check a snapshot with `git -C .canon/canon/snapshots cat-file -e <commit>`. When tracing supplies an ID, keep it with the round's evidence as the `canon` skill's `trace.md` directs.
 
 ## Stopped runs
 
@@ -85,15 +87,13 @@ User cancellation ends the run. For a command, distinguish a caller timeout from
 
 On the first stopped attempt, give the reviewer one more attempt. This also applies to a host reviewer whose run record shows it stopped without a report. Resume it by its ID when possible, asking only that it continue where it stopped and finish the requested report. For a terminally failed or non-resumable run, launch the same reviewer fresh with the same prompt. On the second stop, proceed by role.
 
-- For a **first-round cross-family reviewer**, try the next eligible reviewer in the configured order for the missing report, then the [manual fallback](#manual-fallback) after the last. Credit only reviewers whose reports you merged.
+- For a **first-round cross-family reviewer**, follow the `canon` workflow's Reviewer file to select an unused eligible replacement for these targets and round. Record the outstanding pass and use the [manual fallback](#manual-fallback) when none is available or the user required that specific reviewer. Credit each completed pass once.
 - **Cross-family reviewer in a confirmation or follow-up round**: its part goes to the resumed same-model reviewer, as [Confirmation](#confirmation) and [Follow-up round](#follow-up-round) say.
 - **Same-model reviewer**, a code review's axis reviewers included: the review waits for the user.
 
 ## Manual fallback
 
 When an applicable `none` is configured, setup cannot write the reviewer file, or the first-round routes are exhausted, tell the user why. The `canon-init` skill's reviewer setup can change a configured `none`. Give the user the full prompt for the current targets in one code block to run in an independent tool that can read the repository. For a gate, follow the `canon` workflow's Pending reviews, including `pending.md`, L1 withdrawal and an explicit L2 decision for named revisions. An L2 code review waits for the report. When the report arrives, verify which snapshot and targets it covered, save it and its prompt under the assigned key, leave its ID file empty and credit `manual:<model>`.
-
-For a target added during fixes or in a follow-up, follow the `canon` workflow's Target coverage. Launch a fresh blind reviewer for each missing role with all the applicable first-round criteria, the missing targets and their usual `Changes since` commit. Give each such report its own next key and snapshot, including when its model already wrote another report.
 
 ## Merge
 
@@ -115,7 +115,7 @@ End with one line: Verdict: approve | revise
 - Take the fixed snapshot ([Review files](#review-files)). Run `git -C .canon/canon/snapshots diff <input> <fixed> -- <paths>` using that source's input and confirmation snapshots and the paths its fixes touched. For a legacy first-round report use the shared round snapshots it actually saw. When either commit is unavailable or the command fails, send the no-diff choice.
 - Resume each reviewer by its kept id, so it judges the fixes against its own findings.
 - A cross-family reviewer that runs as a command, and a reviewer that cannot be resumed, gets a new run of the same reviewer with the same scoped prompt. Keep the full report in the round's findings file.
-- For a manual-fallback reviewer, or a cross-family reviewer whose confirmation run stops twice, assign its findings selected for confirmation to the resumed same-model reviewer. Use the same prompt and the actual source key, e.g. `cross-family-2:F<n>`. In a code review, each goes to the resumed reviewer of its axis. Keep the prompt, result and run ID with the source's confirmation files, and record the actual confirmer's key in the dispositions.
+- For a manual-fallback reviewer, or a cross-family reviewer whose confirmation run stops twice, assign its findings selected for confirmation to the resumed same-model reviewer. Use the same prompt and the actual source key, e.g. `cross-family-2:F<n>`. In a code review, each goes to the resumed reviewer of its axis. Save each delegate's evidence as in [Review files](#review-files) and record its actual reviewer key in the dispositions.
 - Blockers still open after this round go to the user.
 
 ### Targeted recheck

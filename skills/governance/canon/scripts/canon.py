@@ -30,7 +30,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "72"
+CANON_VERSION = "73"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -4224,7 +4224,8 @@ def trace_start(args):
     trace_dir = holder / TRACE_DIR
     parent = start_parent(trace_dir, args)
     host, conversation = trace_host()
-    now = datetime.datetime.now(datetime.timezone.utc)
+    started_ns = time.time_ns()
+    now = datetime.datetime.fromtimestamp(started_ns // 10 ** 9, datetime.timezone.utc)
     unit = new_id(now)
     paths = trace_doc_paths(root, is_git, args.docs)
     line = {"v": 1, "type": "start", "id": unit, "kind": args.kind,
@@ -4237,6 +4238,7 @@ def trace_start(args):
     line["base"] = base
     if args.continues is not None:
         line["continues"] = args.continues
+        line["archive_since_ns"] = started_ns
         check_review_continuation(root, trace_dir, line)
 
     def check_start():
@@ -4394,15 +4396,15 @@ def unit_started(unit):
     return int(when.timestamp())
 
 
-def archive_files(source, target, since):
-    """Copy the regular files directly in `source` modified at second `since` or later into `target` when they total
+def archive_files(source, target, since_ns):
+    """Copy the regular files directly in `source` modified at the archive cutoff or later into `target` when they total
     at most 2 MiB; return the end line's `archive`."""
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
     written = []
     try:
         with os.scandir(str(source)) as entries:
             names = sorted(entry.name for entry in entries if entry.is_file(follow_symlinks=False)
-                           and entry.stat(follow_symlinks=False).st_mtime_ns >= since * 10 ** 9)
+                           and entry.stat(follow_symlinks=False).st_mtime_ns >= since_ns)
         files, total = {}, 0
         for name in names:
             with open(os.open(os.path.join(str(source), name), flags), "rb") as file:
@@ -4453,7 +4455,8 @@ def trace_end(args):
 
     def archive():
         if source:
-            line["archive"] = archive_files(source, trace_dir / args.unit, unit_started(args.unit))
+            cutoff = start.get("archive_since_ns", unit_started(args.unit) * 10 ** 9)
+            line["archive"] = archive_files(source, trace_dir / args.unit, cutoff)
 
     append_event(trace_dir, line, lambda: end_unit(trace_dir, args), manifest, archive)
     print("trace {} ended".format(args.unit))
@@ -4496,17 +4499,26 @@ def check_recheck(record):
         raise TraceError("order must be a positive integer or unknown")
 
 
+def recheck_model(key, supplied, models):
+    if len(models) > 1 or (models and supplied is not None and supplied not in models):
+        raise TraceError("model does not match the recorded identity of " + key)
+    return next(iter(models), supplied)
+
+
+def recheck_claim(event):
+    return (event["reviewer"], event["model"], event["snapshot"].lower(), event["result"], event["order"])
+
+
 def new_recheck(args, kind, dispositions, previous):
     """Build the canonical event, or return None for an identical retry of a recorded report."""
     source = finding_source(dispositions, args.finding)
     models = {r["model"] for r in dispositions["reviewers"] if r.get("key", r["role"]) == args.reviewer}
     models.update(e["model"] for e in previous if e["reviewer"] == args.reviewer)
-    if len(models) > 1 or (models and args.model is not None and args.model not in models):
-        raise TraceError("model does not match the recorded identity of " + args.reviewer)
+    model = recheck_model(args.reviewer, args.model, models)
     if args.order != "unknown" and not re.fullmatch(r"[0-9]+", args.order):
         raise TraceError("order must be a positive integer or unknown")
     record = {"v": 1, "type": "recheck", "id": args.unit, "kind": kind, "finding": source,
-              "reviewer": args.reviewer, "model": next(iter(models), args.model), "snapshot": args.snapshot.lower(),
+              "reviewer": args.reviewer, "model": model, "snapshot": args.snapshot.lower(),
               "result": args.result, "report": args.report,
               "order": None if args.order == "unknown" else int(args.order)}
     check_recheck(record)
@@ -4514,14 +4526,22 @@ def new_recheck(args, kind, dispositions, previous):
         if old["finding"] != source:
             continue
         if old["report"] == record["report"]:
-            if (old["snapshot"].lower() == record["snapshot"]
-                    and all(old.get(k) == v for k, v in record.items() if k != "snapshot")):
+            if recheck_claim(old) == recheck_claim(record):
                 return None
             raise TraceError("conflicting recheck for report " + record["report"])
         if record["order"] is not None and old["order"] == record["order"]:
             raise TraceError("recheck order {} already belongs to {}".format(record["order"], old["report"]))
     record["at"] = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
     return record
+
+
+def closed_review(root, trace_dir, unit):
+    start, end = unit_in_writable_store(root, trace_dir, unit)
+    if (not end or start["kind"] not in REVIEW_ROLES or end.get("kind") != start["kind"]
+            or not end.get("dispositions")):
+        raise TraceError("recheck requires a closed review with recorded dispositions")
+    check_dispositions(start["kind"], end["dispositions"], allow_repeated_sources=True)
+    return start["kind"], end["dispositions"]
 
 
 def trace_recheck(args):
@@ -4531,17 +4551,15 @@ def trace_recheck(args):
         print("trace off")
         return 0
     trace_dir = holder / TRACE_DIR
+    closed_review(root, trace_dir, args.unit)
+    ignore_trace_dir(holder)
     with events_lock(trace_dir):
-        start, end = unit_in_writable_store(root, trace_dir, args.unit)
-        if (not end or start["kind"] not in REVIEW_ROLES or end.get("kind") != start["kind"]
-                or not end.get("dispositions")):
-            raise TraceError("recheck requires a closed review with recorded dispositions")
-        check_dispositions(start["kind"], end["dispositions"], allow_repeated_sources=True)
+        kind, dispositions = closed_review(root, trace_dir, args.unit)
         previous = [e for e in read_events(trace_dir, args.unit.encode()) if e.get("id") == args.unit
-                    and e.get("kind") == start["kind"] and e.get("type") == "recheck"]
+                    and e.get("kind") == kind and e.get("type") == "recheck"]
         for event in previous:
             check_recheck(event)
-        record = new_recheck(args, start["kind"], end["dispositions"], previous)
+        record = new_recheck(args, kind, dispositions, previous)
         if record:
             write_event_bytes(trace_dir, event_bytes(record))
     print("trace {} rechecked".format(args.unit))
@@ -4559,6 +4577,68 @@ def event_time(event):
     return None
 
 
+def committed_slice_status(root, commit, path, revision, name, env):
+    try:
+        text = trace_git(root, env, "show", commit + ":" + path).decode("utf-8")
+    except (SnapshotSkip, UnicodeDecodeError):
+        return None
+    filename = Path(path)
+    doc = Doc(None, root / filename, path, FILE_RE.fullmatch(filename.name), False, text)
+    if str(doc.revision) != revision:
+        return None
+    states = [state for heading, state in plan_slices(doc) if re.match(re.escape(name) + r"\b", heading)]
+    return states[0] if len(states) == 1 else None
+
+
+def slice_commit(root, unit):
+    """Find an unambiguous status transition on the recorded plan revision after the slice's starting HEAD."""
+    base = unit.start.get("head")
+    plans = [target_reference(doc, "@r") for doc in unit.start.get("docs", []) if doc.startswith("P")]
+    if not full_oid(base) or not unit.started or len(plans) != 1 or not plans[0]:
+        return None
+    plan, revision = plans[0]
+    env = trace_env()
+    try:
+        names = os.fsdecode(trace_git(root, env, "ls-tree", "-r", "-z", "--name-only", base))
+    except SnapshotSkip:
+        return None
+    paths = [p for p in names.split("\0") if path_id(p) == plan and Path(p).parent.name == "plans"
+             and "docs" in Path(p).parts and FILE_RE.fullmatch(Path(p).name)]
+    if len(paths) != 1:
+        return None
+    path = paths[0]
+    boundary = unit.boundary or {}
+    last = boundary.get("head")
+    tips = [last] if full_oid(last) else ["--all", "HEAD"]
+    since = git(root, "log", "--full-history", "--reverse", "--topo-order", "--ancestry-path", "^" + base,
+                *tips, "--format=%H %P %cI", "--", ":(literal)" + path, env=env) or ""
+    states = {}
+
+    def status(commit):
+        if commit not in states:
+            states[commit] = committed_slice_status(root, commit, path, revision, unit.start["slice"], env)
+        return states[commit]
+
+    first = None
+    limit = event_time(boundary)
+    for line in since.splitlines():
+        commit, *parents, at = line.split()
+        when = event_time({"at": at})
+        if not when or when < unit.started or (limit and when > limit):
+            continue
+        current = status(commit)
+        if current not in ("done", "paused") or not parents:
+            continue
+        prior = [status(parent) for parent in parents]
+        if any(old not in ("todo", "in-progress", "paused") or old == current for old in prior):
+            continue
+        if first is None:
+            first = {"commit": commit, "at": at}
+        elif git(root, "merge-base", "--is-ancestor", first["commit"], commit, env=env) is None:
+            return None  # Independent branches completed the same slice.
+    return first
+
+
 class HistoryUnit:
     """A start paired with its own store's end and archives."""
 
@@ -4569,6 +4649,43 @@ class HistoryUnit:
         self.end = self.boundary = None
         self.continuation = None
         self.rechecks = collections.defaultdict(list)
+        self.conflicts = collections.defaultdict(list)
+
+    def verify_rechecks(self, issues):
+        """Bind imported reports to their authors and exclude contested ordinals regardless of import order."""
+        if not self.rechecks:
+            return
+        reviewers = self.end["dispositions"]["reviewers"]
+        models = {r.get("key", r["role"]): {r["model"]} for r in reviewers}
+        unlisted = collections.defaultdict(set)
+        for checks in self.rechecks.values():
+            for event in checks:
+                if event["reviewer"] not in models:
+                    unlisted[event["reviewer"]].add(event["model"])
+        models.update(unlisted)
+        for source, checks in self.rechecks.items():
+            reports, ordinals = collections.defaultdict(set), collections.defaultdict(set)
+            trusted = []
+            for event in checks:
+                key = event["reviewer"]
+                try:
+                    recheck_model(key, event["model"], models[key])
+                except TraceError:
+                    issues["malformed"] += 1
+                    continue
+                trusted.append(event)
+                reports[event["report"]].add(recheck_claim(event))
+                if event["order"] is not None:
+                    ordinals[event["order"]].add(event["report"])
+            verified = {}
+            for event in trusted:
+                stem, order = event["report"], event["order"]
+                if len(reports[stem]) > 1 or len(ordinals.get(order, ())) > 1:
+                    issues["malformed"] += 1
+                    self.conflicts[source].append(event)
+                else:
+                    verified.setdefault(stem, event)
+            self.rechecks[source] = list(verified.values())
 
     def seconds(self):
         ended = event_time(self.end or self.boundary or {})
@@ -4634,13 +4751,73 @@ class HistoryUnit:
             detail += " slice=" + (self.start.get("slice") or "unknown")
             outcome = "implicit" if self.boundary else "open"
             if self.boundary:
-                ended = "by " + self.boundary["at"] if event_time(self.boundary) else "unknown"
-                if seconds is not None:
-                    wall = "<={}s (upper bound)".format(seconds)
+                if "commit" in self.boundary:
+                    outcome, ended = "committed", self.boundary["at"]
+                    detail += " commit=" + self.boundary["commit"]
+                else:
+                    ended = "by " + self.boundary["at"] if event_time(self.boundary) else "unknown"
+                    if seconds is not None:
+                        wall = "<={}s (upper bound)".format(seconds)
         return ("{} {} parent={} docs={} started={} ended={} outcome={} wall={} archive={}{}"
                 .format(self.unit, self.kind, self.start.get("parent") or "none",
                         " ".join(self.start.get("docs") or []) or "none", self.start["at"] if self.started else "unknown",
                         ended, outcome, wall, self.archive_status(), detail))
+
+    def print_rechecks(self, source, first):
+        checks = self.rechecks[source]
+        ordered = sorted((e for e in checks if e["order"] is not None), key=lambda e: e["order"])
+        unordered = [e for e in checks if e["order"] is None]
+        latest = first
+        for heading, group in (("", ordered), ("    unordered rechecks:", unordered)):
+            if heading and group:
+                print(heading)
+            for event in group:
+                verdict = "{result} reviewer={reviewer} snapshot={snapshot} model={model}".format(**event)
+                print("      recheck order={} result={} report={} archive={}".format(
+                    event["order"] or "unknown", verdict, event["report"], self.report_status(event["report"])))
+        if ordered:
+            last = ordered[-1]
+            latest = "{result} reviewer={reviewer} snapshot={snapshot} model={model}".format(**last)
+            print("    highest verified order={} result={}".format(last["order"], latest))
+        if unordered:
+            latest = "unknown (unordered evidence)"
+        for event in self.conflicts[source]:
+            print("    conflicting recheck report={} order={}".format(event["report"], event["order"] or "unknown"))
+            if not ordered or event["order"] is None or event["order"] >= ordered[-1]["order"]:
+                latest = "unknown (conflicting evidence)"
+        print("    latest=" + latest)
+
+    def print_review(self):
+        """Report the evidence this review recorded; a legacy aggregate does not identify any confirmer."""
+        if not self.end:
+            print("  dispositions=pending")
+            return
+        dispositions = self.end.get("dispositions")
+        if not dispositions:
+            print("  dispositions=unknown")
+            return
+        for reviewer in dispositions["reviewers"]:
+            print("  reviewer {} model={} id={} targets={}".format(
+                reviewer.get("key", reviewer["role"]), reviewer["model"], reviewer["id"] or "unknown",
+                ", ".join(reviewer.get("targets", [])) or "unknown"))
+        for finding in dispositions["findings"]:
+            axis = " axis=" + finding["axis"] if "axis" in finding else ""
+            print("  finding {} severity={} disposition={}{}".format(", ".join(finding["by"]), finding["severity"],
+                                                                     finding["disposition"], axis))
+            verdict = finding.get("confirmed", "unknown")
+            confirmations = finding.get("confirmations", [])
+            if confirmations:
+                print("    first confirmation=" + verdict)
+                for item in confirmations:
+                    print("      confirmation={} reviewer={} snapshot={}".format(
+                        item["result"], item["reviewer"], item["snapshot"] or "unknown"))
+                authors = ", ".join("reviewer={} snapshot={}".format(c["reviewer"], c["snapshot"] or "unknown")
+                                    for c in confirmations if c["result"] == verdict)
+            else:
+                authors = "reviewer=unknown snapshot=unknown"
+                print("    first confirmation={} {}".format(verdict, authors))
+            self.print_rechecks(finding["by"][0], "{} {}".format(verdict, authors))
+        print("  new blockers={}".format(dispositions["new_blockers"]))
 
 
 def history_events(trace_dir, issues):
@@ -4663,11 +4840,11 @@ def history_events(trace_dir, issues):
                        for link in (parent, continues))
                 or (continues is not None and (action != "start" or event["kind"] not in REVIEW_ROLES))
                 or (slice_name is not None and (not isinstance(slice_name, str) or not SLICE_RE.fullmatch(slice_name)))
-                or (action == "end" and event["kind"] == "slice")
+                or (event["kind"] == "slice" and (action != "start" or parent is None or slice_name is None))
                 or not isinstance(docs, list) or not all(isinstance(doc, str) for doc in docs)):
             issues["malformed"] += 1
             continue
-        if action == "recheck" and event["kind"] in REVIEW_ROLES:
+        if action == "recheck":
             try:
                 check_recheck(event)
             except TraceError:
@@ -4717,62 +4894,13 @@ def history_units(trace_dir, store):
                 unit.rechecks[source].append(event)
                 continue
         orphans.append(event)
+    for unit in units.values():
+        unit.verify_rechecks(issues)
     return list(units.values()), orphans, issues
 
 
-def print_rechecks(unit, checks, first):
-    ordered = sorted((e for e in checks if e["order"] is not None), key=lambda e: e["order"])
-    unordered = [e for e in checks if e["order"] is None]
-    latest = first
-    for heading, group in (("", ordered), ("    unordered rechecks:", unordered)):
-        if heading and group:
-            print(heading)
-        for event in group:
-            verdict = "{result} reviewer={reviewer} snapshot={snapshot} model={model}".format(**event)
-            print("      recheck order={} result={} report={} archive={}".format(
-                event["order"] or "unknown", verdict, event["report"], unit.report_status(event["report"])))
-    if ordered:
-        last = ordered[-1]
-        latest = "{result} reviewer={reviewer} snapshot={snapshot} model={model}".format(**last)
-        print("    highest verified order={} result={}".format(last["order"], latest))
-    print("    latest=" + ("unknown (unordered evidence)" if unordered else latest))
-
-
-def print_review_history(unit):
-    """Report the evidence this review recorded; a legacy aggregate does not identify any confirmer."""
-    if not unit.end:
-        print("  dispositions=pending")
-        return
-    dispositions = unit.end.get("dispositions")
-    if not dispositions:
-        print("  dispositions=unknown")
-        return
-    for reviewer in dispositions["reviewers"]:
-        print("  reviewer {} model={} id={} targets={}".format(
-            reviewer.get("key", reviewer["role"]), reviewer["model"], reviewer["id"] or "unknown",
-            ", ".join(reviewer.get("targets", [])) or "unknown"))
-    for finding in dispositions["findings"]:
-        axis = " axis=" + finding["axis"] if "axis" in finding else ""
-        print("  finding {} severity={} disposition={}{}".format(", ".join(finding["by"]), finding["severity"],
-                                                                 finding["disposition"], axis))
-        verdict = finding.get("confirmed", "unknown")
-        confirmations = finding.get("confirmations", [])
-        if confirmations:
-            print("    first confirmation=" + verdict)
-            for item in confirmations:
-                print("      confirmation={} reviewer={} snapshot={}".format(
-                    item["result"], item["reviewer"], item["snapshot"] or "unknown"))
-            authors = ", ".join("reviewer={} snapshot={}".format(c["reviewer"], c["snapshot"] or "unknown")
-                                for c in confirmations if c["result"] == verdict)
-        else:
-            authors = "reviewer=unknown snapshot=unknown"
-            print("    first confirmation={} {}".format(verdict, authors))
-        print_rechecks(unit, unit.rechecks[finding["by"][0]], "{} {}".format(verdict, authors))
-    print("  new blockers={}".format(dispositions["new_blockers"]))
-
-
 def trace_history(args):
-    root, _is_git = trace_root()
+    root, is_git = trace_root()
     units, orphans, skipped = [], [], collections.Counter()
     for store, trace_dir in history_stores(root):
         found, unmatched, bad = history_units(trace_dir, store)
@@ -4789,11 +4917,13 @@ def trace_history(args):
         print("no traced units")
     counts, wall = collections.Counter(), collections.Counter()
     for unit in sorted(units, key=lambda u: (u.started is None, u.started, u.unit)):
+        if is_git and unit.kind == "slice":
+            unit.boundary = slice_commit(root, unit) or unit.boundary
         print(unit.row())
         if args.unit and unit.kind in REVIEW_ROLES:
-            print_review_history(unit)
+            unit.print_review()
         counts[unit.kind] += 1
-        if unit.end:
+        if unit.end or (unit.boundary and "commit" in unit.boundary):
             wall[unit.kind] += unit.seconds() or 0
     if units and not args.unit:
         print("By kind (a parent's wall time includes its children):")
