@@ -48,7 +48,7 @@ You are implementing one slice of a plan in this repository, with no prior conte
 
 Plan: {plan path}, slice {S<n>: name}. Read the plan's Current state and Log, the slice, and the design sections it builds on: {D00X#section, ...}.
 
-Build the slice test-first with the `canon-tdd` skill, at the seams its test criteria name, until those criteria pass and nothing green turned red. Settle unclear points with the `canon-grill` skill's triage. Keep scratch files in `.canon/canon-implement/{P id}/{S<n>}/`; search tools that honor `.gitignore` skip `.canon/`, so read its paths directly. Do not edit the plan or any design, and do not commit. When you edit a numbered doc, check and fix only it, with `canon.py check <id> --fix`.
+Build the slice test-first with the `canon-tdd` skill, at the seams its test criteria name, until those criteria pass and nothing green turned red. Settle unclear points with the `canon-grill` skill's triage. Keep scratch files in `.canon/canon-implement/{P id}/{S<n>}/`; search tools that honor `.gitignore` skip `.canon/`, so read its paths directly. Do not edit the plan or any design, and do not commit. Regenerate source blocks only in assigned documents with `canon.py embed <paths>`. When you edit a numbered doc, check and fix only it, with `canon.py check <id> --fix`.
 
 You cannot reach the user. Stop and report instead when:
 - the plan or a design cannot be followed: say which, and the fix you would propose;

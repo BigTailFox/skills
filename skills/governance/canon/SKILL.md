@@ -16,6 +16,7 @@ When `canon.py` says it runs only from an install inside the project, as when th
 | Command | Purpose |
 |---|---|
 | `check [ID\|PATH ...] [--fix] [--base REF] [--staged \| --rev REV]` | Validate all docs. `--fix` applies mechanical fixes (`refs`, `updated`, indexes, `implemented` of an active design never revised, and deleting an `as_built` left on a reviewed revision). `--base origin/main` also checks the branch against that ref: deleted docs, id collisions, revisions pending review and unfinished docs fail. `--staged` checks the staged tree, what `git commit` records, and `--rev REV` commit REV's tree, instead of the work tree. Given doc ids or paths, it reports and fixes only those docs' problems. |
+| `embed [ID\|PATH ...] [--check]` | Generate [source blocks](#embedded-source) in the work tree. An ID selects its numbered doc and Markdown attachments. A path selects one file. Omit selectors for every live consumer. `--check` reports stale or invalid blocks without writing. |
 | `new TYPE SLUG [--title T] [--from D00X] [--parent D00X] [--root DIR]` | Create a doc from its template with the next free id. A plan needs `--from`, which links it to its accepted or active design; `--parent` creates a sub-design. |
 | `status ID STATUS` | Move a doc's status forward and check the move; a concept may move to a live `adopted`, an experiment to a live `concluded`, and an answered experiment back to `running` for a later run. |
 | `approvals [GATE]` | List pending L2 approvals in this checkout or for one original review topic. Use `GATE --start ID@rN ...` for the first round and `GATE --update [ID@rN ...]` for follow-ups or after approval. [Gate status](workflow.md#gate-status) covers recovery and retiring superseded entries. |
@@ -63,11 +64,24 @@ In `trace` calls, `<skill>` is the followed skill's directory path (`canon-blind
 
 Temporary files of canon skills (prompts, scratch prototypes, handoffs, teaching workspaces) go in `.canon/<skill>/<topic>/` at the repo root, never in the OS temp directory or the tracked tree; `<topic>` is a short kebab-case slug. `init` adds `.canon/` to `.gitignore`; if `git check-ignore -q .canon` fails, add it yourself. Search tools that honor `.gitignore` skip it: read its paths directly, or search with `rg --no-ignore`. Nothing in `.canon/` is a doc: anything worth keeping becomes an attachment or doc content. `.canon/canon/trace/` is not scratch: until `canon.py trace prune` it holds the only copy of its data.
 
-Attachments of a numbered doc (data, scripts, reports, prototypes, images used only by it) live in `<category>/<ID>/` beside the doc, e.g. `designs/D003/flow.svg`; `archive` and `renumber` move them with it, and `check` checks the links in their `.md` files. Create the directory when the first attachment appears. Link large binaries instead of committing them.
+Attachments of a numbered doc (data, scripts, reports, prototypes, images used only by it) live in `<category>/<ID>/` beside the doc, e.g. `designs/D003/flow.svg`. `archive` and `renumber` move them with it. `check` validates links in Markdown attachments, guides and assets, and checks live [source blocks](#embedded-source) against the sources in the same tree. Create the attachment directory when the first attachment appears. Link large binaries instead of committing them.
 
 The project's `README.md`, its hand-written intro for users, belongs to the doc system like `AGENTS.md` and `docs/`: it stays, and where it restates D000 or a design, they hold. A doc by its name is a file in any directory whose name up to its first `.` is, in any case, `README`, `AGENTS`, `CLAUDE`, `CHANGELOG`, `CONTRIBUTING`, `LICENSE`, `NOTICE`, `SECURITY`, `CODE_OF_CONDUCT` or `COPYING`, or starts with `LICENSE-`, and that has no extension or ends in `.md`, `.markdown`, `.rst`, `.txt`, `.adoc` or `.org`. `canon.py` takes it, and every file under a docs root, for a project doc, never for code: a design governs one only through a `paths` entry equal to its path, never through a glob or directory. An installed skill file, the repo root's `skills-lock.json`, a file under its `.agents/skills/` or a link into that directory such as `.claude/skills/canon`, is tooling, neither code nor doc: a design governs it the same way, and an `AGENTS.md` among them makes no project.
 
 A more specific `AGENTS.md` and its `docs/` govern their subtree and override broader rules. Repo-wide and cross-module docs live in the root `docs/`; module docs live in the module's `docs/`. Ids are global across the repo: `D003` exists once, whichever `docs/` holds it.
+
+### Embedded source
+
+In a live numbered doc's body or a Markdown guide, asset or attachment, place these lines at column one outside code fences. Use a source path relative to the resolved document. Percent-encode whitespace, `%` and literal `#` in the path.
+
+```markdown
+<!-- embed: D002/queue.py#enqueue -->
+<!-- /embed -->
+```
+
+`#enqueue` selects the lines between `# region enqueue` and `# endregion`. Either delimiter can use `//`. Region names use ASCII letters, digits, underscores and hyphens and must be unique and unnested. Omit the fragment for the whole file with delimiters removed. The source must resolve within the repository to a UTF-8 file that Git tracks or would add. A Markdown source may contain fenced examples. Choose a source without active embeds.
+
+Run `canon.py embed <ID or path>` after editing the source, then stage the source and generated block together. `check --fix` handles the doc's `updated` date. The indexes belong to `index`. Archived blocks preserve the source as it stood at archiving.
 
 ## Doc types
 
@@ -139,7 +153,7 @@ Sessions that work in one repository at the same time each work in a linked work
 - Keep the change in its worktree and name its path beside a [next-phase command](#workflow). In a handoff, give the path, branch, tip commit and target branch (the tracked base unless another target was named). Check `git merge-base --is-ancestor <tip> <target>`. On exit 0, report that the target contains the tip. On exit 1 with complete history, give the outstanding commit count from `git rev-list --count <target>..<tip>`. If shallow history, a missing ref or an error prevents verification, say so. Identify an intentionally retained prototype tip separately and check the commit delivering its experiment or decision.
 - Before the branch goes back, update it from the target with a merge or rebase in the worktree, run `check --fix` there, settle with `renumber` each id both branches took, as above, and commit, so the branch merges back with no `check --fix` in a checkout another session uses. Merging it back, `git worktree remove .worktrees/<branch>` and deleting the branch are the user's to do, or yours when the user asks.
 - In a linked worktree, start every subagent prompt, in every round, with ``Work in `<worktree root>`, a linked worktree of this repository: run every command from that directory and read every path relative to it.``, and run a reviewer's command from that root, since the host starts subagents in the checkout you started in.
-- In one checkout, one session at a time stages and commits, since the Git index is shared; `archive`, `rename`, `renumber` and `adopt` stage too. A subagent that edits docs, such as a worker or a researcher, checks and fixes only those with `check <ids> [--fix]`, which leaves the other docs and the indexes alone; the session that commits checks the rest.
+- In one checkout, one session at a time stages and commits, since the Git index is shared. `archive`, `rename`, `renumber` and `adopt` stage too. A subagent regenerates only assigned documents with `embed <paths>`. Use an ID when its Markdown attachments are assigned too. Check and fix only assigned numbered docs with `check <ids> [--fix]`. The session that commits checks the rest.
 - To commit part of a checkout's changes, such as your own beside another session's or one change of several:
   1. When the commit holds numbered docs, run `check --fix <ids>` on them.
   2. Check that `git diff --cached --name-status` lists nothing but your own changes, else ask the user. Stage the files by path with `git add <path>`. Of a file that also holds changes you do not commit, stage only your hunks, applying a patch of them with `git apply --cached`; when you cannot tell your hunks from the others, ask the user.

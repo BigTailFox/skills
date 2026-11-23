@@ -18,7 +18,7 @@ Implements [D011: Source code embedded in docs](../designs/D011-embedded-source.
 
 ## Current state
 
-Next: S2
+Next: S3
 
 ## Slices
 
@@ -35,7 +35,7 @@ Ship the fillable `reviewer-example.md` in the core skill, directly reachable fr
 
 ### S2: Generate and validate source blocks in the selected tree
 
-Status: todo
+Status: done
 
 Risk: A source reached through a symlink or the wrong Git tree could be published. A shorter fence in generated content could expose literal examples to doc rewrites.
 
@@ -77,3 +77,4 @@ Use the shared closing condition in `canon-code-review`, `canon-design`, `canon-
 - The joint design passed review in `6a473ce`. The four reviewed revisions were approved in `e646349`.
 - Started at 2d7ef6499dcd2c3755abe1bd84e53d1497bbcbb2.
 - S1 completed. Verified the installed grant and progress instructions using synthetic grants, the unfilled example, a real native command item and six offline launcher cases. All 434 repository tests passed across the default and outside-checkout runs. D001 budgets passed and discovery listed 19 skills.
+- S2 completed. Added scoped source generation and checking in the work tree, index and commits, with full-length fences and eligible-file resolution. Eleven CLI regressions and the independent byte and Git-tree checks passed. All 445 repository tests passed across both environments; D001 budgets and discovery of 19 skills passed. Canon version 75.

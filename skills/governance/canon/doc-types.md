@@ -110,4 +110,4 @@ Sections: Symptom, Reproduction, Analysis, Resolution.
 
 ## Guides
 
-Unnumbered docs for users and operators under `docs/guides/`; only link checks apply. Guides explain how to use the system and link to designs for specs.
+Unnumbered docs for users and operators under `docs/guides/`. Guides explain how to use the system and link to designs for specs. `check` validates their links and [embedded source](SKILL.md#embedded-source).

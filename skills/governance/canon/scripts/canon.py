@@ -15,6 +15,7 @@ import json
 import os
 import posixpath
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -30,7 +31,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "74"
+CANON_VERSION = "75"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -90,7 +91,7 @@ SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 LINK_RE = re.compile(r"(!?)\[([^\]]*)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
-FENCE_RE = re.compile(r"^\s*(```|~~~)")
+FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
 INLINE_CODE_RE = re.compile(r"`[^`]*`")
 LINK_UNSAFE_RE = re.compile(r"[\s%#?()]")
 STATUS_LINE_RE = re.compile(r"^\s*(?:-\s+)?Status:\s*(.*?)\s*$")
@@ -417,7 +418,7 @@ def code_mask(lines, start=0):
         if match:
             if fence is None:
                 fence = match.group(1)
-            elif fence == match.group(1):
+            elif match[1].startswith(fence) and not lines[i][match.end():].strip():
                 fence = None
             continue
         if fence is None:
@@ -539,6 +540,36 @@ def parse_date(value):
 
 # ---------------------------------------------------------------- trees
 
+def resolve_tree_path(tree, relative, aliases=None):
+    """Walk a repository-relative path in this tree, following each link before interpreting the next component."""
+    if os.path.isabs(relative) or "\0" in relative:
+        return None
+    done, todo, links = [], collections.deque(relative.split("/")), 0
+    while todo:
+        part = todo.popleft()
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if not done:
+                return None
+            done.pop()
+            continue
+        rel = "/".join((*done, part))
+        kind, target = tree.entry(rel)
+        if kind == "link":
+            if aliases is not None:
+                aliases.append(rel)
+            links += 1
+            if links > MAX_LINKS or os.path.isabs(target):
+                return None
+            todo.extendleft(reversed(target.split("/")))
+        elif kind == "dir" or kind == "file" and not todo:
+            done.append(part)
+        else:
+            return None
+    return "/".join(done)
+
+
 class WorkTree:
     """The work tree, read from disk: the files Git tracks or would add that exist on disk, or outside Git the files
     a walk of the directory finds."""
@@ -563,6 +594,20 @@ class WorkTree:
             return []
         out = git_checked(self.root, "ls-files", "-z", "--", ":(glob)**/" + name).stdout
         return [rel for rel in out.split("\0") if rel]
+
+    def entry(self, rel):
+        path = self.root / rel
+        try:
+            mode = path.lstat().st_mode
+            if stat.S_ISLNK(mode):
+                return "link", os.readlink(path)
+            if stat.S_ISDIR(mode):
+                return "dir", None
+            if stat.S_ISREG(mode):
+                return "file", None
+        except (FileNotFoundError, NotADirectoryError):
+            pass
+        return None, None
 
     def is_file(self, path):
         return path.is_file()
@@ -653,33 +698,20 @@ class GitTree:
         err = self.batch.communicate()[1].decode().strip()
         return err or "git cat-file exited {}".format(self.batch.returncode)
 
+    def entry(self, rel):
+        mode, name = self.entries.get(rel, ("", None))
+        if mode == "120000":
+            return "link", self.blob(name).decode("utf-8", "surrogateescape")
+        if mode.startswith("100"):
+            return "file", None
+        return ("dir" if rel in self.dirs else None), None
+
     def resolve(self, path):
-        """The path from the repo root that `path` names in the tree, each symbolic link on it followed component by
-        component as `realpath` follows it, its blob a path relative to the link's directory; None when the path or a
-        link's target leaves the tree, or it takes more than MAX_LINKS links."""
-        rel = posix_rel(path, self.root)
-        if rel == ".." or rel.startswith("../"):
+        try:
+            relative = path.relative_to(self.root).as_posix()
+        except ValueError:
             return None
-        done, todo, links = [], [] if rel == "." else rel.split("/"), 0
-        while todo:
-            part = todo.pop(0)
-            if part in ("", "."):
-                continue
-            if part == "..":
-                if not done:
-                    return None
-                done.pop()
-                continue
-            mode, name = self.entries.get("/".join(done + [part]), (None, None))
-            if mode != "120000":
-                done.append(part)
-                continue
-            links += 1
-            target = self.blob(name).decode("utf-8", "surrogateescape")
-            if links > MAX_LINKS or target.startswith("/"):
-                return None
-            todo = target.split("/") + todo
-        return "/".join(done)
+        return resolve_tree_path(self, relative)
 
     def files(self):
         return sorted(rel for rel, (mode, _name) in self.entries.items()
@@ -889,6 +921,7 @@ class Repo:
         self.roots = [Root(self, rel) for rel in parents]
         self.docs, self.problems, self.attachments = [], [], []
         self.index_files, self.scope_md = [], []
+        self.live_markdown = {}
         self.by_id, self.by_path = {}, {}
         self._slug_cache, self._design_linked, self._citations = {}, None, None
         self._scan()
@@ -930,6 +963,7 @@ class Repo:
                 if parts[0] in EXTRA_DIRS and not archived:
                     if rel.endswith(".md"):
                         self.scope_md.append(path)
+                        self.live_markdown[path] = root
                     continue
                 letter = CATEGORY_DIRS.get(parts[0])
                 if letter is None:
@@ -953,7 +987,14 @@ class Repo:
                     self.problem("ERROR", rel, "invalid doc path; expected {}/{}NNN-kebab-slug.md{}".format(
                         TYPES[letter]["dir"], letter, " (D may add one A-Z suffix)" if letter == "D" else ""))
                     continue
-                doc = Doc(root, path, rel, match, archived, self.tree.read_text(path))
+                if not archived and resolve_tree_path(self.tree, rel) != rel:
+                    self.live_markdown[path] = root
+                    continue
+                try:
+                    doc = Doc(root, path, rel, match, archived, self.tree.read_text(path))
+                except UnicodeDecodeError:
+                    self.problem("ERROR", rel, "document is not UTF-8")
+                    continue
                 self.docs.append(doc)
                 if doc.id in self.by_id:
                     first = self.by_id[doc.id].rel
@@ -963,7 +1004,13 @@ class Repo:
                 else:
                     self.by_id[doc.id] = doc
                 self.by_path[path] = doc
+                if not archived and doc.fm is not None:
+                    self.live_markdown[path] = root
         self.docs.sort(key=Doc.sort_key)
+        owners = {(d.root, d.id) for d in self.docs if not d.archived and d.fm is not None}
+        for root, archived, name, rel in self.attachments:
+            if not archived and (root, name) in owners and rel.endswith(".md"):
+                self.live_markdown[self.root / rel] = root
 
     def unknown_entry_step(self, where, is_dir, archived):
         """The next step for an unknown entry of a docs root, the file or directory at repo-relative `where`."""
@@ -1156,6 +1203,219 @@ class Repo:
             return []
         exact = not self.is_code(rel)
         return [doc for doc in self.docs if doc.type == "D" and not doc.archived and doc.governs(rel, exact)]
+
+
+# ---------------------------------------------------------------- embedded source
+
+EMBED_OPEN = re.compile(r"<!-- embed: ([^\s]+) -->")
+EMBED_CLOSE = "<!-- /embed -->"
+REGION_NAME = re.compile(r"[a-zA-Z0-9_-]+")
+REGION_LINE = re.compile(r"^[ \t]*(?:#|//)[ \t]*(region|endregion)\b(.*)$")
+SOURCE_LANG = {".py": "python", ".h": "cpp", ".hpp": "cpp", ".cpp": "cpp", ".capnp": "capnp"}
+EmbedBlock = collections.namedtuple("EmbedBlock", "start end operand")
+
+
+def embed_blocks(lines, start):
+    """Disjoint, closed pairs and syntax problems, with zero-based marker lines in the Markdown body."""
+    pairs, errors, stack = [], [], []
+    invalid = False
+    for i, line in code_mask(lines, start):
+        line = line.rstrip("\r\n")
+        if line.startswith("<!-- embed:"):
+            match = EMBED_OPEN.fullmatch(line)
+            if stack:
+                errors.append((i, "nested embed marker"))
+                invalid = True
+            if not match:
+                errors.append((i, "malformed opening embed marker"))
+                invalid = True
+            stack.append((i, match[1] if match else ""))
+        elif line.startswith("<!-- /embed"):
+            if line != EMBED_CLOSE:
+                errors.append((i, "malformed closing embed marker"))
+                invalid = bool(stack)
+            elif not stack:
+                errors.append((i, "closing embed marker has no opening marker"))
+            else:
+                opened, operand = stack.pop()
+                if not stack:
+                    if not invalid:
+                        pairs.append(EmbedBlock(opened, i, operand))
+                    invalid = False
+    errors.extend((i, "unclosed embed marker") for i, _ in stack)
+    return pairs, errors
+
+
+def source_operand(operand):
+    raw, separator, region = operand.partition("#")
+    if not raw or re.search(r"%(?![a-fA-F0-9]{2})", raw) or separator and not REGION_NAME.fullmatch(region):
+        raise ValueError("invalid embed operand: " + operand)
+    path = urllib.parse.unquote(raw, errors="strict")
+    if os.path.isabs(path) or "\0" in path:
+        raise ValueError("embed source needs a relative repository path: " + operand)
+    return path, region
+
+
+def source_fence(source, text, region):
+    """Validate every delimiter, then format the selected region or the whole source without its delimiters."""
+    if "\0" in text:
+        raise ValueError("NUL byte in embed source " + source.name)
+    body, regions, active = [], {}, None
+    for i, line in enumerate(re.split(r"\r\n|\r|\n", text), 1):
+        marker = REGION_LINE.match(line)
+        if not marker:
+            body.append(line)
+            continue
+        keyword, tail = marker.groups()
+        name = tail.strip(" \t")
+        if name and (tail[0] not in " \t" or not REGION_NAME.fullmatch(name)) or keyword == "region" and not name:
+            raise ValueError("invalid region delimiter in {}:{}".format(source.name, i))
+        if keyword == "region":
+            if active is not None or name in regions:
+                raise ValueError("nested or duplicate region {} in {}:{}".format(name, source.name, i))
+            active = name, len(body)
+        else:
+            if active is None or name and name != active[0]:
+                raise ValueError("unmatched endregion in {}:{}".format(source.name, i))
+            regions[active[0]] = active[1], len(body)
+            active = None
+    if active is not None:
+        raise ValueError("unclosed region {} in {}".format(active[0], source.name))
+    if region:
+        if region not in regions:
+            raise ValueError("no region {} in {}".format(region, source.name))
+        start, end = regions[region]
+        body = body[start:end]
+    nonblank = [i for i, line in enumerate(body) if line.strip()]
+    if nonblank:
+        indent = os.path.commonprefix([re.match(r"[ \t]*", body[i])[0] for i in nonblank])
+        body = [line[len(indent):] if line.startswith(indent) else line for line in body[nonblank[0]:nonblank[-1]+1]]
+    else:
+        body = []
+    longest = max((len(run) for line in body for run in re.findall(r"`+", line)), default=0)
+    fence = "`" * max(3, longest + 1)
+    return [fence + SOURCE_LANG.get(source.suffix, "")] + body + [fence]
+
+
+class SourceEmbeds:
+    """Live consumers and their source files in one repository tree."""
+
+    def __init__(self, repo):
+        self.repo = repo
+        self.inventory = set(repo.files)
+        self.starts = {}
+        for path in repo.live_markdown:
+            rel = path.relative_to(repo.root).as_posix()
+            if resolve_tree_path(repo.tree, rel) == rel:
+                self.starts[path] = repo.by_path[path].fm_end + 1 if path in repo.by_path else 0
+
+    def consumer(self, path):
+        try:
+            relative = path.relative_to(self.repo.root).as_posix()
+        except ValueError:
+            return None
+        aliases = []
+        resolved = resolve_tree_path(self.repo.tree, relative, aliases)
+        real = self.repo.root / resolved if resolved is not None else None
+        if real not in self.starts:
+            return None
+        if aliases:
+            alias = self.repo.root / aliases[0]
+            root = self.repo.live_markdown[real]
+            if alias in self.repo.live_markdown:
+                return real if self.repo.live_markdown[alias] is root else None
+            areas = {root.docs / directory for directory in EXTRA_DIRS}
+            areas.update(doc.path.parent / doc.id for doc in self.repo.docs if doc.root is root and not doc.archived)
+            if alias not in areas and areas.isdisjoint(alias.parents):
+                return None
+        return real
+
+    def selected(self, names):
+        selected, errors = set(), []
+        for name in names:
+            if FULL_ID_RE.fullmatch(name):
+                try:
+                    doc = self.repo.get(name)
+                except SystemExit as error:
+                    errors.append(str(error))
+                    continue
+                path = self.consumer(doc.path)
+                if path:
+                    attached = path.parent / doc.id
+                    selected.update(p for p in self.starts if attached in p.parents)
+            else:
+                path = self.consumer(Path.cwd() / name)
+            if path is None:
+                errors.append("canon: {} is not a live embed consumer".format(name))
+            else:
+                selected.add(path)
+        return sorted(selected if names else self.starts), errors
+
+    def source(self, path, operand):
+        parent = path.parent.relative_to(self.repo.root).as_posix()
+        relative, region = source_operand(operand)
+        rel = resolve_tree_path(self.repo.tree, parent + "/" + relative)
+        if rel not in self.inventory:
+            raise ValueError("source is not a repository file: " + operand)
+        source = self.repo.root / rel
+        if source == path:
+            raise ValueError("embed source is the consumer itself: " + operand)
+        return source, region
+
+    def update(self, path, problems, check=False):
+        try:
+            text = self.repo.tree.read_bytes(path).decode("utf-8")
+        except (OSError, UnicodeError) as error:
+            problems.append((path, 1, str(error)))
+            return None
+        if "<!-- embed:" not in text and "<!-- /embed" not in text:
+            return None
+        lines = re.findall(r"[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+$", text)
+        blocks, errors = embed_blocks(lines, self.starts[path])
+        problems.extend((path, i + 1, error) for i, error in errors)
+        for start, end, operand in reversed(blocks):
+            try:
+                source, region = self.source(path, operand)
+                source_text = self.repo.tree.read_text(source)
+                if source in self.starts and embed_blocks(source_text.split("\n"), self.starts[source])[0]:
+                    raise ValueError("embed source contains an active embed: " + operand)
+                block = source_fence(source, source_text, region)
+            except (OSError, ValueError) as error:
+                problems.append((path, start + 1, str(error)))
+                continue
+            if block == [line.rstrip("\r\n") for line in lines[start + 1:end]]:
+                continue
+            if check:
+                reason = "stale embed"
+                if self.repo.reads_work_tree:
+                    repair = shlex.quote(posix_rel(path, Path.cwd()))
+                    reason += "; run `canon.py embed {}`".format(repair)
+                problems.append((path, start + 1, reason))
+                continue
+            eol = lines[start][len(lines[start].rstrip("\r\n")):]
+            lines[start + 1:end] = [line + eol for line in block]
+        result = "".join(lines)
+        return result if result != text else None
+
+
+def cmd_embed(repo, args):
+    embeds = SourceEmbeds(repo)
+    updates, problems = {}, []
+    selected, errors = embeds.selected(args.docs)
+    for path in selected:
+        updated = embeds.update(path, problems, check=args.check)
+        if updated is not None:
+            updates[path] = updated
+    if errors or problems:
+        for error in errors:
+            print(error, file=sys.stderr)
+        for path, line, reason in sorted(problems):
+            print("ERROR {}:{}: {}".format(posix_rel(path, repo.root), line, reason))
+        return 1
+    for path, text in updates.items():
+        path.write_bytes(text.encode("utf-8"))
+        print("updated " + posix_rel(path, repo.root))
+    return 0
 
 
 # ---------------------------------------------------------------- index
@@ -1431,7 +1691,7 @@ def unfinished_problems(doc):
     return out
 
 
-def check_doc(repo, doc, changed, strict=False):
+def check_doc(repo, doc, changed, embeds, strict=False):
     rel, fm, info = doc.rel, doc.fm, TYPES[doc.type]
 
     def err(msg, fix=None):
@@ -1509,7 +1769,11 @@ def check_doc(repo, doc, changed, strict=False):
     for name in info["sections"]:
         if name not in names:
             err("missing section `## {}`".format(name))
-    if not doc.archived and line_count(doc.lines) > MAX_DOC_LINES:
+    count = line_count(doc.lines)
+    if count > MAX_DOC_LINES and doc.path in embeds.starts:
+        blocks, _errors = embed_blocks(doc.lines, doc.fm_end + 1)
+        count -= sum(block.end - block.start - 1 for block in blocks)
+    if not doc.archived and count > MAX_DOC_LINES:
         if doc.type == "D":
             hint = "; make it a new top-level design" if doc.suffix \
                 else "; split into sub-designs ({0}A, {0}B, ...)".format(doc.id)
@@ -1517,7 +1781,7 @@ def check_doc(repo, doc, changed, strict=False):
             hint = "; split it into several concepts"
         else:
             hint = "; move detail into {}/".format(posix_rel(doc.path.parent / doc.id, repo.root))
-        repo.problem("WARN", rel, "{} lines (max {}){}".format(line_count(doc.lines), MAX_DOC_LINES, hint))
+        repo.problem("WARN", rel, "{} lines (max {}){}".format(count, MAX_DOC_LINES, hint))
 
     refs = doc.as_list("refs")
     for ref in refs:
@@ -1762,8 +2026,9 @@ def run_check(repo, base=None, named=None):
     a problem recorded on one doc may involve a named one."""
     fork = merge_base(repo, base) if base else None
     changed = repo.checked_changes()
+    embeds = SourceEmbeds(repo)
     for doc in repo.docs:
-        check_doc(repo, doc, changed, strict=bool(base))
+        check_doc(repo, doc, changed, embeds, strict=bool(base))
 
     owners = {}
     for doc in repo.docs:
@@ -1780,12 +2045,30 @@ def run_check(repo, base=None, named=None):
             repo.problem("ERROR", rel, "attachment directory {} has no matching doc beside it".format(name))
 
     attached = attachment_dirs(repo, named or [])
+    problems = []
+    named_paths = {doc.path for doc in named or []}
+    for path in embeds.starts:
+        if named is None or path in named_paths or posix_rel(path, repo.root).startswith(attached):
+            embeds.update(path, problems, check=True)
+    for path, line, reason in problems:
+        if repo.staged:
+            reason += "; generate against the source intended for the commit and stage the matching block"
+        elif repo.rev:
+            reason += " in commit " + repo.rev
+        repo.problem("ERROR", posix_rel(path, repo.root), reason, line)
     scope = repo.scope_md if named is None else \
         [path for path in repo.scope_md if posix_rel(path, repo.root).startswith(attached)]
     for path in scope:
+        if path in repo.live_markdown and path not in embeds.starts:
+            continue
         if not repo.tree.is_file(path):
             continue
-        lines = repo.tree.read_text(path).split("\n")
+        try:
+            lines = repo.tree.read_text(path).split("\n")
+        except UnicodeDecodeError:
+            if path not in embeds.starts:
+                repo.problem("ERROR", posix_rel(path, repo.root), "document is not UTF-8")
+            continue
         check_links(repo, path, lines, 0)
         if path.name == "AGENTS.md" and line_count(lines) > MAX_AGENTS_LINES:
             repo.problem("WARN", posix_rel(path, repo.root), "{} lines (max {}); move detail into docs".format(
@@ -5191,6 +5474,11 @@ def main(argv=None):
                    help="check the staged tree, what `git commit` records, instead of the work tree")
     p.add_argument("--rev", metavar="REV", help="check the tree of commit REV instead of the work tree")
     p.set_defaults(func=cmd_check)
+
+    p = command(sub, "embed", help="generate source blocks in live Markdown documents")
+    p.add_argument("docs", nargs="*", metavar="ID|PATH", help="a live document ID or Markdown path")
+    p.add_argument("--check", action="store_true", help="report stale or invalid source blocks without writing")
+    p.set_defaults(func=cmd_embed)
 
     p = command(sub, "new", help="create a doc from its template with the next free id")
     p.add_argument("type", help="C D P R E I (or concept, design, plan, ...)")

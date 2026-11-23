@@ -261,6 +261,310 @@ class CanonTest(unittest.TestCase):
         return found
 
 
+class EmbedTest(CanonTest):
+    def test_invalid_utf8_markdown_sources_report_the_consumer_marker(self):
+        self.create("docs/guides/input.md")
+        doc = self.doc("C", "consumer")
+        other = self.doc("C", "source")
+        (self.root / "docs/guides/input.md").write_bytes(b"\xff")
+        other.write_bytes(b"\xff")
+        start = doc.read_text()
+        for name in ("../guides/input.md", "C002-source.md"):
+            doc.write_text(start + "<!-- embed: " + name + " -->\n<!-- /embed -->\n")
+            for args in (("embed", "--check"), ("embed", "C001"), ("check",), ("check", "C001")):
+                out = self.fails(*args)
+                self.assertIn("ERROR docs/concepts/C001-consumer.md:{}:".format(start.count("\n") + 1), out)
+                self.assertIn("utf-8", out.lower())
+                self.assertNotIn("Traceback", out)
+
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_numbered_aliases_share_the_resolved_consumer_and_cannot_import_an_outside_file(self):
+        doc = self.doc("C", "real")
+        doc.write_text(doc.read_text() + "<!-- embed: ../../src/base.py -->\n<!-- /embed -->\n")
+        alias = doc.parent / "C001-alias.md"
+        alias.symlink_to(doc.name)
+        outside = self.tmpdir() / "other.md"
+        outside.write_bytes(b"\xff not a document")
+        escape = doc.parent / "C002-outside.md"
+        escape.symlink_to(os.path.relpath(outside, doc.parent))
+        self.assertEqual(self.ok("embed", alias, "C001"), "updated docs/concepts/C001-real.md\n")
+        self.assertEqual(self.ok("embed", "--check"), "")
+        self.assertIn(str(escape), self.fails("embed", escape))
+        self.ok("check", "C001")
+        self.assertEqual(outside.read_bytes(), b"\xff not a document")
+
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_source_walk_stays_inside_each_inventory_and_escaping_consumers_are_skipped(self):
+        self.create("docs/guides/inputs.md", "src/ignored.txt")
+        with (self.root / ".gitignore").open("a") as ignore:
+            ignore.write("src/ignored.txt\n")
+        guides, src = self.root / "docs/guides", self.root / "src"
+        outside = self.tmpdir() / "outside.md"
+        outside.write_bytes(b"outside\xff\n")
+        (guides / "outside.md").symlink_to(os.path.relpath(outside, guides))
+        (src / "absolute").symlink_to(src / "base.py")
+        (src / "relative").symlink_to(os.path.relpath(outside, src))
+        (src / "ignored-link").symlink_to("ignored.txt")
+        (src / "loop").symlink_to("loop")
+        for hops in range(1, 42):
+            (src / str(hops)).symlink_to(str(hops - 1) if hops > 1 else "base.py")
+        valid = guides / "forty.md"
+        valid.write_text("<!-- embed: ../../src/40 -->\n<!-- /embed -->\n")
+        self.ok("embed", valid)
+        self.assertIn("value = 1", valid.read_text())
+        guide = guides / "inputs.md"
+        operands = ["../../src/" + s for s in ("absolute", "relative", "ignored-link", "ignored.txt", "loop",
+                                                "41", "missing/../base.py", "base.py/../base.py")]
+        operands.extend(["../../../" + self.root.name + "/src/base.py", str(src / "base.py"), "../../src"])
+        guide.write_text("".join("<!-- embed: {} -->\n<!-- /embed -->\n".format(o) for o in operands))
+        self.commit(check=False)
+        before = guide.read_bytes(), outside.read_bytes(), self.git("ls-files", "--stage")
+        for args in (("embed", "--check"), ("check",), ("check", "--staged"), ("check", "--rev", "HEAD")):
+            out = self.fails(*args)
+            for i, operand in enumerate(operands):
+                self.assertIn("ERROR docs/guides/inputs.md:{}:".format(2*i + 1), out, operand)
+            self.assertNotIn("outside.md:", out)
+            self.assertNotIn("Traceback", out)
+        self.assertEqual((guide.read_bytes(), outside.read_bytes(), self.git("ls-files", "--stage")), before)
+
+    def test_line_limit_counts_marker_lines_and_fences_hide_generated_headings_and_links(self):
+        doc = self.doc("C", "length")
+        prefix = doc.read_text()
+        (self.root / "src/sample.txt").write_text("```\n## Code only\n[missing](nowhere)\n<!-- embed: missing -->\n")
+        open_line = "<!-- embed: ../../src/sample.txt -->\n"
+        close_line = "<!-- /embed -->\n"
+        doc.write_text(prefix + open_line + close_line)
+        self.ok("embed", "C001")
+        block = doc.read_text()[len(prefix):]
+        self.assertTrue(block.startswith(open_line + "````\n"))
+        self.assertNotIn("Code only", self.ok("show", "C001"))
+        stale = open_line + "old\n" * 7 + close_line
+        invalid = stale.replace("sample.txt", "absent")
+        malformed = open_line + "uncounted?\n" * 7
+        nested = open_line * 2 + "ordinary\n" * 7 + close_line * 2
+        for span, counted, clean in ((block, 2, True), (stale, 2, False), (invalid, 2, False),
+                                     (malformed, 8, False), (nested, 11, False)):
+            for total in (500, 501):
+                with self.subTest(span=span, total=total):
+                    doc.write_text(prefix + "\n" * (total - counted - prefix.count("\n")) + span)
+                    out = self.ok("check", "C001") if clean else self.fails("check", "C001")
+                    self.assertNotIn("broken link", out)
+                    self.assertEqual("501 lines (max 500)" in out, total == 501, out)
+                    if total == 500:
+                        self.assertNotIn("lines (max", out)
+
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_check_uses_the_document_links_and_source_from_the_selected_tree(self):
+        doc = self.doc("C", "tree")
+        self.create("pkg/nested/file", "pkg/value.py", "src/value.py")
+        jump, source = self.root / "src/jump", self.root / "pkg/value.py"
+        jump.symlink_to("../pkg/nested")
+        (self.root / "src/value.py").write_text("lexical shortcut\n")
+        source.write_text("first\n")
+        doc.write_text(doc.read_text() + "<!-- embed: ../../src/jump/../value.py -->\n<!-- /embed -->\n")
+        self.ok("embed", "C001")
+        self.assertIn("```python\nfirst\n```", doc.read_text())
+        self.commit()
+        source.write_text("committed source\n")
+        self.commit(check=False)
+        commit = self.git("rev-parse", "HEAD")
+
+        source.write_text("staged source\n")
+        self.ok("embed", "C001")
+        self.git("add", str(source), str(doc))
+        source.write_text("working source\n")
+        doc.write_text(doc.read_text().replace("staged source", "working stale block"))
+        jump.unlink()
+        jump.symlink_to("..")  # file after '..' changes with this work-tree link
+        before = doc.read_bytes(), self.git("ls-files", "--stage")
+        rel = "docs/concepts/C001-tree.md"
+        for args in ((), ("C001",), ("--base", "HEAD"), ("C001", "--fix")):
+            out = self.fails("check", *args)
+            self.assertIn("ERROR " + rel + ":", out)
+            self.assertIn("value.py", out)
+        self.ok("check", "--staged")
+        out = self.fails("check", "--rev", commit)
+        self.assertIn("stale embed", out)
+        self.assertIn(commit, out)
+        self.assertEqual((doc.read_bytes(), self.git("ls-files", "--stage")), before)
+        jump.unlink()
+        jump.symlink_to("../pkg/nested")
+        self.assertIn("canon.py embed " + rel, self.fails("check", "C001"))
+        self.git("add", str(source))
+        staged = self.git("ls-files", "--stage")
+        out = self.fails("check", "--staged")
+        self.assertIn("stale embed", out)
+        self.assertIn("stage", out)
+        self.assertIn("matching block", out)
+        self.assertEqual((doc.read_bytes(), self.git("ls-files", "--stage")), (before[0], staged))
+        self.ok("embed", "C001")
+        self.ok("check", "C001")
+        self.assertIn("working source", doc.read_text())
+
+    def test_plain_markdown_and_source_literals_are_allowed_but_active_consumers_cannot_be_sources(self):
+        self.create("docs/guides/plain.md", "docs/guides/example.md", "docs/guides/parent.md", "src/data.txt")
+        guides = self.root / "docs/guides"
+        plain, example, parent = (guides / name for name in ("plain.md", "example.md", "parent.md"))
+        literal = "<!-- embed: absent -->\n<!-- /embed -->\n"
+        source = self.root / "src/data.txt"
+        source.write_text(literal)
+        plain.write_text("```\n" + literal + "```\n")
+        def pair(name):
+            return "<!-- embed: {} -->\n<!-- /embed -->\n".format(name)
+        example.write_text(pair("plain.md") + pair("../../src/data.txt"))
+        self.ok("embed", example)
+        self.assertIn("````\n```\n" + literal + "```\n````", example.read_text())
+        self.assertIn("```\n" + literal + "```", example.read_text())
+        expected = example.read_bytes()
+        for target in ("example.md", "parent.md"):
+            parent.write_text(pair(target))
+            out = self.fails("embed", parent)
+            self.assertIn("ERROR docs/guides/parent.md:1:", out)
+            self.assertIn(target, out)
+            self.assertEqual(parent.read_text(), pair(target))
+            self.assertEqual(example.read_bytes(), expected)
+        parent.write_text(pair("example.md"))
+        example.write_text(pair("parent.md"))
+        out = self.fails("embed", "--check", example, parent)
+        for path in (example, parent):
+            self.assertIn("ERROR docs/guides/{}:1:".format(path.name), out)
+
+    def test_invalid_markers_and_sources_report_their_marker_and_keep_every_file(self):
+        guides = self.root / "docs/guides"
+        guides.mkdir()
+        cases = {
+            "unclosed": "<!-- embed: ../../src/base.py -->\n",
+            "no-open": "<!-- /embed -->\n",
+            "malformed-close": "<!-- /embed wrong -->\n",
+            "malformed-open": "<!-- embed:file -->\n<!-- /embed -->\n",
+            "raw-space": "<!-- embed: bad path -->\n<!-- /embed -->\n",
+            "nested": "<!-- embed: ../../src/base.py -->\n<!-- embed: ../../src/base.py -->\n"
+                      "<!-- /embed -->\n<!-- /embed -->\n",
+        }
+        (self.root / "src/binary").write_bytes(b"x\0x")
+        (self.root / "src/nonutf8").write_bytes(b"\xff")
+        for name, text in (("duplicate", "#region a\n#endregion\n//region a\n//endregion\n"),
+                           ("nested-region", "//region a\n#region b\n#endregion\n//endregion\n"),
+                           ("unclosed-region", "//region a\n"), ("unopened-region", "#endregion\n"),
+                           ("bad-region", "//region invalid name\n"), ("closing-name", "#region a\n#endregion b\n")):
+            (self.root / "src" / name).write_text(text)
+        operands = ["base.py#unknown", "base.py#", "base.py#bad!", "percent%", "binary", "nonutf8", "absent",
+                    "duplicate", "nested-region", "unclosed-region", "unopened-region", "bad-region", "closing-name"]
+        for i, operand in enumerate(operands):
+            cases["source" + str(i)] = "<!-- embed: ../../src/{} -->\n<!-- /embed -->\n".format(operand)
+        for name, body in cases.items():
+            (guides / (name + ".md")).write_text("# Guide\n" + body)
+        before = {p: p.read_bytes() for p in guides.iterdir()}
+        for args in (("embed",), ("embed", "--check")):
+            out = self.fails(*args)
+            for name in cases:
+                line = 3 if name == "nested" else 2
+                self.assertIn("ERROR docs/guides/{}.md:{}: ".format(name, line), out)
+            self.assertNotIn("Traceback", out)
+            self.assertEqual({p: p.read_bytes() for p in before}, before)
+
+    def test_check_reports_stale_and_invalid_blocks_and_generation_validates_before_writing(self):
+        self.create("docs/guides/a.md", "docs/guides/b.md")
+        good = self.root / "docs/guides/a.md"
+        bad = self.root / "docs/guides/b.md"
+        good.write_text("Before\n<!-- embed: ../../src/base.py -->\n<!-- /embed -->\n")
+        bad.write_text("Before\n\n<!-- embed: missing -->\n<!-- /embed -->\n")
+        before = good.read_bytes(), bad.read_bytes()
+        errors = self.fails("embed", "--check").splitlines()
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(errors[0].startswith("ERROR docs/guides/a.md:2: stale"), errors)
+        self.assertIn("canon.py embed docs/guides/a.md", errors[0])
+        self.assertTrue(errors[1].startswith("ERROR docs/guides/b.md:3:"), errors)
+        self.assertIn("missing", errors[1])
+        self.assertEqual((good.read_bytes(), bad.read_bytes()), before)
+        mixed = self.fails("embed", "--check", "absent.md", good, "C099", bad)
+        for diagnostic in [*errors, "absent.md", "C099"]:
+            self.assertIn(diagnostic, mixed)
+        self.assertIn(errors[1], self.fails("embed"))
+        self.assertIn("absent.md", self.fails("embed", good, "absent.md"))
+        self.assertEqual((good.read_bytes(), bad.read_bytes()), before)
+        self.ok("embed", good)
+        self.assertEqual(self.ok("embed", "--check", good), "")
+        self.assertEqual(bad.read_bytes(), before[1])
+
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_selects_live_consumers_in_their_own_root_and_only_assigned_documents(self):
+        doc = self.doc("C", "example")
+        other = self.doc("C", "history")
+        self.ok("archive", "C002", "dropped")
+        self.init_module("module")
+        module_doc = self.root / self.ok("new", "C", "module", "--root", "module").strip()
+        self.create("docs/concepts/C001/note.md", "docs/guides/real/example.md", "module/docs/assets/a.md",
+                    "outside.md")
+        attachment = self.root / "docs/concepts/C001/note.md"
+        guide = self.root / "docs/guides/real/example.md"
+        asset = self.root / "module/docs/assets/a.md"
+        def block(path):
+            return "<!-- embed: " + os.path.relpath(self.root / "src/base.py", path.parent) + " -->\n<!-- /embed -->\n"
+        for path in (doc, module_doc, attachment, guide, asset):
+            path.write_text(path.read_text() + block(path))
+        protected = [self.root / "docs/README.md", self.root / "docs/archived/README.md",
+                     self.root / "docs/archived/concepts" / other.name, self.root / "outside.md"]
+        for path in protected:
+            path.write_text(path.read_text() + "<!-- embed: never -->\n<!-- /embed -->\n")
+        before = {path: path.read_bytes() for path in protected + [module_doc, guide, asset]}
+        alias = self.root / "docs/guides/alias.md"
+        alias.symlink_to("real/example.md")
+        (attachment.parent / "examples").symlink_to("../../guides/real", target_is_directory=True)
+        escape = self.root / "docs/guides/escape.md"
+        escape.symlink_to("../../outside.md")
+        cross = self.root / "docs/guides/cross.md"
+        cross.symlink_to("../../module/docs/assets/a.md")
+        self.assertCountEqual(self.ok("embed", "C001", doc, attachment, "C001").splitlines(),
+                              ["updated docs/concepts/C001-example.md", "updated docs/concepts/C001/note.md"])
+        self.assertEqual({path: path.read_bytes() for path in before}, before)
+        self.assertEqual(self.ok("embed", "alias.md", "real/example.md", "../concepts/C001/examples/example.md",
+                                 cwd=guide.parent.parent),
+                         "updated docs/guides/real/example.md\n")
+        self.assertIn("value = 1", guide.read_text())
+        self.assertEqual(self.ok("embed").splitlines(),
+                         ["updated module/docs/assets/a.md", "updated module/docs/concepts/C003-module.md"])
+        self.assertEqual(self.ok("embed"), "")
+        for path in [*protected, escape, cross]:
+            with self.subTest(path=path):
+                self.assertIn(str(path), self.fails("embed", path))
+        self.assertEqual({path: path.read_bytes() for path in protected}, {path: before[path] for path in protected})
+
+    def test_regions_escaped_filenames_and_fences(self):
+        doc = self.doc("C", "regions")
+        prefix = doc.read_text()
+        sources = self.root / "src"
+        (sources / "a #%.hpp").write_text("\n    // region add\n        # Heading\n        ```\n"
+                                          "        <!-- /embed -->\n    # endregion add\n    text\n"
+                                          "    #region empty\n    // endregion\n\n")
+        cases = [("a%20%23%25.hpp#add", "````cpp\n# Heading\n```\n<!-- /embed -->\n````"),
+                 ("a%20%23%25.hpp#empty", "```cpp\n```"),
+                 ("a%20%23%25.hpp", "````cpp\n    # Heading\n    ```\n    <!-- /embed -->\ntext\n````")]
+        for name, lang in (("header.h", "cpp"), ("file.cpp", "cpp"), ("spec.capnp", "capnp"), ("other.txt", "")):
+            (sources / name).write_text("  value\n")
+            cases.append((name, "```" + lang + "\nvalue\n```"))
+        def body(generate):
+            return "".join("<!-- embed: ../../src/{} -->\n{}<!-- /embed -->\n"
+                           .format(name, block + "\n" if generate else "") for name, block in cases)
+        literal = "~~~~markdown\n~~~\n~~~~ not a closing fence\n<!-- embed: missing -->\n<!-- /embed -->\n~~~~~\n"
+        doc.write_text(prefix + literal + body(False))
+        self.assertEqual(self.ok("embed", "C001"), "updated docs/concepts/C001-regions.md\n")
+        self.assertEqual(doc.read_text(), prefix + literal + body(True))
+        self.assertEqual(self.ok("embed", "C001"), "")
+
+    def test_generation_preserves_the_markers_line_endings_and_last_byte(self):
+        doc = self.doc("C", "example")
+        prefix = doc.read_bytes() + b"Before.\r\n<!-- embed: ../../src/base.py -->\r\n"
+        suffix = b"<!-- /embed -->\r\nAfter."
+        doc.write_bytes(prefix + suffix)
+        rel = "docs/concepts/C001-example.md"
+        self.assertEqual(self.ok("embed", "C001"), "updated " + rel + "\n")
+        expected = prefix + b"```python\r\nvalue = 1\r\n```\r\n" + suffix
+        self.assertEqual(doc.read_bytes(), expected)
+        self.assertEqual(self.ok("embed", rel), "")
+        self.assertEqual(doc.read_bytes(), expected)
+
+
 class ReviewGateTest(CanonTest):
     def test_pending_revision_warns_locally_and_fails_with_base(self):
         design = self.design()
