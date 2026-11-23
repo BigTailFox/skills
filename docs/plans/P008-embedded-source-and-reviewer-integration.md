@@ -1,9 +1,10 @@
 ---
-status: draft
+status: accepted
 created: 2026-11-23
 updated: 2026-11-23
 revision: 1
 reviewed: 1
+approved: 1
 reviewers: [gpt-6.2-astra, gemini-4-neon-xhigh]
 modules: [canon]
 summary: Deliver embedded source, attachment citations, native command review progress, scoped consent and verified skill references in one change.
