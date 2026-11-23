@@ -23,23 +23,25 @@ The first three findings have short remedies already in Silk's project instructi
 | ID | Severity | Finding | Disposition |
 |----|----------|---------|-------------|
 | R004-F1 | major | An L2 approval request can omit an earlier target or imply permission to start planning. | open |
-| R004-F2 | major | Reviewers accepted a design guarantee broader than the experiment that supported it. | open |
-| R004-F3 | major | A session can run a repository-wide fix after another session starts editing the same checkout. | open |
+| R004-F2 | major | Reviewers accepted a design guarantee broader than the experiment that supported it. | fixed 4e2663a |
+| R004-F3 | major | A session can run a repository-wide fix after another session starts editing the same checkout. | fixed 977ff17 |
 | R004-F4 | major | An external review can make progress for minutes without a visible status or a usable way to resume. | open |
 | R004-F5 | major | The manual fallback leaves the gate's state unclear when an independent reviewer is unavailable. | open |
 | R004-F6 | minor | Reviewer setup repeats launch commands and can omit the scope of an existing authorization. | open |
-| R004-F7 | minor | Fixing one occurrence of a guarantee can leave contradictory wording elsewhere. | open |
+| R004-F7 | minor | Fixing one occurrence of a guarantee can leave contradictory wording elsewhere. | fixed 4e2663a |
 | R004-F8 | minor | A fresh confirmation reviewer can reopen findings the maintainer already declined. | open |
-| R004-F9 | minor | A reply approving some decisions and asking about others can trigger premature edits. | open |
+| R004-F9 | minor | A reply approving some decisions and asking about others can trigger premature edits. | fixed 33e1e47 |
 | R004-F10 | major | Review records can misattribute a revision or give an outdated result for a finding. | open |
 | R004-F11 | minor | Historical trace gaps require manually matching events to review directories. | open |
-| R004-F12 | minor | A worktree handoff can leave the maintainer guessing whether the work reached the target branch. | open |
+| R004-F12 | minor | A worktree handoff can leave the maintainer guessing whether the work reached the target branch. | fixed 977ff17 |
 | R004-F13 | minor | Renumbering an experiment can break a command needed to reproduce it. | open |
 | R004-F14 | minor | A strict branch check gives no indication that a reported error already exists on the base. | open |
 
 ### Design approval and shared checkouts
 
 **F1. Carry the whole approval forward.** The last of two follow-ups listed three revisions. A later session had to read the original gate and both follow-ups to recover the fourth, `D002@r6`. Commit `03050e1` records all four. In a separate gate, the maintainer answered yes to a combined approval and planning question, then had to interrupt planning. Silk recorded the approval in `847ce66` and changed its handoff wording in `707d0b4`. Keep a machine-readable list in `.canon/canon-design/` for each change, carrying each target and its exact reviewed revision forward until approved or superseded. Ask for approval of that list and put the planning command on its own line. A bare yes records the revisions. An explicit request for both also starts planning. Records 8, 9 and 19. [D007§gate-status: gate status](../designs/D007-change-tiers.md#gate-status)
+
+Commit `4e2663a` separates approval from starting the next phase and asks for every pending target at its reviewed revision. The machine-readable list that a fresh session can recover remains open.
 
 **F2. Check the conditions of experimental claims.** One experiment measured a stall within a single CUDA context. Two successive design revisions applied the result to a whole process, which can contain multiple contexts. The maintainer caught the change in scope after two review rounds. Silk narrowed the claim and added a reviewer instruction in `14319d3`. The upstream correctness prompt should ask whether the experiment exercised the conditions under which the design promises the result. Record 6. [D007§reviewer-prompt: reviewer prompt](../designs/D007-change-tiers.md#reviewer-prompt)
 
