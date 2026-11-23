@@ -262,6 +262,170 @@ class CanonTest(unittest.TestCase):
 
 
 class EmbedTest(CanonTest):
+    def test_nested_project_owns_its_index_and_archived_consumers(self):
+        module = self.root / "docs/guides/demo"
+        self.init_module(module)
+        index = module / "docs/README.md"
+        archived = module / "docs/archived/concepts/C045-old.md"
+        archived.parent.mkdir(parents=True, exist_ok=True)
+        original = self.doc("C", "live")
+        archived.write_text(original.read_text().replace("C001:", "C045:").replace("status: draft", "status: dropped"))
+        self.ok("index")
+        frozen = {}
+        for path in (index, archived):
+            path.write_text(path.read_text() + "\n<!-- embed: missing.py -->\n<!-- /embed -->\n")
+            frozen[path] = path.read_bytes()
+        self.assertEqual(self.ok("embed", "--check"), "")
+        self.assertEqual(self.ok("embed"), "")
+        self.ok("check")
+        for path, data in frozen.items():
+            self.assertEqual(path.read_bytes(), data)
+            self.assertIn("not a live embed consumer", self.fails("embed", path))
+
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_every_consumer_alias_hop_stays_in_live_markdown_locations(self):
+        self.create("docs/guides/real.md", "docs/concepts/C020-invalid.md", "docs/concepts/C020/note.md", "other/keep")
+        guides = self.root / "docs/guides"
+        target = guides / "real.md"
+        target.write_text("<!-- embed: ../../src/base.py -->\n<!-- /embed -->\n")
+        bad_owner = self.root / "docs/concepts/C020/alias.md"
+        bad_owner.symlink_to("../../guides/real.md")
+        (guides / "link.txt").symlink_to("real.md")
+        (guides / "up").symlink_to("../..", target_is_directory=True)
+        (guides / "out").symlink_to("../../other", target_is_directory=True)
+        (self.root / "other/back.md").symlink_to("../docs/guides/real.md")
+        before = target.read_bytes()
+        for alias in (bad_owner, guides / "link.txt", guides / "up/docs/guides/real.md", guides / "out/back.md"):
+            with self.subTest(alias=alias):
+                self.assertIn("not a live embed consumer", self.fails("embed", alias))
+                self.assertEqual(target.read_bytes(), before)
+        (guides / "alias.md").symlink_to("real.md")
+        self.assertIn("updated docs/guides/real.md", self.ok("embed", guides / "alias.md"))
+
+    def test_region_keywords_in_ordinary_punctuated_comments_stay_literal(self):
+        doc = self.doc("C", "comments")
+        text = "# region-based allocator\n// region.size\n# region: setup\n# endregion, in prose\n"
+        (self.root / "src/base.py").write_text(text)
+        doc.write_text(doc.read_text() + "<!-- embed: ../../src/base.py -->\n<!-- /embed -->\n")
+        self.ok("embed", "C001")
+        self.assertIn(text, doc.read_text())
+        self.ok("embed", "--check", "C001")
+
+    def test_malformed_active_markers_in_a_live_source_refuse_the_scoped_write(self):
+        self.create("docs/guides/parent.md", "docs/guides/source.md")
+        guides = self.root / "docs/guides"
+        parent, source = guides / "parent.md", guides / "source.md"
+        before = b"<!-- embed: source.md -->\n<!-- /embed -->\n"
+        parent.write_bytes(before)
+        for malformed in ("<!-- embed: bad -->\n", "<!-- embed:bad -->\n<!-- /embed -->\n",
+                          "<!-- embed: bad -->\n<!-- embed: bad -->\n<!-- /embed -->\n<!-- /embed -->\n"):
+            source.write_text(malformed)
+            for args in (("embed", parent), ("embed", "--check", parent)):
+                out = self.fails(*args)
+                self.assertIn("ERROR docs/guides/parent.md:1:", out)
+                self.assertIn("source.md", out)
+            self.assertEqual(parent.read_bytes(), before)
+
+    def test_generating_one_hard_link_preserves_the_other_entry_and_the_selected_mode(self):
+        self.create("docs/guides/a.md")
+        selected = self.root / "docs/guides/a.md"
+        other = selected.with_name("b.md")
+        before = b"<!-- embed: ../../src/base.py -->\n<!-- /embed -->\n"
+        selected.write_bytes(before)
+        selected.chmod(0o640)
+        mode = stat.S_IMODE(selected.stat().st_mode)
+        os.link(selected, other)
+        self.ok("embed", selected)
+        self.assertIn(b"value = 1", selected.read_bytes())
+        self.assertEqual(other.read_bytes(), before)
+        self.assertEqual(stat.S_IMODE(selected.stat().st_mode), mode)
+
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_numbered_symlink_to_an_ordinary_file_still_supplies_the_document_and_index(self):
+        doc = self.doc("C", "intro")
+        body = self.root / "src/body.md"
+        doc.rename(body)
+        doc.symlink_to(os.path.relpath(body, doc.parent))
+        self.git("add", "-A")
+        self.assertIn("# C001: Intro", self.ok("show", "C001"))
+        self.ok("index")
+        self.assertIn("C001-intro.md", (self.root / "docs/README.md").read_text())
+        self.assertIn("not a live embed consumer", self.fails("embed", "C001"))
+        self.ok("check", "C001")
+        body.write_text("No frontmatter.\n")
+        self.git("add", "src/body.md")
+        for args in (("check", "C001"), ("check", "--staged")):
+            self.assertRegex(self.fails(*args), r"C001-intro\.md:[^\n]*frontmatter")
+
+    def test_adopt_preserves_raw_embed_headings_and_supplies_real_document_sections(self):
+        old = self.root / "sample.md"
+        raw = "<!-- embed: src/base.py -->\n# Example\n## Ideas\n<!-- /embed -->"
+        old.write_text(raw + "\n")
+        self.ok("adopt", old, "C")
+        doc = self.root / "docs/concepts/C001-sample.md"
+        self.assertIn(raw.replace("src/", "../../src/"), doc.read_text())
+        self.ok("embed", "C001")
+        self.assertIn("# C001: Sample\n", doc.read_text())
+        self.assertIn("\n## Ideas\n", doc.read_text())
+        self.ok("check", "C001")
+
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_absolute_numbered_alias_retains_only_its_ordinary_work_tree_identity(self):
+        doc = self.doc("C", "intro")
+        body = self.root / "src/body.md"
+        doc.rename(body)
+        doc.symlink_to(body)
+        self.ok("index")
+        self.assertIn("# C001: Intro", self.ok("show", "C001"))
+        self.assertIn("C001-intro.md", (self.root / "docs/README.md").read_text())
+        self.ok("check", "C001")
+        self.assertIn("not a live embed consumer", self.fails("embed", "C001"))
+        self.git("add", "-A")
+        self.ok("index", "--staged")
+        self.assertNotIn("C001-intro.md", self.git("show", ":docs/README.md"))
+        self.assertIn("C001-intro.md", (self.root / "docs/README.md").read_text())
+        self.ok("check", "--staged")
+
+    def test_inline_triple_backticks_before_an_embed_keep_it_visible_to_archive(self):
+        doc = self.doc("C", "sample")
+        doc.write_text(doc.read_text() + "\n```sample```\n<!-- embed: ../../src/base.py -->\n<!-- /embed -->\n")
+        before = doc.read_bytes()
+        for args in (("embed", "--check", "C001"), ("archive", "C001", "dropped")):
+            self.assertIn("stale embed", self.fails(*args))
+            self.assertEqual(doc.read_bytes(), before)
+
+    def test_archive_preserves_work_tree_and_index_when_a_rewrite_input_is_unreadable(self):
+        doc = self.doc("C", "history")
+        other = self.doc("C", "broken")
+        self.commit()
+        other.write_bytes(b"\xff")
+        before = doc.read_bytes(), self.git("ls-files", "--stage")
+        out = self.fails("archive", "C001", "dropped")
+        self.assertEqual((doc.read_bytes(), self.git("ls-files", "--stage")), before)
+        self.assertIn("C002-broken.md", out)
+        self.assertNotIn("Traceback", out)
+
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_renaming_skips_tracked_children_under_a_replaced_directory_link(self):
+        self.doc("C", "old")
+        self.create("notes/read.md")
+        self.commit()
+        directory = self.root / "notes"
+        outside = self.tmpdir() / "notes"
+        directory.rename(outside)
+        directory.symlink_to(outside, target_is_directory=True)
+        text = b"[C001: Old](../docs/concepts/C001-old.md)\n"
+        (outside / "read.md").write_bytes(text)
+        self.ok("rename", "C001", "new")
+        self.assertEqual((outside / "read.md").read_bytes(), text)
+
+    def test_retitle_preserves_unmarked_crlf_markdown(self):
+        doc = self.doc("C", "old")
+        doc.write_bytes(doc.read_bytes().replace(b"\n", b"\r\n"))
+        before = doc.read_bytes()
+        self.ok("rename", "C001", "new", "--title", "New")
+        self.assertEqual(doc.with_name("C001-new.md").read_bytes(), before.replace(b"# C001: Old", b"# C001: New"))
+
     @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
     def test_a_marker_reaching_a_stationary_source_through_a_moved_directory_keeps_working(self):
         self.design()
@@ -406,10 +570,12 @@ class EmbedTest(CanonTest):
         other.write_bytes(b"\xff")
         start = doc.read_text()
         for name in ("../guides/input.md", "C002-source.md"):
-            doc.write_text(start + "<!-- embed: " + name + " -->\n<!-- /embed -->\n")
+            doc.write_text(start + "<!-- embed: " + name + " -->\n<!-- /embed -->\n[Input](" + name + "#example)\n")
             for args in (("embed", "--check"), ("embed", "C001"), ("check",), ("check", "C001")):
                 out = self.fails(*args)
                 self.assertIn("ERROR docs/concepts/C001-consumer.md:{}:".format(start.count("\n") + 1), out)
+                if args[0] == "check":
+                    self.assertIn("anchor target is not UTF-8", out)
                 self.assertIn("utf-8", out.lower())
                 self.assertNotIn("Traceback", out)
 
@@ -1020,7 +1186,7 @@ class RenumberTest(CanonTest):
             (self.root / name).write_text("## See [D001: Area](../D001-area.md)\n")
         concept = self.doc("C", "read", body=CONCEPT.format(
             "### [Moved D001§see-d001-area](../designs/D001/notes.md#see-d001-area)\n\n"
-            "[Stationary D002§see-d001-area, `D002§see-d001-area`, D000§goals]"
+            "[Stationary D002§see-d001-area, `D002§see-d001-area`, ``D002§see-d001-area``, D000§goals]"
             "(../designs/D002/notes.md#see-d001-area)"))
         later = self.doc("C", "later", body=CONCEPT.format(
             "[C001§moved-d001see-d001-area: later](C001-read.md#moved-d001see-d001-area)"))
@@ -1029,7 +1195,7 @@ class RenumberTest(CanonTest):
             notes = self.root / "docs/designs" / owner / "notes.md"
             self.assertEqual(notes.read_text(), "## See [D005: Area](../D005-area.md)\n")
         self.assertIn("### [Moved D005§see-d005-area](../designs/D005/notes.md#see-d005-area)", concept.read_text())
-        self.assertIn("[Stationary D002§see-d005-area, `D002§see-d001-area`, D000§goals]"
+        self.assertIn("[Stationary D002§see-d005-area, `D002§see-d001-area`, ``D002§see-d001-area``, D000§goals]"
                       "(../designs/D002/notes.md#see-d005-area)", concept.read_text())
         self.assertIn("[C001§moved-d005see-d005-area: later](C001-read.md#moved-d005see-d005-area)", later.read_text())
         self.ok("check", "--fix")

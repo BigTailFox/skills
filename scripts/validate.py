@@ -34,7 +34,7 @@ BRAND = "canon"
 MAX_NAME = 64
 MAX_DESCRIPTION = 1024
 MAX_LINES = 500
-LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)\s]+)\)")
+LINK_RE = re.compile(r"""\[([^\]]*)\]\(([^)\s]+)(?:[ \t]+(?:"[^"]*"|'[^']*'|\([^()]*\)))?\)""")
 HEADING_RE = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$")
 FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
 INLINE_CODE_RE = re.compile(r"(?<!`)(`+)(?!`)(.*?)(?<!`)\1(?!`)")
@@ -123,7 +123,7 @@ def has_sections(md, pointer):
 def skill_reference_errors(line, prose, source):
     for span in INLINE_CODE_RE.finditer(line):
         code = span.group(2).strip()
-        name = code[1:].partition(" ")[0] if code.startswith("/") else code
+        name = code[1:].split(maxsplit=1)[0] if len(code) > 1 and code.startswith(("/", "$")) else code
         named = SKILL_NAME_RE.fullmatch(name) or (NAME_RE.fullmatch(name) and re.match(r"\s+skill\b", line[span.end():]))
         if named and not any((SKILLS_DIR / category / name / "SKILL.md").is_file() for category in CATEGORIES):
             yield f"{source}: unknown skill `{name}`"

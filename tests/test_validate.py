@@ -103,10 +103,10 @@ class SkillReferenceTest(ScratchRepoTest):
         skill = "skills/execution/canon-x"
         self.write(f"{skill}/guide.md", "# Run `git` (again)!\n## Queue\n## Queue\n")
         self.write(f"{skill}/notes.md", "# Notes\n[Here](#notes) [Command](guide.md#run-git-again)\n"
-                   "[Second](guide.md#queue-1) [External](https://outside.example/guide.md#absent)\n")
+                   "[Second](guide.md#queue-1 \"Title\") [External](https://outside.example/guide.md#absent)\n")
         self.assertEqual(self.validate(WORD_TOKENS).returncode, 0)
         self.write("OTHER.md", "# Other\n[Gone](#gone)\n")
-        self.write(f"{skill}/notes.md", "# Notes\n[Third](guide.md#queue-2)\n[Missing file](absent.md#topic)\n")
+        self.write(f"{skill}/notes.md", "# Notes\n[Third](guide.md#queue-2 \"Title\")\n[Missing file](absent.md#topic)\n")
         result = self.validate(WORD_TOKENS)
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("OTHER.md:2:", result.stdout)
@@ -125,21 +125,25 @@ class SkillReferenceTest(ScratchRepoTest):
                 self.assertEqual(result.returncode, 1, result.stdout)
                 self.assertIn(f"{notes}:9: missing heading for #example-heading", result.stdout)
                 self.assertNotIn("absent", result.stdout)
+        self.write(notes, "```sample```\n[Details](#missing)\n")
+        self.assertIn(f"{notes}:2: missing heading for #missing", self.validate(WORD_TOKENS).stdout)
 
     def test_named_skills_and_slash_commands_must_be_installed(self):
         notes = "skills/execution/canon-x/notes.md"
-        examples = ("Use the `canon-x` skill or run `/canon-x D001`.\n"
+        examples = ("Use the `canon-x` skill or run `/canon-x D001` or `$canon-x D001`.\n"
                     "A log mentions canon-log. The flag is `--name canon-log`.\n"
                     "Literal: ``Use the `canon-example` skill.``\n"
                     "````markdown\n```\nUse `canon-example`.\n````\n")
         self.write(notes, examples)
         self.assertEqual(self.validate(WORD_TOKENS).returncode, 0)
-        self.write(notes, examples + "Use `canon-gone`.\nRun `/canon-typo P001`.\nRead the `canom-x` skill.\n")
+        self.write(notes, examples + "Use `canon-gone`.\nRun `/canon-typo P001`.\nRead the `canom-x` skill.\n"
+                   "Run `$canon-missing P001`.\n")
         result = self.validate(WORD_TOKENS)
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertRegex(result.stdout, rf"{notes}:8: [^\n]*canon-gone")
         self.assertRegex(result.stdout, rf"{notes}:9: [^\n]*canon-typo")
         self.assertRegex(result.stdout, rf"{notes}:10: [^\n]*canom-x")
+        self.assertRegex(result.stdout, rf"{notes}:11: [^\n]*canon-missing")
         self.assertNotIn("canon-example", result.stdout)
 
     def test_workflow_pointers_resolve_sections_and_children_in_the_named_workflow(self):

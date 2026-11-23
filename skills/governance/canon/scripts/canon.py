@@ -31,7 +31,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "76"
+CANON_VERSION = "77"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -92,7 +92,7 @@ DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 LINK_RE = re.compile(r"(!?)\[([^\]]*)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
-INLINE_CODE_RE = re.compile(r"`[^`]*`")
+INLINE_CODE_RE = re.compile(r"(?<!`)(`+)(?!`)(.*?)(?<!`)\1(?!`)")
 LINK_UNSAFE_RE = re.compile(r"[\s%#?()]")
 STATUS_LINE_RE = re.compile(r"^\s*(?:-\s+)?Status:\s*(.*?)\s*$")
 DISPOSITION_ID_RE = re.compile(r"^\s*\|\s*(?P<finding>[^|\s]+)\s*\|.*\|\s*(?:moved\s+(?P<moved>[CDPREI]\d{3,}[A-Z]?)"
@@ -415,14 +415,14 @@ def code_mask(lines, start=0):
     fence = None
     for i in range(start, len(lines)):
         match = FENCE_RE.match(lines[i])
-        if match:
-            if fence is None:
-                fence = match.group(1)
-            elif match[1].startswith(fence) and not lines[i][match.end():].strip():
+        if fence:
+            if match and match[1].startswith(fence) and not lines[i][match.end():].strip():
                 fence = None
             continue
-        if fence is None:
-            yield i, lines[i]
+        if match and (match[1][0] == "~" or "`" not in lines[i][match.end():]):
+            fence = match[1]
+            continue
+        yield i, lines[i]
 
 
 class Heading:
@@ -547,6 +547,9 @@ def resolve_tree_path(tree, relative, aliases=None, walked=None):
     done, todo, links = [], collections.deque(relative.split("/")), 0
     while todo:
         part = todo.popleft()
+        if part is None:
+            aliases.append("/".join(done))  # Resolved endpoint of this link, before its caller's remaining components.
+            continue
         if part in ("", "."):
             continue
         if part == "..":
@@ -561,11 +564,12 @@ def resolve_tree_path(tree, relative, aliases=None, walked=None):
         if kind == "link":
             if aliases is not None:
                 aliases.append(rel)
+                todo.appendleft(None)
             links += 1
             if links > MAX_LINKS or os.path.isabs(target):
                 return None
             todo.extendleft(reversed(target.split("/")))
-        elif kind == "dir" or kind == "file" and not todo:
+        elif kind == "dir" or kind == "file" and not any(p is not None for p in todo):
             done.append(part)
         else:
             return None
@@ -939,15 +943,17 @@ class Repo:
         self.problems.append(Problem(level, rel, line, msg, fix, also))
 
     def _scan(self):
+        aliases = {}
         for root in self.roots:
             agents = root.project / "AGENTS.md"
             self.scope_md.append(agents)
             if not self.tree.is_dir(root.docs):
                 continue
             prefix = root.docs_rel + "/"
+            nested = tuple(other.rel + "/" for other in self.roots if other.rel.startswith(prefix))
             reported = set()
             for rel in self.files:
-                if not rel.startswith(prefix):
+                if not rel.startswith(prefix) or rel.startswith(nested):
                     continue
                 parts = rel[len(prefix):].split("/")
                 path = self.root / rel
@@ -989,29 +995,39 @@ class Repo:
                     self.problem("ERROR", rel, "invalid doc path; expected {}/{}NNN-kebab-slug.md{}".format(
                         TYPES[letter]["dir"], letter, " (D may add one A-Z suffix)" if letter == "D" else ""))
                     continue
-                if not archived and resolve_tree_path(self.tree, rel) != rel:
-                    self.live_markdown[path] = root
+                real = self.tree.realpath(path)
+                if real is None or self.root not in real.parents:
                     continue
+                if real != path:
+                    aliases[path] = real
                 try:
                     doc = Doc(root, path, rel, match, archived, self.tree.read_text(path))
                 except UnicodeDecodeError:
                     self.problem("ERROR", rel, "document is not UTF-8")
                     continue
-                self.docs.append(doc)
-                if doc.id in self.by_id:
-                    first = self.by_id[doc.id].rel
-                    self.problem("ERROR", rel, "duplicate id {}, also {}; run `canon.py renumber <path> --base <ref>` "
-                                 "on the doc this branch added, with the branch it merged or rebased onto"
-                                 .format(doc.id, first), also=(first,))
-                else:
-                    self.by_id[doc.id] = doc
                 self.by_path[path] = doc
                 if not archived and doc.fm is not None:
                     self.live_markdown[path] = root
+        for path, target in aliases.items():
+            alias, canonical = self.by_path.get(path), self.by_path.get(target)
+            if alias and canonical and alias.id == canonical.id:
+                del self.by_path[path]
+        self.docs = list(self.by_path.values())
+        for doc in self.docs:
+            if doc.id in self.by_id:
+                first = self.by_id[doc.id].rel
+                self.problem("ERROR", doc.rel, "duplicate id {}, also {}; run `canon.py renumber <path> --base <ref>` "
+                             "on the doc this branch added, with the branch it merged or rebased onto"
+                             .format(doc.id, first), also=(first,))
+            else:
+                self.by_id[doc.id] = doc
         self.docs.sort(key=Doc.sort_key)
-        owners = {(d.root, d.id) for d in self.docs if not d.archived and d.fm is not None}
+        self.live_areas = {root.docs / name: root for root in self.roots for name in EXTRA_DIRS}
+        self.live_areas.update({doc.path.parent / doc.id: doc.root for doc in self.docs
+                                if not doc.archived and doc.fm is not None})
         for root, archived, name, rel in self.attachments:
-            if not archived and (root, name) in owners and rel.endswith(".md"):
+            area = root.docs / TYPES[name[0]]["dir"] / name
+            if not archived and area in self.live_areas and rel.endswith(".md"):
                 self.live_markdown[self.root / rel] = root
 
     def unknown_entry_step(self, where, is_dir, archived):
@@ -1041,8 +1057,12 @@ class Repo:
         if doc:
             return {h.slug for h in doc.headings}
         if path not in self._slug_cache:
-            lines = self.tree.read_text(path).split("\n")
-            self._slug_cache[path] = {h.slug for h in scan_headings(lines)}
+            try:
+                lines = self.tree.read_text(path).split("\n")
+            except UnicodeDecodeError:
+                self._slug_cache[path] = None
+            else:
+                self._slug_cache[path] = {h.slug for h in scan_headings(lines)}
         return self._slug_cache[path]
 
     def design_linked(self):
@@ -1212,7 +1232,7 @@ class Repo:
 EMBED_OPEN = re.compile(r"<!-- embed: ([^\s]+) -->")
 EMBED_CLOSE = "<!-- /embed -->"
 REGION_NAME = re.compile(r"[a-zA-Z0-9_-]+")
-REGION_LINE = re.compile(r"^[ \t]*(?:#|//)[ \t]*(region|endregion)\b(.*)$")
+REGION_LINE = re.compile(r"^[ \t]*(?:#|//)[ \t]*(region|endregion)(?=[ \t]|$)(.*)$")
 SOURCE_LANG = {".py": "python", ".h": "cpp", ".hpp": "cpp", ".cpp": "cpp", ".capnp": "capnp"}
 EmbedBlock = collections.namedtuple("EmbedBlock", "start end operand")
 
@@ -1258,22 +1278,25 @@ def physical_lines(text):
 
 def write_markdown(path, text, numbered=True):
     """Preserve line endings across in-place edits and in paired source spans when a command adds headings or fields."""
-    if "<!-- embed:" in text:
-        before = path.read_bytes().decode("utf-8")
-        if "\r" in before:
-            old, new = physical_lines(before), physical_lines(text)
+    before = path.read_bytes().decode("utf-8")
+    if "\r" in before:
+        old, new = physical_lines(before), physical_lines(text)
 
-            def blocks(lines):
-                return embed_blocks(lines, parse_frontmatter(lines)[1] + 1 if numbered else 0)[0]
+        def blocks(lines):
+            return embed_blocks(lines, parse_frontmatter(lines)[1] + 1 if numbered else 0)[0]
 
-            spans = [(range(len(old)), range(len(new)))] if len(old) == len(new) else []
-            spans.extend((range(a.start, a.end + 1), range(b.start, b.end + 1)) for a, b in zip(blocks(old), blocks(new)))
-            for original, edited in spans:
-                for i, j in zip(original, edited):
-                    ending = old[i][len(old[i].rstrip("\r\n")):]
-                    if ending or j == len(new) - 1:
-                        new[j] = new[j].rstrip("\r\n") + ending
-            text = "".join(new)
+        if len(old) == len(new):
+            spans = [(range(len(old)), range(len(new)))]
+        else:
+            ending = re.search(r"\r\n|\r|\n", before)[0]
+            new = [line.rstrip("\r\n") + ending if line.endswith(("\r", "\n")) else line for line in new]
+            spans = [(range(a.start, a.end + 1), range(b.start, b.end + 1)) for a, b in zip(blocks(old), blocks(new))]
+        for original, edited in spans:
+            for i, j in zip(original, edited):
+                ending = old[i][len(old[i].rstrip("\r\n")):]
+                if ending or j == len(new) - 1:
+                    new[j] = new[j].rstrip("\r\n") + ending
+        text = "".join(new)
     path.write_bytes(text.encode("utf-8"))
 
 
@@ -1299,7 +1322,7 @@ def source_fence(source, text, region):
             continue
         keyword, tail = marker.groups()
         name = tail.strip(" \t")
-        if name and (tail[0] not in " \t" or not REGION_NAME.fullmatch(name)) or keyword == "region" and not name:
+        if name and not REGION_NAME.fullmatch(name) or keyword == "region" and not name:
             raise ValueError("invalid region delimiter in {}:{}".format(source.name, i))
         if keyword == "region":
             if active is not None or name in regions:
@@ -1334,13 +1357,30 @@ class SourceEmbeds:
     def __init__(self, repo):
         self.repo = repo
         self.inventory = set(repo.files)
+        self.projects = {root.project for root in repo.roots}
         self.starts = {}
         for path in repo.live_markdown:
             rel = path.relative_to(repo.root).as_posix()
             if resolve_tree_path(repo.tree, rel) == rel:
                 self.starts[path] = repo.by_path[path].fm_end + 1 if path in repo.by_path else 0
 
+    def alias_area(self, rel):
+        """The live root that owns this file or directory hop, stopping at nested projects."""
+        path = self.repo.root / rel
+        if rel in self.inventory and path.suffix != ".md":
+            return None
+        if path in self.repo.live_markdown:
+            return self.repo.live_markdown[path]
+        for parent in (path, *path.parents):
+            if parent in self.repo.live_areas:
+                return self.repo.live_areas[parent]
+            if parent in self.projects:
+                break
+        return None
+
     def consumer(self, path):
+        if path.suffix != ".md":
+            return None
         try:
             relative = path.relative_to(self.repo.root).as_posix()
         except ValueError:
@@ -1350,15 +1390,8 @@ class SourceEmbeds:
         real = self.repo.root / resolved if resolved is not None else None
         if real not in self.starts:
             return None
-        if aliases:
-            alias = self.repo.root / aliases[0]
-            root = self.repo.live_markdown[real]
-            if alias in self.repo.live_markdown:
-                return real if self.repo.live_markdown[alias] is root else None
-            areas = {root.docs / directory for directory in EXTRA_DIRS}
-            areas.update(doc.path.parent / doc.id for doc in self.repo.docs if doc.root is root and not doc.archived)
-            if alias not in areas and areas.isdisjoint(alias.parents):
-                return None
+        if any(self.alias_area(hop) is not self.repo.live_markdown[real] for hop in aliases):
+            return None
         return real
 
     def selected(self, names):
@@ -1403,6 +1436,37 @@ class SourceEmbeds:
                 continue
             yield block, source, region, walked
 
+    def move_editor(self, moves, adopted, destination):
+        """For this move set, find protected lines and edits to marker operands in each original Markdown file."""
+        repo = self.repo
+        moved_entries = {posix_rel(path, repo.root) for path in moves}
+        new_attachments = {moves[src].parent / doc_id for src, doc_id in adopted.items()}
+        archive_dirs = {root.docs / "archived" for root in repo.roots}
+        starts = dict(self.starts)
+        starts.update((d.path, d.fm_end + 1) for d in repo.docs if d.archived and d.fm is not None)
+        starts.update((repo.root / rel, 0) for _root, archived, _id, rel in repo.attachments
+                      if archived and rel.endswith(".md"))
+
+        def edit(path, lines):
+            start = starts.get(path)
+            if path in adopted:
+                start = parse_frontmatter(lines)[1] + 1
+            elif not new_attachments.isdisjoint(path.parents):
+                start = 0
+            blocks = embed_blocks(lines, start)[0] if start is not None else ()
+            new_path = destination(path)
+            edits = {}
+            if blocks and archive_dirs.isdisjoint(new_path.parents):
+                for block, source, region, walked in self.resolved_blocks(path, blocks):
+                    if new_path != path or not moved_entries.isdisjoint(walked):
+                        relative = posix_rel(destination(source), new_path.parent)
+                        relative = re.sub(r"[%#\s]", lambda m: urllib.parse.quote(m[0], safe=""), relative)
+                        marker = EMBED_OPEN.match(lines[block.start])
+                        edits[block.start] = [(*marker.span(1), relative + ("#" + region if region else ""))]
+            return marked_lines(blocks), edits
+
+        return edit
+
     def update(self, path, problems, check=False):
         try:
             text = self.repo.tree.read_bytes(path).decode("utf-8")
@@ -1418,7 +1482,7 @@ class SourceEmbeds:
             try:
                 source, region = self.source(path, operand)
                 source_text = self.repo.tree.read_text(source)
-                if source in self.starts and embed_blocks(source_text.split("\n"), self.starts[source])[0]:
+                if source in self.starts and any(embed_blocks(source_text.split("\n"), self.starts[source])):
                     raise ValueError("embed source contains an active embed: " + operand)
                 block = source_fence(source, source_text, region)
             except (OSError, ValueError) as error:
@@ -1459,7 +1523,12 @@ def process_embeds(repo, names, check):
             print("ERROR {}:{}: {}".format(posix_rel(path, repo.root), line, reason))
         return 1
     for path, text in updates.items():
-        path.write_bytes(text.encode("utf-8"))
+        # Replacing this directory entry leaves even an unselected hard link untouched.
+        with tempfile.TemporaryDirectory(dir=path.parent) as directory:
+            updated = Path(directory) / path.name
+            updated.write_bytes(text.encode("utf-8"))
+            shutil.copymode(path, updated)
+            updated.replace(path)
         print("updated " + posix_rel(path, repo.root))
     return 0
 
@@ -1596,8 +1665,12 @@ def check_links(repo, path, lines, start, doc=None):
                 repo.problem("ERROR", rel, "link to {} must read {}".format(target_doc.id, want), i + 1)
             elif (ref.group(2) or "") != anchor:
                 repo.problem("ERROR", rel, "link text section and #anchor differ; use " + want, i + 1)
-        if anchor and dest.suffix == ".md" and anchor not in repo.slugs(dest):
-            repo.problem("ERROR", rel, "missing anchor #{} in {}".format(anchor, posix_rel(dest, repo.root)), i + 1)
+        if anchor and dest.suffix == ".md":
+            slugs = repo.slugs(dest)
+            if slugs is None:
+                repo.problem("ERROR", rel, "anchor target is not UTF-8: " + target, i + 1)
+            elif anchor not in slugs:
+                repo.problem("ERROR", rel, "missing anchor #{} in {}".format(anchor, posix_rel(dest, repo.root)), i + 1)
     return linked
 
 
@@ -2197,7 +2270,7 @@ def apply_edits(lines, edits):
 
 
 def rewrite_for_moves(repo, moves, renamed=None, adopted=None, anchors=None, retitled=None, citations=False,
-                      renumber_text=None):
+                      renumber_text=None, revised=None):
     """Rewrite relative links in every markdown file so they survive `moves` (old path -> new path).
 
     `renamed` maps a moved doc's old path, and the old path of an attachment directory that moves with it, to
@@ -2215,13 +2288,6 @@ def rewrite_for_moves(repo, moves, renamed=None, adopted=None, anchors=None, ret
     """
     renamed, adopted, anchors, retitled = renamed or {}, adopted or {}, anchors or {}, retitled or {}
     owner, follow = doc_owner(repo, {}), slug_follower(repo)
-    embeds = SourceEmbeds(repo)
-    moved_entries = {posix_rel(path, repo.root) for path in moves}
-    adopted_attachments = {moves[src].parent / doc_id for src, doc_id in adopted.items()}
-    archive_dirs = {root.docs / "archived" for root in repo.roots}
-    historical = {d.path: d.fm_end + 1 for d in repo.docs if d.archived and d.fm is not None}
-    historical.update((repo.root / rel, 0) for _root, archived, _id, rel in repo.attachments
-                      if archived and rel.endswith(".md"))
 
     def mapped(p):
         for src, dst in moves.items():
@@ -2233,26 +2299,14 @@ def rewrite_for_moves(repo, moves, renamed=None, adopted=None, anchors=None, ret
                 continue
         return p
 
+    marker_edits = SourceEmbeds(repo).move_editor(moves, adopted, mapped)
+
     def rewrite(path, lines, shifted):
         """The edits to `lines`, the text of the file at `path`, with `shifted` as the anchors."""
         new_path = mapped(path)
         new_dir = new_path.parent
         doc = repo.by_path.get(path)
-        edits = {}
-        start = embeds.starts.get(path, historical.get(path))
-        if path in adopted:
-            start = parse_frontmatter(lines)[1] + 1
-        elif not adopted_attachments.isdisjoint(path.parents):
-            start = 0
-        blocks = embed_blocks(lines, start)[0] if start is not None else ()
-        protected = marked_lines(blocks)
-        if blocks and archive_dirs.isdisjoint(new_path.parents):
-            for block, source, region, walked in embeds.resolved_blocks(path, blocks):
-                if new_path != path or not moved_entries.isdisjoint(walked):
-                    relative = posix_rel(mapped(source), new_dir)
-                    relative = re.sub(r"[%#\s]", lambda m: urllib.parse.quote(m[0], safe=""), relative)
-                    marker = EMBED_OPEN.match(lines[block.start])
-                    edits[block.start] = [(*marker.span(1), relative + ("#" + region if region else ""))]
+        protected, edits = marker_edits(path, lines)
         for i, match in iter_links(lines):
             if i in protected:
                 continue
@@ -2299,7 +2353,18 @@ def rewrite_for_moves(repo, moves, renamed=None, adopted=None, anchors=None, ret
         return edits
 
     paths = {repo.root / rel for rel in repo.files if rel.endswith(".md")} | set(adopted)
-    texts = {path: path.read_text(encoding="utf-8") for path in sorted(paths) if not path.is_symlink()}
+    originals = {}
+    for path in sorted(paths):
+        if repo.tree.realpath(path) != path:
+            continue
+        try:
+            originals[path] = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            sys.exit("canon: {} is not UTF-8".format(posix_rel(path, repo.root)))
+    revised = revised or {}
+    for path in revised.keys() - originals.keys():
+        sys.exit("canon: cannot rewrite through an alias: " + posix_rel(path, repo.root))
+    texts = {**originals, **revised}
 
     def step(shifted):
         rewritten = {}
@@ -2320,7 +2385,7 @@ def rewrite_for_moves(repo, moves, renamed=None, adopted=None, anchors=None, ret
 
     rewritten = settle(step, anchors, sum(len(body_headings(text)) for text in texts.values()) + 1)[0]
     for path, text in rewritten.items():
-        if text != texts[path]:
+        if text != originals[path]:
             write_markdown(path, text, numbered=path in repo.by_path or path in adopted)
 
 
@@ -2577,13 +2642,12 @@ def cmd_archive(repo, args):
     if report_unmet_terminal(doc, args.status) or process_embeds(repo, [doc.id], check=True):
         return 1
     text = set_field(set_field(doc.text, "status", args.status), "updated", today())
-    write_markdown(doc.path, text)
     archive_dir = doc.root.docs / "archived" / info["dir"]
     moves = {doc.path: archive_dir / doc.path.name}
     attachment = doc.root.docs / info["dir"] / doc.id
     if attachment.is_dir():
         moves[attachment] = archive_dir / doc.id
-    rewrite_for_moves(repo, moves)
+    rewrite_for_moves(repo, moves, revised={doc.path: text})
     move_paths(repo, moves)
     write_indexes(Repo())
     print("{} -> {}".format(doc.rel, posix_rel(moves[doc.path], repo.root)))
@@ -2827,7 +2891,7 @@ def cmd_rename(repo, args):
     for dest in moves.values():
         if os.path.lexists(str(dest)):
             sys.exit("canon: {} already exists".format(posix_rel(dest, repo.root)))
-    anchors, retitled = {}, {}
+    anchors, retitled, revised = {}, {}, {}
     if title is not None:
         h1 = next((h for h in doc.headings if h.level == 1), None)
         if h1 is None:
@@ -2838,8 +2902,8 @@ def cmd_rename(repo, args):
         anchors[doc.path] = changed_anchors(doc.text, text)
         if doc.title:
             retitled[doc.path] = ("{}: {}".format(doc.id, doc.title), "{}: {}".format(doc.id, title))
-        write_markdown(doc.path, text)
-    rewrite_for_moves(repo, moves, anchors=anchors, retitled=retitled, citations=True)
+        revised[doc.path] = text
+    rewrite_for_moves(repo, moves, anchors=anchors, retitled=retitled, citations=True, revised=revised)
     move_paths(repo, moves)
     write_indexes(Repo())
     print("{} -> {}".format(doc.rel, posix_rel(moves.get(doc.path, doc.path), repo.root)))
@@ -3086,13 +3150,15 @@ def adopted_text(text, letter, doc_id, slug, title=None):
     lines = text.split("\n")
     fm, end, _bad = parse_frontmatter(lines)
     body = lines[end + 1:] if fm is not None else lines
-    h1 = next((h for h in scan_headings(body) if h.level == 1), None)
+    protected = marked_lines(embed_blocks(body, 0)[0])
+    headings = [h for h in scan_headings(body) if h.line not in protected]
+    h1 = next((h for h in headings if h.level == 1), None)
     title = title or (h1.text if h1 else slug.replace("-", " ").capitalize())
     if h1:
         body[h1.line] = "# {}: {}".format(doc_id, title)
     else:
         body = ["# {}: {}".format(doc_id, title), ""] + body
-    names = {h.text for h in scan_headings(body) if h.level == 2}
+    names = {h.text for h in headings if h.level == 2}
     text = "\n".join(body).strip("\n") + "\n"
     for name in TYPES[letter]["sections"]:
         if name not in names:
