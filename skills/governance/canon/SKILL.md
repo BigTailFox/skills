@@ -126,7 +126,7 @@ based_on: [D003@r4]                  # P only
 - `owns`: topics this design is the single authority for, unique across non-archived designs.
 - `paths`: code globs relative to the project directory; they drive `which`, `affected` and `audit`. A design with no `implemented` may list code not yet written; a revision of one with `implemented` adds a file once it exists, in the docs step.
 - `reviewed`, `reviewers`: the revision that passed the review gate and who reviewed that revision (`manual:<model>` for a review the user ran), never accumulated across revisions.
-- `approved`: the latest revision the user approved, set as the workflow's [Gate status](workflow.md#gate-status) says.
+- `approved`: the latest revision the user approved, set as [Gate status](workflow.md#gate-status) directs.
 - `implemented`: the revision the code fully implements; required once a design is `active`. Below `revision`, the spec leads the code and the difference is an open plan's work, not a defect. A revision that needs no code change raises it as Gate status says.
 - `as_built`: the commit an [as-built revision](as-built.md) records, only while the revision awaits its gate.
 - `based_on`: design revisions a plan was written against; `check` warns when a design moves past them.
@@ -166,7 +166,7 @@ Every change has a tier, except one that touches only docs that no design's `pat
 
 - **L0**: changes no spec in any design: bug fixes that restore specified behavior, refactors, dependency bumps, test and tooling changes. Implement, keep docs factually true, commit.
 - **L1**: changes or extends specs inside the owned topics of one existing design, within one module; or multi-step work under an existing design that needs a plan. When the work changes a spec, revise the design in place, bumping `revision` once, in this session or in a `/canon-design` session the user starts, which you offer when the revision needs an interview of the user. The revision, and the plan when there is one, each pass the review gate (same-model reviewer; cross-family too when the user asks), then implement. A [design problem](workflow.md#design-problems) is revised by the session that finds it.
-- **L2**: a new topic with no owning design, a new module, a change to a cross-module interface or the architecture (adding, removing or merging a module, or changing which modules depend on which), a revision that rewrites an existing design's goals or core approach, or the user asks for it. Design and plan each pass the review gate (same-model and cross-family reviewers) and need the user's approval, as the workflow's [Gate status](workflow.md#gate-status) says.
+- **L2**: a new topic with no owning design, a new module, a change to a cross-module interface or the architecture (adding, removing or merging a module, or changing which modules depend on which), a revision that rewrites an existing design's goals or core approach, or the user asks for it. Design and plan each pass the review gate (same-model and cross-family reviewers) and need the user's approval, as [Gate status](workflow.md#gate-status) directs.
 
 A change with no tier, such as an edit to concepts, reviews, experiments or investigations, a wording edit, a known issue, D000's rows or a finding's disposition, needs no gate or code review; the skill that writes the doc says what it needs.
 

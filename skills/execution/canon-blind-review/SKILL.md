@@ -55,7 +55,7 @@ The review gate and code review say when the cross-family reviewer runs; other r
 
 - A reviewer that runs as a host subagent is a new subagent from the host's own tool, never a fork of the session, launched without a model or effort so it runs on the session's; only a cross-family reviewer gets a model, the one its entry names. In Claude Code use a `general-purpose` or custom subagent; the built-in Explore and Plan agents cannot be resumed.
 - Launch the first-round reviewers together. Start each command reviewer once on a retained host job with its output attached as below, then launch the host reviewers asynchronously. A lone host reviewer may run in the foreground.
-- While any reviewer reads, keep the work tree outside `.canon/` at its review snapshot. If a first-round report is missing once all readers stop, follow the `canon` workflow's Pending reviews to fix or confirm the reports already received and freeze the next review baseline.
+- While any reviewer reads, keep the work tree outside `.canon/` at its review snapshot. If a first-round report is missing once all readers stop, follow the `canon` skill's workflow (Pending reviews) to fix or confirm the reports already received and freeze the next review baseline.
 - Once you have no other work, look for the report of a host subagent whose completion notice has not come in the host's record of its run: in Cursor, `subagents/<agent id>.jsonl` in `<cursor home>/projects/<project>/agent-transcripts/$CURSOR_CONVERSATION_ID/`; in Codex, the `rollout-*.jsonl` under `$CODEX_HOME/sessions/` whose `session_meta` names your session as `parent_thread_id`.
 - On every route the prompt is what keeps reviewers from modifying files, writing scratch files and reading `.canon/`.
 
@@ -91,17 +91,17 @@ User cancellation ends the run. For a command, distinguish a caller timeout from
 
 On the first stopped attempt, give the reviewer one more attempt. This also applies to a host reviewer whose run record shows it stopped without a report. Resume it by its ID when possible, asking only that it continue where it stopped and finish the requested report. For a terminally failed or non-resumable run, launch the same reviewer fresh with the same prompt. On the second stop, proceed by role.
 
-- For a **first-round cross-family reviewer**, follow the `canon` workflow's Reviewer file to select an unused eligible replacement for these targets and round. Record the outstanding pass and use the [manual fallback](#manual-fallback) when none is available or the user required that specific reviewer. Credit each completed pass once.
+- For a **first-round cross-family reviewer**, follow the `canon` skill's workflow (Reviewer file) to select an unused eligible replacement for these targets and round. Record the outstanding pass and use the [manual fallback](#manual-fallback) when none is available or the user required that specific reviewer. Credit each completed pass once.
 - **Cross-family reviewer in a confirmation or follow-up round**: its part goes to the resumed same-model reviewer, as [Confirmation](#confirmation) and [Follow-up round](#follow-up-round) say.
 - **Same-model reviewer**, a code review's axis reviewers included: the review waits for the user.
 
 ## Manual fallback
 
-When an applicable `none` is configured, setup cannot write the reviewer file, or the first-round routes are exhausted, tell the user why. The `canon-init` skill's reviewer setup can change a configured `none`. Give the user the full prompt for the current targets in one code block to run in an independent tool that can read the repository. For a gate, follow the `canon` workflow's Pending reviews, including `pending.md`, L1 withdrawal and an explicit L2 decision for named revisions. An L2 code review waits for the report. When the report arrives, verify which snapshot and targets it covered, save it and its prompt under the assigned key, leave its ID file empty and credit `manual:<model>`.
+When an applicable `none` is configured, setup cannot write the reviewer file, or the first-round routes are exhausted, tell the user why. The `canon-init` skill's reviewer setup can change a configured `none`. Give the user the full prompt for the current targets in one code block to run in an independent tool that can read the repository. For a gate, follow the `canon` skill's workflow (Pending reviews), including `pending.md`, L1 withdrawal and an explicit L2 decision for named revisions. An L2 code review waits for the report. When the report arrives, verify which snapshot and targets it covered, save it and its prompt under the assigned key, leave its ID file empty and credit `manual:<model>`.
 
 ## Merge
 
-Accept and fix each finding, decline it with a one-line reason for the user, or escalate it to the user. A finding raised by two reviewers is accepted unless it is clearly wrong. The review gate adds its own merge rules (the `canon` skill's workflow, Review gate).
+Accept and fix each finding, decline it with a one-line reason for the user, or escalate it to the user. A finding raised by two reviewers is accepted unless it is clearly wrong. The `canon` skill's workflow (Review gate) adds the gate's merge rules.
 
 ## Confirmation
 
@@ -141,5 +141,5 @@ End with one line: Verdict: approve | revise
 ```
 
 - Resume each reviewer that runs as a host subagent by its kept id. A cross-family reviewer that runs as a command, and a reviewer that cannot be resumed, gets a new run, given its first-round prompt followed by the follow-up prompt.
-- On targets it previously reviewed in full, a manual-fallback reviewer's part, or that of a cross-family reviewer whose follow-up stops twice, goes to the resumed same-model reviewer. Credit the actual reader of the new revision. An added target needs full passes from its missing roles. After a waiver, give a fresh independent reviewer the full criteria, current targets and follow-up changes. For missing independent coverage follow the `canon` workflow's Pending reviews.
+- On targets it previously reviewed in full, a manual-fallback reviewer's part, or that of a cross-family reviewer whose follow-up stops twice, goes to the resumed same-model reviewer. Credit the actual reader of the new revision. An added target needs full passes from its missing roles. After a waiver, give a fresh independent reviewer the full criteria, current targets and follow-up changes. For missing independent coverage follow the `canon` skill's workflow (Pending reviews).
 - Confirm accepted blocker and major fixes from each source's own input as in [Confirmation](#confirmation).

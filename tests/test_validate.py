@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -91,6 +92,90 @@ class SkillPlacementTest(ScratchRepoTest):
         reported = result.stdout.split("FAIL SKILL.md placement\n", 1)[1].split("\n", len(strays))[:len(strays)]
         self.assertEqual(reported, ["  - {} is not a skill's own skills/<category>/<name>/SKILL.md, yet the skills CLI "
                                     "would treat it as an installable skill".format(rel) for rel in strays])
+
+
+class SkillReferenceTest(ScratchRepoTest):
+    def add_canon(self):
+        self.write("skills/governance/canon/SKILL.md", SKILL.replace("canon-x", "canon") + "\nIn `trace` calls, x.\n")
+        self.write("README.md", README + "\n### governance\n\n| `canon` | Core. | Auto |\n")
+
+    def test_markdown_fragments_resolve_to_numbered_heading_slugs_and_report_the_source_line(self):
+        skill = "skills/execution/canon-x"
+        self.write(f"{skill}/guide.md", "# Run `git` (again)!\n## Queue\n## Queue\n")
+        self.write(f"{skill}/notes.md", "# Notes\n[Here](#notes) [Command](guide.md#run-git-again)\n"
+                   "[Second](guide.md#queue-1) [External](https://outside.example/guide.md#absent)\n")
+        self.assertEqual(self.validate(WORD_TOKENS).returncode, 0)
+        self.write("OTHER.md", "# Other\n[Gone](#gone)\n")
+        self.write(f"{skill}/notes.md", "# Notes\n[Third](guide.md#queue-2)\n[Missing file](absent.md#topic)\n")
+        result = self.validate(WORD_TOKENS)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("OTHER.md:2:", result.stdout)
+        self.assertIn("#gone", result.stdout)
+        self.assertRegex(result.stdout, rf"{skill}/notes\.md:2: [^\n]*guide\.md#queue-2")
+        self.assertRegex(result.stdout, rf"{skill}/notes\.md:3: [^\n]*absent\.md#topic")
+
+    def test_only_prose_outside_the_full_fence_supplies_references_and_headings(self):
+        notes = "skills/execution/canon-x/notes.md"
+        for fence in ("`", "~"):
+            with self.subTest(fence=fence):
+                self.write(notes, f"# Real\n{fence * 4}markdown\n{fence * 3}\n## Example heading\n"
+                           f"[Example](absent.md)\n{fence * 4} info\n[Example](absent-again.md)\n"
+                           f"{fence * 5}\n[Typo](#example-heading)\n")
+                result = self.validate(WORD_TOKENS)
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn(f"{notes}:9: missing heading for #example-heading", result.stdout)
+                self.assertNotIn("absent", result.stdout)
+
+    def test_named_skills_and_slash_commands_must_be_installed(self):
+        notes = "skills/execution/canon-x/notes.md"
+        examples = ("Use the `canon-x` skill or run `/canon-x D001`.\n"
+                    "A log mentions canon-log. The flag is `--name canon-log`.\n"
+                    "Literal: ``Use the `canon-example` skill.``\n"
+                    "````markdown\n```\nUse `canon-example`.\n````\n")
+        self.write(notes, examples)
+        self.assertEqual(self.validate(WORD_TOKENS).returncode, 0)
+        self.write(notes, examples + "Use `canon-gone`.\nRun `/canon-typo P001`.\nRead the `canom-x` skill.\n")
+        result = self.validate(WORD_TOKENS)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertRegex(result.stdout, rf"{notes}:8: [^\n]*canon-gone")
+        self.assertRegex(result.stdout, rf"{notes}:9: [^\n]*canon-typo")
+        self.assertRegex(result.stdout, rf"{notes}:10: [^\n]*canom-x")
+        self.assertNotIn("canon-example", result.stdout)
+
+    def test_workflow_pointers_resolve_sections_and_children_in_the_named_workflow(self):
+        notes = "skills/execution/canon-x/notes.md"
+        workflow = "skills/governance/canon/workflow.md"
+        self.write(workflow, "# Workflow\n## Subagents\n### Reviewer file\n### Reviewer setup\n"
+                   "## Review gate\n### Reviewer prompt\n## Fixes and checks\n## Notes (draft)\n")
+        self.add_canon()
+        examples = ("Use the `canon` skill's workflow (Subagents → Reviewer file and Reviewer setup).\n"
+                    "See its workflow (Reviewer file, Fixes and checks, and Notes (draft)).\n"
+                    "- The build workflow (GitHub Actions) changed the workflow (during release week).\n"
+                    "Literal: `the workflow (Lost)`.\n")
+        self.write(notes, examples)
+        result = self.validate(WORD_TOKENS)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.write(notes, examples + "Read the workflow (Missing (draft)).\n"
+                   "Follow the `canon` skill's workflow (Subagents → Reviewer file and Reviewer prompt).\n"
+                   "- workflow (Missing section)\n1. workflow (Missing ordered section)\n"
+                   "  + workflow (Missing nested section)\n2) workflow (Missing final section)\n")
+        result = self.validate(WORD_TOKENS)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        for number, pointer in enumerate(("Missing (draft)", "Subagents → Reviewer file and Reviewer prompt",
+                                          "Missing section", "Missing ordered section", "Missing nested section",
+                                          "Missing final section"), 5):
+            self.assertRegex(result.stdout, rf"{notes}:{number}: [^\n]*{re.escape(pointer)}[^\n]*workflow\.md")
+
+    def test_a_named_doc_types_pointer_reports_a_missing_destination(self):
+        self.add_canon()
+        notes = "skills/execution/canon-x/notes.md"
+        self.write(notes, "Use the `canon` skill's doc types (Deferred findings).\n")
+        result = self.validate(WORD_TOKENS)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertRegex(result.stdout, rf"{notes}:1: [^\n]*Deferred findings[^\n]*doc-types\.md")
+        self.write("skills/governance/canon/doc-types.md", "# Doc types\n## Deferred findings\n")
+        result = self.validate(WORD_TOKENS)
+        self.assertEqual(result.returncode, 0, result.stdout)
 
 
 class TextBudgetTest(ScratchRepoTest):

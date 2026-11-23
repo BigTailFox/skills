@@ -1,7 +1,7 @@
 ---
 status: in-progress
 created: 2026-11-23
-updated: 2026-11-23
+updated: 2026-11-24
 revision: 1
 reviewed: 1
 approved: 1
@@ -18,7 +18,7 @@ Implements [D011: Source code embedded in docs](../designs/D011-embedded-source.
 
 ## Current state
 
-Next: S4
+Next: complete code review.
 
 ## Slices
 
@@ -57,7 +57,7 @@ Use the move mapping and heading-settlement logic in `canon.py` for [D011§moves
 
 ### S4: Share workflow closing instructions and validate their references
 
-Status: todo
+Status: done
 
 Implement the closing and reference-checking entries in [C001§ideas: backlog](../concepts/C001-canon-backlog.md#ideas) within [D001§budgets: skill budgets](../designs/D001-skill-telemetry.md#budgets). In the core skill add “Closing a workflow” to `workflow.md` and “Deferred findings” beside the known-issue format in `doc-types.md`, following [D006§known-issues-findings-and-slices: issue records](../designs/D006-doc-model.md#known-issues-findings-and-slices) and [D007§merging-findings: destinations](../designs/D007-change-tiers.md#merging-findings).
 
@@ -79,3 +79,4 @@ Use the shared closing condition in `canon-code-review`, `canon-design`, `canon-
 - S1 completed. Verified the installed grant and progress instructions using synthetic grants, the unfilled example, a real native command item and six offline launcher cases. All 434 repository tests passed across the default and outside-checkout runs. D001 budgets passed and discovery listed 19 skills.
 - S2 completed. Added scoped source generation and checking in the work tree, index and commits, with full-length fences and eligible-file resolution. Eleven CLI regressions and the independent byte and Git-tree checks passed. All 445 repository tests passed across both environments; D001 budgets and discovery of 19 skills passed. Canon version 75.
 - S3 completed. Fixed D010-K10 for moved and stationary owners and their dependent headings. Nine public regressions cover moves, adoption, collision ownership and archival freezing. Independently reproduced the original link mismatch, verified the corrected label and target, and compared CRLF spans and the Git index across archive refusal and success. All 454 tests passed, D001 budgets passed and discovery listed 19 skills. Canon version 76.
+- S4 completed. Consolidated the seven workflow closing steps and preserved caller-specific finding destinations and trace parents. Five public validator regressions include section links, full fences, named skills and list-item references. All 459 repository tests passed across both test environments, D001 budgets passed, and discovery listed 19 skills.

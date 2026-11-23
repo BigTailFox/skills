@@ -29,6 +29,14 @@ Sections: Goals, Spec, Decisions; Budgets when there are quantitative targets; K
 - **Status**: `draft` until the review gate passes, then `accepted`, in L2 once the user approves the gate's targets ([Gate status](workflow.md#gate-status)). Once an implementation has landed, or a revision that needs no code change has passed as Gate status says, the design is `active` with `implemented` at the revision the code matches. Revising an active design keeps it `active`; its spec leads the code until the next implementation lands and raises `implemented`. Archive as `superseded` (successor in `refs`) or `retired` (feature removed). An [as-built revision](as-built.md) takes its status from its gate ([Gate status](workflow.md#gate-status)).
 - **Split**: when a design outgrows one doc (`check` warns over 500 lines), run `new D <slug> --parent D00X` to create `D00XA`, `D00XB`, ... Move the sub-topic's spec, `owns` and `paths` into the sub-design; the parent keeps the overview and links to its children. Only one suffix level exists: a sub-design that outgrows itself becomes a new top-level design. Whenever a topic moves to another design, by a split or otherwise, move together its spec, its `owns` entries, the `paths` entries no topic left behind governs, and its known issues, renumbered to the new design's ids with Source and Since kept and every citation of the old ids updated; turn each restatement left behind, in the old design or elsewhere, into a link.
 
+### Deferred findings
+
+Choose one destination for the finding. For a finding about code, use `canon.py which <file>` to find its governing design.
+
+- A review-gate finding about the target plan goes in its Notes.
+- When the caller chooses the backlog, or no design governs the code, add an Idea to the module's backlog concept. Find it with `canon.py find backlog`, or create it with `canon.py new C <module>-backlog`.
+- Otherwise record a known issue in the affected design using the table above. Give the Source of the finding and the Next action it awaits. At a gate the Source is `<gate target id> gate`.
+
 ### Project overview (D000)
 
 Every repository that follows canon has `designs/D000-project-overview.md`, titled `# D000: Project overview`, in the repo root's `docs/`, and no other docs root has a D000; `init` at the repo root creates it. It is a design like any other, with these rules:
@@ -84,7 +92,7 @@ Sections: Scope, Findings.
 
   Severity is `blocker`, `major` or `minor`. Disposition is `open`, `fixed <commit>` (`fixed <ID>@r<N>` for a fix made in a doc, e.g. `fixed C001@r22`), `moved <ID>` (handed to the C, D, P or I that now tracks it; a design tracks it as a known issue) or `declined <reason>`.
 - Archive as `closed` as soon as no finding is `open`; `check` blocks it before that.
-- R docs cover code, modules, the whole repo or a concept. A periodic review or a concept review produces one R doc per run, with its reports in `reviews/R00X/`. A concept review fills the `canon-blind-review` skill's template as for any other review; its Scope names the concept revision it read, and its findings link the doc that owns each spec instead of restating it. Code review of a change produces no R doc: its deferred findings become known issues ([workflow.md](workflow.md#code-review)). Design and plan reviews happen in the review gate and produce no R doc.
+- R docs cover code, modules, the whole repo or a concept. A periodic review or a concept review produces one R doc per run, with its reports in `reviews/R00X/`. A concept review fills the `canon-blind-review` skill's template as for any other review; its Scope names the concept revision it read, and its findings link the doc that owns each spec instead of restating it. [Code review](workflow.md#code-review) produces no R doc. It records [deferred findings](#deferred-findings) in the doc that will track them. Design and plan reviews happen in the review gate and produce no R doc.
 
 ## Experiments (E)
 

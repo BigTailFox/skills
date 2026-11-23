@@ -36,8 +36,8 @@ When drafting or the gate finds a design problem, as when a slice would have to 
 1. Run `canon.py check` and fix its errors.
 2. Pass the review gate's steps 1 to 5 from the `canon` skill's workflow.
 3. Set the status as the gate's step 6 says.
-4. Commit the plan as the gate's step 7 says (Conventional Commits, `docs` type, `Refs:` trailer). In L2, request and record approval of the reviewed plan revision as the workflow's Gate status says.
-5. Run the `canon-retro` skill's end check only if this work hit concrete friction in the development infrastructure or the agent workflow that could recur, such as a correction to how you worked, a finding a check could have caught, a command that would not run, a check that failed after you thought you were done, a search that took far too long, or a canon step that got in the way. Use only evidence already in context; do not search for reasons to run it.
+4. Commit the plan as the gate's step 7 says (Conventional Commits, `docs` type, `Refs:` trailer). In L2, request and record approval of the reviewed plan revision as the workflow (Gate status) directs.
+5. Follow the `canon` skill's workflow (Closing a workflow).
 6. Run `canon.py trace end <id> <outcome>`.
 
 A revision this session makes after step 4's commit runs steps 1 to 4 again, step 2 passing a follow-up round through the gate's step 5, so an L2 revision asks for approval again; the `canon` skill's workflow (Follow-up round) names the revisions that pass a new gate instead.

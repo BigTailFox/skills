@@ -16,7 +16,7 @@ Read the `canon` skill first; its workflow governs tiers, deviations, code revie
    - An L1 design revision that passed the gate and needs no plan: finish Start, then follow L1 without a plan below.
    - A change without a plan or revision that alters or extends behavior no design states, as the `canon` skill's tiers define it: at L1, after step 5 write an as-built revision from HEAD (the `canon` skill's `as-built.md`), pass it through the review gate at L1 and commit it on its own, then make the change's revision as the next bullet makes a missing L1 revision. At L2, stop and give the user `/canon-design`, which records the behavior first. [Backfill](#backfill) is for work that only turns out to alter such behavior.
    - When an earlier phase is missing: a missing L1 design revision is made here after step 5, as the `canon` skill's L1 says, and the work continues once it passes its gate; for a missing plan or L2 design, stop and give the user its command, e.g. `/canon-plan D00X` or `/canon-design D00X`.
-3. Read the plan's Current state, then the governing design sections (`show D00X#<section>`). If `check` warns that a design moved past the plan's `based_on`, compare the design's changes with the remaining slices first; a conflict is a plan or design problem under the workflow's deviation rules.
+3. Read the plan's Current state, then the governing design sections (`show D00X#<section>`). If `check` warns that a design moved past the plan's `based_on`, compare the design's changes with the remaining slices first; a conflict is a plan or design problem under the workflow (Implementation).
 4. When the plan is `accepted`: set it `in-progress` with `canon.py status` and append `Started at <commit>` to its Log. That commit is the code-review fixed point. A resumed plan already has it.
 5. Run `canon.py trace start implement [<P or D id>] --tier <tier> --base <start commit> --skill <skill> --model <model>`.
 
@@ -30,8 +30,8 @@ This session orchestrates, and a fresh worker builds each slice, so every slice 
    - **done**: re-run the slice's tests and check the diff: it stays within the slice and edits no plan or design.
    - **stuck** on a failure it could not explain: pause the slice without retrying; the user decides the next step.
    - **blocked** on a question: settle it with the `canon-grill` skill's triage and resume the worker with the answer. A question only the user can answer is a pending decision: pause the slice.
-   - **blocked** on the plan or design: apply the workflow's deviation rules. For a plan problem with one clear fix, edit the plan, log it and resume the worker. Otherwise pause the slice. A slice that alters or extends behavior no design states takes [Backfill](#backfill).
-   - **No report**, because the host stopped the run: give it one more run, as the workflow's Subagents says, replacing it as [Workers](#workers) says when it cannot be resumed. When that run stops too, pause the slice with the stopped runs as its problem.
+   - **blocked** on the plan or design: follow the workflow (Implementation). For a plan problem with one clear fix, edit the plan, log it and resume the worker. Otherwise pause the slice. A slice that alters or extends behavior no design states takes [Backfill](#backfill).
+   - **No report**, because the host stopped the run: give it one more run, as the workflow (Subagents) directs, replacing it as [Workers](#workers) says when it cannot be resumed. When that run stops too, pause the slice with the stopped runs as its problem.
 
    To pause a slice, set `Status: paused`, stash the worker's changes, new files included but not the plan, under a message that starts with `<P id> S<n>`, log the problem and that message for whoever resumes it, and continue with slices that do not depend on it. Find a stash by its message, never by its `stash@{<n>}` position, which other sessions' stashes shift.
 4. When the slice is done by the `canon-tdd` skill's definition, set `Status: done`, point Current state at the next action, and append results, decisions and deviations to the Log.
@@ -60,13 +60,13 @@ Your final message is your report: status (done | stuck | blocked), files change
 
 ### Workers
 
-A worker is a new general-purpose subagent from the host's own tool, never a fork of this session, launched without a model or effort so it runs on the session's (the `canon` skill's workflow, Subagents). Write its id to `.canon/canon-implement/<P id>/S<n>-id.txt` so you can resume it. A worker that cannot be resumed is replaced: stash its changes as a pause does, under a message that starts with `<P id> S<n>` and names the replacement, log that message, and launch a new worker with the worker prompt, followed by the answer when it was blocked on a question.
+A worker is a new general-purpose subagent from the host's own tool, never a fork of this session, launched without a model or effort so it runs on the session's model and effort, as the `canon` skill's workflow (Subagents) directs. Write its id to `.canon/canon-implement/<P id>/S<n>-id.txt` so you can resume it. A worker that cannot be resumed is replaced: stash its changes as a pause does, under a message that starts with `<P id> S<n>` and names the replacement, log that message, and launch a new worker with the worker prompt, followed by the answer when it was blocked on a question.
 
 ## 3. Finish
 
 1. Review the whole change with the `canon-code-review` skill from the `Started at` commit. Fix the findings, commit, and record deferred ones as it describes.
 2. Run the docs step from the `canon` skill's workflow with `--base <Started at>`, so it covers the committed slices. It sets the design's `implemented`, archives the plan as `done` once every slice is done, then commits.
-3. Run the `canon-retro` skill's end check only if this work hit concrete friction in the development infrastructure or the agent workflow that could recur, such as a correction to how you worked, a finding a check could have caught, a command that would not run, a check that failed after you thought you were done, a search that took far too long, or a canon step that got in the way. Use only evidence already in context; do not search for reasons to run it.
+3. Follow the `canon` skill's workflow (Closing a workflow).
 4. Run `canon.py trace end <id> <outcome>`.
 5. Report: slices done, every paused slice with its problem, the known issues recorded for deferred findings, and the due-review line when the docs step produced one.
 

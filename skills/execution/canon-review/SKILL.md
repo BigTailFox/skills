@@ -45,7 +45,7 @@ Take the findings to the user with the `canon-grill` skill. Present the fixable 
 - **Fix now** (an approved plan): build it through its tier's flow, L0 with `canon-tdd` and `canon-code-review`, L1 by revising the design and passing the review gate (same-model reviewer) first. Run the docs step, commit each fix on its own, and set `fixed <commit>`.
 - **Needs a spec change**: record it as a known issue of the design that will carry it, source `R00X-F<n>` and next `L1` or `L2`, and set `moved D00X`; or set `moved P00X` when a plan covers it. Give the user the next phase's command (`/canon-design D00X` or `/canon-plan D00X`).
 - **A defect**: create an investigation (`canon.py new I <slug>`) and set `moved I00X`.
-- **Later**: a defect in code a design governs becomes a known issue of that design, source `R00X-F<n>` and next `fix`, with `moved D00X`; anything else becomes an Idea in the module's backlog concept (`canon.py find backlog`, else `canon.py new C <module>-backlog`), with `moved C00X`.
+- **Later** follows the `canon` skill's doc types (Deferred findings). For a defect in governed code, use Source `R00X-F<n>` and Next `fix`, then set `moved D00X`. Send every other Later item to the backlog and set `moved C00X`.
 - **Rejected**: set `declined <reason>`. When the reason is lasting and the idea likely to return, add a one-line Decision to the owning design so later reviews skip it.
 
 Before deciding on an architecture candidate, the user may explore it: walk it with `canon-grill` and design alternative interfaces with the `canon-codebase-design` skill.
@@ -54,6 +54,6 @@ Before deciding on an architecture candidate, the user may explore it: walk it w
 
 Once no finding is `open`, run `canon.py archive R00X closed` and `canon.py check --fix`, then commit (Conventional Commits, `docs` type, `Refs: R00X`).
 
-Then run the `canon-retro` skill's end check only if this work hit concrete friction in the development infrastructure or the agent workflow that could recur, such as a correction to how you worked, a finding a check could have caught, a command that would not run, a check that failed after you thought you were done, a search that took far too long, or a canon step that got in the way. Use only evidence already in context; do not search for reasons to run it.
+Follow the `canon` skill's workflow (Closing a workflow).
 
 Then run `canon.py trace end <id> <outcome>`.

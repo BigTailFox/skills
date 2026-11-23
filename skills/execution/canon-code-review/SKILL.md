@@ -55,10 +55,10 @@ Present the findings under `## Spec` and `## Standards`, verbatim or lightly cle
 ## 6. Dispose
 
 - Fix findings in the change, then re-run the checks the fix touched. When blocker or major fixes changed the code, run the `canon-blind-review` skill's confirmation.
-- A finding the user defers becomes a known issue of the design governing its code (`canon.py which`), with source `code review <HEAD commit>`, as the `canon` skill's doc types define; when no design governs it, an Idea in the module's backlog concept (`canon.py find backlog`, else `canon.py new C <module>-backlog`).
+- For findings the user defers, follow the `canon` skill's doc types (Deferred findings). Use Source `code review <HEAD commit>` for a known issue.
 - A finding that shows the design itself is wrong is a design problem: follow the `canon` skill's workflow (Design problems). The review ends once any revision the user chose has passed its gate.
 - A finding of altered behavior no design states is fixed by an as-built revision from the merge base the review diffs against, written as the `canon` skill's `as-built.md` says, which passes its L1 gate and is committed on its own. The change then alters what that design states, which needs a revision of it: a design problem, as above.
-- Unless another workflow invoked this review, run the `canon-retro` skill's end check only if this work hit concrete friction in the development infrastructure or the agent workflow that could recur, such as a correction to how you worked, a finding a check could have caught, a command that would not run, a check that failed after you thought you were done, a search that took far too long, or a canon step that got in the way. Use only evidence already in context; do not search for reasons to run it.
+- For a standalone review, follow the `canon` skill's workflow (Closing a workflow).
 
 Then run `canon.py trace end <id> <outcome> --dir .canon/canon-blind-review/<topic> --input -`, with the dispositions on stdin.
 

@@ -19,7 +19,9 @@ import time
 import unittest
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
+from functools import lru_cache
 from pathlib import Path
+from urllib.parse import unquote
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parent.parent
@@ -32,9 +34,13 @@ BRAND = "canon"
 MAX_NAME = 64
 MAX_DESCRIPTION = 1024
 MAX_LINES = 500
-LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
-FENCE_RE = re.compile(r"^\s*(```|~~~)")
-INLINE_CODE_RE = re.compile(r"`[^`]*`")
+LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)\s]+)\)")
+HEADING_RE = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$")
+FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
+INLINE_CODE_RE = re.compile(r"(?<!`)(`+)(?!`)(.*?)(?<!`)\1(?!`)")
+SKILL_NAME_RE = re.compile(r"canon(?:-[a-z0-9-]+)?")
+SECTION_POINTER_RE = re.compile(r"(?:^|\b(the|its|skill['’]s|(?:see|follow|read)(?: the)?)\s+)"
+                                r"(workflow|doc types)\s+\(((?:[^()]|\([^()]*\))+)\)", re.I)
 SKILL_LIST = "## Skills"
 SKILL_ROW_RE = re.compile(r"^\|\s*`([a-z0-9-]+)`\s*\|.*\|\s*([^|]+?)\s*\|\s*$")
 TRIGGER = {False: "Auto", True: "Manual"}
@@ -42,7 +48,7 @@ IMPLICIT_RE = re.compile(r"^\s*allow_implicit_invocation:\s*['\"]?(\w+)", re.M)
 CANON_SCRIPT = "skills/governance/canon/scripts/canon.py"
 VERSION_RE = re.compile(r'^CANON_VERSION = "\d+"', re.M)
 TRACE_CALL_RE = re.compile(r"`canon\.py trace (?:start|end) [^`]*`")
-LIST_MARKER_RE = re.compile(r"^\s*(?:\d+\.|[-*])\s+")
+LIST_MARKER_RE = re.compile(r"^\s*(?:\d{1,9}[.)]|[-*+])\s+")
 SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\0(\[*_\"'])")
 CALL_SITE_TOKENS = 40
 PLACEHOLDERS = ("skills/governance/canon/SKILL.md", "In `trace` calls", 110)
@@ -63,17 +69,70 @@ def prose_lines(text):
     fence = None
     for number, line in enumerate(text.splitlines(), 1):
         match = FENCE_RE.match(line)
-        if match:
-            fence = match.group(1) if fence is None else (None if fence == match.group(1) else fence)
+        if fence:
+            if match and match.group(1).startswith(fence) and not match.group(2).strip():
+                fence = None
             continue
-        if fence is None:
-            yield number, line
+        if match and (match.group(1)[0] == "~" or "`" not in match.group(2)):
+            fence = match.group(1)
+            continue
+        yield number, line
 
 
-def link_targets(text):
-    """Yield link targets outside fenced code blocks and inline code."""
-    for _number, line in prose_lines(text):
-        yield from LINK_RE.findall(INLINE_CODE_RE.sub("", line))
+@lru_cache(maxsize=None)
+def headings(md):
+    """Map each Markdown anchor to the path of heading titles that leads to it."""
+    anchors, parents = {}, []
+    for _number, line in prose_lines(md.read_text(encoding="utf-8")):
+        heading = HEADING_RE.match(line)
+        if not heading:
+            continue
+        title = LINK_RE.sub(r"\1", heading.group(2)).replace("`", "").strip()
+        base = re.sub(r"[^\w -]", "", title.lower()).replace(" ", "-")
+        slug, suffix = base, 0
+        while slug in anchors:
+            suffix += 1
+            slug = f"{base}-{suffix}"
+        level = len(heading.group(1))
+        while parents and parents[-1][0] >= level:
+            parents.pop()
+        parents.append((level, title.casefold()))
+        anchors[slug] = tuple(name for _level, name in parents)
+    return anchors
+
+
+def has_sections(md, pointer):
+    """A parent → child list names children under that parent. A plain list can name any heading."""
+    if not md.is_file():
+        return False
+    parts = tuple(part.strip().casefold() for part in pointer.split("→"))
+    parents, sections = parts[:-1], parts[-1]
+    titles = set()
+    for path in headings(md).values():
+        ancestors = path[:-1]
+        if not parents or ancestors[-len(parents):] == parents:
+            titles.add(path[-1])
+    if not titles:
+        return False
+    # Match complete headings, including ones whose titles themselves contain commas or "and".
+    title = "(?:" + "|".join(re.escape(name) for name in sorted(titles)) + ")"
+    separator = r"(?:,\s*(?:and\s+)?|\s+and\s+)"
+    return re.fullmatch(rf"{title}(?:{separator}{title})*", sections) is not None
+
+
+def skill_reference_errors(line, prose, source):
+    for span in INLINE_CODE_RE.finditer(line):
+        code = span.group(2).strip()
+        name = code[1:].partition(" ")[0] if code.startswith("/") else code
+        named = SKILL_NAME_RE.fullmatch(name) or (NAME_RE.fullmatch(name) and re.match(r"\s+skill\b", line[span.end():]))
+        if named and not any((SKILLS_DIR / category / name / "SKILL.md").is_file() for category in CATEGORIES):
+            yield f"{source}: unknown skill `{name}`"
+    for qualifier, document, sections in SECTION_POINTER_RE.findall(LIST_MARKER_RE.sub("", prose)):
+        if qualifier.lower() == "the" and sections[0].islower():
+            continue  # Ordinary prose, such as "changed the workflow (during release week)".
+        md = SKILLS_DIR / "governance" / "canon" / (document.lower().replace(" ", "-") + ".md")
+        if not has_sections(md, sections):
+            yield f"{source}: cannot find ({sections}) in {md.relative_to(ROOT)}"
 
 
 def paragraph_lines(text):
@@ -108,13 +167,23 @@ def trace_call_sites(text):
             start = end
 
 
-def broken_links(md, base):
+def reference_errors(md, *, skill_text=False):
     errors = []
-    for target in link_targets(md.read_text(encoding="utf-8")):
-        if re.match(r"^[a-z]+:", target) or target.startswith("#"):
-            continue
-        if not (md.parent / target.split("#", 1)[0]).exists():
-            errors.append(f"broken relative link in {md.relative_to(base).as_posix()}: {target}")
+    for number, line in prose_lines(md.read_text(encoding="utf-8")):
+        source = f"{md.relative_to(ROOT).as_posix()}:{number}"
+        prose = INLINE_CODE_RE.sub(" ", line)
+        if skill_text:
+            errors.extend(skill_reference_errors(line, prose, source))
+        for _label, target in LINK_RE.findall(prose):
+            if re.match(r"^(?:[a-z][a-z0-9+.-]*:|//)", target, re.I):
+                continue
+            path, _, fragment = target.partition("#")
+            dest = md.parent / unquote(path) if path else md
+            if not dest.exists():
+                errors.append(f"{source}: broken relative link {target}")
+            elif fragment and dest.suffix.lower() in (".md", ".markdown") and dest.is_file():
+                if unquote(fragment) not in headings(dest):
+                    errors.append(f"{source}: missing heading for {target}")
     return errors
 
 
@@ -189,7 +258,7 @@ def validate_skill(skill_dir):
         errors.append(f"SKILL.md has {line_count} lines (max {MAX_LINES})")
 
     for md in sorted(skill_dir.rglob("*.md")):
-        errors += broken_links(md, skill_dir)
+        errors += reference_errors(md, skill_text=True)
 
     manual = fields.get("disable-model-invocation", "").lower() == "true"
     policy = skill_dir / "agents" / "openai.yaml"
@@ -396,7 +465,7 @@ def main():
     failures += report("SKILL.md placement", misplaced_skill_files(skill_files))
 
     for md in sorted(ROOT.glob("*.md")):
-        errors = broken_links(md, ROOT)
+        errors = reference_errors(md)
         if md.name == "README.md":
             errors += check_readme(skills)
         failures += report(md.name, errors)

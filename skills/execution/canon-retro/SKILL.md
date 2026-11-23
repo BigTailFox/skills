@@ -7,7 +7,7 @@ description: Turns tooling and workflow friction into fixes. Use when the user a
 
 A retro improves how work gets done in the project: checks and CI, the development environment, docs navigation, steering files, review standards and canon itself. The project's own architecture, performance, functionality, security and usability are out of scope even when the session exposed a problem in them; code review, the `canon-review` skill and the `canon-investigate` skill own those. Only the session the user talks to runs a retro; subagents leave it to that session. Read the `canon` skill first; `canon.py` means the `canon` skill's `scripts/canon.py`, as its Tool section says.
 
-- **End check**: a canon workflow's closing step runs it when the work hit friction in the development infrastructure or the agent workflow that could recur. It covers the work since the previous retro in this session, or since the session began. When one workflow runs inside another, such as code review inside implement, only the outer one runs it. It opens with `canon.py trace start end-check --skill <skill> --model <model> [--parent <parent>]`.
+- The **end check** follows the `canon` skill's workflow (Closing a workflow). It covers the work since the previous retro in this session, or since the session began. It opens with `canon.py trace start end-check --skill <skill> --model <model> [--parent <parent>]`.
 - **Requested retro**: the user asks for one. It covers this whole session and always reports, if only that nothing qualified. It opens with `canon.py trace start retro --skill <skill> --model <model>`.
 
 ## 1. Find events
@@ -72,7 +72,7 @@ Raise at most three, ranked by what their events cost times how likely they are 
 Put the items at the end of the workflow's report, before any closing command or prompt line it ends with. One line each: the event with its evidence, the change with its place and tier, and whether to apply it now. Then one line for each friction added to `skills.jsonl`. Set each raised cause to `raised`. Then run `canon.py trace end <id> <outcome>`: for an end check, `raised` if it raised an item, else `quiet`. The user answers every item in one reply:
 
 - **Apply**, when it fits in this session. Commit docs edits that change no spec's meaning (pointers, summaries, headings, `paths`, guides, `AGENTS.md` lines) after `canon.py check --fix`; build an L0 change through its flow, code review and docs step included. Commit each change on its own and set `applied <commit>`. For an L1 or L2 change, follow **Later** below, then give the user the `/canon-design` command.
-- **Later**: add it as an Idea to the module's backlog concept (`canon.py find backlog`, else `canon.py new C <module>-backlog`). Run `canon.py check --fix` until it reports no errors, then commit the concept and its index changes separately (Conventional Commits, `docs` type, `Refs: C00X`). Set `later C00X` only after the commit succeeds; otherwise keep `raised` and report the failure.
+- For **Later**, always use the backlog destination in the `canon` skill's doc types (Deferred findings). Run `canon.py check --fix` until it reports no errors, then commit the concept and its index changes separately (Conventional Commits, `docs` type, `Refs: C00X`). Set `later C00X` only after the commit succeeds; otherwise keep `raised` and report the failure.
 - **No**: set `declined`.
 
 Without an answer the cause stays `raised`.
