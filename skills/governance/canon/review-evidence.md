@@ -1,5 +1,15 @@
 # Review evidence
 
+## Handed-off reviews
+
+Append each printed review unit ID to `trace-unit.txt` in the round's directory. Keep the latest ID and its predecessors with the pending record. On handoff end the current unit with the reports, target coverage and dispositions already established. Point the handoff to that record.
+
+On resume, use `trace history UNIT` to verify the handoff. For an older record without an ID, find a candidate in `trace history` and verify its kind, exact targets or recorded code-review base and plan, and round against the saved prompts, reports or archive. Use only an unambiguous match. If a continuation already exists, check its status. An open one belongs to the session resuming it. A delivered one holds the completed evidence. A further handoff is continued by its own ID.
+
+Add `--continues UNIT` to the usual review start with the same primary revision, or the same recorded base and exact plan revision for a code review. Two plan-less code reviews can match on their recorded base. Keep `--parent` for the current enclosing workflow. When the origin is uncertain, unavailable in the writable store, or tracing is off, note the gap with the evidence and resume the review from its saved state. Leave the unmatched trace history intact.
+
+The final end describes all reports actually used, including reused reports, with their original source keys, targets, findings and first confirmations. Archive the current round with its usual `--dir`. A reused report older than the new unit stays in the predecessor's archive. Leave its timestamp intact. The predecessor's handoff and the recorded findings survive loss of those files.
+
 ## End dispositions
 
 Pass one object to `trace end UNIT OUTCOME --dir DIR --input -` on stdin. A gate could record two findings merged into one claim and confirmed by the cross-family reviewer.

@@ -16,6 +16,8 @@ Every change, whatever its tier, gets both axes, each from a fresh subagent: the
 
 Use the user's fixed point (a commit, branch, tag or `HEAD~5`). Otherwise use the start commit a plan's Log records, otherwise the default branch (`origin/HEAD`, else `main`); on the default branch itself, review only the uncommitted work.
 
+For a handed-off review, recover its evidence directory, exact plan revision if any, source snapshots and completed reports. Use its recorded base commit as the fixed point. Add `--continues <handoff-unit>` to the start below as the `canon` skill's review evidence directs. Keep the printed unit ID with the evidence.
+
 Diff the working tree against the merge base so uncommitted work is included: `git diff $(git merge-base <fixed-point> HEAD)`. Untracked new files are missing from that diff; list them with `git ls-files --others --exclude-standard` and pass them as files to read in full. Note the commits with `git log --oneline <fixed-point>..HEAD`. Confirm the ref resolves and the change is non-empty before spawning anything.
 
 Run `canon.py trace start code-review [<P id>] --base <fixed-point> --tier <tier> --skill <skill> --model <model> [--parent <parent>]`.
@@ -40,6 +42,8 @@ When no design governs the change, the Spec axis still runs: it reports behavior
 
 Issue the calls together, launched as the `canon-blind-review` skill says: a Spec reviewer and a Standards reviewer, each launched like that skill's same-model reviewer, plus, for an L2 change, its cross-family reviewer with a prompt carrying both briefs and both sets of sources. Keep each reviewer's files in `.canon/canon-blind-review/<topic>/` (topic: `<P id>-code-review`, else a slug of the change) as that skill names them, by role: `spec`, `standards` or `cross-family`, e.g. `spec-prompt.md`, `spec.md` and `spec-id.txt`; take the review snapshot before spawning, as that skill says. Each prompt fills that skill's template: the diff command, the untracked files and the commit list as its Target lines; `Read the change and these sources: {paths}.` as its reading line; and its brief below as its Assess items, the Standards brief followed by the pasted baseline.
 
+On resume, reuse reports for the parts of the change they still cover. Freeze the current tree before launching each missing pass and save its input snapshot under its key. An unavailable L2 cross-family reviewer goes through the manual fallback with both briefs. Wait for the returned report, credit its actual model with `manual:` and send any accepted blocker or major fixes to the reviewer of their axis for confirmation.
+
 **Spec brief**: "Report: (a) requirements the spec or plan asks for that are missing or partial; (b) behavior in the diff that nothing asked for; (c) requirements that look implemented but wrong; (d) behavior the diff changes that its governing design contradicts, meaning the change needed a design revision first; (e) behavior callers rely on (results, errors, side effects, config keys, data formats) that the diff alters or extends and no design states, whether or not a design governs the changed files, meaning the change needed an as-built revision first; (f) slice test criteria with no test at the named seam. Cite the section for each finding, e.g. D003§token-refresh."
 
 **Standards brief**: "Report, naming the file or hunk, (a) violations of a stated standard, citing the doc and rule; (b) baseline smells, named and quoted. Stated-standard breaches can be hard violations; baseline smells are always judgement calls, and a stated standard overrides the baseline. Skip anything tooling enforces."
@@ -57,3 +61,5 @@ Present the findings under `## Spec` and `## Standards`, verbatim or lightly cle
 - Unless another workflow invoked this review, run the `canon-retro` skill's end check only if this work hit concrete friction in the development infrastructure or the agent workflow that could recur, such as a correction to how you worked, a finding a check could have caught, a command that would not run, a check that failed after you thought you were done, a search that took far too long, or a canon step that got in the way. Use only evidence already in context; do not search for reasons to run it.
 
 Then run `canon.py trace end <id> <outcome> --dir .canon/canon-blind-review/<topic> --input -`, with the dispositions on stdin.
+
+Include each report actually used and each actual confirmer. On a separate request use the `canon-blind-review` targeted recheck. For a request received before closure, preserve its result for the append immediately after this end. For one received later, append it on receipt using the saved unit ID.

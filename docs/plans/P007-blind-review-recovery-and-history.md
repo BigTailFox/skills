@@ -18,7 +18,7 @@ Deliver findings F4, F5, F6, F10 and F11 in [R004: field feedback](../reviews/R0
 
 ## Current state
 
-Next: S4
+Next: review the complete change from `6e69d74` at L2.
 
 ## Slices
 
@@ -62,7 +62,7 @@ Update the Subagents section in the `canon` workflow, the reviewer setup in `can
 
 ### S4: Resume a pending gate and credit each target
 
-Status: todo
+Status: done
 
 Risk: A handoff or supplemental review can otherwise lose completed work, duplicate a continuation or credit a revision the independent reviewer never saw.
 
@@ -89,3 +89,4 @@ For linking units and retaining reports, use [D001§commands: continuity](../des
 - S1 added read-only `trace history [UNIT]`. The local field replay matched 31 starts, 30 ends, six per-kind duration totals, the unmatched design and the follow-up with `archive=none`. Both switch settings produced identical output and left the log checksum intact. Seven CLI tests also cover malformed records, slice bounds, missing archives and store collisions. All 411 repository tests passed across the default and outside-checkout runs. D001 text budgets passed and skill discovery found 19 skills. No plan deviation.
 - S2 added per-report coverage, individual confirmation results and `trace recheck`. In an isolated copy of a historical gate, a recheck at its preserved snapshot, using a fixture reviewer identity, left the original unresolved finding intact and showed the later resolved result. Retrying succeeded once. A conflicting retry left the log byte-identical. CLI tests also cover concurrent aliases, unknown ordering, linked stores and pruned reports. All 421 tests passed across both temp environments, the D001 budgets passed, and discovery found 19 skills. No plan deviation.
 - S3 tested ten reviewer selections through each of the three installed entry points. Named defaults, host-specific `none`, legacy entries and an explicit pair of reviewers produced the expected selections. A targeted setup preserved the other families and shared definitions. Local processes demonstrated permission and activity reporting, a polling timeout with the same job active, bounded same-ID recovery, the stopped-run retry, terminal publication, cancellation and an ID-less fallback. Both requested reviewers published separate reports. A fresh confirmation retained the original IDs. The local launcher also passed 42 offline cases. All 421 repository tests, D001 budgets and discovery of 19 skills passed. No plan deviation.
+- S4 added `trace start --continues` and checked seven CLI regressions, including racing starts and exact base/plan matching. A legacy handoff’s event and archived reports survived a continuation that credited four sources to their assessed revisions. In the workflow walkthrough a fresh session recovered seven confirmed fixes, then completed the missing pass on matching and changed target baselines. A manual report and a scoped waiver gave different reviewer credits and kept approval separate. Added targets received full passes, delegated confirmations kept their author, and rechecks requested before and after closure followed the original end. Two requested reviewers each retained F1. The gate also resumed from its pending record with tracing off or its original store unavailable. L1 withdrawal and the L2 code-review manual fallback were exercised separately. All 428 tests, D001 budgets and discovery of 19 skills passed. No plan deviation.

@@ -55,7 +55,7 @@ The review gate and code review say when the cross-family reviewer runs; other r
 
 - A reviewer that runs as a host subagent is a new subagent from the host's own tool, never a fork of the session, launched without a model or effort so it runs on the session's; only a cross-family reviewer gets a model, the one its entry names. In Claude Code use a `general-purpose` or custom subagent; the built-in Explore and Plan agents cannot be resumed.
 - Launch the first-round reviewers together. Start command reviewers in the background first, keeping their job handles. Launch the host reviewers asynchronously so you can observe the commands. A lone host reviewer may run in the foreground.
-- While reviewers read, in any round, edit nothing in the work tree outside `.canon/`, so each reads what the review snapshot records; fix findings once the reports are in.
+- While any reviewer reads, keep the work tree outside `.canon/` at its review snapshot. If a first-round report is missing once all readers stop, follow the `canon` workflow's Pending reviews to fix or confirm the reports already received and freeze the next review baseline.
 - Once you have no other work, look for the report of a host subagent whose completion notice has not come in the host's record of its run: in Cursor, `subagents/<agent id>.jsonl` in `<cursor home>/projects/<project>/agent-transcripts/$CURSOR_CONVERSATION_ID/`; in Codex, the `rollout-*.jsonl` under `$CODEX_HOME/sessions/` whose `session_meta` names your session as `parent_thread_id`.
 - On every route the prompt is what keeps reviewers from modifying files, writing scratch files and reading `.canon/`.
 
@@ -73,7 +73,7 @@ Give each independently numbered report a key. Start with the role (`same-model`
 
 Save a host subagent's terminal report verbatim and merge it in its original language. Once that report is saved and newer than its prompt, ignore repeated or late completion notices for that run.
 
-Before a round's reviewers start, run `canon.py snapshot` (the `canon` skill's Tool) from the repo root, the worktree's root when you work in a linked worktree, with its output written to `snapshot.txt` in the round's directory, replacing any earlier one; once the fixes for its confirmation are made, run it again with its output written to `snapshot-confirm.txt` beside it. The commit it prints is a ref of `.canon/canon/snapshots`, not its HEAD: check it with `git -C .canon/canon/snapshots cat-file -e <commit>`.
+Before the first launch in each round, run `canon.py snapshot` from the checkout root and keep its output in the round's `snapshot.txt`. Preserve it through a handoff. Save the input snapshot for each report in `<key>-snapshot.txt`. Take a fresh snapshot for a late or supplemental pass. Save each confirmation's fixed snapshot in `<key>-snapshot-confirm.txt` and the round's latest fixed snapshot in `snapshot-confirm.txt`. Check a snapshot with `git -C .canon/canon/snapshots cat-file -e <commit>`. When tracing supplies an ID, keep it with the round's evidence as the `canon` skill's `trace.md` directs.
 
 ## Stopped runs
 
@@ -91,7 +91,9 @@ On the first stopped attempt, give the reviewer one more attempt. This also appl
 
 ## Manual fallback
 
-When an applicable `none` is configured, setup cannot write the reviewer file, or the first-round routes are exhausted, tell the user why. The `canon-init` skill's reviewer setup can change a configured `none`. Give the user the filled prompt in one code block to run in an independent tool that can read the repository. When they return the report, save it with its prompt under the assigned key, leave its ID file empty and credit `manual:<model>`.
+When an applicable `none` is configured, setup cannot write the reviewer file, or the first-round routes are exhausted, tell the user why. The `canon-init` skill's reviewer setup can change a configured `none`. Give the user the full prompt for the current targets in one code block to run in an independent tool that can read the repository. For a gate, follow the `canon` workflow's Pending reviews, including `pending.md`, L1 withdrawal and an explicit L2 decision for named revisions. An L2 code review waits for the report. When the report arrives, verify which snapshot and targets it covered, save it and its prompt under the assigned key, leave its ID file empty and credit `manual:<model>`.
+
+For a target added during fixes or in a follow-up, follow the `canon` workflow's Target coverage. Launch a fresh blind reviewer for each missing role with all the applicable first-round criteria, the missing targets and their usual `Changes since` commit. Give each such report its own next key and snapshot, including when its model already wrote another report.
 
 ## Merge
 
@@ -110,11 +112,15 @@ Write the answer in {documentation language}, even where your instructions set a
 End with one line: Verdict: approve | revise
 ```
 
-- Before sending it, write the round's `snapshot-confirm.txt` ([Review files](#review-files)). The diff command is `git -C .canon/canon/snapshots diff <first> <second> -- <paths>`: the commits in the round's `snapshot.txt` and `snapshot-confirm.txt`, and the files the fixes touched. Run it yourself first; when either file holds no commit or the command fails, send the no-diff choice.
+- Take the fixed snapshot ([Review files](#review-files)). Run `git -C .canon/canon/snapshots diff <input> <fixed> -- <paths>` using that source's input and confirmation snapshots and the paths its fixes touched. For a legacy first-round report use the shared round snapshots it actually saw. When either commit is unavailable or the command fails, send the no-diff choice.
 - Resume each reviewer by its kept id, so it judges the fixes against its own findings.
 - A cross-family reviewer that runs as a command, and a reviewer that cannot be resumed, gets a new run of the same reviewer with the same scoped prompt. Keep the full report in the round's findings file.
-- For a manual-fallback reviewer, or a cross-family reviewer whose confirmation run stops twice, assign its findings selected for confirmation to the resumed same-model reviewer. Use the same prompt and the actual source key, e.g. `cross-family-2:F<n>`. In a code review, each goes to the resumed reviewer of its axis. The user relays nothing a second time.
-- There is no further round; blockers still open go to the user.
+- For a manual-fallback reviewer, or a cross-family reviewer whose confirmation run stops twice, assign its findings selected for confirmation to the resumed same-model reviewer. Use the same prompt and the actual source key, e.g. `cross-family-2:F<n>`. In a code review, each goes to the resumed reviewer of its axis. Keep the prompt, result and run ID with the source's confirmation files, and record the actual confirmer's key in the dispositions.
+- Blockers still open after this round go to the user.
+
+### Targeted recheck
+
+On a separate request, snapshot the version to check. Use the confirmation prompt for only the named source finding and accepted claim. Name its fix and diff from that reviewer's last checked snapshot, or give the locations when a diff is unavailable. Resume the reviewer when possible. A command or unavailable session gets a fresh run of the same reviewer. Identify any delegate as in Confirmation. Save the prompt, terminal report, actual run ID and checked snapshot in `<stem>-prompt.md`, `<stem>.md`, `<stem>-id.txt` and `<stem>-snapshot.txt` under a new stem. Preserve the first confirmation. Use the saved review ID and the `canon` skill's review evidence instructions to record the recheck on receipt for a closed unit, or immediately after its end if the request came earlier.
 
 ## Follow-up round
 
@@ -131,5 +137,5 @@ End with one line: Verdict: approve | revise
 ```
 
 - Resume each reviewer that runs as a host subagent by its kept id. A cross-family reviewer that runs as a command, and a reviewer that cannot be resumed, gets a new run, given its first-round prompt followed by the follow-up prompt.
-- A manual-fallback reviewer's part, and that of a cross-family reviewer whose follow-up run stops twice, goes to the resumed same-model reviewer, whose review of the same diff covers it; the user relays nothing a second time.
-- Fixes of the round's accepted blocker and major findings pass a [confirmation](#confirmation) from the round's own snapshot: its `snapshot.txt` to its `snapshot-confirm.txt`.
+- On targets it previously reviewed in full, a manual-fallback reviewer's part, or that of a cross-family reviewer whose follow-up stops twice, goes to the resumed same-model reviewer. Credit the actual reader of the new revision. An added target needs full passes from its missing roles. After a waiver, give a fresh independent reviewer the full criteria, current targets and follow-up changes. For missing independent coverage follow the `canon` workflow's Pending reviews.
+- Confirm accepted blocker and major fixes from each source's own input as in [Confirmation](#confirmation).

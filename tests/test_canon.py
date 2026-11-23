@@ -5450,6 +5450,175 @@ class DispositionsTest(TraceCase):
         self.assertEqual([line["id"] for line in self.lines() if line["type"] == "end"], [gate, review])
 
 
+class ReviewContinuationTest(TraceCase):
+    def setUp(self):
+        super().setUp()
+        self.trace("on")
+
+    def test_gate_handoff_keeps_its_partial_evidence_and_links_both_directions(self):
+        self.design()
+        first = self.start_line("gate", "D001")
+        self.assertNotIn("continues", first)
+        earlier = first["id"]
+        reviewer = {"role": "same-model", "model": "Reviewer-A", "id": "run-a", "targets": ["D001@r1"]}
+        evidence = {"reviewers": [reviewer], "findings": [], "new_blockers": 0}
+        self.trace("end", earlier, "handoff", "--input", "-", stdin=json.dumps(evidence))
+        partial = self.events.read_bytes()
+        self.assertIn("coverage=partial continuation=none", self.trace("history", earlier))
+        parent = self.start("implement")
+        later = self.start_line("gate", "D001", "D000", "--parent", parent, "--continues", earlier)
+        self.assertEqual(later["continues"], earlier)
+        self.assertEqual(later["parent"], parent)
+        evidence["reviewers"].append({"role": "cross-family", "model": "Reviewer-B", "id": "run-b",
+                                      "targets": ["D001@r1", "D000@r1"]})
+        self.trace("end", later["id"], "delivered", "--input", "-", stdin=json.dumps(evidence))
+        self.assertTrue(self.events.read_bytes().startswith(partial))
+        old, new, all_units = self.trace("history", earlier), self.trace("history", later["id"]), self.trace("history")
+        for output in (old, all_units):
+            self.assertIn("coverage=partial continuation=" + later["id"], output)
+        for output in (new, all_units):
+            self.assertIn("continues=" + earlier, output)
+        self.assertNotIn("Reviewer-B", old)
+        for source in ("reviewer same-model model=Reviewer-A id=run-a targets=D001@r1",
+                       "reviewer cross-family model=Reviewer-B id=run-b targets=D001@r1, D000@r1"):
+            self.assertIn(source, new)
+
+    def test_only_a_handed_off_review_of_the_same_kind_and_exact_primary_revision_can_continue(self):
+        primary = self.design()
+        subdesign = self.doc("D", "child", parent="D001")
+        for kind in ("gate", "follow-up"):
+            earlier = self.start(kind, "D001", "D001A")
+            self.rejects("start", kind, "D001", "--continues", earlier)
+            self.trace("end", earlier, "handoff")
+            for different in (["implement", "D001"], ["follow-up" if kind == "gate" else "gate", "D001"],
+                              [kind, "D001A", "D001"], [kind], [kind, "D404"]):
+                self.rejects("start", *different, "--continues", earlier)
+            self.set(primary, revision=2)
+            self.rejects("start", kind, "D001", "--continues", earlier)
+            self.set(primary, revision=1)
+            self.set(subdesign, revision=2)
+            child = self.start(kind, "D001", "D001A", "--continues", earlier)
+            self.trace("end", child, "delivered")
+            self.rejects("start", kind, "D001", "--continues", child)
+        for args in (["gate", "D404"], ["gate"], ["design", "D001"]):
+            earlier = self.start(*args)
+            self.trace("end", earlier, "handoff")
+            self.rejects("start", *args, "--continues", earlier)
+        self.rejects("start", "gate", "D001", "--continues", "20250101T000000Z-000001")
+
+    def test_code_review_continues_at_its_recorded_base_and_exact_plan_if_it_had_one(self):
+        plan = self.doc("P", "change")
+        self.commit(check=False)
+        base = self.git("rev-parse", "HEAD")
+        earlier = self.start("code-review", "D000", "P001", "--base", "main")
+        self.trace("end", earlier, "handoff")
+        self.git("commit", "--allow-empty", "-qm", "later")
+        self.rejects("start", "code-review", "P001", "--base", "main", "--continues", earlier)
+        self.rejects("start", "code-review", "--base", base, "--continues", earlier)
+        self.set(plan, revision=2)
+        self.rejects("start", "code-review", "P001", "--base", base, "--continues", earlier)
+        self.set(plan, revision=1)
+        self.start("code-review", "P001", "--base", "HEAD~1", "--continues", earlier)
+        self.assertIn("base=" + base, self.trace("history", earlier))
+        planless = self.start("code-review", "--base", base)
+        self.trace("end", planless, "handoff")
+        self.rejects("start", "code-review", "P001", "--base", base, "--continues", planless)
+        self.start("code-review", "--base", base, "--continues", planless)
+        for args in ([], ["P001"], ["P404", "--base", base]):
+            earlier = self.start("code-review", *args)
+            self.trace("end", earlier, "handoff")
+            self.rejects("start", "code-review", *args, "--continues", earlier)
+
+    def test_racing_starts_claim_one_handoff_once_and_a_second_handoff_can_continue(self):
+        first = self.start("gate", "D000")
+        self.trace("end", first, "handoff")
+        args = ("start", "gate", "D000", "--continues", first)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            with self.lock_held("events.lock"):
+                starts = [pool.submit(self.trace, *args) for _ in range(2)]
+                time.sleep(1)
+            results = [call.result() for call in starts]
+        [rejected] = [out for out in results if out.startswith("trace error:")]
+        self.assertIn("already", rejected)
+        [second] = [line["id"] for line in self.lines() if line.get("continues") == first]
+        self.assertIn("trace {}\n".format(second), results)
+        self.trace("end", second, "handoff")
+        self.rejects(*args)
+        third = self.start("gate", "D000", "--continues", second)
+        middle = self.trace("history", second)
+        for field in ("continues=" + first, "coverage=partial continuation=" + third):
+            self.assertIn(field, middle)
+
+    def test_a_malformed_continuation_does_not_hide_the_rest_of_history(self):
+        first = self.start("gate", "D000")
+        bad = dict(self.lines()[0], id="20250101T000000Z-000002", continues=[])
+        with self.events.open("a") as log:
+            log.write(json.dumps(bad) + "\n")
+        output = self.trace("history")
+        self.assertIn(first + " gate ", output)
+        self.assertIn("1 malformed", output)
+
+    @unittest.skipIf(os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+                     "requires a read-only main trace directory")
+    def test_changed_writable_store_ambiguous_origin_and_trace_off_leave_both_logs_intact(self):
+        self.commit()
+        tree = self.worktree()
+        fallback = tree / ".canon/canon/trace/events.jsonl"
+
+        def handoff():
+            unit = self.start("gate", "D000", cwd=tree)
+            self.trace("end", unit, "handoff", cwd=tree)
+            return unit
+
+        def attempt(unit, expected):
+            def logs():
+                return [path.read_bytes() if path.exists() else None for path in (self.events, fallback)]
+            before = logs()
+            out = self.trace("start", "gate", "D000", "--continues", unit, cwd=tree)
+            self.assertIn(expected, out)
+            self.assertEqual(logs(), before)
+
+        shared = handoff()
+        with self.read_only(self.events.parent):
+            attempt(shared, "not the current writable store")
+            local = handoff()
+        attempt(local, "not the current writable store")
+        with fallback.open("ab") as log:
+            log.write(self.events.read_bytes())
+        attempt(shared, "ambiguous")
+        attempt("20250101T000000Z-000001", "names no unit")
+        self.trace("off")
+        attempt(shared, "trace off\n")
+
+    def test_reused_report_stays_in_the_predecessor_archive_and_its_recorded_result_survives_loss(self):
+        topic = self.root / ".canon/canon-blind-review/D000-r1"
+        topic.mkdir(parents=True)
+        first = self.start("gate", "D000")
+        report = topic / "same-model.md"
+        report.write_text("### F1 [major] D000\n")
+        created = self.started(first).timestamp()
+        os.utime(report, (created, created))
+        evidence = {"reviewers": [{"role": "same-model", "model": "Reviewer-A", "id": "a", "targets": ["D000@r1"]}],
+                    "findings": [{"by": ["same-model:F1"], "severity": "major", "disposition": "accepted",
+                                  "confirmed": "resolved"}], "new_blockers": 0}
+        self.trace("end", first, "handoff", "--dir", str(topic), "--input", "-", stdin=json.dumps(evidence))
+        time.sleep(max(0, created + 1 - time.time()))
+        second = self.start("gate", "D000", "--continues", first)
+        self.assertLess(report.stat().st_mtime, self.started(second).timestamp())
+        evidence["reviewers"].append({"role": "cross-family", "model": "Reviewer-B", "id": "b", "targets": ["D000@r1"]})
+        (topic / "cross-family.md").write_text("Verdict: approve\n")
+        self.trace("end", second, "delivered", "--dir", str(topic), "--input", "-", stdin=json.dumps(evidence))
+        old, new = self.events.parent / first, self.events.parent / second
+        self.assertEqual({p.name for p in old.iterdir()}, {"same-model.md"})
+        self.assertEqual({p.name for p in new.iterdir()}, {"cross-family.md"})
+        old.rename(self.root / "removed-archive")
+        self.assertIn("files missing", self.trace("history", first))
+        for unit in (first, second):
+            history = self.trace("history", unit)
+            self.assertIn("reviewer same-model model=Reviewer-A id=a targets=D000@r1", history)
+            self.assertIn("first confirmation=resolved", history)
+
+
 class RecheckTest(TraceCase):
     def setUp(self):
         super().setUp()

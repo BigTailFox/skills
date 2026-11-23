@@ -27,6 +27,7 @@ Write `HANDOFF.md` to `.canon/canon-handoff/<id>-<topic>/` at the repository roo
 - **Goal**: the work and, when the user passed arguments, what the next session will focus on.
 - **Position**: tier, branch, `HEAD` commit and `git status --short`. In a linked worktree, include its path, target branch and verified integration status as the `canon` skill's Concurrent work says.
 - **Resume from**: doc ids and sections in reading order, e.g. `P012#current-state`, then `D003#token-refresh`.
+- For a pending gate, point to the round's `pending.md` with the checkout and original gate key. For a handed-off code review, point to its evidence directory, fixed base, plan revision if any, and outstanding reports. Keep the trace unit ID there when recorded. Resume at the missing work using the `canon` skill's review evidence instructions. Once the review resolves, update this handoff and its pending record.
 - **Not in any doc**: instructions and preferences the user gave in conversation, options the user rejected that no doc records, open hunches, environment quirks (services that must run, commands needing special flags).
 - **Suggested skills**: which canon skills to use next and on what, e.g. `canon-implement` to resume P012.
 

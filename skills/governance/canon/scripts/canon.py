@@ -30,7 +30,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "71"
+CANON_VERSION = "72"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -3766,6 +3766,35 @@ def start_parent(trace_dir, args):
     return start
 
 
+def review_fixed_point(start):
+    """The revision or (base, plan revision) that identifies the work a review can continue."""
+    docs = start.get("docs") or []
+    if start["kind"] == "code-review":
+        plans = [doc for doc in docs if doc.startswith("P")]
+        if not start.get("base") or len(plans) > 1 or (plans and not target_reference(plans[0], "@r")):
+            raise TraceError("--continues needs a recorded base and an exact revision of any plan")
+        return start["base"], plans
+    if not docs or not target_reference(docs[0], "@r"):
+        raise TraceError("--continues needs the primary target at an exact revision")
+    return docs[0]
+
+
+def check_review_continuation(root, trace_dir, line):
+    """Check the handoff's identity before snapshotting and again under the append lock."""
+    kind = line["kind"]
+    if kind not in REVIEW_ROLES:
+        raise TraceError("--continues comes with gate, follow-up and code-review units only")
+    previous, end = unit_in_writable_store(root, trace_dir, line["continues"])
+    if previous.get("kind") != kind or not end or end.get("kind") != kind or end.get("outcome") != "handoff":
+        raise TraceError("--continues needs a handoff end of the same review kind")
+    if review_fixed_point(previous) != review_fixed_point(line):
+        raise TraceError("--continues needs the same primary revision, or the same base and plan for a code review")
+    predecessor = line["continues"]
+    if any(event.get("type") == "start" and event.get("continues") == predecessor
+           for event in read_events(trace_dir, predecessor.encode())):
+        raise TraceError("{} already has a continuation".format(predecessor))
+
+
 def ignore_trace_dir(root):
     """Write .canon/canon/.gitignore when missing, so no commit holds the trace directory even when the project's own
     .gitignore lacks .canon/."""
@@ -4205,6 +4234,16 @@ def trace_start(args):
         line["slice"] = args.slice
     head = trace_head(root, is_git)
     base = resolve_base(root, args.base, head)
+    line["base"] = base
+    if args.continues is not None:
+        line["continues"] = args.continues
+        check_review_continuation(root, trace_dir, line)
+
+    def check_start():
+        start_parent(trace_dir, args)
+        if args.continues is not None:
+            check_review_continuation(root, trace_dir, line)
+
     if args.kind == "slice":
         model, skill = parent.get("model"), parent.get("skill")
     else:
@@ -4215,10 +4254,10 @@ def trace_start(args):
     gate_doc = paths.get(args.docs[0]) if args.kind == "gate" and args.docs and is_git else None
     as_built = as_built_commit(root, gate_doc) if gate_doc else None
     snapshot, skipped = record_snapshot(root, is_git, trace_dir, unit, base or head, manifest, files, as_built)
-    line.update(tier=args.tier or (parent or {}).get("tier"), base=base, head=head, snapshot=snapshot,
+    line.update(tier=args.tier or (parent or {}).get("tier"), head=head, snapshot=snapshot,
                 skipped=skipped, host=host, conversation=conversation, model=model, skill=skill,
                 manifest=manifest["digest"] if manifest else None)
-    append_event(trace_dir, line, lambda: start_parent(trace_dir, args), manifest)
+    append_event(trace_dir, line, check_start, manifest)
     print("trace " + line["id"])
     return 0
 
@@ -4528,6 +4567,7 @@ class HistoryUnit:
         self.unit, self.kind = start["id"], start["kind"]
         self.started = event_time(start)
         self.end = self.boundary = None
+        self.continuation = None
         self.rechecks = collections.defaultdict(list)
 
     def seconds(self):
@@ -4583,6 +4623,13 @@ class HistoryUnit:
         ended = end["at"] if event_time(end) else "unknown"
         outcome = (end.get("outcome") or "unknown") if self.end else "open (missing end)"
         detail = " store=" + self.store if self.store else ""
+        if self.kind == "code-review":
+            base = self.start.get("base")
+            detail += " base=" + (base if full_oid(base) else "unknown")
+        if self.start.get("continues"):
+            detail += " continues=" + self.start["continues"]
+        if self.kind in REVIEW_ROLES and outcome == "handoff":
+            detail += " coverage=partial continuation=" + (self.continuation or "none")
         if self.kind == "slice":
             detail += " slice=" + (self.start.get("slice") or "unknown")
             outcome = "implicit" if self.boundary else "open"
@@ -4610,9 +4657,11 @@ def history_events(trace_dir, issues):
             continue
         unit = event.get("id")
         docs = event.get("docs") or []
-        parent, slice_name = event.get("parent"), event.get("slice")
+        parent, continues, slice_name = event.get("parent"), event.get("continues"), event.get("slice")
         if (not isinstance(unit, str) or not UNIT_RE.fullmatch(unit) or event.get("kind") not in TRACE_KINDS
-                or (parent is not None and (not isinstance(parent, str) or not UNIT_RE.fullmatch(parent)))
+                or any(link is not None and (not isinstance(link, str) or not UNIT_RE.fullmatch(link))
+                       for link in (parent, continues))
+                or (continues is not None and (action != "start" or event["kind"] not in REVIEW_ROLES))
                 or (slice_name is not None and (not isinstance(slice_name, str) or not SLICE_RE.fullmatch(slice_name)))
                 or (action == "end" and event["kind"] == "slice")
                 or not isinstance(docs, list) or not all(isinstance(doc, str) for doc in docs)):
@@ -4656,6 +4705,9 @@ def history_units(trace_dir, store):
             ends[unit, event["kind"]] = event
     for unit in units.values():
         unit.end = ends.pop((unit.unit, unit.kind), None)
+        predecessor = units.get(unit.start.get("continues"))
+        if predecessor:
+            predecessor.continuation = unit.unit
     orphans = list(ends.values())
     for event in rechecks:
         unit = units.get(event["id"])
@@ -5111,6 +5163,7 @@ def main(argv=None):
     t.add_argument("kind", choices=TRACE_KINDS)
     t.add_argument("docs", nargs="*", metavar="DOC", help="ids of the docs the unit works on")
     t.add_argument("--parent", metavar="UNIT", help="id of the open unit this one runs inside")
+    t.add_argument("--continues", metavar="UNIT", help="id of the handed-off review this one resumes")
     t.add_argument("--tier", choices=("L0", "L1", "L2"))
     t.add_argument("--slice", metavar="S<n>", help="the plan slice a slice unit builds")
     t.add_argument("--base", metavar="REF", help="the commit the unit's change starts from; the snapshot's parent "
