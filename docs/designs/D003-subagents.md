@@ -10,7 +10,7 @@ owns: [subagents]
 paths: [skills/governance/canon/workflow.md, skills/execution/canon-blind-review/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/governance/canon-init/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-research/SKILL.md, skills/execution/canon-grill/SKILL.md, skills/execution/canon-codebase-design/DESIGN-IT-TWICE.md, skills/governance/canon/scripts/canon.py, tests/test_canon.py]
 reviewed: 12
 reviewers: [gpt-6.2-astra, gemini-4-neon-xhigh]
-approved: 11
+approved: 12
 implemented: 11
 ---
 

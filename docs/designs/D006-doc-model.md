@@ -10,7 +10,7 @@ owns: [doc-model, doc-writing, concurrent-work]
 paths: [skills/governance/canon/SKILL.md, skills/governance/canon/doc-types.md, skills/governance/canon/writing.md, skills/governance/canon/workflow.md, skills/execution/canon-design/SKILL.md, skills/governance/canon/scripts/canon.py, tests/test_canon.py, skills/execution/canon-implement/SKILL.md, skills/execution/canon-blind-review/SKILL.md, skills/execution/canon-handoff/SKILL.md, skills/execution/canon-prototype/SKILL.md, skills/execution/canon-research/SKILL.md]
 reviewed: 21
 reviewers: [gpt-6.2-astra, gemini-4-neon-xhigh]
-approved: 19
+approved: 21
 implemented: 20
 ---
 

@@ -1,5 +1,5 @@
 ---
-status: draft
+status: accepted
 created: 2026-11-23
 updated: 2026-11-23
 revision: 1
@@ -10,6 +10,7 @@ owns: [source-embeds]
 paths: [skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, tests/test_canon.py]
 reviewed: 1
 reviewers: [gpt-6.2-astra, gemini-4-neon-xhigh]
+approved: 1
 ---
 
 # D011: Source code embedded in docs

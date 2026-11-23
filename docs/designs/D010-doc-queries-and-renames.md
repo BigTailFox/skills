@@ -10,7 +10,7 @@ owns: [doc-queries, doc-renames, doc-renumbering]
 paths: [skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, tests/test_canon.py]
 reviewed: 8
 reviewers: [gpt-6.2-astra, gemini-4-neon-xhigh]
-approved: 2
+approved: 8
 implemented: 7
 ---
 
