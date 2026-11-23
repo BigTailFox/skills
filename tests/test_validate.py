@@ -135,16 +135,47 @@ class TextBudgetTest(ScratchRepoTest):
 
 
 class RunTestsTest(ScratchRepoTest):
+    def test_skips_print_each_reason_once_with_the_affected_test_names_and_still_pass(self):
+        self.write("tests/test_x.py", '''import unittest
+
+class Fixture(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        raise unittest.SkipTest("missing fixture")
+
+    def test_one(self):
+        pass
+
+    def test_two(self):
+        pass
+
+class Runtime(unittest.TestCase):
+    def test_formats(self):
+        with self.subTest(fmt="png"):
+            self.skipTest("missing decoder")
+''')
+        result = self.validate("raise ImportError('tiktoken')")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("ok   tests (3 skipped)\n"
+                      "  skipped: missing fixture\n"
+                      "    test_x.Fixture.test_one\n"
+                      "    test_x.Fixture.test_two\n"
+                      "  skipped: missing decoder\n"
+                      "    test_x.Runtime.test_formats (fmt='png')\n", result.stdout)
+
     @unittest.skipIf((getattr(os, "process_cpu_count", os.cpu_count)() or 1) < 2,
                      "two tests run at once only on two CPUs")
     def test_tests_run_in_parallel_and_their_line_counts_skips_and_names_each_failure_and_broken_module(self):
         self.write("tests/test_x.py", SUITE)
         self.write("tests/test_broken.py", "raise ImportError('broken')\n")
-        out = self.validate().stdout
+        result = self.validate()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        out = result.stdout
         self.assertIn("FAIL tests (1 skipped)\n  - unittest.loader._FailedTest.test_broken\n"
                       "ImportError: Failed to import test module: test_broken\n", out)
         self.assertIn("ImportError: broken\n  - test_x.T.test_fails\nTraceback", out)
         self.assertIn("AssertionError: 1 != 2\n", out)
+        self.assertIn("  skipped: fixture\n    test_x.T.test_skipped\n", out)
         self.assertNotIn("ran alone", out)
 
     def test_a_run_records_each_tests_duration_over_an_unreadable_record(self):

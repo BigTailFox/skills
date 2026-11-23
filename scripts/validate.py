@@ -314,25 +314,25 @@ def discover_tests():
 
 
 def run_test(test_id):
-    """Run one test, with its class and module fixtures, in a worker process: how many tests it skipped, its
-    failures, and its duration in seconds."""
+    """Run one test with its fixtures in a worker. Return its skips, failures and duration in seconds."""
     start = time.perf_counter()
     result = unittest.TestResult()
     result.buffer = True
     unittest.TestSuite([TESTS[test_id]]).run(result)
     failed = result.errors + result.failures + [(test, "unexpected success") for test in result.unexpectedSuccesses]
     failures = [f"{test.id()}\n{trace.rstrip()}" for test, trace in failed]
-    return len(result.skipped), failures, time.perf_counter() - start
+    # A skipped class or module fixture stands in for the test this worker was asked to run.
+    skips = [(test.id() if isinstance(test, unittest.TestCase) else test_id, reason) for test, reason in result.skipped]
+    return skips, failures, time.perf_counter() - start
 
 
 def run_tests():
-    """The label of the suite's line, counting skipped tests, and its failures. The tests start with those the last
-    run did not time, then the rest slowest first by the durations it recorded in DURATIONS."""
+    """Run untimed tests first, then the slowest. Report failures and skips in discovery order."""
     if not TESTS_DIR.is_dir():
-        return "tests", []
+        return report("tests", [])
     ids = discover_tests()
     if not ids:
-        return "tests", ["no tests in tests/"]
+        return report("tests", ["no tests in tests/"])
     try:
         recorded = json.loads(DURATIONS.read_text(encoding="utf-8"))
         order = sorted(ids, key=lambda test_id: -recorded.get(test_id, math.inf))
@@ -342,15 +342,22 @@ def run_tests():
         with ProcessPoolExecutor(initializer=discover_tests) as pool:
             results = dict(zip(order, pool.map(run_test, order)))
     except BrokenProcessPool as error:
-        return "tests", [f"a worker process died: {error}"]
-    durations, skipped, failures = {}, 0, []
+        return report("tests", [f"a worker process died: {error}"])
+    durations, skipped, failures = {}, {}, []
     for test_id in ids:
         skips, errors, durations[test_id] = results[test_id]
-        skipped += skips
+        for name, reason in skips:
+            skipped.setdefault(reason, []).append(name)
         failures += errors
     DURATIONS.parent.mkdir(exist_ok=True)
     DURATIONS.write_text(json.dumps(durations), encoding="utf-8")
-    return f"tests ({skipped} skipped)" if skipped else "tests", failures
+    count = sum(len(names) for names in skipped.values())
+    status = report(f"tests ({count} skipped)" if count else "tests", failures)
+    for reason, names in skipped.items():
+        print(f"  skipped: {reason}")
+        for name in names:
+            print(f"    {name}")
+    return status
 
 
 def report(label, errors):
@@ -400,7 +407,7 @@ def main():
         print(f"skip D001 text budgets: {unmeasured}")
     else:
         failures += report("D001 text budgets", budget_errors)
-    failures += report(*run_tests())
+    failures += run_tests()
     print(f"\n{len(skills)} skill(s) checked, {failures} problem(s)")
     return 1 if failures else 0
 
