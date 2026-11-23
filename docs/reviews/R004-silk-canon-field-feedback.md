@@ -29,12 +29,12 @@ The first three findings have short remedies already in Silk's project instructi
 | R004-F5 | major | The manual fallback leaves the gate's state unclear when an independent reviewer is unavailable. | open |
 | R004-F6 | minor | Reviewer setup repeats launch commands and can omit the scope of an existing authorization. | open |
 | R004-F7 | minor | Fixing one occurrence of a guarantee can leave contradictory wording elsewhere. | fixed 4e2663a |
-| R004-F8 | minor | A fresh confirmation reviewer can reopen findings the maintainer already declined. | open |
+| R004-F8 | minor | A fresh confirmation reviewer can reopen findings the maintainer already declined. | fixed 8478e13 |
 | R004-F9 | minor | A reply approving some decisions and asking about others can trigger premature edits. | fixed 33e1e47 |
 | R004-F10 | major | Review records can misattribute a revision or give an outdated result for a finding. | open |
 | R004-F11 | minor | Historical trace gaps require manually matching events to review directories. | open |
 | R004-F12 | minor | A worktree handoff can leave the maintainer guessing whether the work reached the target branch. | fixed 977ff17 |
-| R004-F13 | minor | Renumbering an experiment can break a command needed to reproduce it. | open |
+| R004-F13 | minor | Renumbering an experiment can break a command needed to reproduce it. | fixed de9c466 |
 | R004-F14 | minor | A strict branch check gives no indication that a reported error already exists on the base. | open |
 
 ### Design approval and shared checkouts
