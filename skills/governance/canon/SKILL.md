@@ -29,10 +29,11 @@ When `canon.py` says it runs only from an install inside the project, as when th
 | `affected [FILE...] [--base REF]` | Designs and plans governing the given files, else the uncommitted changes plus, with `--base`, the branch's. |
 | `audit` | Designs with code commits since the design last changed or was reconciled (a `Reconciled:` trailer) that no `Refs:` trailer names, known issues oldest first, idle open docs other than concepts, active designs and concluded experiments, due reviews, source areas under D000's module Paths that no design covers, ranked by commits in the last 90 days, and designs D000 does not reach by following `refs` from design to design. |
 | `trace history [UNIT]` | Read recorded units, their elapsed times and archive status, even with tracing off. Give a unit ID for its details, including review findings and confirmations. |
+| `trace recheck UNIT FINDING` | Record a separately requested recheck using the saved review unit ID. See the [review evidence fields and command](review-evidence.md). |
 | `snapshot` | Record the work tree, untracked files included, and print the snapshot commit, for the diffs of a review's confirmation and follow-up rounds (the `canon-blind-review` skill). |
 | `init`, `adopt` | Project setup, upgrades and migration; the user runs them through the `canon-init` skill. |
 
-In `trace` calls, `<skill>` is the path of the followed `SKILL.md`'s directory (`canon-blind-review`'s for a gate or follow-up round, else `canon`'s), `<model>` your model id as the host names it, and `<parent>` the invoking workflow's open unit id, if any. Unless a skill's first `start` prints `trace <id>`, skip its other trace calls; else follow [trace.md](trace.md), using that `<id>`.
+In `trace` calls, `<skill>` is the followed skill directory (`canon-blind-review` for gates and follow-ups, otherwise `canon`), `<model>` your host's model ID, and `<parent>` the invoking workflow's open unit ID, if any. When a workflow's first `start` prints `trace <id>`, use that ID and follow [trace.md](trace.md). Otherwise skip its remaining calls. A separately requested recheck uses the saved review ID.
 
 ## Reading docs
 

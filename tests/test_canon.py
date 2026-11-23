@@ -4489,6 +4489,27 @@ class HistoryTest(TraceCase):
                 self.assertIn("archive=" + expected, self.row(report, start))
                 self.assertNotIn("pruned", report)
 
+    def test_history_counts_rechecks_without_a_closed_review_or_an_unambiguous_finding(self):
+        closed = self.start_record("gate", 0)
+        pending = self.start_record("gate", 2)
+        absent = self.start_record("gate", 3)
+        design = self.start_record("design", 4)
+        record = {"v": 1, "type": "recheck", "id": closed["id"], "kind": "gate", "at": self.at(5).isoformat(),
+                  "finding": "same-model:F9", "reviewer": "same-model", "model": "X", "snapshot": "a" * 40,
+                  "report": "import", "result": "resolved", "order": 1}
+        self.write_log([closed, self.end_record(closed, 1, dispositions=DispositionsTest.GATE), pending, design,
+                        self.end_record(design, 5), record, dict(record, id=pending["id"]), dict(record, id=absent["id"]),
+                        dict(record, id=design["id"]), dict(record, snapshot="bad"),
+                        dict(record, finding="same-model:F1", report="known")])
+        out = self.trace("history")
+        for start in (closed, pending, absent, design):
+            self.assertIn("orphan recheck {} gate finding=same-model:F9".format(start["id"]), out)
+        self.assertIn("4 orphan rechecks", out)
+        self.assertIn("1 malformed, 0 unsupported", out)
+        detail = self.trace("history", closed["id"])
+        self.assertIn("model=X report=known archive=missing", detail)
+        self.assertNotIn("report=import", detail)
+
     def test_scoped_open_reviews_and_legacy_reviewers_findings_and_confirmations(self):
         self.trace("on")
         review = self.start("gate", "D001")
@@ -5318,6 +5339,24 @@ class DispositionsTest(TraceCase):
     def end_line(self, unit):
         return next(line for line in self.lines() if line["id"] == unit and line["type"] == "end")
 
+    def test_joint_gate_keeps_each_numbered_report_and_its_exact_targets(self):
+        gate = self.start("gate", "D001", "D003A")
+        evidence = {"reviewers": [
+            {"role": "cross-family", "model": "Reviewer-X", "id": "x", "targets": ["D001@r2", "D003A@r1"]},
+            {"role": "cross-family", "key": "cross-family-2", "model": "Reviewer-Y", "id": "y",
+             "targets": ["D003A@r1"]}],
+            "findings": [{"by": ["cross-family:F1"], "severity": "major", "disposition": "accepted"},
+                         {"by": ["cross-family-2:F1"], "severity": "minor", "disposition": "deferred"}],
+            "new_blockers": 0}
+        self.assertEqual(self.trace("end", gate, "delivered", "--input", "-", stdin=json.dumps(evidence)),
+                         "trace {} ended\n".format(gate))
+        self.assertEqual(self.end_line(gate)["dispositions"], evidence)
+        out = self.trace("history", gate)
+        for detail in ("reviewer cross-family model=Reviewer-X id=x targets=D001@r2, D003A@r1",
+                       "reviewer cross-family-2 model=Reviewer-Y id=y targets=D003A@r1",
+                       "finding cross-family:F1 severity=major", "finding cross-family-2:F1 severity=minor"):
+            self.assertIn(detail, out)
+
     def test_valid_dispositions_appear_in_the_end_line_unchanged(self):
         gate, review, bare = self.start("gate", "D001"), self.start("code-review"), self.start("gate", "D001")
         self.trace("end", gate, "delivered", "--input", "-", stdin=json.dumps(self.GATE))
@@ -5331,11 +5370,50 @@ class DispositionsTest(TraceCase):
             self.assertIn('"dispositions":' + json.dumps(dispositions, separators=(",", ":")), raw)
         self.assertEqual(self.end_line(bare).get("dispositions", "absent"), None)
 
+    def test_code_review_keeps_conflicting_first_confirmations_and_the_delegates_snapshot(self):
+        unit = self.start("code-review")
+        evidence = self.changed(self.CODE_REVIEW, lambda d: d["findings"][0].update(confirmations=[
+            {"reviewer": "standards", "result": "resolved", "snapshot": None},
+            {"reviewer": "cross-family", "result": "not-resolved", "snapshot": "ABCDEF01" * 8}]))
+        self.assertEqual(self.trace("end", unit, "delivered", "--input", "-", stdin=json.dumps(evidence)),
+                         "trace {} ended\n".format(unit))
+        self.assertEqual(self.end_line(unit)["dispositions"], evidence)
+        out = self.trace("history", unit)
+        for detail in ("finding spec:F1 severity=major disposition=accepted axis=spec", "first confirmation=not-resolved",
+                       "confirmation=resolved reviewer=standards snapshot=unknown",
+                       "confirmation=not-resolved reviewer=cross-family snapshot=" + "ABCDEF01" * 8,
+                       "latest=not-resolved reviewer=cross-family snapshot=" + "ABCDEF01" * 8):
+            self.assertIn(detail, out)
+
     def changed(self, dispositions, change):
         """A copy of `dispositions` that `change` edited in place."""
         copy = json.loads(json.dumps(dispositions))
         change(copy)
         return copy
+
+    def test_invalid_source_keys_coverage_and_confirmations_leave_the_review_open(self):
+        gate, review = self.start("gate"), self.start("code-review")
+        confirmation = {"reviewer": "cross-family", "result": "resolved", "snapshot": "a" * 40}
+        cases = [(self.GATE, lambda d: d["findings"][0]["by"].append("same-model:F1")),
+                 (self.GATE, lambda d: d["findings"][2].update(by=["same-model:F1"])),
+                 (self.GATE, lambda d: d["reviewers"].append(d["reviewers"][0])),
+                 (self.CODE_REVIEW, lambda d: d["reviewers"][0].update(targets=["D003@r1"]))]
+        for bad_key in ("same-model-1", "same-model-02", "same-model-2x", "cross-family-2", None):
+            cases.append((self.GATE, lambda d, k=bad_key: d["reviewers"][0].update(key=k)))
+        for targets in ([], ["D001@r1", "D001@r1"], ["D001@r1", "D001@r2"], ["D003"], ["D003@r0"],
+                        ["D003@r01"], ["D0003@r1"],
+                        ["P003A@r1"], ["C003@r1"], [None]):
+            cases.append((self.GATE, lambda d, t=targets: d["reviewers"][0].update(targets=t)))
+        for listed in ([], [confirmation, confirmation], [dict(confirmation, reviewer="cross-family-2")],
+                       [dict(confirmation, result="undecided")], [dict(confirmation, snapshot="a" * 41)],
+                       [dict(confirmation, text="unsupported")], [dict(confirmation, result="not-resolved")]):
+            cases.append((self.GATE, lambda d, c=listed: d["findings"][0].update(confirmations=c)))
+        cases.append((self.GATE, lambda d: d["findings"][1].update(confirmations=[confirmation])))
+        for base, change in cases:
+            evidence = self.changed(base, change)
+            with self.subTest(evidence=evidence):
+                self.rejects("end", gate if base is self.GATE else review, "delivered", "--input", "-",
+                             stdin=json.dumps(evidence))
 
     def test_invalid_dispositions_or_input_on_another_kind_print_a_trace_error_and_write_nothing(self):
         gate, review, design = self.start("gate", "D001"), self.start("code-review"), self.start("design", "D001")
@@ -5370,6 +5448,153 @@ class DispositionsTest(TraceCase):
         self.trace("end", gate, "delivered", "--input", "-", stdin=json.dumps(self.GATE))
         self.trace("end", review, "delivered", "--input", "-", stdin=json.dumps(self.CODE_REVIEW))
         self.assertEqual([line["id"] for line in self.lines() if line["type"] == "end"], [gate, review])
+
+
+class RecheckTest(TraceCase):
+    def setUp(self):
+        super().setUp()
+        self.trace("on")
+
+    def arguments(self, unit, finding="same-model:F1", reviewer="cross-family", snapshot="AB" * 20,
+                  result="resolved", report="cross-family-recheck2", order="2", model=None):
+        return ["recheck", unit, finding, "--reviewer", reviewer, "--snapshot", snapshot, "--result", result,
+                "--report", report, "--order", order] + (["--model", model] if model is not None else [])
+
+    def test_concurrent_alias_retries_append_one_canonical_event_and_preserve_the_original_end(self):
+        unit = self.start("gate")
+        self.trace("end", unit, "delivered", "--input", "-", stdin=json.dumps(DispositionsTest.GATE))
+        before = self.events.read_bytes()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda alias: self.trace(*self.arguments(unit, alias)),
+                                    ("same-model:F1", "cross-family:F2")))
+        self.assertEqual(results, ["trace {} rechecked\n".format(unit)] * 2)
+        self.assertTrue(self.events.read_bytes().startswith(before))
+        [record] = [line for line in self.lines() if line["type"] == "recheck"]
+        self.assertTrue(record.pop("at"))
+        self.assertEqual(record, {"v": 1, "type": "recheck", "id": unit, "kind": "gate", "finding": "same-model:F1",
+                                  "reviewer": "cross-family", "model": "manual:gpt-6-astra", "snapshot": "ab" * 20,
+                                  "report": "cross-family-recheck2", "order": 2, "result": "resolved"})
+
+    def test_legacy_findings_sharing_a_source_remain_visible_but_both_aliases_are_ambiguous(self):
+        unit = self.start("gate")
+        self.trace("end", unit, "delivered", "--input", "-", stdin=json.dumps(DispositionsTest.GATE))
+        # Earlier releases allowed two distinct findings to list the same primary source.
+        records = self.lines()
+        records[-1]["dispositions"]["findings"][1]["by"] = ["same-model:F1"]
+        self.events.write_text("".join(json.dumps(record) + "\n" for record in records))
+        out = self.trace("history", unit)
+        self.assertIn("finding same-model:F1, cross-family:F2 severity=major", out)
+        self.assertIn("finding same-model:F1 severity=blocker", out)
+        before = self.events.read_bytes()
+        for ref in ("same-model:F1", "cross-family:F2"):
+            self.assertRegex(self.trace(*self.arguments(unit, ref)), "^trace error: .*ambiguous")
+        self.assertEqual(self.events.read_bytes(), before)
+
+    def test_rechecks_validate_units_reviewer_identity_ordinals_and_idempotent_report_stems(self):
+        unit = self.start("follow-up")
+        self.rejects(*self.arguments(unit))
+        design, bare = self.start("design"), self.start("gate")
+        for other in (design, bare):
+            self.trace("end", other, "delivered")
+            self.rejects(*self.arguments(other))
+        self.trace("end", unit, "delivered", "--input", "-", stdin=json.dumps(DispositionsTest.GATE))
+        recorded = self.arguments(unit, reviewer="cross-family-3", model="Reviewer-Z", snapshot="ABCDEF01" * 8)
+        self.assertEqual(self.trace(*recorded), "trace {} rechecked\n".format(unit))
+        self.assertEqual(self.lines()[-1]["snapshot"], "abcdef01" * 8)
+        self.assertEqual(self.lines()[-1]["model"], "Reviewer-Z")
+        for changes in ({"finding": "same-model:F99"}, {"reviewer": "spec", "model": "someone"},
+                        {"reviewer": "same-model-2"}, {"reviewer": "same-model-2", "model": ""},
+                        {"reviewer": "same-model-2", "model": "m\nx"}, {"reviewer": "same-model-2", "model": "m" * 201},
+                        {"reviewer": "same-model-01", "model": "m"}, {"model": "Manual:gpt-6-astra"},
+                        {"reviewer": "cross-family-3", "model": "reviewer-z"}, {"report": "../import"},
+                        {"report": "bad.md"}, {"report": "badé"}, {"report": ""}, {"report": "x" * 101},
+                        {"snapshot": "abcd"}, {"snapshot": "z" * 40}, {"result": "partial"}, {"order": "0"},
+                        {"order": "-2"}, {"order": "1.5"}, {"order": "later"}):
+            with self.subTest(changes=changes):
+                self.rejects(*self.arguments(unit, **dict({"order": "1", "report": "other"}, **changes)))
+        for changes in ({"result": "not-resolved"}, {"order": "3"}, {"snapshot": "a" * 40},
+                        {"report": "other"}, {"reviewer": "same-model"}):
+            self.rejects(*self.arguments(unit, **dict({"reviewer": "cross-family-3", "snapshot": "abcdef01" * 8},
+                                                       **changes)))
+        same = self.arguments(unit, "cross-family:F2", reviewer="cross-family-3", snapshot="abcdef01" * 8)
+        before = self.events.read_bytes()
+        self.assertEqual(self.trace(*same), "trace {} rechecked\n".format(unit))
+        self.assertEqual(self.events.read_bytes(), before)
+        self.assertEqual(self.trace(*self.arguments(unit, reviewer="cross-family-3", order="3", report="next")),
+                         "trace {} rechecked\n".format(unit))
+        self.assertEqual(self.lines()[-1]["model"], "Reviewer-Z")
+        oversized = self.arguments(unit, reviewer="cross-family-" + "2" * 16384, model="model", report="big", order="4")
+        before = self.events.read_bytes()
+        self.assertRegex(self.trace(*oversized), "^trace error: .*16 KiB")
+        self.trace("off")
+        self.assertEqual(self.trace(*self.arguments(unit, order="4", report="off")), "trace off\n")
+        self.assertEqual(self.events.read_bytes(), before)
+
+    def test_out_of_order_reports_keep_authorship_archive_presence_and_the_uncertainty_of_an_unordered_report(self):
+        doc = self.doc("D", "target", reviewed=1, reviewers=["fixture"])
+        pending = self.ok("approvals", "D001-r1", "--start", "D001@r1")
+        doc_before = doc.read_bytes()
+        unit = self.start("gate", "D001")
+        evidence = {"reviewers": [{"role": "same-model", "model": "Local", "id": "a", "targets": ["D001@r1"]}],
+                    "findings": [{"by": ["same-model:F1"], "severity": "major", "disposition": "accepted",
+                                  "confirmed": "not-resolved", "confirmations": [
+                                      {"reviewer": "same-model", "result": "not-resolved", "snapshot": "1" * 40}]}],
+                    "new_blockers": 0}
+        topic = self.root / ".canon/review"
+        topic.mkdir()
+        (topic / "second.md").write_text("Resolved.\n")
+        (topic / "first-prompt.md").write_text("Confirm F1.\n")
+        self.trace("end", unit, "delivered", "--dir", ".canon/review", "--input", "-", stdin=json.dumps(evidence))
+        self.trace(*self.arguments(unit, reviewer="cross-family", model="External", report="second"))
+        self.trace(*self.arguments(unit, reviewer="same-model", report="first", order="1", result="not-resolved",
+                                   snapshot="CD" * 32))
+        out = self.trace("history", unit)
+        first = "recheck order=1 result=not-resolved reviewer=same-model snapshot=" + "cd" * 32
+        second = "recheck order=2 result=resolved reviewer=cross-family snapshot=" + "ab" * 20
+        self.assertIn(first + " model=Local report=first archive=missing", out)
+        self.assertIn(second + " model=External report=second archive=present", out)
+        self.assertLess(out.index(first), out.index(second))
+        self.assertIn("latest=resolved reviewer=cross-family snapshot=" + "ab" * 20, out)
+        self.trace(*self.arguments(unit, reviewer="cross-family", order="unknown", report="undated",
+                                   result="not-resolved"))
+        self.trace("off")
+        out = self.trace("history", unit)
+        for field in ("confirmation=not-resolved reviewer=same-model snapshot=" + "1" * 40,
+                      "highest verified order=2 result=resolved reviewer=cross-family snapshot=" + "ab" * 20,
+                      "recheck order=unknown result=not-resolved reviewer=cross-family snapshot=" + "ab" * 20,
+                      "model=External report=undated archive=missing", "latest=unknown (unordered evidence)",
+                      "reviewer same-model model=Local id=a targets=D001@r1"):
+            self.assertIn(field, out)
+        self.assertEqual(self.ok("approvals", "D001-r1"), pending)
+        self.assertEqual(doc.read_bytes(), doc_before)
+
+    @unittest.skipIf(os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+                     "requires a read-only main trace directory")
+    def test_recheck_uses_the_units_sole_origin_across_a_change_of_writable_store(self):
+        self.commit()
+        tree = self.worktree()
+        fallback = tree / ".canon/canon/trace/events.jsonl"
+
+        def close_gate():
+            unit = self.start("gate", cwd=tree)
+            self.trace("end", unit, "delivered", "--input", "-", stdin=json.dumps(DispositionsTest.GATE), cwd=tree)
+            return unit
+
+        def refused(unit, reason):
+            before = [path.read_bytes() if path.exists() else None for path in (self.events, fallback)]
+            self.assertRegex(self.trace(*self.arguments(unit), cwd=tree), "^trace error: .*" + reason)
+            self.assertEqual([p.read_bytes() if p.exists() else None for p in (self.events, fallback)], before)
+
+        main_unit = close_gate()
+        with self.read_only(self.events.parent):
+            refused(main_unit, "store")
+            local_unit = close_gate()
+            self.assertEqual(self.trace(*self.arguments(local_unit), cwd=tree), "trace {} rechecked\n".format(local_unit))
+        refused(local_unit, "store")
+        self.assertEqual(self.trace(*self.arguments(main_unit), cwd=tree), "trace {} rechecked\n".format(main_unit))
+        with fallback.open("ab") as log:
+            log.write(self.events.read_bytes())
+        refused(main_unit, "ambiguous")
 
 
 class ArchiveTest(TraceCase):
@@ -5719,6 +5944,26 @@ class PruneTest(TraceCase):
         """The snapshot refs of the trace directory `trace_dir`, by default the test repository's, or `unit`'s."""
         return sorted(self.git("-C", str(trace_dir or self.trace_dir), "for-each-ref", "--format=%(refname)",
                                "refs/trace/" + unit).splitlines())
+
+    def test_full_sha1_and_sha256_recheck_evidence_still_attaches_after_pruning(self):
+        unit = self.start("code-review")
+        topic = self.root / ".canon/review"
+        topic.mkdir()
+        (topic / "original.md").write_text("Original evidence.\n")
+        self.trace("end", unit, "delivered", "--dir", ".canon/review", "--input", "-",
+                   stdin=json.dumps(DispositionsTest.CODE_REVIEW))
+        old = self.backdate(unit, 2)
+        self.assertIn("removed 1 snapshot and 1 archive", self.trace("prune", "--days", "1"))
+        self.assertFalse((self.trace_dir / old).exists())
+        self.assertEqual(self.snapshot_refs(), [])
+        for order, oid in (("1", "AB" * 20), ("2", "CD" * 32)):
+            self.assertEqual(self.trace("recheck", old, "spec:F1", "--reviewer", "standards", "--snapshot", oid,
+                                        "--report", "later-" + order, "--order", order, "--result", "resolved"),
+                             "trace {} rechecked\n".format(old))
+        out = self.trace("history", old)
+        self.assertIn("first confirmation=not-resolved", out)
+        self.assertIn("snapshot=" + "ab" * 20 + " model=claude-opus-5.5 report=later-1 archive=missing", out)
+        self.assertIn("latest=resolved reviewer=standards snapshot=" + "cd" * 32, out)
 
     def reviewed_gate(self, top=None):
         """Start a gate in the checkout `top`, by default the test repository, and end it with its review file

@@ -30,7 +30,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "70"
+CANON_VERSION = "71"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -2279,13 +2279,24 @@ def cmd_status(repo, args):
     return 0
 
 
-def approval_ref(text, separator, gate=None):
-    """The canonical design or plan ID and positive revision in a gate key or target reference."""
+def target_reference(text, separator):
+    """Split a canonical design or plan ID and positive revision, or return None."""
+    if not isinstance(text, str):
+        return None
     doc_id, _, number = text.partition(separator)
     match = FULL_ID_RE.fullmatch(doc_id)
-    if not (match and well_formed_id(match) and doc_id[0] in "DP" and re.fullmatch(r"[1-9][0-9]*", number)):
+    if match and doc_id[0] in "DP" and well_formed_id(match) and re.fullmatch(r"[1-9][0-9]*", number):
+        return doc_id, number
+    return None
+
+
+def approval_ref(text, separator, gate=None):
+    """The canonical design or plan ID and positive revision in a gate key or target reference."""
+    target = target_reference(text, separator)
+    if not target:
         sys.exit("canon: invalid approval {} {}{}".format("gate" if separator == "-r" else "target", text,
                                                          " in " + gate if gate else ""))
+    doc_id, number = target
     revision = int(number)
     if gate:
         primary, first_revision = approval_ref(gate, "-r")
@@ -3476,6 +3487,7 @@ KIND_OUTCOMES = {"implement": OUTCOMES + ("partial", "escalated"), "end-check": 
 GATE_ROLES = ("same-model", "cross-family")
 REVIEW_ROLES = {"gate": GATE_ROLES, "follow-up": GATE_ROLES, "code-review": ("spec", "standards", "cross-family")}
 REVIEW_DISPOSITIONS = ("accepted", "declined", "escalated", "deferred")
+CONFIRMATION_RESULTS = ("resolved", "not-resolved")
 FINDING_ID_RE = re.compile(r"F[1-9][0-9]*")
 UNIT_RE = re.compile(r"^\d{8}T\d{6}Z-[0-9a-f]{6}$")
 UNIT_TIME_FORMAT = "%Y%m%dT%H%M%SZ"
@@ -3716,6 +3728,23 @@ def unit_events(trace_dir, unit):
     return start, end
 
 
+def unit_in_writable_store(root, trace_dir, unit):
+    """Find the sole origin of a saved unit ID before appending related evidence under the writer's lock."""
+    origins = []
+    for store, directory in history_stores(root):
+        start, end = unit_events(directory, unit)
+        if start:
+            origins.append((store, directory, start, end))
+    if not origins:
+        raise TraceError("{} names no unit".format(unit))
+    if len(origins) > 1:
+        raise TraceError("{} is ambiguous (main and worktree stores)".format(unit))
+    store, directory, start, end = origins[0]
+    if directory != trace_dir:
+        raise TraceError("{} belongs to the {} store, which is not the current writable store".format(unit, store))
+    return start, end
+
+
 def start_parent(trace_dir, args):
     """The start line of the open unit `--parent` names, once checked that it may hold a unit of this kind."""
     if args.kind in TOP_LEVEL_KINDS and args.parent:
@@ -3755,14 +3784,29 @@ def event_bytes(line):
     return data + b"\n"
 
 
+def events_lock(trace_dir):
+    return file_lock(trace_dir / "events.lock", TRACE_LOCK_WAIT, TraceError("timed out waiting for events.lock"))
+
+
+def write_event_bytes(trace_dir, data):
+    """Append the serialized lines in one write while the caller holds events.lock."""
+    fd = os.open(str(trace_dir / "events.jsonl"),
+                 os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0), 0o666)
+    try:
+        written = os.write(fd, data)
+    finally:
+        os.close(fd)
+    if written != len(data):
+        raise TraceError("wrote {} of the {} bytes to append to events.jsonl".format(written, len(data)))
+
+
 def append_event(trace_dir, line, check, manifest=None, store=None):
     """Append `line` to events.jsonl in one write, under events.lock and once `check` passes there again, preceded by
     the `manifest` line of its digest when the file holds none. `store`, run there once `check` passes and before
     `line` is serialized, stores what the line records and completes it, so that a call rejected there stores
     nothing."""
     entry = event_bytes(manifest) if manifest else b""
-    trace_dir.mkdir(parents=True, exist_ok=True)
-    with file_lock(trace_dir / "events.lock", TRACE_LOCK_WAIT, TraceError("timed out waiting for events.lock")):
+    with events_lock(trace_dir):
         check()
         if store:
             store()
@@ -3770,14 +3814,7 @@ def append_event(trace_dir, line, check, manifest=None, store=None):
         if entry and not any(event.get("type") == "manifest" and event.get("digest") == manifest["digest"]
                              for event in read_events(trace_dir, manifest["digest"].encode())):
             data = entry + data
-        fd = os.open(str(trace_dir / "events.jsonl"),
-                     os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0), 0o666)
-        try:
-            written = os.write(fd, data)
-        finally:
-            os.close(fd)
-    if written != len(data):
-        raise TraceError("wrote {} of the {} bytes to append to events.jsonl".format(written, len(data)))
+        write_event_bytes(trace_dir, data)
 
 
 def trace_env(**extra):
@@ -4221,7 +4258,15 @@ def read_dispositions(kind, source):
     return dispositions
 
 
-def check_dispositions(kind, dispositions):
+def reviewer_key(role, key):
+    return isinstance(key, str) and (key == role or re.fullmatch(role + r"-(?:[2-9]|[1-9][0-9]+)", key))
+
+
+def full_oid(value):
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-fA-F]{40}(?:[0-9a-fA-F]{24})?", value)
+
+
+def check_dispositions(kind, dispositions, allow_repeated_sources=False):
     """Raise TraceError unless `dispositions` holds what D001#review-dispositions defines for a `kind` unit and
     nothing else, so that no free text reaches the line."""
     def expect(ok, where, what):
@@ -4243,28 +4288,54 @@ def check_dispositions(kind, dispositions):
     listed = []
     for n, reviewer in enumerate(dispositions["reviewers"]):
         where = ".reviewers[{}]".format(n)
-        entry(reviewer, where, ("role", "model", "id"))
-        expect(reviewer["role"] in roles and reviewer["role"] not in listed, where + ".role",
-               "one of {}, each listed once".format(", ".join(roles)))
-        listed.append(reviewer["role"])
+        entry(reviewer, where, ("role", "model", "id"), ("key",) if review else ("key", "targets"))
+        role = reviewer["role"]
+        key = reviewer.get("key", role)
+        expect(role in roles, where + ".role", "one of " + ", ".join(roles))
+        expect(reviewer_key(role, key) and key not in listed, where + ".key", "a unique key for " + role)
+        listed.append(key)
+        if "targets" in reviewer:
+            targets = reviewer["targets"]
+            refs = [target_reference(t, "@r") for t in targets] if isinstance(targets, list) else []
+            expect(refs and all(refs) and len({ref[0] for ref in refs}) == len(refs), where + ".targets",
+                   "a non-empty list of distinct design or plan IDs at positive exact revisions")
         expect(short_field(reviewer["model"]), where + ".model", "a single-line string of at most 200 characters")
         expect(reviewer["id"] is None or short_field(reviewer["id"]), where + ".id",
                "null or a single-line string of at most 200 characters")
     expect(isinstance(dispositions["findings"], list), ".findings", "a list")
+    sources = set()
     for n, finding in enumerate(dispositions["findings"]):
         where = ".findings[{}]".format(n)
-        entry(finding, where, ("by", "severity", "disposition") + (("axis",) if review else ()), ("confirmed",))
+        entry(finding, where, ("by", "severity", "disposition") + (("axis",) if review else ()),
+              ("confirmed", "confirmations"))
         by = finding["by"]
         expect(isinstance(by, list) and by and all(isinstance(ref, str) and ref.partition(":")[0] in listed
                                                    and FINDING_ID_RE.fullmatch(ref.partition(":")[2]) for ref in by),
-               where + ".by", "a non-empty list of <role>:F<n>, each naming a listed reviewer")
+               where + ".by", "a non-empty list of <key>:F<n>, each naming a listed reviewer")
+        if not allow_repeated_sources:
+            expect(len(set(by)) == len(by) and sources.isdisjoint(by), where + ".by", "source references used only once")
+            sources.update(by)
         expect(finding["severity"] in SEVERITIES, where + ".severity", " or ".join(SEVERITIES))
         expect(finding["disposition"] in REVIEW_DISPOSITIONS, where + ".disposition", " or ".join(REVIEW_DISPOSITIONS))
         if review:
             expect(finding["axis"] in ("spec", "standards"), where + ".axis", "spec or standards")
         if "confirmed" in finding:
-            expect(finding["confirmed"] in ("resolved", "not-resolved"), where + ".confirmed",
-                   "resolved or not-resolved")
+            expect(finding["confirmed"] in CONFIRMATION_RESULTS, where + ".confirmed", "resolved or not-resolved")
+        if "confirmations" in finding:
+            confirmations = finding["confirmations"]
+            expect(isinstance(confirmations, list) and confirmations, where + ".confirmations", "a non-empty list")
+            confirmers = set()
+            for i, item in enumerate(confirmations):
+                field = "{}.confirmations[{}]".format(where, i)
+                entry(item, field, ("reviewer", "result", "snapshot"))
+                key = item["reviewer"]
+                expect(key in listed and key not in confirmers, field + ".reviewer", "a distinct listed reviewer key")
+                confirmers.add(key)
+                expect(item["result"] in CONFIRMATION_RESULTS, field + ".result", "resolved or not-resolved")
+                expect(item["snapshot"] is None or full_oid(item["snapshot"]), field + ".snapshot",
+                       "null or a full 40- or 64-hex object ID")
+            aggregate = "not-resolved" if any(c["result"] == "not-resolved" for c in confirmations) else "resolved"
+            expect(finding.get("confirmed") == aggregate, where + ".confirmed", aggregate + " for these confirmations")
     blockers = dispositions["new_blockers"]
     expect(type(blockers) is int and blockers >= 0, ".new_blockers", "a non-negative integer")
 
@@ -4350,6 +4421,94 @@ def trace_end(args):
     return 0
 
 
+def finding_source(dispositions, reference):
+    """Resolve the caller's alias and the stored primary source, both unambiguous even in a legacy end."""
+    matches = [f for f in dispositions["findings"] if reference in f["by"]]
+    if not matches:
+        raise TraceError("unknown finding " + reference)
+    if len(matches) != 1:
+        raise TraceError("ambiguous finding " + reference)
+    source = matches[0]["by"][0]
+    if source != reference and any(f is not matches[0] and source in f["by"] for f in dispositions["findings"]):
+        raise TraceError("ambiguous primary source " + source)
+    return source
+
+
+def check_recheck(record):
+    """Validate a recheck's evidence before appending it or using its report stem to inspect an archive."""
+    roles = REVIEW_ROLES.get(record["kind"], ())
+    key, source = record.get("reviewer"), record.get("finding")
+    if not any(reviewer_key(role, key) for role in roles):
+        raise TraceError("invalid reviewer key for " + record["kind"])
+    source_key, _, finding_id = source.partition(":") if isinstance(source, str) else ("", "", "")
+    if not (any(reviewer_key(role, source_key) for role in roles) and FINDING_ID_RE.fullmatch(finding_id)):
+        raise TraceError("finding must be <key>:F<n>")
+    if not short_field(record.get("model")):
+        raise TraceError("a new reviewer key requires a single-line model ID of 1 to 200 characters")
+    if not full_oid(record.get("snapshot")):
+        raise TraceError("snapshot must be a full 40- or 64-hex object ID")
+    if record.get("result") not in CONFIRMATION_RESULTS:
+        raise TraceError("result must be resolved or not-resolved")
+    stem = record.get("report")
+    if not isinstance(stem, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", stem):
+        raise TraceError("report must be 1 to 100 ASCII letters, digits, hyphens or underscores")
+    order = record.get("order")
+    if "order" not in record or (order is not None and (type(order) is not int or order < 1)):
+        raise TraceError("order must be a positive integer or unknown")
+
+
+def new_recheck(args, kind, dispositions, previous):
+    """Build the canonical event, or return None for an identical retry of a recorded report."""
+    source = finding_source(dispositions, args.finding)
+    models = {r["model"] for r in dispositions["reviewers"] if r.get("key", r["role"]) == args.reviewer}
+    models.update(e["model"] for e in previous if e["reviewer"] == args.reviewer)
+    if len(models) > 1 or (models and args.model is not None and args.model not in models):
+        raise TraceError("model does not match the recorded identity of " + args.reviewer)
+    if args.order != "unknown" and not re.fullmatch(r"[0-9]+", args.order):
+        raise TraceError("order must be a positive integer or unknown")
+    record = {"v": 1, "type": "recheck", "id": args.unit, "kind": kind, "finding": source,
+              "reviewer": args.reviewer, "model": next(iter(models), args.model), "snapshot": args.snapshot.lower(),
+              "result": args.result, "report": args.report,
+              "order": None if args.order == "unknown" else int(args.order)}
+    check_recheck(record)
+    for old in previous:
+        if old["finding"] != source:
+            continue
+        if old["report"] == record["report"]:
+            if (old["snapshot"].lower() == record["snapshot"]
+                    and all(old.get(k) == v for k, v in record.items() if k != "snapshot")):
+                return None
+            raise TraceError("conflicting recheck for report " + record["report"])
+        if record["order"] is not None and old["order"] == record["order"]:
+            raise TraceError("recheck order {} already belongs to {}".format(record["order"], old["report"]))
+    record["at"] = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+    return record
+
+
+def trace_recheck(args):
+    root, _is_git = trace_root()
+    holder = trace_holder(root)
+    if not trace_state(holder, root)[0]:
+        print("trace off")
+        return 0
+    trace_dir = holder / TRACE_DIR
+    with events_lock(trace_dir):
+        start, end = unit_in_writable_store(root, trace_dir, args.unit)
+        if (not end or start["kind"] not in REVIEW_ROLES or end.get("kind") != start["kind"]
+                or not end.get("dispositions")):
+            raise TraceError("recheck requires a closed review with recorded dispositions")
+        check_dispositions(start["kind"], end["dispositions"], allow_repeated_sources=True)
+        previous = [e for e in read_events(trace_dir, args.unit.encode()) if e.get("id") == args.unit
+                    and e.get("kind") == start["kind"] and e.get("type") == "recheck"]
+        for event in previous:
+            check_recheck(event)
+        record = new_recheck(args, start["kind"], end["dispositions"], previous)
+        if record:
+            write_event_bytes(trace_dir, event_bytes(record))
+    print("trace {} rechecked".format(args.unit))
+    return 0
+
+
 def event_time(event):
     """The recorded wall time, comparable across UTC offsets, or None when unknown."""
     value = event.get("at")
@@ -4369,6 +4528,7 @@ class HistoryUnit:
         self.unit, self.kind = start["id"], start["kind"]
         self.started = event_time(start)
         self.end = self.boundary = None
+        self.rechecks = collections.defaultdict(list)
 
     def seconds(self):
         ended = event_time(self.end or self.boundary or {})
@@ -4404,6 +4564,18 @@ class HistoryUnit:
             return "ok (files unknown, {})".format(errno_name(error))
         return "ok (files missing, snapshot diagnostic only)" if diagnostic else "ok (files missing)"
 
+    def report_status(self, stem):
+        """Check only the exact regular report file in this unit's own archive."""
+        directory = self.trace_dir / self.unit
+        try:
+            if not directory.is_symlink() and stat.S_ISREG((directory / (stem + ".md")).lstat().st_mode):
+                return "present"
+        except (FileNotFoundError, NotADirectoryError):
+            pass
+        except OSError as error:
+            return "unknown ({})".format(errno_name(error))
+        return "missing"
+
     def row(self):
         end = self.end or {}
         seconds = self.seconds()
@@ -4433,7 +4605,7 @@ def history_events(trace_dir, issues):
         action = event.get("type")
         if action == "manifest":
             continue
-        if action not in ("start", "end"):
+        if action not in ("start", "end", "recheck"):
             issues["unsupported"] += 1
             continue
         unit = event.get("id")
@@ -4446,11 +4618,17 @@ def history_events(trace_dir, issues):
                 or not isinstance(docs, list) or not all(isinstance(doc, str) for doc in docs)):
             issues["malformed"] += 1
             continue
+        if action == "recheck" and event["kind"] in REVIEW_ROLES:
+            try:
+                check_recheck(event)
+            except TraceError:
+                issues["malformed"] += 1
+                continue
         if action == "end" and event.get("dispositions") is not None:
             try:
                 if event["kind"] not in REVIEW_ROLES:
                     raise TraceError("dispositions on a non-review unit")
-                check_dispositions(event["kind"], event["dispositions"])
+                check_dispositions(event["kind"], event["dispositions"], allow_repeated_sources=True)
             except TraceError:
                 issues["malformed"] += 1
                 event["dispositions"] = None
@@ -4459,9 +4637,13 @@ def history_events(trace_dir, issues):
 
 def history_units(trace_dir, store):
     units, ends, open_slices = {}, {}, {}
+    rechecks = []
     issues = collections.Counter()
     for event in history_events(trace_dir, issues):
         action, unit = event["type"], event["id"]
+        if action == "recheck":
+            rechecks.append(event)
+            continue
         parent = event.get("parent") if action == "start" else unit
         previous = open_slices.pop(parent, None) if action == "start" or event["kind"] == "implement" else None
         if previous:
@@ -4474,7 +4656,34 @@ def history_units(trace_dir, store):
             ends[unit, event["kind"]] = event
     for unit in units.values():
         unit.end = ends.pop((unit.unit, unit.kind), None)
-    return list(units.values()), list(ends.values()), issues
+    orphans = list(ends.values())
+    for event in rechecks:
+        unit = units.get(event["id"])
+        if unit and unit.kind == event["kind"] and unit.end and unit.end.get("dispositions"):
+            with contextlib.suppress(TraceError):
+                source = finding_source(unit.end["dispositions"], event["finding"])
+                unit.rechecks[source].append(event)
+                continue
+        orphans.append(event)
+    return list(units.values()), orphans, issues
+
+
+def print_rechecks(unit, checks, first):
+    ordered = sorted((e for e in checks if e["order"] is not None), key=lambda e: e["order"])
+    unordered = [e for e in checks if e["order"] is None]
+    latest = first
+    for heading, group in (("", ordered), ("    unordered rechecks:", unordered)):
+        if heading and group:
+            print(heading)
+        for event in group:
+            verdict = "{result} reviewer={reviewer} snapshot={snapshot} model={model}".format(**event)
+            print("      recheck order={} result={} report={} archive={}".format(
+                event["order"] or "unknown", verdict, event["report"], unit.report_status(event["report"])))
+    if ordered:
+        last = ordered[-1]
+        latest = "{result} reviewer={reviewer} snapshot={snapshot} model={model}".format(**last)
+        print("    highest verified order={} result={}".format(last["order"], latest))
+    print("    latest=" + ("unknown (unordered evidence)" if unordered else latest))
 
 
 def print_review_history(unit):
@@ -4487,15 +4696,26 @@ def print_review_history(unit):
         print("  dispositions=unknown")
         return
     for reviewer in dispositions["reviewers"]:
-        print("  reviewer {} model={} id={} targets=unknown".format(
-            reviewer["role"], reviewer["model"], reviewer["id"] or "unknown"))
+        print("  reviewer {} model={} id={} targets={}".format(
+            reviewer.get("key", reviewer["role"]), reviewer["model"], reviewer["id"] or "unknown",
+            ", ".join(reviewer.get("targets", [])) or "unknown"))
     for finding in dispositions["findings"]:
         axis = " axis=" + finding["axis"] if "axis" in finding else ""
         print("  finding {} severity={} disposition={}{}".format(", ".join(finding["by"]), finding["severity"],
                                                                  finding["disposition"], axis))
-        verdict = finding.get("confirmed", "unknown") + " reviewer=unknown snapshot=unknown"
-        print("    first confirmation=" + verdict)
-        print("    latest=" + verdict)
+        verdict = finding.get("confirmed", "unknown")
+        confirmations = finding.get("confirmations", [])
+        if confirmations:
+            print("    first confirmation=" + verdict)
+            for item in confirmations:
+                print("      confirmation={} reviewer={} snapshot={}".format(
+                    item["result"], item["reviewer"], item["snapshot"] or "unknown"))
+            authors = ", ".join("reviewer={} snapshot={}".format(c["reviewer"], c["snapshot"] or "unknown")
+                                for c in confirmations if c["result"] == verdict)
+        else:
+            authors = "reviewer=unknown snapshot=unknown"
+            print("    first confirmation={} {}".format(verdict, authors))
+        print_rechecks(unit, unit.rechecks[finding["by"][0]], "{} {}".format(verdict, authors))
     print("  new blockers={}".format(dispositions["new_blockers"]))
 
 
@@ -4528,8 +4748,16 @@ def trace_history(args):
         for kind in sorted(counts):
             print("  {}: {}, {} measured wall seconds".format(kind, counted(counts[kind], "unit", "units"), wall[kind]))
     if not args.unit:
+        orphan_rechecks = 0
         for store, event in orphans:
-            print("orphan end {} {}{}".format(event["id"], event["kind"], " store=" + store if store else ""))
+            finding = ""
+            if event["type"] == "recheck":
+                finding = " finding={}".format(event.get("finding", "unknown"))
+                orphan_rechecks += 1
+            print("orphan {} {} {}{}{}".format(event["type"], event["id"], event["kind"], finding,
+                                              " store=" + store if store else ""))
+        if orphan_rechecks:
+            print(counted(orphan_rechecks, "orphan recheck", "orphan rechecks"))
     if skipped:
         print("event line issues: {} malformed, {} unsupported".format(skipped["malformed"], skipped["unsupported"]))
     return 0
@@ -4906,6 +5134,16 @@ def main(argv=None):
     t = command(actions, "history", help="read the recorded history of all units or one unit, tracing on or off")
     t.add_argument("unit", nargs="?", metavar="UNIT")
     t.set_defaults(func=trace_history)
+    t = command(actions, "recheck", help="record a targeted recheck of a closed review finding")
+    t.add_argument("unit", metavar="UNIT")
+    t.add_argument("finding", metavar="FINDING")
+    t.add_argument("--reviewer", required=True, metavar="KEY")
+    t.add_argument("--snapshot", required=True, metavar="OID")
+    t.add_argument("--result", required=True, metavar="resolved|not-resolved")
+    t.add_argument("--report", required=True, metavar="STEM")
+    t.add_argument("--order", required=True, metavar="N|unknown")
+    t.add_argument("--model", metavar="MODEL")
+    t.set_defaults(func=trace_recheck)
     t = command(actions, "on", help="turn tracing on for this machine; --here deletes this checkout's off file")
     t.add_argument("--here", action="store_true",
                    help="only delete this checkout's off file; the machine switch stays as it is")
