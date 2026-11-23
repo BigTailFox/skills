@@ -1,15 +1,15 @@
 ---
 status: active
 created: 2026-11-12
-updated: 2026-11-13
-revision: 6
+updated: 2026-11-23
+revision: 7
 modules: [canon]
 summary: Doc queries and renames with canon.py show, find, which and affected, and rename and renumber, with the references and id collisions renumber settles.
 refs: [D002, D004, D005, D006, R001]
 owns: [doc-queries, doc-renames, doc-renumbering]
 paths: [skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, tests/test_canon.py]
-reviewed: 6
-reviewers: [claude-opus-5.5]
+reviewed: 7
+reviewers: [gpt-6.2-astra]
 approved: 2
 implemented: 6
 ---
@@ -136,7 +136,8 @@ canon.py renumber ID|PATH [NEW] [--base REF]
   - in each moved doc, also each `<old id>-F<n>` and `<old id>-K<n>` in code.
 
   A citation is the id as a whole word in its case, so that `D012` matches neither `D012A`, `D0123` nor `d012`, with the `@r<n>`, `-F<n>` or `-K<n>` right after it, if any: a known issue's Source (`R004-F2`), a path (`D012-auth.md`) or a mention in prose. In every doc, a citation followed by `§<slug>` has its slug follow the heading anchors of what it names after the command, as a link's `§<anchor>` does: a citation, in a link's text, of the doc the link points at names the linked file, the doc or a file in its attachment directory; any other names the moved doc when it takes its new id, the doc it is in when it is that doc's own id, and otherwise the one doc with the id, when only one has it. A doc's citations of its own id are its own: they follow in a moved doc and stay in another doc that has the id. No other text changes: frontmatter fields other than `refs`, `based_on` and `summary`, and code outside a moved doc, keep the old id. A heading whose text changes gets a new anchor, which the links to it follow ([D006§statuses-and-archiving: statuses and archiving](D006-doc-model.md#statuses-and-archiving)).
-- It prints `<old id> -> <new id>` for each moved doc, the doc first and then its sub-designs in letter order, then the notes of [Id collisions](#id-collisions), then ``run `canon.py check --fix` to finish``, and exits 0.
+- When the experiment's attachment directory moves, the command scans the renumbered experiment's body, including inline code and fenced commands, for literal paths to files in that move. Paths may be relative to the repository root, the experiment's project root, its docs root or the document directory, including a leading `./`. A match names a whole path, so a longer filename or an unrelated directory with the same suffix gets no note. For each distinct moved file still named by its old path on a line, it prints `<renumbered doc>:<line>: moved attachment <old path> -> <new path>` in final document order. The line is one-based and the printed paths are repository-relative. The note leaves the command for the user to edit.
+- It prints `<old id> -> <new id>` for each moved doc, the doc first and then its sub-designs in letter order, then the notes of [Id collisions](#id-collisions), any moved-attachment notes, and finally ``run `canon.py check --fix` to finish``. It exits 0.
 
 ### Id collisions
 
