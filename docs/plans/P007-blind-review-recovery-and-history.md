@@ -1,5 +1,5 @@
 ---
-status: draft
+status: accepted
 created: 2026-11-23
 updated: 2026-11-23
 revision: 1
@@ -8,6 +8,7 @@ summary: Recover interrupted blind reviews, credit the reports each revision rec
 refs: [D003, D007, D001, R004]
 reviewed: 1
 reviewers: [gpt-6.2-astra, gemini-4-neon-xhigh]
+approved: 1
 based_on: [D003@r11, D007@r9, D001@r15]
 ---
 

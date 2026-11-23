@@ -18,7 +18,7 @@
 
 ### Plans
 
-- [P007: Blind review recovery and history](plans/P007-blind-review-recovery-and-history.md) · draft · Recover interrupted blind reviews, credit the reports each revision received and query the complete trace history of findings and rechecks. · modules: canon
+- [P007: Blind review recovery and history](plans/P007-blind-review-recovery-and-history.md) · accepted · Recover interrupted blind reviews, credit the reports each revision received and query the complete trace history of findings and rechecks. · modules: canon
 
 ### Reviews
 
