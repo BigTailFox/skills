@@ -11,7 +11,7 @@ paths: [skills/governance/canon/workflow.md, skills/execution/canon-blind-review
 reviewed: 10
 reviewers: [gpt-6.2-astra]
 approved: 8
-implemented: 9
+implemented: 10
 ---
 
 # D003: Subagents

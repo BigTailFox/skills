@@ -90,16 +90,18 @@ Accept and fix each finding, decline it with a one-line reason for the user, or 
 After the author fixes accepted blocker or major findings, the reviewers that raised them confirm the fixes in one round. Send only this prompt, started with the template's worktree line when the first round's prompt has one and with `{documentation language}` filled as in the template, never the author's reasoning:
 
 ```text
-The author revised the target after your review. Fixed findings: {F-ids, each with the location of its fix}. {Diff since your review: {diff command}, which reads the review snapshots in `.canon/`. | No diff is available; read each fix at its location.} Read nothing else in `.canon/`.
-For each listed finding, answer resolved or not resolved, citing the location that shows it. Then report any new blocker the fixes introduce. Do not modify any file or write scratch files; read long command output in parts instead.
+The author revised the target after your review. Confirm these findings:
+{For each finding assigned to this reviewer, quote its original ID and text, give the fix location and, if only part was accepted, state the accepted claim.}
+{Diff since your review: {diff command}, which reads the review snapshots in `.canon/`. | No diff is available; read each fix at its location.} Read nothing else in `.canon/`.
+For each listed finding, judge the accepted claim and answer resolved or not resolved, citing the location that shows it. Then report any new blocker the fixes introduce. Do not modify any file or write scratch files; read long command output in parts instead.
 Write the answer in {documentation language}, even where your instructions set another reply language.
 End with one line: Verdict: approve | revise
 ```
 
 - Before sending it, write the round's `snapshot-confirm.txt` ([Review files](#review-files)). The diff command is `git -C .canon/canon/snapshots diff <first> <second> -- <paths>`: the commits in the round's `snapshot.txt` and `snapshot-confirm.txt`, and the files the fixes touched. Run it yourself first; when either file holds no commit or the command fails, send the no-diff choice.
 - Resume each reviewer by its kept id, so it judges the fixes against its own findings.
-- A cross-family reviewer that runs as a command, and a reviewer that cannot be resumed, gets a new run of the same reviewer instead, given the confirmation prompt followed by the findings it raised in the round.
-- Findings from a manual-fallback reviewer, and those of a cross-family reviewer whose confirmation run stops twice, go to the resumed same-model reviewer, given the confirmation prompt followed by those findings, named `cross-family:F<n>`; in a code review, each goes to the resumed reviewer of its axis. The user relays nothing a second time.
+- A cross-family reviewer that runs as a command, and a reviewer that cannot be resumed, gets a new run of the same reviewer with the same scoped prompt. Keep the full report in the round's findings file.
+- For a manual-fallback reviewer, or a cross-family reviewer whose confirmation run stops twice, assign its findings selected for confirmation to the resumed same-model reviewer. Use the same prompt and name those findings `cross-family:F<n>`. In a code review, each goes to the resumed reviewer of its axis. The user relays nothing a second time.
 - There is no further round; blockers still open go to the user.
 
 ## Follow-up round
