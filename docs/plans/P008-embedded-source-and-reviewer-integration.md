@@ -18,7 +18,7 @@ Implements [D011: Source code embedded in docs](../designs/D011-embedded-source.
 
 ## Current state
 
-Next: S3
+Next: S4
 
 ## Slices
 
@@ -46,7 +46,7 @@ Add `embed [ID|PATH ...] [--check]` to the core CLI and skill. Reuse the repo an
 
 ### S3: Preserve sources and citation headings across document moves
 
-Status: todo
+Status: done
 
 Risk: ID collisions, headings changed indirectly, and literal code in generated blocks make a plain text substitution ambiguous.
 
@@ -78,3 +78,4 @@ Use the shared closing condition in `canon-code-review`, `canon-design`, `canon-
 - Started at 2d7ef6499dcd2c3755abe1bd84e53d1497bbcbb2.
 - S1 completed. Verified the installed grant and progress instructions using synthetic grants, the unfilled example, a real native command item and six offline launcher cases. All 434 repository tests passed across the default and outside-checkout runs. D001 budgets passed and discovery listed 19 skills.
 - S2 completed. Added scoped source generation and checking in the work tree, index and commits, with full-length fences and eligible-file resolution. Eleven CLI regressions and the independent byte and Git-tree checks passed. All 445 repository tests passed across both environments; D001 budgets and discovery of 19 skills passed. Canon version 75.
+- S3 completed. Fixed D010-K10 for moved and stationary owners and their dependent headings. Nine public regressions cover moves, adoption, collision ownership and archival freezing. Independently reproduced the original link mismatch, verified the corrected label and target, and compared CRLF spans and the Git index across archive refusal and success. All 454 tests passed, D001 budgets passed and discovery listed 19 skills. Canon version 76.

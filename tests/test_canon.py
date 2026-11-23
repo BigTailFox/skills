@@ -262,6 +262,142 @@ class CanonTest(unittest.TestCase):
 
 
 class EmbedTest(CanonTest):
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_a_marker_reaching_a_stationary_source_through_a_moved_directory_keeps_working(self):
+        self.design()
+        self.create("docs/designs/D001/notes.txt", "docs/guides/read.md")
+        directory = self.root / "docs/designs/D001"
+        (directory / "alias.py").symlink_to("../../../src/base.py")
+        guide = self.root / "docs/guides/read.md"
+        guide.write_text("<!-- embed: ../designs/D001/alias.py -->\n<!-- /embed -->\n"
+                         "<!-- embed: ../designs/D001/../../../src/base.py -->\n<!-- /embed -->\n")
+        self.ok("embed", guide)
+        self.ok("renumber", "D001", "D005")
+        self.assertEqual(guide.read_text().count("<!-- embed: ../../src/base.py -->"), 2)
+        self.assertEqual(self.ok("embed", "--check", guide), "")
+
+    def test_archive_and_renumber_freeze_the_raw_marked_spans_while_live_sources_follow_the_moves(self):
+        doc = self.doc("C", "past")
+        self.create("docs/concepts/C001/notes.md", "docs/concepts/C001/moving.py", "docs/guides/use.md")
+        notes = doc.parent / "C001/notes.md"
+        moving = doc.parent / "C001/moving.py"
+        moving.write_text("# region C001\n# C001-F1\n# endregion\n")
+        original = self.root / "src/frozen #%.py"
+        original.write_text("# region C001\nprint('C001-K2 ```')\n# endregion\n")
+        for path, prefix in ((doc, b"../../"), (notes, b"../../../")):
+            path.write_bytes(path.read_bytes() + b"\n[Input](" + prefix + b"src/frozen%20%23%25.py)\n"
+                             + b"<!-- embed: " + prefix + b"src/frozen%20%23%25.py#C001 -->\r\n<!-- /embed -->\r\n")
+        guide = self.root / "docs/guides/use.md"
+        guide.write_text("<!-- embed: ../concepts/C001/moving.py#C001 -->\n<!-- /embed -->\n")
+        self.ok("embed", "C001", guide)
+
+        def span(path):
+            return re.search(rb"^<!-- embed: .*?^<!-- /embed -->[^\S\n]*\n", path.read_bytes(), re.M | re.S)[0]
+
+        frozen = span(doc), span(notes)
+        self.assertIn(b"\r\n````python\r\nprint('C001-K2 ```')\r\n````\r\n", frozen[0])
+        incoming = guide.read_bytes()
+        self.ok("archive", "C001", "dropped")
+        archived = self.root / "docs/archived/concepts"
+        self.assertEqual((span(archived / doc.name), span(archived / "C001/notes.md")), frozen)
+        self.assertEqual(guide.read_bytes(), incoming.replace(b"../concepts", b"../archived/concepts"))
+        self.ok("renumber", "C001", "C009")
+        self.assertEqual((span(archived / "C009-past.md"), span(archived / "C009/notes.md")), frozen)
+        self.assertEqual(guide.read_bytes(), incoming.replace(b"../concepts/C001/", b"../archived/concepts/C009/"))
+        original.write_text("replaced\n")
+        self.assertEqual(self.ok("embed", "--check"), "")
+        self.ok("check", "C009")
+
+    def test_archive_validates_the_doc_and_all_markdown_attachments_before_changing_files_or_the_index(self):
+        doc = self.doc("C", "history")
+        self.create("docs/concepts/C001/notes.md")
+        notes = doc.parent / "C001/notes.md"
+        for path, source in ((doc, "../../src/base.py"), (notes, "../../../src/base.py")):
+            path.write_text(path.read_text() + "<!-- embed: " + source + " -->\n<!-- /embed -->\n")
+        self.ok("embed", "C001")
+        self.commit()
+        self.create("src/partial.py")
+        self.git("add", "src/partial.py")
+        (self.root / "src/partial.py").write_text("unstaged\n")
+
+        def state():
+            return self.git("status", "--porcelain"), self.git("diff", "--binary", "HEAD"), self.git("ls-files", "-s")
+
+        for path in (doc, notes):
+            original = path.read_bytes()
+            for edit, message in ((original.replace(b"value = 1", b"old"), "stale embed"),
+                                  (original.replace(b"base.py", b"absent.py"), "source is not a repository file"),
+                                  (original.replace(b"<!-- /embed -->", b""), "unclosed embed marker")):
+                with self.subTest(path=path.name, message=message):
+                    path.write_bytes(edit)
+                    before = state()
+                    out = self.fails("archive", "C001", "dropped")
+                    self.assertIn("ERROR " + path.relative_to(self.root).as_posix() + ":", out)
+                    self.assertIn(message, out)
+                    self.assertEqual(state(), before)
+            path.write_bytes(original)
+
+    def test_adoption_resolves_markers_from_the_original_file_and_newly_owned_attachments(self):
+        self.create("notes/old.md", "notes/plain #%.md")
+        old = self.root / "notes/old.md"
+        old.write_text("# Old\n\n<!-- embed: ../src/base.py -->\n```python\nvalue = 1\n```\n<!-- /embed -->\n")
+        self.ok("adopt", old, "C")
+        adopted = self.root / "docs/concepts/C001-old.md"
+        self.assertIn("<!-- embed: ../../src/base.py -->\n```python\nvalue = 1\n```\n<!-- /embed -->", adopted.read_text())
+        self.assertEqual(self.ok("embed", "--check", adopted), "")
+        name = "docs/concepts/C002/excerpt.md"
+        self.create(name)
+        excerpt = self.root / name
+        excerpt.write_text("<!-- embed: ../../../notes/plain%20%23%25.md -->\n<!-- /embed -->\n")
+        self.ok("adopt", self.root / "notes/plain #%.md", "C", "--slug", "plain")
+        self.assertEqual(excerpt.read_text(), "<!-- embed: ../C002-plain.md -->\n<!-- /embed -->\n")
+        self.ok("embed", excerpt)
+        self.assertIn("# C002: Plain", excerpt.read_text())
+
+    def test_an_owners_embed_alone_moves_its_attachment_in_a_collision_and_keeps_embedded_ids_literal(self):
+        ours = self.design()
+        rival = ours.with_name("D001-rival.md")
+        rival.write_text(ours.read_text().replace("owns: [area]", "owns: [rival]")
+                         + "\n```md\n<!-- embed: D001/demo%23.py#D001 -->\n<!-- /embed -->\n```\n")
+        source = "docs/designs/D001/demo#.py"
+        self.create(source, "docs/guides/use.md")
+        (self.root / source).write_text("# region D001\nprint('D001-K3 and D001-F4')\n# endregion\n")
+        marker = "<!-- embed: D001/demo%23.py#D001 -->\n<!-- /embed -->\n"
+        ours.write_text(ours.read_text() + marker + "\nSee `D001-K3`.\n")
+        guide = self.root / "docs/guides/use.md"
+        guide.write_text(marker.replace("D001/demo", "../designs/D001/demo"))
+        ambiguous = self.doc("C", "read", body=CONCEPT.format("D001 still needs a decision."))
+        self.ok("embed", ours, guide)
+        out = self.ok("renumber", ours, "D005")
+        self.assertTrue((self.root / "docs/designs/D005/demo#.py").is_file())
+        literal = "demo%23.py#D001 -->\n```python\nprint('D001-K3 and D001-F4')\n```\n<!-- /embed -->"
+        self.assertIn("<!-- embed: D005/" + literal + "\n\nSee `D005-K3`.", ours.with_name("D005-area.md").read_text())
+        self.assertIn("<!-- embed: ../designs/D005/" + literal, guide.read_text())
+        self.assertIn("<!-- embed: D001/demo%23.py#D001", rival.read_text())
+        self.assertIn("kept D001 in docs/concepts/C001-read.md", out)
+        self.assertIn("D001 still needs a decision.", ambiguous.read_text())
+        self.assertEqual(self.ok("embed", "--check"), "")
+
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_rename_rewrites_source_paths_only_in_resolved_live_consumers(self):
+        self.design()
+        source = "docs/designs/D001/more # %/area.py"
+        self.create(source, "docs/guides/use.md")
+        (self.root / source).write_text("# region D001\nprint('D001-K7')\n# endregion\n")
+        guide = self.root / "docs/guides/use.md"
+        guide.write_bytes(b"Read the example.\r\n<!-- embed: ../designs/D001/more%20%23%20%25/area.py#D001 -->\r\n"
+                          b"<!-- /embed -->\r\nEnd.\n")
+        self.ok("embed", guide)
+        before = guide.read_bytes()
+        outside = self.tmpdir() / "literal.md"
+        outside.write_bytes(before)
+        alias = guide.with_name("alias.md")
+        alias.symlink_to(os.path.relpath(outside, guide.parent))
+        self.ok("rename", "D001", "zone")
+        self.assertEqual(guide.read_bytes(), before.replace(b"area.py#", b"zone.py#"))
+        self.assertEqual(outside.read_bytes(), before)
+        self.assertEqual(self.ok("embed", "--check"), "")
+
     def test_invalid_utf8_markdown_sources_report_the_consumer_marker(self):
         self.create("docs/guides/input.md")
         doc = self.doc("C", "consumer")
@@ -856,6 +992,48 @@ class PendingApprovalsTest(CanonTest):
 
 
 class RenumberTest(CanonTest):
+    def test_a_base_sided_attachment_keeps_its_owner_and_follows_its_changed_heading(self):
+        base = self.design("existing")
+        self.create("docs/designs/D001/notes.md")
+        notes = base.parent / "D001/notes.md"
+        notes.write_text("## Compare D001 New\n")
+        observer = self.doc("C", "read", body=CONCEPT.format(
+            "[From D001§compare-d001-new](../designs/D001/notes.md#compare-d001-new). D001 is shared."))
+        self.commit()
+        ours = base.with_name("D001-new.md")
+        ours.write_text(base.read_text().replace("owns: [existing]", "owns: [new]"))
+        notes.write_text("## Compare [D001: New](../D001-new.md)\n")
+        observer.write_text(observer.read_text().replace("D001 is shared.", "D001 is shared. D001 stays."))
+        out = self.ok("renumber", ours, "D005", "--base", "HEAD")
+        self.assertEqual(notes.read_text(), "## Compare [D005: New](../D005-new.md)\n")
+        self.assertIn("[From D001§compare-d005-new](../designs/D001/notes.md#compare-d005-new). "
+                      "D001 is shared. D001 stays.", observer.read_text())
+        self.assertIn("kept D001 in docs/concepts/C001-read.md", out)
+        self.ok("check", "--fix")
+
+    def test_citations_of_an_attachment_follow_its_final_heading_and_the_headings_that_depend_on_it(self):
+        self.design()
+        self.design("other")
+        for owner in ("D001", "D002"):
+            name = "docs/designs/{}/notes.md".format(owner)
+            self.create(name)
+            (self.root / name).write_text("## See [D001: Area](../D001-area.md)\n")
+        concept = self.doc("C", "read", body=CONCEPT.format(
+            "### [Moved D001§see-d001-area](../designs/D001/notes.md#see-d001-area)\n\n"
+            "[Stationary D002§see-d001-area, `D002§see-d001-area`, D000§goals]"
+            "(../designs/D002/notes.md#see-d001-area)"))
+        later = self.doc("C", "later", body=CONCEPT.format(
+            "[C001§moved-d001see-d001-area: later](C001-read.md#moved-d001see-d001-area)"))
+        self.ok("renumber", "D001", "D005")
+        for owner in ("D005", "D002"):
+            notes = self.root / "docs/designs" / owner / "notes.md"
+            self.assertEqual(notes.read_text(), "## See [D005: Area](../D005-area.md)\n")
+        self.assertIn("### [Moved D005§see-d005-area](../designs/D005/notes.md#see-d005-area)", concept.read_text())
+        self.assertIn("[Stationary D002§see-d005-area, `D002§see-d001-area`, D000§goals]"
+                      "(../designs/D002/notes.md#see-d005-area)", concept.read_text())
+        self.assertIn("[C001§moved-d005see-d005-area: later](C001-read.md#moved-d005see-d005-area)", later.read_text())
+        self.ok("check", "--fix")
+
     def test_renumber_reports_the_remaining_commands_for_a_moved_experiment_attachment(self):
         experiment = self.doc("E", "trial")
         experiment.with_name("E001-other.md").write_text(experiment.read_text())
@@ -3830,6 +4008,23 @@ class OverviewMoveTest(CanonTest):
         self.assertIn("based_on: [D000@r2]", plan.read_text())
         self.assertIn("[D000: Fixture](../designs/D000-project-overview.md)", plan.read_text())
         self.assertIn("| moved D000 |", review.read_text())
+
+    def test_init_carries_embed_sources_to_d000_and_preserves_region_names_and_code_bytes(self):
+        self.project()
+        old = self.root / "docs/designs/D003-architecture.md"
+        self.create("docs/designs/D003/demo %.py", "docs/guides/overview.md")
+        (old.parent / "D003/demo %.py").write_text("# region D003\n# D000: Code\nprint('D003-K1')\n# endregion\n")
+        pair = b"<!-- embed: D003/demo%20%25.py#D003 -->\r\n<!-- /embed -->\r\n"
+        old.write_bytes(old.read_bytes().replace(b"# D003: Fixture", pair + b"\n# D003: Fixture"))
+        guide = self.root / "docs/guides/overview.md"
+        guide.write_bytes(pair.replace(b"D003/", b"../designs/D003/"))
+        self.ok("embed", "D003", guide)
+        expected = (b"<!-- embed: D000/demo%20%25.py#D003 -->\r\n```python\r\n# D000: Code\r\n"
+                    b"print('D003-K1')\r\n```\r\n<!-- /embed -->\r\n")
+        self.ok("init")
+        self.assertIn(expected + b"\n# D000: Project overview\n", (self.root / self.OVERVIEW).read_bytes())
+        self.assertEqual(guide.read_bytes(), expected.replace(b"D000/", b"../designs/D000/"))
+        self.assertEqual(self.ok("embed", "--check"), "")
 
     def test_init_carries_links_to_the_h1_and_to_headings_whose_numbered_anchor_shifts(self):
         self.project(body=self.ARCHITECTURE.replace("## Decisions", "## Glossary\n\nTerms.\n\n## Decisions"))

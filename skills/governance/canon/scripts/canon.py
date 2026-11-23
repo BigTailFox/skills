@@ -31,7 +31,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "75"
+CANON_VERSION = "76"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -540,7 +540,7 @@ def parse_date(value):
 
 # ---------------------------------------------------------------- trees
 
-def resolve_tree_path(tree, relative, aliases=None):
+def resolve_tree_path(tree, relative, aliases=None, walked=None):
     """Walk a repository-relative path in this tree, following each link before interpreting the next component."""
     if os.path.isabs(relative) or "\0" in relative:
         return None
@@ -555,6 +555,8 @@ def resolve_tree_path(tree, relative, aliases=None):
             done.pop()
             continue
         rel = "/".join((*done, part))
+        if walked is not None:
+            walked.add(rel)
         kind, target = tree.entry(rel)
         if kind == "link":
             if aliases is not None:
@@ -1246,6 +1248,35 @@ def embed_blocks(lines, start):
     return pairs, errors
 
 
+def marked_lines(blocks):
+    return {i for block in blocks for i in range(block.start, block.end + 1)}
+
+
+def physical_lines(text):
+    return re.findall(r"[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+$", text)
+
+
+def write_markdown(path, text, numbered=True):
+    """Preserve line endings across in-place edits and in paired source spans when a command adds headings or fields."""
+    if "<!-- embed:" in text:
+        before = path.read_bytes().decode("utf-8")
+        if "\r" in before:
+            old, new = physical_lines(before), physical_lines(text)
+
+            def blocks(lines):
+                return embed_blocks(lines, parse_frontmatter(lines)[1] + 1 if numbered else 0)[0]
+
+            spans = [(range(len(old)), range(len(new)))] if len(old) == len(new) else []
+            spans.extend((range(a.start, a.end + 1), range(b.start, b.end + 1)) for a, b in zip(blocks(old), blocks(new)))
+            for original, edited in spans:
+                for i, j in zip(original, edited):
+                    ending = old[i][len(old[i].rstrip("\r\n")):]
+                    if ending or j == len(new) - 1:
+                        new[j] = new[j].rstrip("\r\n") + ending
+            text = "".join(new)
+    path.write_bytes(text.encode("utf-8"))
+
+
 def source_operand(operand):
     raw, separator, region = operand.partition("#")
     if not raw or re.search(r"%(?![a-fA-F0-9]{2})", raw) or separator and not REGION_NAME.fullmatch(region):
@@ -1351,16 +1382,26 @@ class SourceEmbeds:
                 selected.add(path)
         return sorted(selected if names else self.starts), errors
 
-    def source(self, path, operand):
+    def source(self, path, operand, walked=None):
         parent = path.parent.relative_to(self.repo.root).as_posix()
         relative, region = source_operand(operand)
-        rel = resolve_tree_path(self.repo.tree, parent + "/" + relative)
+        rel = resolve_tree_path(self.repo.tree, parent + "/" + relative, walked=walked)
         if rel not in self.inventory:
             raise ValueError("source is not a repository file: " + operand)
         source = self.repo.root / rel
         if source == path:
             raise ValueError("embed source is the consumer itself: " + operand)
         return source, region
+
+    def resolved_blocks(self, path, blocks):
+        """The pairs naming a repository file, for move paths and attachment ownership."""
+        for block in blocks:
+            walked = set()
+            try:
+                source, region = self.source(path, block.operand, walked)
+            except ValueError:
+                continue
+            yield block, source, region, walked
 
     def update(self, path, problems, check=False):
         try:
@@ -1370,7 +1411,7 @@ class SourceEmbeds:
             return None
         if "<!-- embed:" not in text and "<!-- /embed" not in text:
             return None
-        lines = re.findall(r"[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+$", text)
+        lines = physical_lines(text)
         blocks, errors = embed_blocks(lines, self.starts[path])
         problems.extend((path, i + 1, error) for i, error in errors)
         for start, end, operand in reversed(blocks):
@@ -1399,11 +1440,16 @@ class SourceEmbeds:
 
 
 def cmd_embed(repo, args):
+    return process_embeds(repo, args.docs, args.check)
+
+
+def process_embeds(repo, names, check):
+    """Check the selected live consumers or regenerate them together once every input is valid."""
     embeds = SourceEmbeds(repo)
     updates, problems = {}, []
-    selected, errors = embeds.selected(args.docs)
+    selected, errors = embeds.selected(names)
     for path in selected:
-        updated = embeds.update(path, problems, check=args.check)
+        updated = embeds.update(path, problems, check=check)
         if updated is not None:
             updates[path] = updated
     if errors or problems:
@@ -2123,7 +2169,7 @@ def apply_fixes(repo):
             continue
         doc, key, value = problem.fix
         doc.text = set_field(doc.text, key, value)
-        doc.path.write_text(doc.text, encoding="utf-8")
+        write_markdown(doc.path, doc.text)
         done.append("{}: {} {}".format(problem.rel, "set" if value is not None else "deleted", key))
     return done, index
 
@@ -2150,12 +2196,14 @@ def apply_edits(lines, edits):
     return lines
 
 
-def rewrite_for_moves(repo, moves, renamed=None, adopted=None, anchors=None, retitled=None, citations=False):
+def rewrite_for_moves(repo, moves, renamed=None, adopted=None, anchors=None, retitled=None, citations=False,
+                      renumber_text=None):
     """Rewrite relative links in every markdown file so they survive `moves` (old path -> new path).
 
     `renamed` maps a moved doc's old path, and the old path of an attachment directory that moves with it, to
-    (old id, new id); in files other than docs, which `move_doc` rewrites itself, the citations of the old id in the
-    texts of links to them become the new id.
+    (old id, new id); in files other than docs, the citations of the old id in the texts of links to them become
+    the new id. For numbered docs, `renumber_text(doc, anchors)` rewrites references against the same headings as
+    the link pass, from the original document in every round.
     `adopted` maps a file becoming a canon doc to its id; link texts to it get the reference format.
     `anchors` maps a file's old path to {old anchor: new anchor} for the headings the command changed before this
     rewrite; links into the file, its own `#<anchor>` links included, and a reference's `§<anchor>` follow.
@@ -2167,6 +2215,13 @@ def rewrite_for_moves(repo, moves, renamed=None, adopted=None, anchors=None, ret
     """
     renamed, adopted, anchors, retitled = renamed or {}, adopted or {}, anchors or {}, retitled or {}
     owner, follow = doc_owner(repo, {}), slug_follower(repo)
+    embeds = SourceEmbeds(repo)
+    moved_entries = {posix_rel(path, repo.root) for path in moves}
+    adopted_attachments = {moves[src].parent / doc_id for src, doc_id in adopted.items()}
+    archive_dirs = {root.docs / "archived" for root in repo.roots}
+    historical = {d.path: d.fm_end + 1 for d in repo.docs if d.archived and d.fm is not None}
+    historical.update((repo.root / rel, 0) for _root, archived, _id, rel in repo.attachments
+                      if archived and rel.endswith(".md"))
 
     def mapped(p):
         for src, dst in moves.items():
@@ -2180,10 +2235,27 @@ def rewrite_for_moves(repo, moves, renamed=None, adopted=None, anchors=None, ret
 
     def rewrite(path, lines, shifted):
         """The edits to `lines`, the text of the file at `path`, with `shifted` as the anchors."""
-        new_dir = mapped(path).parent
+        new_path = mapped(path)
+        new_dir = new_path.parent
         doc = repo.by_path.get(path)
         edits = {}
+        start = embeds.starts.get(path, historical.get(path))
+        if path in adopted:
+            start = parse_frontmatter(lines)[1] + 1
+        elif not adopted_attachments.isdisjoint(path.parents):
+            start = 0
+        blocks = embed_blocks(lines, start)[0] if start is not None else ()
+        protected = marked_lines(blocks)
+        if blocks and archive_dirs.isdisjoint(new_path.parents):
+            for block, source, region, walked in embeds.resolved_blocks(path, blocks):
+                if new_path != path or not moved_entries.isdisjoint(walked):
+                    relative = posix_rel(mapped(source), new_dir)
+                    relative = re.sub(r"[%#\s]", lambda m: urllib.parse.quote(m[0], safe=""), relative)
+                    marker = EMBED_OPEN.match(lines[block.start])
+                    edits[block.start] = [(*marker.span(1), relative + ("#" + region if region else ""))]
         for i, match in iter_links(lines):
+            if i in protected:
+                continue
             target = match.group(3)
             resolved = repo.resolve(path.parent, target)
             if resolved is None:
@@ -2226,12 +2298,14 @@ def rewrite_for_moves(repo, moves, renamed=None, adopted=None, anchors=None, ret
                 edits.setdefault(citation.line, []).append((citation.slug.start, citation.slug.end, slug))
         return edits
 
-    texts = {repo.root / rel: (repo.root / rel).read_text(encoding="utf-8") for rel in repo.files
-             if rel.endswith(".md")}
+    paths = {repo.root / rel for rel in repo.files if rel.endswith(".md")} | set(adopted)
+    texts = {path: path.read_text(encoding="utf-8") for path in sorted(paths) if not path.is_symlink()}
 
     def step(shifted):
         rewritten = {}
         for path, text in texts.items():
+            if renumber_text and path in repo.by_path:
+                text = renumber_text(repo.by_path[path], shifted)
             lines = text.split("\n")
             rewritten[path] = "\n".join(apply_edits(lines, rewrite(path, lines, shifted)))
         settled = dict(anchors)
@@ -2247,7 +2321,7 @@ def rewrite_for_moves(repo, moves, renamed=None, adopted=None, anchors=None, ret
     rewritten = settle(step, anchors, sum(len(body_headings(text)) for text in texts.values()) + 1)[0]
     for path, text in rewritten.items():
         if text != texts[path]:
-            path.write_text(text, encoding="utf-8")
+            write_markdown(path, text, numbered=path in repo.by_path or path in adopted)
 
 
 def move_paths(repo, moves):
@@ -2500,10 +2574,10 @@ def cmd_archive(repo, args):
     live = [d.id for d in repo.docs if d.type == "D" and d.suffix and "D" + d.digits == doc.id and not d.archived]
     if live:
         sys.exit("canon: {} has live sub-designs {}; archive them first".format(doc.id, ", ".join(live)))
-    if report_unmet_terminal(doc, args.status):
+    if report_unmet_terminal(doc, args.status) or process_embeds(repo, [doc.id], check=True):
         return 1
     text = set_field(set_field(doc.text, "status", args.status), "updated", today())
-    doc.path.write_text(text, encoding="utf-8")
+    write_markdown(doc.path, text)
     archive_dir = doc.root.docs / "archived" / info["dir"]
     moves = {doc.path: archive_dir / doc.path.name}
     attachment = doc.root.docs / info["dir"] / doc.id
@@ -2764,7 +2838,7 @@ def cmd_rename(repo, args):
         anchors[doc.path] = changed_anchors(doc.text, text)
         if doc.title:
             retitled[doc.path] = ("{}: {}".format(doc.id, doc.title), "{}: {}".format(doc.id, title))
-        doc.path.write_text(text, encoding="utf-8")
+        write_markdown(doc.path, text)
     rewrite_for_moves(repo, moves, anchors=anchors, retitled=retitled, citations=True)
     move_paths(repo, moves)
     write_indexes(Repo())
@@ -2939,7 +3013,7 @@ def add_overview_sections(doc):
             added.append("### " + name)
             block += ["", "### " + name, ""] + body.split("\n")
     lines[end:end] = block
-    doc.path.write_text("\n".join(lines), encoding="utf-8")
+    write_markdown(doc.path, "\n".join(lines))
     return added
 
 
@@ -2999,7 +3073,7 @@ def adopt_doc(repo, args):
     text, dropped = adopted_text(src.read_text(encoding="utf-8"), letter, doc_id, slug, args.title)
     if dropped:
         print("dropped frontmatter fields: " + ", ".join(dropped))
-    src.write_text(text, encoding="utf-8")
+    write_markdown(src, text)
     move_paths(repo, {src: dest})
     write_indexes(Repo())
     print("{} -> {}".format(posix_rel(src, repo.root), posix_rel(dest, repo.root)))
@@ -3116,6 +3190,14 @@ def move_doc(repo, doc, new_id, base=None, on_base=None, slug=None, title=None, 
             links[src.path] = doc_links(repo, src)
         return path in links[src.path]
 
+    embeds, embedded_files = SourceEmbeds(repo), {}
+
+    def links_attachment(d, path):
+        if d not in embedded_files:
+            blocks = embed_blocks(d.lines, embeds.starts[d.path])[0] if d.path in embeds.starts else ()
+            embedded_files[d] = {source for _block, source, _region, _walk in embeds.resolved_blocks(d.path, blocks)}
+        return linked(d, path) or path in embedded_files[d]
+
     def side(ours, theirs, there, ours_linked, theirs_linked):
         """Whose a sub-design, attachment or reference is when `ours` shares its id with `theirs`: 'ours',
         'theirs', or None when nothing tells or the evidence conflicts. It belongs to the doc on its side of the
@@ -3159,8 +3241,8 @@ def move_doc(repo, doc, new_id, base=None, on_base=None, slug=None, title=None, 
         if not attachment.is_dir():
             continue
         others = [x for x in repo.docs if x.id == d.id and x is not d and x.path.parent == d.path.parent]
-        owners = {side(d, others, on_base is not None and posix_rel(f, repo.root) in on_base, linked(d, f),
-                       any(linked(x, f) for x in others)) for f in attachment.rglob("*") if f.is_file()} \
+        owners = {side(d, others, on_base is not None and posix_rel(f, repo.root) in on_base, links_attachment(d, f),
+                       any(links_attachment(x, f) for x in others)) for f in attachment.rglob("*") if f.is_file()} \
             if others else {"ours"}
         if owners <= {"ours"}:
             moves[attachment] = d.path.parent / new
@@ -3171,10 +3253,6 @@ def move_doc(repo, doc, new_id, base=None, on_base=None, slug=None, title=None, 
             notes.append("kept {}: it also holds attachments of another {}; move this doc's files to {} and fix "
                          "their links".format(posix_rel(attachment, repo.root), d.id,
                                               posix_rel(d.path.parent / new, repo.root)))
-
-    def retitle(text):
-        return re.sub(r"(?m)^# {}:.*$".format(re.escape(new_id)), lambda m: "# {}: {}".format(new_id, title), text,
-                      count=1) if title else text
 
     id_map = dict(renamed.values())
     holder = {old: repo.by_path[path] for path, (old, _new) in renamed.items()}
@@ -3231,6 +3309,10 @@ def move_doc(repo, doc, new_id, base=None, on_base=None, slug=None, title=None, 
         lines = apply_edits(list(d.lines), edits)
         if d.path in renamed:
             lines = rename_finding_ids(lines, d.fm_end, *renamed[d.path])
+        if d is doc and title:
+            h1 = next((h for h in d.headings if h.level == 1), None)
+            if h1:
+                lines[h1.line] = "# {}: {}".format(new_id, title)
         text = "\n".join(lines)
         for field in ("refs", "based_on"):
             values = d.get(field)
@@ -3241,21 +3323,16 @@ def move_doc(repo, doc, new_id, base=None, on_base=None, slug=None, title=None, 
                     mapped.append((pick(field, value, head) or head) + sep + tail)
                 if mapped != values:
                     text = set_field(text, field, mapped)
-        return retitle(text) if d is doc else text
-
-    def step(shifted):
-        texts = {d: remap(d, pick, shifted) for d, pick in picks.items()}
-        settled = {d.path: changed_anchors(d.text, text) for d, text in texts.items()}
-        return texts, {path: anchors for path, anchors in settled.items() if anchors}
+        return text
 
     picks = {d: picker(d) for d in repo.docs if "§" in d.text or any(old in d.text for old in id_map)}
-    texts, settled = settle(step, {}, sum(len(body_headings(d.text)) for d in picks) + 1)
-    for d, text in texts.items():
-        if text != d.text:
-            d.path.write_text(text, encoding="utf-8")
+
+    def renumber_text(d, shifted):
+        return remap(d, picks[d], shifted) if d in picks else d.text
+
     renamed_paths = dict(renamed)
     renamed_paths.update((d.path.parent / d.id, renamed[d.path]) for d in group if d.path.parent / d.id in moves)
-    rewrite_for_moves(repo, moves, renamed_paths, anchors=settled)
+    rewrite_for_moves(repo, moves, renamed_paths, renumber_text=renumber_text)
     move_paths(repo, moves)
     notes = ["kept {} in {}: another doc still has that id; change the references there that mean {}"
              .format(old, ", ".join(sorted(rels)), id_map[old]) for old, rels in sorted(kept.items())] + notes
@@ -3361,8 +3438,11 @@ def id_citations(repo, doc, owner, text=None):
     written. `start` and `end` span the id, and `slug` is the Span of a `§<slug>` after it."""
     lines = doc.lines if text is None else text.split("\n")
     fm_end = doc.fm_end if text is None else parse_frontmatter(lines)[1]
+    protected = marked_lines(embed_blocks(lines, fm_end + 1)[0]) if fm_end >= 0 else set()
     summary = [(i, lines[i]) for i in range(1, fm_end) if lines[i].startswith("summary:")]
     for i, line in summary + list(code_mask(lines, fm_end + 1)):
+        if i in protected:
+            continue
         masked = INLINE_CODE_RE.sub(lambda m: " " * len(m.group(0)), line)
         texts, skipped = [], []
         for match in LINK_RE.finditer(masked):
@@ -3406,8 +3486,11 @@ def rename_finding_ids(lines, fm_end, old, new):
                                and (m.group(2) or "").startswith("-") else m.group(0), code)
 
     prose = dict(code_mask(lines, fm_end + 1))
-    return lines[:fm_end + 1] + [INLINE_CODE_RE.sub(lambda m: rename(m.group(0)), line) if i in prose else rename(line)
-                                 for i, line in enumerate(lines[fm_end + 1:], fm_end + 1)]
+    protected = marked_lines(embed_blocks(lines, fm_end + 1)[0]) if fm_end >= 0 else set()
+    for i in range(fm_end + 1, len(lines)):
+        if i not in protected:
+            lines[i] = INLINE_CODE_RE.sub(lambda m: rename(m.group(0)), lines[i]) if i in prose else rename(lines[i])
+    return lines
 
 
 def staged_index_repo(repo):
