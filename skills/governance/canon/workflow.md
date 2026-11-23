@@ -125,7 +125,7 @@ Before committing, after implementation and code review. Scope: the uncommitted 
 4. For each listed plan, update slice statuses, Current state and Log; report paused slices to the user.
 5. Set the dispositions of review findings the change fixed, and delete the known issues it resolved. For each design and plan step 1's `affected` listed, set each answered experiment it links `concluded` with `canon.py status`, archiving the earlier experiments on that experiment's question as [doc-types.md](doc-types.md#experiments-e) says. Then archive what is finished, in this order: plans whose every slice is `done` (`done`), reviews with no open finding (`closed`), fixed investigations (`resolved`), and experiments `check` reports concluded but cited by no live doc (`concluded`).
 6. Search READMEs, guides and `AGENTS.md` for names the change renamed or removed (commands, flags, config keys, paths) and for what they state of behavior the change altered, and fix them.
-7. Run `canon.py check --fix` until it reports no errors.
+7. Choose the scope of `canon.py check --fix` as [Concurrent work](SKILL.md#concurrent-work) says and run it until it reports no errors.
 8. When this change archived a plan, run `canon.py audit`. If it reports a due review, end your report with one line suggesting the user run a codebase review (the `canon-review` skill). Never start a review yourself.
 9. Commit with Conventional Commits. Every commit that touches a design's `paths`, L0 included, names the designs it was checked against and the plans it updated in a trailer, e.g. `Refs: D003, P012`; `audit` counts code commits whose trailer omits their design as unchecked.
 

@@ -11,7 +11,7 @@ paths: [skills/governance/canon/SKILL.md, skills/governance/canon/doc-types.md, 
 reviewed: 20
 reviewers: [gpt-6.2-astra]
 approved: 19
-implemented: 19
+implemented: 20
 ---
 
 # D006: Doc model and writing rules
