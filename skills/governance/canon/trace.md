@@ -1,8 +1,8 @@
 # Tracing
 
-Only the orchestrating session calls `trace`, never a worker or reviewer. On `trace error`, correct the input and retry once, then carry on either way. `trace status` recovers a lost id.
+Only the orchestrating session calls `trace`. On `trace error`, correct the input and retry once, then continue. `trace status` lists recent open IDs. [`trace history [UNIT]`](SKILL.md#tool) works with tracing off.
 
-End every unit you start but a slice: delivered when it produced its output, blocked on what only the user can settle, handoff when another session continues it, cancelled when the user stopped it. Implement also allows partial, leaving paused slices, and escalated `--to` what it needs: L1 when an L0 change ends awaiting a spec change, L2 for a new or rewritten design, plan when L1 work needs one. An end check ends only quiet, or raised if it put items to the user.
+End each unit except a slice. Use delivered for completed output, blocked on what only the user can settle, handoff when another session continues, cancelled when the user stopped it. Implement also allows partial for paused slices and escalated `--to` L1 when L0 work ends awaiting a spec change, L2 for a new or rewritten design, or plan when L1 work needs one. An end check ends quiet, or raised if it put items to the user.
 
 A gate's, follow-up round's or code review's `end`, at a handoff too, takes its `--dir` and, with `--input -`, reads its dispositions from stdin:
 

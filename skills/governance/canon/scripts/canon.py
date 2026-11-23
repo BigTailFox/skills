@@ -30,7 +30,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "69"
+CANON_VERSION = "70"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -3571,16 +3571,28 @@ def can_create_file(directory):
     return True
 
 
-def trace_holder(root):
-    """The checkout whose trace directory the trace calls run in the checkout at `root` use, found without running
-    Git (D001#switch-and-storage): a worktree in .worktrees/ uses its main checkout's, found again from there, unless
-    tracing is on there and no file can be created in it; every other checkout uses its own."""
+def main_trace_root(root):
+    """The main checkout this worktree shares, or the checkout itself, found without Git or writes."""
     main, shared = root, worktree_main(root)
     while shared:
         main, shared = shared, worktree_main(shared)
+    return main
+
+
+def trace_holder(root):
+    """The checkout whose trace directory accepts writes, falling back to the worktree's own (D001#switch-and-storage)."""
+    main = main_trace_root(root)
     if main != root and trace_state(main, root)[0] and not can_create_file(main / TRACE_DIR):
         return root
     return main
+
+
+def history_stores(root):
+    """Eligible event logs and their archives, independent of the trace switch and current write access."""
+    main = main_trace_root(root)
+    if main == root:
+        return [(None, root / TRACE_DIR)]
+    return [("main", main / TRACE_DIR), ("worktree", root / TRACE_DIR)]
 
 
 def trace_switch_path():
@@ -3665,23 +3677,31 @@ def trace_host():
     return host, env.get("CURSOR_CONVERSATION_ID") or env.get("CODEX_THREAD_ID") or None
 
 
-def read_events(trace_dir, *needles):
-    """The lines of events.jsonl holding one of the byte strings `needles`, parsed; lines that do not parse or carry
-    another `v` are skipped."""
+def event_lines(trace_dir, *needles):
+    """Yield (v1 event, None) or (None, reason) for each matching line; no needles selects every line."""
     try:
-        data = (trace_dir / "events.jsonl").read_bytes()
+        events = (trace_dir / "events.jsonl").open("rb")
     except FileNotFoundError:
-        return []
-    events = []
-    for raw in data.split(b"\n"):
-        if any(needle in raw for needle in needles):
+        return
+    with events:
+        for raw in events:
+            if needles and not any(needle in raw for needle in needles):
+                continue
             try:
                 event = json.loads(raw.decode("utf-8"))
-            except ValueError:
-                continue
-            if isinstance(event, dict) and type(event.get("v")) is int and event["v"] == 1:
-                events.append(event)
-    return events
+            except (ValueError, RecursionError):
+                event = None
+            if not isinstance(event, dict) or type(event.get("v")) is not int:
+                yield None, "malformed"
+            elif event["v"] != 1:
+                yield None, "unsupported"
+            else:
+                yield event, None
+
+
+def read_events(trace_dir, *needles):
+    """The parseable v1 events matching the given byte strings."""
+    return [event for event, problem in event_lines(trace_dir, *needles) if not problem]
 
 
 def unit_events(trace_dir, unit):
@@ -4330,6 +4350,191 @@ def trace_end(args):
     return 0
 
 
+def event_time(event):
+    """The recorded wall time, comparable across UTC offsets, or None when unknown."""
+    value = event.get("at")
+    if isinstance(value, str):
+        with contextlib.suppress(ValueError):
+            when = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if when.tzinfo is not None:
+                return when
+    return None
+
+
+class HistoryUnit:
+    """A start paired with its own store's end and archives."""
+
+    def __init__(self, start, trace_dir, store):
+        self.start, self.trace_dir, self.store = start, trace_dir, store
+        self.unit, self.kind = start["id"], start["kind"]
+        self.started = event_time(start)
+        self.end = self.boundary = None
+
+    def seconds(self):
+        ended = event_time(self.end or self.boundary or {})
+        if self.started and ended and ended >= self.started:
+            return int((ended - self.started).total_seconds())
+        return None
+
+    def archive_status(self):
+        if self.kind == "slice":
+            return "unrequested"
+        if not self.end:
+            return "pending"
+        if "archive" not in self.end:
+            return "unknown"
+        recorded = self.end["archive"]
+        if recorded is None:
+            return "unrequested"
+        if recorded != "ok":
+            return "none" if recorded == "none" else "failed ({})".format(recorded)
+        directory = self.trace_dir / self.unit
+        diagnostic = False
+        try:
+            if not directory.is_symlink():
+                with os.scandir(str(directory)) as entries:
+                    for entry in entries:
+                        if entry.is_file(follow_symlinks=False):
+                            if entry.name != "snapshot-error.txt":
+                                return "ok (files present)"
+                            diagnostic = True
+        except (FileNotFoundError, NotADirectoryError):
+            pass
+        except OSError as error:
+            return "ok (files unknown, {})".format(errno_name(error))
+        return "ok (files missing, snapshot diagnostic only)" if diagnostic else "ok (files missing)"
+
+    def row(self):
+        end = self.end or {}
+        seconds = self.seconds()
+        wall = "{}s".format(seconds) if seconds is not None else "unknown"
+        ended = end["at"] if event_time(end) else "unknown"
+        outcome = (end.get("outcome") or "unknown") if self.end else "open (missing end)"
+        detail = " store=" + self.store if self.store else ""
+        if self.kind == "slice":
+            detail += " slice=" + (self.start.get("slice") or "unknown")
+            outcome = "implicit" if self.boundary else "open"
+            if self.boundary:
+                ended = "by " + self.boundary["at"] if event_time(self.boundary) else "unknown"
+                if seconds is not None:
+                    wall = "<={}s (upper bound)".format(seconds)
+        return ("{} {} parent={} docs={} started={} ended={} outcome={} wall={} archive={}{}"
+                .format(self.unit, self.kind, self.start.get("parent") or "none",
+                        " ".join(self.start.get("docs") or []) or "none", self.start["at"] if self.started else "unknown",
+                        ended, outcome, wall, self.archive_status(), detail))
+
+
+def history_events(trace_dir, issues):
+    """Yield usable unit records, counting bad lines. A damaged disposition still leaves the end boundary usable."""
+    for event, problem in event_lines(trace_dir):
+        if problem:
+            issues[problem] += 1
+            continue
+        action = event.get("type")
+        if action == "manifest":
+            continue
+        if action not in ("start", "end"):
+            issues["unsupported"] += 1
+            continue
+        unit = event.get("id")
+        docs = event.get("docs") or []
+        parent, slice_name = event.get("parent"), event.get("slice")
+        if (not isinstance(unit, str) or not UNIT_RE.fullmatch(unit) or event.get("kind") not in TRACE_KINDS
+                or (parent is not None and (not isinstance(parent, str) or not UNIT_RE.fullmatch(parent)))
+                or (slice_name is not None and (not isinstance(slice_name, str) or not SLICE_RE.fullmatch(slice_name)))
+                or (action == "end" and event["kind"] == "slice")
+                or not isinstance(docs, list) or not all(isinstance(doc, str) for doc in docs)):
+            issues["malformed"] += 1
+            continue
+        if action == "end" and event.get("dispositions") is not None:
+            try:
+                if event["kind"] not in REVIEW_ROLES:
+                    raise TraceError("dispositions on a non-review unit")
+                check_dispositions(event["kind"], event["dispositions"])
+            except TraceError:
+                issues["malformed"] += 1
+                event["dispositions"] = None
+        yield event
+
+
+def history_units(trace_dir, store):
+    units, ends, open_slices = {}, {}, {}
+    issues = collections.Counter()
+    for event in history_events(trace_dir, issues):
+        action, unit = event["type"], event["id"]
+        parent = event.get("parent") if action == "start" else unit
+        previous = open_slices.pop(parent, None) if action == "start" or event["kind"] == "implement" else None
+        if previous:
+            previous.boundary = event
+        if action == "start":
+            units[unit] = HistoryUnit(event, trace_dir, store)
+            if event["kind"] == "slice":
+                open_slices[parent] = units[unit]
+        else:
+            ends[unit, event["kind"]] = event
+    for unit in units.values():
+        unit.end = ends.pop((unit.unit, unit.kind), None)
+    return list(units.values()), list(ends.values()), issues
+
+
+def print_review_history(unit):
+    """Report the evidence this review recorded; a legacy aggregate does not identify any confirmer."""
+    if not unit.end:
+        print("  dispositions=pending")
+        return
+    dispositions = unit.end.get("dispositions")
+    if not dispositions:
+        print("  dispositions=unknown")
+        return
+    for reviewer in dispositions["reviewers"]:
+        print("  reviewer {} model={} id={} targets=unknown".format(
+            reviewer["role"], reviewer["model"], reviewer["id"] or "unknown"))
+    for finding in dispositions["findings"]:
+        axis = " axis=" + finding["axis"] if "axis" in finding else ""
+        print("  finding {} severity={} disposition={}{}".format(", ".join(finding["by"]), finding["severity"],
+                                                                 finding["disposition"], axis))
+        verdict = finding.get("confirmed", "unknown") + " reviewer=unknown snapshot=unknown"
+        print("    first confirmation=" + verdict)
+        print("    latest=" + verdict)
+    print("  new blockers={}".format(dispositions["new_blockers"]))
+
+
+def trace_history(args):
+    root, _is_git = trace_root()
+    units, orphans, skipped = [], [], collections.Counter()
+    for store, trace_dir in history_stores(root):
+        found, unmatched, bad = history_units(trace_dir, store)
+        units.extend(found)
+        orphans.extend((store, event) for event in unmatched)
+        skipped.update(bad)
+    if args.unit:
+        units = [unit for unit in units if unit.unit == args.unit]
+        if not units:
+            raise TraceError("{} names no unit".format(args.unit))
+        if len(units) > 1:
+            raise TraceError("{} is ambiguous (main and worktree stores)".format(args.unit))
+    if not units:
+        print("no traced units")
+    counts, wall = collections.Counter(), collections.Counter()
+    for unit in sorted(units, key=lambda u: (u.started is None, u.started, u.unit)):
+        print(unit.row())
+        if args.unit and unit.kind in REVIEW_ROLES:
+            print_review_history(unit)
+        counts[unit.kind] += 1
+        if unit.end:
+            wall[unit.kind] += unit.seconds() or 0
+    if units and not args.unit:
+        print("By kind (a parent's wall time includes its children):")
+        for kind in sorted(counts):
+            print("  {}: {}, {} measured wall seconds".format(kind, counted(counts[kind], "unit", "units"), wall[kind]))
+    if not args.unit:
+        for store, event in orphans:
+            print("orphan end {} {}{}".format(event["id"], event["kind"], " store=" + store if store else ""))
+    if skipped:
+        print("event line issues: {} malformed, {} unsupported".format(skipped["malformed"], skipped["unsupported"]))
+    return 0
+
+
 def trace_status(args):
     root, _is_git = trace_root()
     holder = trace_holder(root)
@@ -4698,6 +4903,9 @@ def main(argv=None):
     t.set_defaults(func=trace_end)
     t = command(actions, "status", help="say whether tracing is on and why, and list the open units")
     t.set_defaults(func=trace_status)
+    t = command(actions, "history", help="read the recorded history of all units or one unit, tracing on or off")
+    t.add_argument("unit", nargs="?", metavar="UNIT")
+    t.set_defaults(func=trace_history)
     t = command(actions, "on", help="turn tracing on for this machine; --here deletes this checkout's off file")
     t.add_argument("--here", action="store_true",
                    help="only delete this checkout's off file; the machine switch stays as it is")

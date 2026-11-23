@@ -4357,6 +4357,231 @@ class TraceCase(CanonTest):
             yield
 
 
+class HistoryTest(TraceCase):
+    def at(self, seconds):
+        return datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc) + datetime.timedelta(seconds=seconds)
+
+    def start_record(self, kind, seconds, parent=None, **fields):
+        at = self.at(seconds)
+        return {"v": 1, "type": "start", "id": at.strftime(UNIT_TIME_FORMAT) + "-abcdef",
+                "kind": kind, "at": at.isoformat(), "parent": parent["id"] if parent else None,
+                "docs": ["D001@r1"], **fields}
+
+    def end_record(self, start, seconds, **fields):
+        return {"v": 1, "type": "end", "id": start["id"], "kind": start["kind"],
+                "at": self.at(seconds).isoformat(), "outcome": "delivered", "archive": None, **fields}
+
+    def write_log(self, records, path=None):
+        path = path or self.events
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("".join(json.dumps(record, separators=(",", ":")) + "\n" for record in records))
+
+    def row(self, out, start):
+        [line] = [line for line in out.splitlines() if line.startswith(start["id"] + " ")]
+        return line
+
+    def test_empty_history_and_unknown_unit_with_tracing_off(self):
+        self.assertEqual(self.trace("history"), "no traced units\n")
+        self.assertFalse(self.events.parent.exists())
+        self.rejects("history", "20250101T000000Z-000001")
+
+    def test_chronological_history_and_per_kind_wall_seconds_include_nested_work(self):
+        design = self.start_record("design", 0)
+        implement = self.start_record("implement", 10)
+        gate = self.start_record("gate", 20, implement)
+        follow_up = self.start_record("follow-up", 40, implement)
+        follow_up["at"] = "2024-12-31T19:00:40-05:00"
+        plans = [self.start_record("plan", 80 + 4 * i) for i in range(27)]
+        records = [design, implement, gate, self.end_record(gate, 40), follow_up,
+                   self.end_record(follow_up, 45, archive="none"), self.end_record(implement, 70)]
+        for i, plan in reversed(list(enumerate(plans))):
+            records.extend([plan, self.end_record(plan, 83 + 4 * i)])
+        self.write_log(records)
+
+        for switch in ("off", "on"):
+            self.trace(switch)
+            out = self.trace("history")
+            ids = [line.split()[0] for line in out.splitlines() if line.startswith("2025")]
+            self.assertEqual(ids, [s["id"] for s in [design, implement, gate, follow_up, *plans]])
+            self.assertIn("outcome=open (missing end)", self.row(out, design))
+            self.assertIn("parent=" + implement["id"], self.row(out, gate))
+            self.assertIn("archive=none", self.row(out, follow_up))
+            self.assertIn("implement: 1 unit, 60 measured wall seconds", out)
+            self.assertIn("gate: 1 unit, 20 measured wall seconds", out)
+            self.assertIn("follow-up: 1 unit, 5 measured wall seconds", out)
+            self.assertIn("design: 1 unit, 0 measured wall seconds", out)
+            self.assertIn("plan: 27 units, 81 measured wall seconds", out)
+            self.assertNotIn("total", out.lower())
+            focused = self.trace("history", implement["id"])
+            self.assertEqual(self.row(focused, implement), self.row(out, implement))
+            for field in ("implement", "parent=none", "outcome=delivered", "wall=60s", "archive=unrequested",
+                          implement["at"], self.at(70).isoformat(), "D001@r1"):
+                self.assertIn(field, focused)
+        self.assertNotIn(design["id"], self.trace("status"))
+
+    def test_slices_use_the_next_child_or_parent_end_only_as_an_upper_bound(self):
+        implement = self.start_record("implement", 0)
+        first = self.start_record("slice", 10, implement, slice="S1")
+        second = self.start_record("slice", 30, implement, slice="S2")
+        other = self.start_record("implement", 40)
+        pending = self.start_record("slice", 45, other, slice="S1")
+        self.write_log([implement, first, second, other, pending, self.end_record(implement, 70)])
+        out = self.trace("history")
+        for start, n in ((first, 20), (second, 40)):
+            row = self.row(out, start)
+            self.assertIn(start["slice"], row)
+            self.assertIn("wall=<={}s (upper bound)".format(n), row)
+            self.assertNotIn("missing end", row)
+            self.assertEqual(row, self.row(self.trace("history", start["id"]), start))
+        row = self.row(out, pending)
+        self.assertIn("outcome=open", row)
+        self.assertIn("parent=" + other["id"], row)
+        self.assertNotIn("missing end", row)
+        self.assertIn("slice: 3 units, 0 measured wall seconds", out)
+
+    def test_bad_lines_orphan_ends_and_unknown_durations_preserve_usable_history(self):
+        reversed_time = self.start_record("design", 5)
+        missing = self.start_record("design", 20)
+        missing.pop("at")
+        valid = self.start_record("design", 40)
+        orphan = self.end_record(self.start_record("retro", 60), 70)
+        review = self.start_record("gate", 80)
+        records = [{"v": 1, "type": "manifest", "digest": "a" * 64, "skills": {}}, reversed_time,
+                   self.end_record(reversed_time, 4), missing, self.end_record(missing, 25),
+                   [], {"v": True}, {"v": 1, "type": "start", "id": []}, {"v": 2, "type": "start"},
+                   self.start_record("slice", 50, valid, slice=["broken"]), orphan, valid, self.end_record(valid, 44),
+                   review, self.end_record(review, 85, dispositions={"reviewers": [[]]})]
+        self.write_log(records)
+        with self.events.open("ab") as events:
+            events.write(b'\xff\n{"v":1\n')
+        out = self.trace("history")
+        self.assertIn("7 malformed, 1 unsupported", out)
+        self.assertIn("orphan end " + orphan["id"], out)
+        for start in (reversed_time, missing):
+            self.assertIn("wall=unknown", self.row(out, start))
+        self.assertIn("design: 3 units, 4 measured wall seconds", out)
+        self.assertIn("wall=4s", self.row(self.trace("history", valid["id"]), valid))
+        damaged = self.trace("history", review["id"])
+        self.assertIn("wall=5s", self.row(damaged, review))
+        self.assertIn("dispositions=unknown", damaged)
+
+    def test_review_archive_statuses_in_the_list_and_scoped_reads(self):
+        cases = [
+            (None, [], "unrequested"), ("none", [], "none"),
+            ("copy: ENOENT", [], "failed (copy: ENOENT)"), ("over-2MiB", [], "failed (over-2MiB)"),
+            ("ok", [], "ok (files missing)"),
+            ("ok", ["snapshot-error.txt"], "ok (files missing, snapshot diagnostic only)"),
+            ("ok", ["snapshot-error.txt", "same-model.md"], "ok (files present)"),
+        ]
+        records, starts = [], []
+        for i, (archive, files, _) in enumerate(cases):
+            start = self.start_record(("gate", "follow-up", "code-review")[i % 3], 10 * i)
+            starts.append(start)
+            records.extend([start, self.end_record(start, 10 * i + 1, archive=archive)])
+            for name in files:
+                path = self.events.parent / start["id"] / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("fixture\n")
+        self.write_log(records)
+        out = self.trace("history")
+        for start, (_, _, expected) in zip(starts, cases):
+            for report in (out, self.trace("history", start["id"])):
+                self.assertIn("archive=" + expected, self.row(report, start))
+                self.assertNotIn("pruned", report)
+
+    def test_scoped_open_reviews_and_legacy_reviewers_findings_and_confirmations(self):
+        self.trace("on")
+        review = self.start("gate", "D001")
+        self.assertIn("dispositions=pending", self.trace("history", review))
+        self.trace("end", review, "delivered", "--input", "-", stdin=json.dumps(DispositionsTest.GATE))
+        bare = self.start("follow-up", "D001")
+        self.trace("end", bare, "blocked")
+        self.trace("off")
+        self.assertIn("dispositions=unknown", self.trace("history", bare))
+        out = self.trace("history", review)
+        self.assertIn("reviewer same-model model=claude-opus-5.5 id=a3f0c2e1 targets=unknown", out)
+        self.assertIn("reviewer cross-family model=manual:gpt-6-astra id=unknown targets=unknown", out)
+        self.assertIn("finding same-model:F1, cross-family:F2 severity=major disposition=accepted", out)
+        self.assertIn("first confirmation=resolved reviewer=unknown snapshot=unknown", out)
+        self.assertIn("latest=resolved reviewer=unknown snapshot=unknown", out)
+        self.assertIn("finding cross-family:F1 severity=blocker disposition=escalated", out)
+        self.assertIn("first confirmation=unknown reviewer=unknown snapshot=unknown", out)
+
+    def test_history_reads_only_eligible_stores_without_even_transient_writes(self):
+        self.commit()
+        tree = self.worktree()
+        outside = self.tmpdir() / "elsewhere"
+        self.git("worktree", "add", "-q", "-b", "elsewhere", str(outside), "main")
+        tops = (self.root, tree, outside)
+        stores = [top / ".canon/canon/trace" for top in tops]
+        # The CLI runs in a child interpreter. Fail on attempted writes, including a create/delete probe.
+        audit = self.config / "audit"
+        audit.mkdir()
+        (audit / "sitecustomize.py").write_text(
+            "import os, sys\n"
+            "stores = " + repr([str(path) for path in stores]) + "\n"
+            "def watch(event, args):\n"
+            "    if event == 'open' and args[2] & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC):\n"
+            "        paths = args[:1]\n"
+            "    elif event in ('os.mkdir', 'os.remove', 'os.rmdir', 'os.chmod', 'os.utime'):\n"
+            "        paths = args[:1]\n"
+            "    elif event in ('os.rename', 'os.link', 'os.symlink'):\n"
+            "        paths = args[:2]\n"
+            "    else:\n"
+            "        return\n"
+            "    for path in paths:\n"
+            "        if isinstance(path, (str, bytes)):\n"
+            "            path = os.path.abspath(os.fsdecode(path))\n"
+            "            if any(path == store or path.startswith(store + os.sep) for store in stores):\n"
+            "                sys.stderr.write('history attempted ' + event + ' on ' + path + '\\n')\n"
+            "                os._exit(90)\n"
+            "sys.addaudithook(watch)\n")
+
+        def history(top, *args):
+            return self.trace("history", *args, cwd=top, PYTHONPATH=str(audit))
+
+        def contents():
+            return {path: path.read_bytes() if path.is_file() else None for top in tops
+                    for path in (top / ".canon").rglob("*")}
+
+        self.trace("on")
+        before = contents()
+        self.assertEqual(history(tree), "no traced units\n")
+        self.assertIn("trace error:", history(tree, "20250101T000000Z-abcdef"))
+        self.assertEqual(contents(), before)
+        main_only = self.start_record("design", 0)
+        main_gate, local_gate = self.start_record("gate", 10), self.start_record("follow-up", 10)
+        local_only = self.start_record("code-review", 20)
+        elsewhere = self.start_record("retro", 30)
+        self.write_log([main_only, main_gate, self.end_record(main_gate, 12, archive="ok")])
+        self.write_log([local_gate, self.end_record(local_gate, 14, archive="ok"), local_only,
+                        self.end_record(local_only, 22, archive="ok"), self.end_record(main_only, 25)],
+                       stores[1] / "events.jsonl")
+        self.write_log([elsewhere], stores[2] / "events.jsonl")
+        for start in (main_gate, local_only):
+            archived = stores[0] / start["id"] / "same-model.md"
+            archived.parent.mkdir()
+            archived.write_text("report\n")
+        for switch in ("on", "off"):
+            self.trace(switch)
+            before = contents()
+            all_units = history(tree)
+            for start, store, archive in ((main_gate, "main", "files present"), (local_gate, "worktree", "files missing")):
+                [line] = [line for line in all_units.splitlines() if line.startswith(start["id"] + " " + start["kind"])]
+                self.assertIn("store=" + store, line)
+                self.assertIn(archive, line)
+            self.assertIn("files missing", history(tree, local_only["id"]))
+            self.assertIn("outcome=open (missing end)", history(tree, main_only["id"]))
+            self.assertIn("orphan end " + main_only["id"], all_units)
+            self.assertRegex(history(tree, main_gate["id"]), r"^trace error: .*ambiguous")
+            self.assertNotIn(local_only["id"], history(self.root))
+            self.assertIn("files present", history(self.root, main_gate["id"]))
+            self.assertIn(elsewhere["id"], history(outside))
+            self.assertNotIn(main_only["id"], history(outside))
+            self.assertIn("trace error:", history(outside, main_gate["id"]))
+            self.assertEqual(contents(), before)
+
+
 class TraceTest(TraceCase):
     @unittest.skipIf(os.name == "nt", "the recording git is a shell script")
     def test_tracing_off_writes_nothing_and_runs_no_git(self):
