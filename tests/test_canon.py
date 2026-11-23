@@ -352,6 +352,75 @@ class ApprovedTest(CanonTest):
 
 
 class RenumberTest(CanonTest):
+    def test_renumber_reports_the_remaining_commands_for_a_moved_experiment_attachment(self):
+        experiment = self.doc("E", "trial")
+        experiment.with_name("E001-other.md").write_text(experiment.read_text())
+        inline = "Run `python docs/experiments/E001/run.py` or `./E001/run.py`."
+        fenced = "cd docs && python experiments/E001/run.py out"
+        experiment.write_text(experiment.read_text() + "\n[Runner](E001/run.py)\n" + inline + "\n```sh\n" + fenced
+                              + "\npython elsewhere/docs/experiments/E001/run.py E001/run.py.bak E001/absent\n```\n")
+        self.create("docs/experiments/E001/run.py")
+
+        out = self.ok("renumber", str(experiment.relative_to(self.root)), "E003")
+
+        renamed = "docs/experiments/E003-trial.md"
+        lines = (self.root / renamed).read_text().splitlines()
+        self.assertIn("[Runner](E003/run.py)", lines)
+        self.assertTrue((self.root / "docs/experiments/E003/run.py").is_file())
+        note = "moved attachment docs/experiments/E001/run.py -> docs/experiments/E003/run.py"
+        self.assertEqual(out.splitlines(), ["E001 -> E003", f"{renamed}:{lines.index(inline) + 1}: {note}",
+                                            f"{renamed}:{lines.index(fenced) + 1}: {note}",
+                                            "run `canon.py check --fix` to finish"])
+
+    def test_renumber_matches_whole_attachment_paths_from_an_experiments_project(self):
+        self.init_module("pkg")
+        experiment = self.root / self.ok("new", "E", "trial", "--root", "pkg").strip()
+        folder = "pkg/docs/experiments"
+        command = 'python ./docs/experiments/E001/run.py --input="pkg/docs/experiments/E001/data/a b.csv"'
+        other = ('python "E001/run.py backup" "elsewhere E001/run.py" elsewhere/pkg/docs/experiments/E001/run.py\n'
+                 'python backup/"E001/run.py"\npython "E001/run.py".bak')
+        literal = 'runner = {"script": "E001/run.py"}'
+        experiment.write_text(experiment.read_text() + f"\n```sh\n{command}\n{other}\n```\n```python\n{literal}\n```\n")
+        self.create(f"{folder}/E001/run.py", f"{folder}/E001/data/a b.csv")
+
+        out = self.ok("renumber", "E001", "E002")
+
+        renamed = f"{folder}/E002-trial.md"
+        lines = (self.root / renamed).read_text().splitlines()
+        number = lines.index(command) + 1
+        runner = f"moved attachment {folder}/E001/run.py -> {folder}/E002/run.py"
+        data = f"moved attachment {folder}/E001/data/a b.csv -> {folder}/E002/data/a b.csv"
+        self.assertEqual(out.splitlines(), ["E001 -> E002", f"{renamed}:{number}: {runner}", f"{renamed}:{number}: {data}",
+                                            f"{renamed}:{lines.index(literal) + 1}: {runner}",
+                                            "run `canon.py check --fix` to finish"])
+
+    def test_renumber_skips_attachment_paths_when_the_colliding_experiment_keeps_the_files(self):
+        experiment = self.doc("E", "trial")
+        rival = experiment.with_name("E001-other.md")
+        rival.write_text(experiment.read_text() + "\n[Runner](E001/run.py)\n")
+        experiment.write_text(experiment.read_text() + "\n`python E001/run.py`\n")
+        self.create("docs/experiments/E001/run.py")
+
+        out = self.ok("renumber", str(experiment.relative_to(self.root)), "E002")
+
+        self.assertTrue((self.root / "docs/experiments/E001/run.py").is_file())
+        self.assertEqual(out.splitlines(), ["E001 -> E002", "run `canon.py check --fix` to finish"])
+
+    def test_renumber_locates_attachment_notes_when_git_ignores_the_new_experiment_filename(self):
+        experiment = self.doc("E", "trial")
+        renamed = "docs/experiments/E002-trial.md"
+        ignore = self.root / ".gitignore"
+        ignore.write_text(ignore.read_text() + f"\n/{renamed}\n")
+        experiment.write_text(experiment.read_text() + "\n`python E001/run.py`\n")
+        self.create("docs/experiments/E001/run.py")
+
+        out = self.ok("renumber", "E001", "E002")
+
+        number = (self.root / renamed).read_text().splitlines().index("`python E001/run.py`") + 1
+        self.assertEqual(out.splitlines(), ["E001 -> E002", f"{renamed}:{number}: moved attachment "
+                                            "docs/experiments/E001/run.py -> docs/experiments/E002/run.py",
+                                            "run `canon.py check --fix` to finish"])
+
     def test_renumber_normalizes_requested_id(self):
         design = self.design()
         child = self.design("part", parent="D001")

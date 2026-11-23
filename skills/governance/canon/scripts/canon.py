@@ -30,7 +30,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "67"
+CANON_VERSION = "68"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -2598,12 +2598,55 @@ def renumber_doc(repo, args):
         require_commit(repo, args.base)
     on_base = repo.tree_files(args.base) if args.base else None
     new_id = renumbered_id(repo, doc, args.new, on_base)
-    id_map, _moves, notes = move_doc(repo, doc, new_id, args.base, on_base, offer_base=True)
+    id_map, moves, notes = move_doc(repo, doc, new_id, args.base, on_base, offer_base=True)
     write_indexes(Repo())
+    notes.extend(moved_attachment_notes(repo, doc, moves))
     for old, new in id_map.items():
         print("{} -> {}".format(old, new))
     print("\n".join(notes + ["run `canon.py check --fix` to finish"]))
     return 0
+
+
+def moved_attachment_notes(repo, doc, moves):
+    """Locate literal old paths still present in the renumbered experiment, after Markdown links were rewritten."""
+    old_dir = doc.path.parent / doc.id
+    if doc.type != "E" or old_dir not in moves:
+        return
+    destination = moves[doc.path]
+    text = destination.read_text(encoding="utf-8")
+    if doc.id + "/" not in text:
+        return
+    new_dir = moves[old_dir]
+    paths = {}
+    for file in new_dir.rglob("*"):
+        if file.is_file():
+            old = old_dir / file.relative_to(new_dir)
+            move = posix_rel(old, repo.root), posix_rel(file, repo.root)
+            for base in (repo.root, doc.root.project, doc.root.docs, doc.path.parent):
+                paths[posix_rel(old, base)] = move
+    if not paths:
+        return
+    spellings = "|".join(re.escape(path) for path in sorted(paths, key=len, reverse=True))
+    quoted = r"""(?P<quoted>"(?:\\.|[^"\\])*"|(?<!\w)'(?:\\.|[^'\\])*')"""
+    pattern = re.compile(quoted + r"|(?P<bare>(?:\./)?(?:" + spellings + "))")
+    # Check both ends of the whole token, including its quotes. A shell word may continue on either side of them.
+    start = re.compile(r"""(?<![^\s`=(\[{,:<>|&;])""")
+    end = re.compile(r"""(?=$|[\s`)\]}<>|&;]|[.,:!?](?=\s|$|['"]))""")
+    lines = text.split("\n")
+    first = parse_frontmatter(lines)[1] + 1
+    rel = posix_rel(destination, repo.root)
+    for index in range(first, len(lines)):
+        seen = set()
+        line = lines[index]
+        for match in pattern.finditer(line):
+            if not start.match(line, match.start()) or not end.match(line, match.end()):
+                continue
+            spelling = match.group("bare") or match.group("quoted")[1:-1]
+            move = paths.get(spelling[2:] if spelling.startswith("./") else spelling)
+            if move and move not in seen:
+                old, new = move
+                yield "{}:{}: moved attachment {} -> {}".format(rel, index + 1, old, new)
+                seen.add(move)
 
 
 def move_doc(repo, doc, new_id, base=None, on_base=None, slug=None, title=None, offer_base=False):
