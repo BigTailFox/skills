@@ -22,7 +22,7 @@ The first three findings have short remedies already in Silk's project instructi
 
 | ID | Severity | Finding | Disposition |
 |----|----------|---------|-------------|
-| R004-F1 | major | An L2 approval request can omit an earlier target or imply permission to start planning. | open |
+| R004-F1 | major | An L2 approval request can omit an earlier target or imply permission to start planning. | fixed 2c4e46c |
 | R004-F2 | major | Reviewers accepted a design guarantee broader than the experiment that supported it. | fixed 4e2663a |
 | R004-F3 | major | A session can run a repository-wide fix after another session starts editing the same checkout. | fixed 977ff17 |
 | R004-F4 | major | An external review can make progress for minutes without a visible status or a usable way to resume. | open |
@@ -41,7 +41,7 @@ The first three findings have short remedies already in Silk's project instructi
 
 **F1. Carry the whole approval forward.** The last of two follow-ups listed three revisions. A later session had to read the original gate and both follow-ups to recover the fourth, `D002@r6`. Commit `03050e1` records all four. In a separate gate, the maintainer answered yes to a combined approval and planning question, then had to interrupt planning. Silk recorded the approval in `847ce66` and changed its handoff wording in `707d0b4`. Keep a machine-readable list in `.canon/canon-design/` for each change, carrying each target and its exact reviewed revision forward until approved or superseded. Ask for approval of that list and put the planning command on its own line. A bare yes records the revisions. An explicit request for both also starts planning. Records 8, 9 and 19. [D007§gate-status: gate status](../designs/D007-change-tiers.md#gate-status)
 
-Commit `4e2663a` separates approval from starting the next phase and asks for every pending target at its reviewed revision. The machine-readable list that a fresh session can recover remains open.
+In the skills repository, `4e2663a` made a bare yes approve the listed revisions. Commit `2c4e46c` added `canon.py approvals` to recover the list in the same worktree. Replaying the original Silk gate and both follow-ups returned all four revisions, including `D002@r6`. Replaying the approval in Silk commit `03050e1` cleared the list. [D007§pending-l2-approvals: pending L2 approvals](../designs/D007-change-tiers.md#pending-l2-approvals)
 
 **F2. Check the conditions of experimental claims.** One experiment measured a stall within a single CUDA context. Two successive design revisions applied the result to a whole process, which can contain multiple contexts. The maintainer caught the change in scope after two review rounds. Silk narrowed the claim and added a reviewer instruction in `14319d3`. The upstream correctness prompt should ask whether the experiment exercised the conditions under which the design promises the result. Record 6. [D007§reviewer-prompt: reviewer prompt](../designs/D007-change-tiers.md#reviewer-prompt)
 
