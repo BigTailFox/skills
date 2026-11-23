@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: in-progress
 created: 2026-11-23
 updated: 2026-11-23
 revision: 1
@@ -18,13 +18,13 @@ Implements [D011: Source code embedded in docs](../designs/D011-embedded-source.
 
 ## Current state
 
-Next: S1
+Next: S2
 
 ## Slices
 
 ### S1: Reuse an authorized reviewer and display its command
 
-Status: todo
+Status: done
 
 Risk: A checkout-supplied or overbroad grant can expose material. A buffered command can cause duplicate launches or lose the provider ID during a quiet wait.
 
@@ -75,3 +75,5 @@ Use the shared closing condition in `canon-code-review`, `canon-design`, `canon-
 ## Log
 
 - The joint design passed review in `6a473ce`. The four reviewed revisions were approved in `e646349`.
+- Started at 2d7ef6499dcd2c3755abe1bd84e53d1497bbcbb2.
+- S1 completed. Verified the installed grant and progress instructions using synthetic grants, the unfilled example, a real native command item and six offline launcher cases. All 434 repository tests passed across the default and outside-checkout runs. D001 budgets passed and discovery listed 19 skills.

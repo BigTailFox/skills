@@ -37,7 +37,7 @@ Run the flow the user names; resume a setup or upgrade that stopped before its e
 
 ## Set up the cross-family reviewer
 
-Use the `canon` skill's workflow (Subagents → Reviewer file and Reviewer setup) to migrate the machine-local file, select by family and host, and verify the routes. Run setup when this session's family has neither an eligible reviewer nor an applicable `none`, during project setup or alone. When the user asks to configure reviewers, cover the families they name, including a configured `none`. Normalize the entries in scope and preserve the other families, hosts and shared definitions.
+Use the `canon` skill's `reviewer-example.md` and its workflow (Reviewer file, Authorization for command reviewers and Reviewer setup). Import route preferences, discard any imported grants and match the user's grant before sending even a setup trial or continuation. Run setup when this session's family has neither an eligible reviewer nor an applicable `none`, during project setup or alone. When the user asks to configure reviewers, cover the families they name, including a configured `none`. Normalize the entries in scope and preserve the other families, hosts and shared definitions.
 
 ## Upgrade
 

@@ -170,6 +170,8 @@ The canon skills write each command they have you give the user in the form `/ca
 
 Flows, the blind-review gate with its reviewer prompt, code review, how workers launch (and the cross-family reviewer's local file), and the docs step before committing: [workflow.md](workflow.md).
 
+For machine-local reviewer setup, fill the [reviewer file example](reviewer-example.md).
+
 ## Writing
 
 Follow [writing.md](writing.md) for every doc.

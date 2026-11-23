@@ -19,7 +19,7 @@
 
 ### Plans
 
-- [P008: Embedded source and external reviewer integration](plans/P008-embedded-source-and-reviewer-integration.md) · accepted · Deliver embedded source, attachment citations, native command review progress, scoped consent and verified skill references in one change. · modules: canon
+- [P008: Embedded source and external reviewer integration](plans/P008-embedded-source-and-reviewer-integration.md) · in-progress · Deliver embedded source, attachment citations, native command review progress, scoped consent and verified skill references in one change. · modules: canon
 
 ### Reviews
 

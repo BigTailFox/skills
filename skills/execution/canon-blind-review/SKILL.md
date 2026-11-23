@@ -47,23 +47,27 @@ End with one line: Verdict: approve | revise
 ## Reviewers
 
 - **Same-model reviewer**: a subagent on the session's model and effort.
-- For a **cross-family review**, select the first eligible reviewer in the initiating family's order and each additional reviewer the user requests. Follow the `canon` skill's workflow (Subagents → Reviewer file and Reviewer setup) for named and legacy orders, host restrictions, `none` and setup. Run a host subagent with its configured model. For a command, write the filled prompt, substitute its prompt and findings paths for `<prompt>` and `<out>` ([Review files](#review-files)), and launch from this checkout's root.
+- For a **cross-family review**, follow the `canon` skill's workflow (Reviewer file, Authorization for command reviewers and Reviewer setup) for the initiating family's order, additional requested reviewers, host restrictions, `none` and setup. Run a host subagent with its configured model. For every command call, including confirmation, follow-up and recovery, match the grant and enforce its input limits before launch. Write the filled prompt and substitute its prompt and findings paths for `<prompt>` and `<out>` ([Review files](#review-files)). Launch from this checkout's root with the granted view.
 
 The review gate and code review say when the cross-family reviewer runs; other reviews run the same-model reviewer, plus the cross-family reviewer when the user asks for another family.
 
 ## Launch
 
 - A reviewer that runs as a host subagent is a new subagent from the host's own tool, never a fork of the session, launched without a model or effort so it runs on the session's; only a cross-family reviewer gets a model, the one its entry names. In Claude Code use a `general-purpose` or custom subagent; the built-in Explore and Plan agents cannot be resumed.
-- Launch the first-round reviewers together. Start command reviewers in the background first, keeping their job handles. Launch the host reviewers asynchronously so you can observe the commands. A lone host reviewer may run in the foreground.
+- Launch the first-round reviewers together. Start each command reviewer once on a retained host job with its output attached as below, then launch the host reviewers asynchronously. A lone host reviewer may run in the foreground.
 - While any reviewer reads, keep the work tree outside `.canon/` at its review snapshot. If a first-round report is missing once all readers stop, follow the `canon` workflow's Pending reviews to fix or confirm the reports already received and freeze the next review baseline.
 - Once you have no other work, look for the report of a host subagent whose completion notice has not come in the host's record of its run: in Cursor, `subagents/<agent id>.jsonl` in `<cursor home>/projects/<project>/agent-transcripts/$CURSOR_CONVERSATION_ID/`; in Codex, the `rollout-*.jsonl` under `$CODEX_HOME/sessions/` whose `session_meta` names your session as `parent_thread_id`.
 - On every route the prompt is what keeps reviewers from modifying files, writing scratch files and reading `.canon/`.
 
 ### External review progress
 
-When the host requires permission, announce the pending request in the active chat before submitting it, with the scope and applicable prior authorization from the reviewer file. Report confirmed process start, the first observed reviewer activity, meaningful changes, and exit status with elapsed time since start. During silence, update the chat about once a minute with the last observation. With buffered output, keep the original job handle and query the configured read-only status operation. For a legacy route report only what the host can observe.
+Use the host's ordinary permission mechanism. Put the destination, inputs and matching grant's source and scope in the actual request metadata. Give one notice before submitting the request only when the host cannot show that context there. Treat process start as confirmed only once the launcher observes it.
 
-At launch, record the absolute checkout, round, report path, provider, model and job handle in a state file under the round's `attempts/<report stem>/<attempt>/`. Bind the provider session ID to that output as soon as you observe it. Retain the prompt, read-only scope, last tool or model activity and recovery count across caller deadlines. Keep attempt state and partial output in that subdirectory, outside the reviewer's input and the round's directly archived files. Permission waits, status polls and launcher heartbeats are observations about the job. Only fresh tool or model activity counts toward [deadline recovery](#stopped-runs).
+In Codex App attach the launcher's flushed stdout and stderr to its native command item. An integrated terminal works when it attaches to the same job. Use the equivalent command view on other hosts. Send observed process start, first and later reviewer activity, elapsed time, optional idle heartbeats and exit status directly to that view. Return only completion or actionable failure and the report location to the agent. Wait for completion on the original job or its wait handle. Continue an ordinary nonterminal yield on that handle.
+
+For buffered output or an unattached job, give one notice that live output is unavailable and wait quietly on its handle. On either route, use the declared read-only status operation only for a requested update, interruption or recovery decision. Chat carries required decisions, failure and the final outcome. Give routine progress in chat only at the user's request.
+
+At launch, bind the absolute checkout, round, report path, provider, model and job handle under the round's `attempts/<report stem>/<attempt>/`. Use a recoverable launcher only when it demonstrated that it persists the provider session ID with that binding at the opening event, even while the caller waits. Describe only the ID or activity a route can observe. Keep the prompt, read-only scope, partial output, last tool or model activity and recovery count with the binding across caller deadlines, outside the reviewer's input and the round's directly archived files. Only fresh tool or model activity counts toward [deadline recovery](#stopped-runs).
 
 ## Review files
 
@@ -81,8 +85,8 @@ Before the first launch in each round, run `canon.py snapshot` from the checkout
 
 User cancellation ends the run. For a command, distinguish a caller timeout from a stopped attempt using the job handle and the [saved binding](#external-review-progress). Allow at most two deadline recoveries per attempt, or the route's lower limit, counting any the launcher already performed.
 
-1. Check the original job after a poll times out. While it is running, keep observing it. If the provider already completed the report and the launcher was interrupted before publication, finish publishing that result with the matching binding.
-2. When a deadline actually terminated the run, check for fresh tool or model activity since its last launch or recovery. With that activity, a matching binding and a recovery left, resume the same provider session with the original prompt, read-only scope and output.
+1. Check the original job after an interruption or wait timeout. If it is still running, continue waiting on its handle. If the provider already completed the report and the launcher was interrupted before publication, finish publishing that result with the matching binding.
+2. When a deadline actually terminated the run, check for fresh tool or model activity since its last launch or recovery. With that activity, a matching binding, a grant covering recovery and a recovery left, resume the same provider session with the original prompt, read-only scope and output. If recovery lacks a matching grant, return to the `canon` skill's workflow (Authorization for command reviewers) before any further provider call.
 3. After recovery is exhausted or unavailable, an exit without a complete terminal report spends one stopped attempt. This includes a terminated run with no new activity and a terminal provider failure. Move any partial `<out>` into the stopped attempt's directory.
 
 On the first stopped attempt, give the reviewer one more attempt. This also applies to a host reviewer whose run record shows it stopped without a report. Resume it by its ID when possible, asking only that it continue where it stopped and finish the requested report. For a terminally failed or non-resumable run, launch the same reviewer fresh with the same prompt. On the second stop, proceed by role.
