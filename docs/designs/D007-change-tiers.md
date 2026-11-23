@@ -10,7 +10,7 @@ owns: [change-tiers, review-gate, design-problems]
 paths: [skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/governance/canon/scripts/canon.py, tests/test_canon.py]
 reviewed: 9
 reviewers: [gpt-6.2-astra, gemini-4-neon-xhigh]
-approved: 5
+approved: 9
 implemented: 8
 ---
 
