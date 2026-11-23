@@ -18,7 +18,7 @@ Deliver findings F4, F5, F6, F10 and F11 in [R004: field feedback](../reviews/R0
 
 ## Current state
 
-Next: S3
+Next: S4
 
 ## Slices
 
@@ -50,7 +50,7 @@ Extend `trace end --input` and both history views in `canon.py`. Add `trace rech
 
 ### S3: Select and recover an external reviewer
 
-Status: todo
+Status: done
 
 Risk: A buffered host can mistake a permission wait, polling timeout or heartbeat for progress and launch a duplicate job.
 
@@ -88,3 +88,4 @@ For linking units and retaining reports, use [D001§commands: continuity](../des
 - Started at `6e69d74`.
 - S1 added read-only `trace history [UNIT]`. The local field replay matched 31 starts, 30 ends, six per-kind duration totals, the unmatched design and the follow-up with `archive=none`. Both switch settings produced identical output and left the log checksum intact. Seven CLI tests also cover malformed records, slice bounds, missing archives and store collisions. All 411 repository tests passed across the default and outside-checkout runs. D001 text budgets passed and skill discovery found 19 skills. No plan deviation.
 - S2 added per-report coverage, individual confirmation results and `trace recheck`. In an isolated copy of a historical gate, a recheck at its preserved snapshot, using a fixture reviewer identity, left the original unresolved finding intact and showed the later resolved result. Retrying succeeded once. A conflicting retry left the log byte-identical. CLI tests also cover concurrent aliases, unknown ordering, linked stores and pruned reports. All 421 tests passed across both temp environments, the D001 budgets passed, and discovery found 19 skills. No plan deviation.
+- S3 tested ten reviewer selections through each of the three installed entry points. Named defaults, host-specific `none`, legacy entries and an explicit pair of reviewers produced the expected selections. A targeted setup preserved the other families and shared definitions. Local processes demonstrated permission and activity reporting, a polling timeout with the same job active, bounded same-ID recovery, the stopped-run retry, terminal publication, cancellation and an ID-less fallback. Both requested reviewers published separate reports. A fresh confirmation retained the original IDs. The local launcher also passed 42 offline cases. All 421 repository tests, D001 budgets and discovery of 19 skills passed. No plan deviation.

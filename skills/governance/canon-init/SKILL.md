@@ -37,7 +37,7 @@ Run the flow the user names; resume a setup or upgrade that stopped before its e
 
 ## Set up the cross-family reviewer
 
-Follow the reviewer setup in the `canon` skill's workflow (Subagents), covering every model family the user's sessions run on, after copying an earlier setup's reviewer file as that section says. Run it, as setup step 8 or alone, only when the reviewer file gives this session's family neither a reviewer this host can run nor a `none` that covers this host, e.g. on a new machine; run it alone whenever the user names this flow.
+Use the `canon` skill's workflow (Subagents → Reviewer file and Reviewer setup) to migrate the machine-local file, select by family and host, and verify the routes. Run setup when this session's family has neither an eligible reviewer nor an applicable `none`, during project setup or alone. When the user asks to configure reviewers, cover the families they name, including a configured `none`. Normalize the entries in scope and preserve the other families, hosts and shared definitions.
 
 ## Upgrade
 
