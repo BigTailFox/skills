@@ -16,10 +16,6 @@
 - [D009: Settling decisions](designs/D009-settling-decisions.md) · active · Settling open decisions with the user (canon-grill): triage before asking, open decisions kept in the doc, and small batches of related questions. · owns: settling-decisions · modules: canon
 - [D010: Doc queries and renames](designs/D010-doc-queries-and-renames.md) · active · 1 known issue · Doc queries and renames with canon.py show, find, which and affected, and rename and renumber, with the references and id collisions renumber settles. · owns: doc-queries, doc-renames, doc-renumbering · modules: canon
 
-### Plans
-
-- [P007: Blind review recovery and history](plans/P007-blind-review-recovery-and-history.md) · in-progress · Recover interrupted blind reviews, credit the reports each revision received and query the complete trace history of findings and rechecks. · modules: canon
-
 ### Reviews
 
 - [R004: Canon feedback from Silk on design reviews and concurrent work](reviews/R004-silk-canon-field-feedback.md) · open · Silk feedback on L2 approvals, experiment claims, concurrent edits, external reviewers, trace history, renumbering and strict checks. · modules: canon

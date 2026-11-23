@@ -5,7 +5,7 @@ updated: 2026-11-23
 revision: 1
 modules: [canon]
 summary: Silk feedback on L2 approvals, experiment claims, concurrent edits, external reviewers, trace history, renumbering and strict checks.
-refs: [D001, D003, D006, D007, D009, D010, R003]
+refs: [D001, D003, D006, D007, D009, D010, R003, P007]
 ---
 
 # R004: Canon feedback from Silk on design reviews and concurrent work
@@ -25,14 +25,14 @@ The first three findings have short remedies already in Silk's project instructi
 | R004-F1 | major | An L2 approval request can omit an earlier target or imply permission to start planning. | fixed 2c4e46c |
 | R004-F2 | major | Reviewers accepted a design guarantee broader than the experiment that supported it. | fixed 4e2663a |
 | R004-F3 | major | A session can run a repository-wide fix after another session starts editing the same checkout. | fixed 977ff17 |
-| R004-F4 | major | An external review can make progress for minutes without a visible status or a usable way to resume. | open |
-| R004-F5 | major | The manual fallback leaves the gate's state unclear when an independent reviewer is unavailable. | open |
-| R004-F6 | minor | Reviewer setup repeats launch commands and can omit the scope of an existing authorization. | open |
+| R004-F4 | major | An external review can make progress for minutes without a visible status or a usable way to resume. | fixed 30596c4 |
+| R004-F5 | major | The manual fallback leaves the gate's state unclear when an independent reviewer is unavailable. | fixed e92eebc |
+| R004-F6 | minor | Reviewer setup repeats launch commands and can omit the scope of an existing authorization. | fixed 30596c4 |
 | R004-F7 | minor | Fixing one occurrence of a guarantee can leave contradictory wording elsewhere. | fixed 4e2663a |
 | R004-F8 | minor | A fresh confirmation reviewer can reopen findings the maintainer already declined. | fixed 8478e13 |
 | R004-F9 | minor | A reply approving some decisions and asking about others can trigger premature edits. | fixed 33e1e47 |
-| R004-F10 | major | Review records can misattribute a revision or give an outdated result for a finding. | open |
-| R004-F11 | minor | Historical trace gaps require manually matching events to review directories. | open |
+| R004-F10 | major | Review records can misattribute a revision or give an outdated result for a finding. | fixed e92eebc |
+| R004-F11 | minor | Historical trace gaps require manually matching events to review directories. | fixed bb35f13 |
 | R004-F12 | minor | A worktree handoff can leave the maintainer guessing whether the work reached the target branch. | fixed 977ff17 |
 | R004-F13 | minor | Renumbering an experiment can break a command needed to reproduce it. | fixed de9c466 |
 | R004-F14 | minor | A strict branch check gives no indication that a reported error already exists on the base. | open |
@@ -68,6 +68,8 @@ In the skills repository, `4e2663a` made a bare yes approve the listed revisions
 **F10. Attribute each review and recheck to the revision it covered.** Silk requested extra cross-family reviewers, but the trace accepted one entry for that role. A follow-on target joined while findings were being fixed, so only the confirming reviewer saw it. The workflow still called for the gate's reviewers in the revision metadata. A separate gate's trace retained three unresolved findings after the archived rechecks recorded their resolution. Set a revision's `reviewers` field from the reviewers who read it. Let the trace identify each reviewer within a role and append each recheck with its finding, reviewer and snapshot. A reader could then retrieve both the first confirmation and the latest result. Records 4, 5 and 12, including trace `20261116T081751Z-6d9406`. [D001§review-dispositions: review dispositions](../designs/D001-skill-telemetry.md#review-dispositions) and [D007§follow-up-round: follow-up round](../designs/D007-change-tiers.md#follow-up-round)
 
 **F11. Make old trace gaps visible.** A November 20 inventory counted 31 starts and 30 ends. The unmatched design start was older than the 24-hour window in `trace status`. A follow-up recorded `archive=none` although its reports still existed in the review directory. Offer a read-only historical view that pairs starts and ends and flags missing archives. Report wall time by workflow kind so nested gates and their parent design sessions can be read separately. Record 13, trace events 17 and 26. [D001§commands: trace commands](../designs/D001-skill-telemetry.md#commands)
+
+A replay of the 31-start trace with `bb35f13` exposed the unmatched design and the follow-up with an empty archive. Replaying the later F2 result with `81c92e6` preserved its first confirmation. The handoff fixture for `e92eebc` retained each source’s coverage. Review fixes in `bd4fef3` preserved both delegates’ reports and identified conflicting historical evidence. The slice query in `b69fc41` recognizes a renamed plan’s completion commit using locally available Git objects. [P007§log: implementation log](../archived/plans/P007-blind-review-recovery-and-history.md#log)
 
 ### Worktree handoffs and command diagnostics
 

@@ -46,7 +46,7 @@ The module, `canon`, and the repository tooling, `scripts/validate.py`, share th
 | The project overview, D000, with the designs `audit` finds D000 does not reach, the source areas it finds no design covers and the designs whose code changed in commits that do not name them | canon | [D002: Project overview and as-built designs](D002-overview-and-as-built.md) |
 | As-built designs, and the backfill before a change to behavior no design states | canon | [D002: Project overview and as-built designs](D002-overview-and-as-built.md) |
 | Blind reviews by fresh subagents, a cross-family reviewer included, for the review gate, code review or any request (`canon-blind-review`), and a fresh worker for each plan slice | canon | [D003: Subagents](D003-subagents.md), [D007: Change tiers and the review gate](D007-change-tiers.md) |
-| Opt-in tracing of workflow runs for replay and analysis (`canon.py trace`) | canon | [D001: Skill telemetry with canon trace](D001-skill-telemetry.md) |
+| Opt-in tracing of workflow runs for replay and analysis, with read-only history of review findings, rechecks and elapsed time (`canon.py trace`) | canon | [D001: Skill telemetry with canon trace](D001-skill-telemetry.md) |
 | Project setup: canon installed in each project with the canon version the project records, `docs/`, the `AGENTS.md` block, migration of existing docs and upgrades (`canon-init`) | canon | [D004: Project setup](D004-project-setup.md) |
 | Docs kept in step with the code: the docs step, repair after a merge or rebase, and the doc health audit (`canon-sync`, and the known issues, idle docs and due reviews `canon.py audit` reports) | canon | none |
 | Code review of a finished change (`canon-code-review`) | canon | none |

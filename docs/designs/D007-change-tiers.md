@@ -11,7 +11,7 @@ paths: [skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, s
 reviewed: 9
 reviewers: [gpt-6.2-astra, gemini-4-neon-xhigh]
 approved: 9
-implemented: 8
+implemented: 9
 ---
 
 # D007: Change tiers and the review gate
