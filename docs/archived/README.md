@@ -11,6 +11,7 @@
 - [P005: Project install](plans/P005-project-install.md) · done · canon.py run only from the project's install, init without a copy, the version check, installed skill files as tooling, and the skill texts. · modules: canon
 - [P006: Concurrent work and staged checks](plans/P006-concurrent-work.md) · done · check --rev and --staged, index --staged and stale index levels, check of named docs, init's hook and .worktrees/, worktree trace data, concurrent-work texts. · modules: canon
 - [P007: Blind review recovery and history](plans/P007-blind-review-recovery-and-history.md) · done · Recover interrupted blind reviews, credit the reports each revision received and query the complete trace history of findings and rechecks. · modules: canon
+- [P008: Embedded source and external reviewer integration](plans/P008-embedded-source-and-reviewer-integration.md) · done · Deliver embedded source, attachment citations, native command review progress, scoped consent and verified skill references in one change. · modules: canon
 
 ### Reviews
 

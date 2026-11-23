@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: active
 created: 2026-11-23
 updated: 2026-11-24
 revision: 1
@@ -11,6 +11,7 @@ paths: [skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.
 reviewed: 1
 reviewers: [gpt-6.2-astra, gemini-4-neon-xhigh]
 approved: 1
+implemented: 1
 ---
 
 # D011: Source code embedded in docs

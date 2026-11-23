@@ -1,11 +1,11 @@
 ---
 status: draft
 created: 2026-11-05
-updated: 2026-11-13
+updated: 2026-11-24
 revision: 14
 modules: [canon]
 summary: Ideas for the canon module that no design tracks yet, from codebase reviews and deferred findings.
-refs: [D001, D002, D003, D004, D005, D006, D007, D008, R001, R003, D000, D009, E002]
+refs: [D001, D002, D003, D004, D005, D006, D007, D008, R001, R003, D000, D009, E002, P008]
 ---
 
 # C001: Canon backlog
@@ -13,6 +13,10 @@ refs: [D001, D002, D003, D004, D005, D006, D007, D008, R001, R003, D000, D009, E
 ## Motivation
 
 Findings that are not defects of code a design governs, and work that needs a new design first, land here so they stay tracked until a design or an L0 change takes them up.
+
+## Delivered work
+
+The Ideas **One place for closing a workflow**, **Check references between skill texts** and **Code embedded in docs** were delivered together in [P008: Embedded source and external reviewer integration](../archived/plans/P008-embedded-source-and-reviewer-integration.md).
 
 ## Ideas
 

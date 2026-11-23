@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-11-12
-updated: 2026-11-23
+updated: 2026-11-24
 revision: 8
 modules: [canon]
 summary: Doc queries and renames with canon.py show, find, which and affected, and rename and renumber, with the references and id collisions renumber settles.
@@ -11,7 +11,7 @@ paths: [skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.
 reviewed: 8
 reviewers: [gpt-6.2-astra, gemini-4-neon-xhigh]
 approved: 8
-implemented: 7
+implemented: 8
 ---
 
 # D010: Doc queries and renames
@@ -162,12 +162,6 @@ The results:
 - A reference is rewritten when it is the renumbered doc's, kept when it is another's, and kept when unclear with the note `kept <old id> in <paths>: another doc still has that id; change the references there that mean <new id>`: one note per id, in id order, its paths sorted and comma-separated, before the attachment notes.
 
 Without another doc of the id, everything follows the renumbered doc.
-
-## Known issues
-
-| ID | Severity | Issue | Source | Since | Next |
-|----|----------|-------|--------|-------|------|
-| D010-K10 | minor | After `renumber`, a citation of the attachment's owner in a doc's link text, other than a reference's leading `<ID>§<anchor>`, keeps its old `§<slug>` when the link points at an attachment whose heading the command changes, including an attachment whose owner keeps its ID, since the docs' citations settle before the headings of other files do. | code review 3ccf260 | 2026-11-13 | L1 |
 
 ## Decisions
 

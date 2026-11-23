@@ -1,17 +1,17 @@
 ---
 status: active
 created: 2026-10-22
-updated: 2026-11-23
+updated: 2026-11-24
 revision: 12
 modules: [canon]
 summary: How canon runs every subagent as a new one, never a fork, reviewers and workers on the session's model, resumed by id, review snapshots, the reviewer file.
 refs: [D001, D004, R003, D000, D007, R001, D006, R004]
 owns: [subagents]
-paths: [skills/governance/canon/workflow.md, skills/execution/canon-blind-review/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/governance/canon-init/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-research/SKILL.md, skills/execution/canon-grill/SKILL.md, skills/execution/canon-codebase-design/DESIGN-IT-TWICE.md, skills/governance/canon/scripts/canon.py, tests/test_canon.py]
+paths: [skills/governance/canon/workflow.md, skills/governance/canon/reviewer-example.md, skills/execution/canon-blind-review/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/governance/canon-init/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-research/SKILL.md, skills/execution/canon-grill/SKILL.md, skills/execution/canon-codebase-design/DESIGN-IT-TWICE.md, skills/governance/canon/scripts/canon.py, tests/test_canon.py]
 reviewed: 12
 reviewers: [gpt-6.2-astra, gemini-4-neon-xhigh]
 approved: 12
-implemented: 11
+implemented: 12
 ---
 
 # D003: Subagents

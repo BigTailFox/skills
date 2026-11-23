@@ -14,12 +14,8 @@
 - [D007: Change tiers and the review gate](designs/D007-change-tiers.md) · active · Change tiers and their flows, design problems, and the review gate of a change: steps, prompt, merge rules, confirmation and follow-up rounds, status. · owns: change-tiers, review-gate, design-problems · modules: canon
 - [D008: Prototypes and research](designs/D008-experiments.md) · active · Prototypes and research (canon-prototype, canon-research): quick answers, the research brief, logic, UI and spike prototypes, verdicts in E docs. · owns: prototypes, research · modules: canon
 - [D009: Settling decisions](designs/D009-settling-decisions.md) · active · Settling open decisions with the user (canon-grill): triage before asking, open decisions kept in the doc, and small batches of related questions. · owns: settling-decisions · modules: canon
-- [D010: Doc queries and renames](designs/D010-doc-queries-and-renames.md) · active · 1 known issue · Doc queries and renames with canon.py show, find, which and affected, and rename and renumber, with the references and id collisions renumber settles. · owns: doc-queries, doc-renames, doc-renumbering · modules: canon
-- [D011: Source code embedded in docs](designs/D011-embedded-source.md) · accepted · Embed a repository source file or a named region in Markdown, regenerate its fenced code block and check it against the same Git tree as the document. · owns: source-embeds · modules: canon
-
-### Plans
-
-- [P008: Embedded source and external reviewer integration](plans/P008-embedded-source-and-reviewer-integration.md) · in-progress · Deliver embedded source, attachment citations, native command review progress, scoped consent and verified skill references in one change. · modules: canon
+- [D010: Doc queries and renames](designs/D010-doc-queries-and-renames.md) · active · Doc queries and renames with canon.py show, find, which and affected, and rename and renumber, with the references and id collisions renumber settles. · owns: doc-queries, doc-renames, doc-renumbering · modules: canon
+- [D011: Source code embedded in docs](designs/D011-embedded-source.md) · active · Embed a repository source file or a named region in Markdown, regenerate its fenced code block and check it against the same Git tree as the document. · owns: source-embeds · modules: canon
 
 ### Reviews
 

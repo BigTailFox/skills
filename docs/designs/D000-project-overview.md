@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-10-23
-updated: 2026-11-23
+updated: 2026-11-24
 revision: 4
 modules: []
 summary: Agent skills built around canon, a documentation system kept in the repository; one module, its capabilities and the designs that own them.
@@ -77,7 +77,7 @@ There is one module, so no direction between modules applies. These hold inside 
 - A skill runs the `scripts/canon.py` of the `canon` skill installed in the project, which refuses to run from outside the project ([D004§install: install](D004-project-setup.md#install)). In this repository, agents, reviewers included, run the working tree's `skills/governance/canon/scripts/canon.py` instead of the one the canon block's Tool line names, as `AGENTS.md` says outside the block, which `init` rewrites; a commit that bumps `CANON_VERSION` reruns `init`, so the block records the new version.
 - Execution skills read and write project docs only through the documentation system the governance skills define.
 - `canon.py` is a single file on the Python 3.8+ standard library, and runs `git` in a Git checkout.
-- The repository tooling, `scripts/validate.py`, checks each skill's layout, frontmatter, length and links, that every `SKILL.md` on disk that Git tracks or does not ignore is a skill's own, directly inside a non-hidden `skills/<category>/<name>/`, failing when Git cannot list the files, the links of the root's Markdown files, the Skills tables of `README.md`, `CANON_VERSION`, and [D001§budgets: budgets](D001-skill-telemetry.md#budgets) for skill text, failing when no paragraph of the `canon` skill starts as they say. That last check needs tiktoken and its `cl100k_base` encoding; when either fails to load, it prints why, with the `uv run` command that adds a missing tiktoken. It runs `tests/`, where `test_validate.py` tests it. Nothing under `skills/` depends on it.
+- The repository tooling, `scripts/validate.py`, checks each skill's layout, frontmatter, length and links, that every `SKILL.md` on disk that Git tracks or does not ignore is a skill's own, directly inside a non-hidden `skills/<category>/<name>/`, failing when Git cannot list the files, the links of the root's Markdown files, section links and explicit skill and workflow references in skill text, the Skills tables of `README.md`, `CANON_VERSION`, and [D001§budgets: budgets](D001-skill-telemetry.md#budgets) for skill text, failing when no paragraph of the `canon` skill starts as they say. That last check needs tiktoken and its `cl100k_base` encoding; when either fails to load, it prints why, with the `uv run` command that adds a missing tiktoken. It runs `tests/`, where `test_validate.py` tests it. Nothing under `skills/` depends on it.
 
 ## Decisions
 
