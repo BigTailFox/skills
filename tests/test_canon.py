@@ -351,6 +351,206 @@ class ApprovedTest(CanonTest):
         self.assertNotIn("must be an integer revision", out)
 
 
+class PendingApprovalsTest(CanonTest):
+    def test_an_initial_round_requires_the_gate_primary_at_its_starting_revision(self):
+        primary = self.design()
+        self.design("other")
+        self.assertIn("D001@r1", self.fails("approvals", "D001-r1", "--start", "D002@r1"))
+        self.set(primary, revision=2, reviewed=2)
+        self.assertIn("D001@r1", self.fails("approvals", "D001-r1", "--start", "D001@r2"))
+        self.assertIn("no approval record", self.fails("approvals", "D001-r1"))
+        self.assertEqual(self.ok("approvals", "D001-r1", "--recover", "D001@r2", "D002@r1"),
+                         "D001-r1: D001@r2 D002@r1\n")
+        self.assertIn("already exists", self.fails("approvals", "D001-r1", "--recover", "D002@r1"))
+        self.assertEqual(self.ok("approvals", "D001-r1"), "D001-r1: D001@r2 D002@r1\n")
+
+    def test_new_session_recovers_all_four_targets_after_two_partial_followups(self):
+        overview = self.root / self.OVERVIEW
+        self.set(overview, revision=13, reviewed=13, reviewers=["fixture"])
+        api = self.design("api", revision=15, reviewed=15)
+        contract = self.design("data-contract", revision=5, reviewed=5)
+        link = self.design("data-link", revision=21, reviewed=21)
+        self.ok("approvals", "D001-r15", "--start", "D001@r15", "D000@r13", "D002@r5", "D003@r21")
+        self.set(overview, revision=14, reviewed=14)
+        self.set(api, revision=16, reviewed=16)
+        self.set(contract, revision=6, reviewed=6)
+        self.set(link, revision=22, reviewed=22)
+        self.ok("approvals", "D001-r15", "--update", "D000@r14", "D001@r16", "D002@r6", "D003@r22")
+        self.set(api, revision=17, reviewed=17)
+        self.set(overview, revision=15, reviewed=15)
+        self.set(link, revision=23, reviewed=23)
+        self.ok("approvals", "D001-r15", "--update", "D001@r17", "D000@r15", "D003@r23")
+
+        expected = "D001-r15: D000@r15 D001@r17 D002@r6 D003@r23\n"
+        self.assertEqual(self.ok("approvals", "D001-r15"), expected)
+        self.assertEqual(self.ok("approvals"), expected)
+        record = self.root / ".canon/canon-design/D001-r15/approvals.json"
+        self.assertEqual(json.loads(record.read_text())["D002"],
+                         {"path": "docs/designs/D002-data-contract.md", "revision": 6})
+
+    def test_a_renumbered_target_cannot_be_satisfied_by_the_other_documents_approval(self):
+        ours = self.design("ours")
+        self.ok("approvals", "D001-r1", "--start", "D001@r1")
+        other = ours.with_name("D001-other.md")
+        other.write_text(ours.read_text().replace("owns: [ours]", "owns: [other]"))
+        self.set(other, approved=1)
+        self.assertIn("renumber", self.fails("approvals", "D001-r1"))
+        self.ok("renumber", str(ours.relative_to(self.root)), "D002")
+        for args in ((), ("--update", "D001@r1")):
+            self.assertIn("docs/designs/D001-ours.md", self.fails("approvals", "D001-r1", *args))
+        self.assertEqual(self.ok("approvals", "D001-r1", "--update", "D002@r1", "--retire", "D001@r1"),
+                         "D001-r1: D002@r1\n")
+        self.assertNotIn("approved:", ours.with_name("D002-ours.md").read_text())
+
+    def test_a_plan_gate_follows_its_reviewed_file_through_a_renumber_and_a_later_recovery(self):
+        plan = self.doc("P", "ours", reviewed=1, reviewers=["fixture"])
+        self.doc("P", "other", reviewed=1, reviewers=["fixture"])
+        gate = "P001-r1"
+        self.assertIn("P001@r1", self.fails("approvals", gate, "--start", "P002@r1"))
+        self.ok("approvals", gate, "--start", "P001@r1")
+        self.set(plan, revision=2, reviewed=2)
+        self.assertIn("plan", self.fails("approvals", gate, "--update", "P002@r1", "--retire", "P001@r1"))
+        rival = plan.with_name("P001-rival.md")
+        rival.write_text(plan.read_text())
+        self.ok("renumber", str(plan.relative_to(self.root)), "P003")
+        self.assertEqual(self.ok("approvals", gate, "--update", "P003@r2", "--retire", "P001@r1"),
+                         "P001-r1: P003@r2\n")
+        moved = plan.with_name("P003-ours.md")
+        self.set(moved, revision=3, reviewed=3)
+        self.ok("approvals", gate, "--update", "P003@r3")
+        self.set(moved, approved=3)
+        self.assertEqual(self.ok("approvals", gate, "--update"), "P001-r1: none\n")
+        self.set(moved, revision=4, reviewed=4)
+        for candidate in ("P001@r2", "P002@r1", "P003@r4"):
+            self.assertIn("--recover", self.fails("approvals", gate, "--update", candidate))
+        self.assertEqual(self.ok("approvals", gate, "--recover", "P003@r4"), "P001-r1: P003@r4\n")
+        self.assertNotIn("approved:", rival.read_text())
+
+    def test_invalid_round_leaves_the_saved_set_intact_until_all_revisions_can_be_verified(self):
+        primary = self.design()
+        self.design("other")
+        self.ok("approvals", "D001-r1", "--start", "D001@r1", "D002@r1")
+        record = self.root / ".canon/canon-design/D001-r1/approvals.json"
+        before = record.read_bytes()
+        self.set(primary, revision=2)
+        self.assertIn("D001@r1", self.fails("approvals", "D001-r1"))
+        self.assertIn("D001@r2", self.fails("approvals", "D001-r1", "--update", "D001@r2"))
+        self.set(primary, reviewed=2)
+        for refs in (("D001@r2", "D009@r1"), ("D001@r1", "D001@r2")):
+            self.assertIn("canon:", self.fails("approvals", "D001-r1", "--update", *refs))
+            self.assertEqual(record.read_bytes(), before)
+        self.assertEqual(self.ok("approvals", "D001-r1", "--update", "D001@r2"), "D001-r1: D001@r2 D002@r1\n")
+
+    def test_reads_follow_approval_fields_and_changes_stay_separate(self):
+        self.design()
+        other = self.design("other")
+        plan = self.doc("P", "work", reviewed=1, reviewers=["fixture"], refs=["D001"], based_on=["D001@r1"])
+        self.doc("P", "other-work", reviewed=1, reviewers=["fixture"], refs=["D001"], based_on=["D001@r1"])
+        self.assertEqual(self.ok("approvals"), "")
+        self.assertIn("no approval record", self.fails("approvals", "P001-r1", "--update", "P001@r1"))
+        self.ok("approvals", "P001-r1", "--start", "P001@r1")
+        self.ok("approvals", "D001-r1", "--start", "D001@r1", "D002@r1")
+        self.assertIn("already exists", self.fails("approvals", "D001-r1", "--start", "D001@r1"))
+        self.assertIn("plan", self.fails("approvals", "P001-r1", "--update", "P002@r1"))
+        self.set(other, approved=1)
+        self.assertEqual(self.ok("approvals"), "D001-r1: D001@r1\nP001-r1: P001@r1\n")
+        record = self.root / ".canon/canon-design/D001-r1/approvals.json"
+        self.assertIn("D002", json.loads(record.read_text()))
+        self.assertEqual(self.ok("approvals", "D001-r1", "--update"), "D001-r1: D001@r1\n")
+        self.assertNotIn("D002", json.loads(record.read_text()))
+        self.set(plan, approved=1)
+        self.ok("status", "P001", "accepted")
+        self.assertEqual(self.ok("approvals", "P001-r1", "--update"), "P001-r1: none\n")
+        self.assertEqual(self.ok("approvals"), "D001-r1: D001@r1\n")
+
+    def test_a_broken_record_or_invalid_approval_never_hides_a_pending_revision(self):
+        doc = self.design()
+        self.ok("approvals", "D001-r1", "--start", "D001@r1")
+        path = self.root / ".canon/canon-design/D001-r1/approvals.json"
+        valid = path.read_text()
+        for broken in ("{", "[]", '{"D001": true}', valid.replace('"revision": 1', '"revision": false'),
+                       valid.replace("docs/designs/D001-area.md", "docs/designs/D002-other.md")):
+            path.write_text(broken)
+            output = self.fails("approvals", "D001-r1", "--update")
+            self.assertIn("canon:", output)
+            self.assertIn("D001-r1", output)
+            self.assertEqual(path.read_text(), broken)
+        path.write_text(valid)
+        for value in (0, "bad", 2):
+            self.set(doc, approved=value)
+            self.assertIn("approved", self.fails("approvals", "D001-r1"))
+            self.assertEqual(path.read_text(), valid)
+
+    def test_a_stored_primary_older_than_its_gate_cannot_be_cleared_by_an_earlier_approval(self):
+        self.design(revision=2, reviewed=2, approved=1)
+        self.ok("approvals", "D001-r2", "--start", "D001@r2")
+        path = self.root / ".canon/canon-design/D001-r2/approvals.json"
+        damaged = path.read_text().replace('"revision": 2', '"revision": 1')
+        path.write_text(damaged)
+        for args in ((), ("--update",)):
+            self.assertIn("D001-r2", self.fails("approvals", "D001-r2", *args))
+            self.assertEqual(path.read_text(), damaged)
+
+    def test_supersession_and_recovery_keep_the_other_pending_revisions(self):
+        primary = self.design()
+        self.design("other")
+        self.ok("approvals", "D001-r1", "--start", "D001@r1", "D002@r1")
+        self.set(primary, revision=2)
+        self.assertIn("cannot retire", self.fails("approvals", "D001-r1", "--update", "--retire", "D001@r1"))
+        self.set(primary, reviewed=2)
+        self.assertIn("not recorded", self.fails("approvals", "D001-r1", "--update", "--retire", "D001@r2"))
+        self.assertEqual(self.ok("approvals", "D001-r1", "--update", "--retire", "D001@r1"), "D001-r1: D002@r1\n")
+        self.assertNotIn("approved:", primary.read_text())
+        # A pre-record gate with an already approved primary can be recovered from its reviewed commits.
+        self.set(primary, revision=3, reviewed=3, approved=2)
+        self.assertEqual(self.ok("approvals", "D001-r2", "--recover", "D001@r2", "D002@r1"), "D001-r2: D002@r1\n")
+        self.assertEqual(self.ok("approvals", "D001-r3", "--recover", "D002@r1"), "D001-r3: D002@r1\n")
+
+    def test_retirement_preserves_a_reviewed_file_in_a_temporarily_unregistered_module(self):
+        self.init_module("mod")
+        doc = self.root / self.ok("new", "D", "area", "--root", "mod").strip()
+        self.set(doc, reviewed=1, reviewers=["fixture"])
+        self.ok("approvals", "D001-r1", "--start", "D001@r1")
+        marker = self.root / "mod/AGENTS.md"
+        saved = marker.rename(marker.with_suffix(".saved"))
+        self.assertIn("cannot retire", self.fails("approvals", "D001-r1", "--update", "--retire", "D001@r1"))
+        saved.rename(marker)
+        self.assertEqual(self.ok("approvals", "D001-r1"), "D001-r1: D001@r1\n")
+
+    def test_discovery_reports_a_stale_gate_and_still_lists_other_outstanding_gates(self):
+        first = self.design()
+        self.design("second")
+        self.ok("approvals", "D001-r1", "--start", "D001@r1")
+        self.ok("approvals", "D002-r1", "--start", "D002@r1")
+        self.set(first, revision=2)
+        result = self.canon("approvals")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("D001-r1", result.stderr)
+        self.assertEqual(result.stdout, "D002-r1: D002@r1\n")
+
+    def test_display_orders_document_numbers_numerically(self):
+        doc = self.design()
+        for doc_id in ("D999", "D1000"):
+            doc.with_name(doc_id + "-area.md").write_text(doc.read_text().replace("# D001:", "# " + doc_id + ":"))
+        self.ok("approvals", "D999-r1", "--start", "D1000@r1", "D999@r1")
+        self.assertEqual(self.ok("approvals", "D999-r1"), "D999-r1: D999@r1 D1000@r1\n")
+
+    def test_concurrent_rounds_preserve_every_independently_added_target(self):
+        template = self.design()
+        gate = "D001-r1"
+        self.ok("approvals", gate, "--start", "D001@r1")
+        refs = []
+        for number in range(2, 18):
+            doc_id = "D{:03d}".format(number)
+            template.with_name(doc_id + "-area.md").write_text(template.read_text().replace("# D001:", "# " + doc_id + ":"))
+            refs.append(doc_id + "@r1")
+        with ThreadPoolExecutor(max_workers=len(refs)) as pool:
+            results = list(pool.map(lambda ref: self.canon("approvals", gate, "--update", ref), refs))
+        for result in results:
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.ok("approvals", gate), "D001-r1: D001@r1 " + " ".join(refs) + "\n")
+
+
 class RenumberTest(CanonTest):
     def test_renumber_reports_the_remaining_commands_for_a_moved_experiment_attachment(self):
         experiment = self.doc("E", "trial")

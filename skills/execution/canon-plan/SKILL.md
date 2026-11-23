@@ -10,7 +10,7 @@ Read the `canon` skill first. `canon.py` means the `canon` skill's `scripts/cano
 
 ## 1. Start
 
-1. The design must have passed the review gate (`reviewed` equals `revision`); otherwise stop and give the user `/canon-design D00X` to finish it. Invoking this skill on a design approves it: before `new P --from`, set its `approved` to its revision where it is lower and a draft `accepted` with `canon.py status`, say so in one line naming the gate's reviewers, and commit them. A new plan also approves each other design you add to its `based_on`: set it likewise, committed with the plan.
+1. The design must have passed the review gate (`reviewed` equals `revision`); otherwise stop and give the user `/canon-design D00X` to finish it. Invoking this skill approves the design. Before changing its `approved` field, run `canon.py approvals` and keep every gate key listing that exact revision. Before `new P --from`, raise `approved` to the revision where needed, move a draft to `accepted` with `canon.py status`, say so in one line naming the reviewers, and commit. For each other design added to the new plan’s `based_on`, capture its gate keys and record approval the same way, committing it with the plan. After each approval commit, run `canon.py approvals GATE --update` for each key it covered.
 2. New plan: `canon.py new P <slug> --from D00X`. Revising a plan: edit it in place and bump `revision`.
 3. Run `canon.py trace start plan <P id> <D id> --tier <tier> --skill <skill> --model <model>`.
 4. Read the whole design, the code its `paths` govern, the existing tests and the commands that run them.

@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-10-23
-updated: 2026-11-13
+updated: 2026-11-23
 revision: 4
 modules: []
 summary: Agent skills built around canon, a documentation system kept in the repository; one module, its capabilities and the designs that own them.
@@ -41,7 +41,7 @@ The module, `canon`, and the repository tooling, `scripts/validate.py`, share th
 | Docs that live in the repository: numbered docs with frontmatter, references, a lifecycle and archiving, created, checked (the work tree, what a commit records, or a commit) and archived with `canon.py`, sessions that work in one repository at the same time, each in a worktree, and the rules for writing them | canon | [D006: Doc model and writing rules](D006-doc-model.md) |
 | Queries of the docs and the code they govern (`canon.py show`, `find`, `which`, `affected`), and renaming and renumbering docs (`rename`, `renumber`) | canon | [D010: Doc queries and renames](D010-doc-queries-and-renames.md) |
 | The generated index of each docs root's docs in `docs/README.md` and `docs/archived/README.md` (`canon.py index`) | canon | [D005: Docs index](D005-docs-index.md) |
-| Change tiers and the flow each sets, the review gate, and design problems found while working from a design | canon | [D007: Change tiers and the review gate](D007-change-tiers.md) |
+| Change tiers and their workflows, review gates, pending L2 approvals across review rounds (`canon.py approvals`), and design problems found while working from a design | canon | [D007: Change tiers and the review gate](D007-change-tiers.md) |
 | Writing designs and plans, and implementing plans slice by slice (`canon-design`, `canon-plan`, `canon-implement`) | canon | none |
 | The project overview, D000, with the designs `audit` finds D000 does not reach, the source areas it finds no design covers and the designs whose code changed in commits that do not name them | canon | [D002: Project overview and as-built designs](D002-overview-and-as-built.md) |
 | As-built designs, and the backfill before a change to behavior no design states | canon | [D002: Project overview and as-built designs](D002-overview-and-as-built.md) |

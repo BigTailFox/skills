@@ -30,7 +30,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "68"
+CANON_VERSION = "69"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -2279,6 +2279,166 @@ def cmd_status(repo, args):
     return 0
 
 
+def approval_ref(text, separator, gate=None):
+    """The canonical design or plan ID and positive revision in a gate key or target reference."""
+    doc_id, _, number = text.partition(separator)
+    match = FULL_ID_RE.fullmatch(doc_id)
+    if not (match and well_formed_id(match) and doc_id[0] in "DP" and re.fullmatch(r"[1-9][0-9]*", number)):
+        sys.exit("canon: invalid approval {} {}{}".format("gate" if separator == "-r" else "target", text,
+                                                         " in " + gate if gate else ""))
+    revision = int(number)
+    if gate:
+        primary, first_revision = approval_ref(gate, "-r")
+        if doc_id[0] != primary[0] or (doc_id == primary and revision < first_revision):
+            sys.exit("canon: {} does not belong to gate {}".format(text, gate))
+    return doc_id, revision
+
+
+def read_approval_record(path):
+    def unique_keys(pairs):
+        result = dict(pairs)
+        if len(result) != len(pairs):
+            raise ValueError("duplicate key")
+        return result
+
+    gate = path.parent.name
+    try:
+        targets = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_keys)
+        if not isinstance(targets, dict) or (gate[0] == "P" and len(targets) > 1):
+            raise ValueError("expected a mapping of gate targets")
+        for doc_id, item in targets.items():
+            if not (isinstance(item, dict) and set(item) == {"path", "revision"} and type(item["revision"]) is int):
+                raise ValueError("invalid target " + doc_id)
+            approval_ref("{}@r{}".format(doc_id, item["revision"]), "@r", gate)
+            rel = item["path"]
+            if not (isinstance(rel, str) and path_id(rel) == doc_id and not Path(rel).is_absolute()
+                    and ".." not in Path(rel).parts and Path(rel).as_posix() == rel):
+                raise ValueError("invalid document path for " + doc_id)
+        return targets
+    except FileNotFoundError:
+        sys.exit("canon: no approval record for " + gate)
+    except (OSError, ValueError) as error:
+        sys.exit("canon: invalid approval record for {}: {}".format(gate, error))
+
+
+def merge_approval_round(repo, gate, original, args):
+    """Merge only the targets reviewed in this round, keeping other pending revisions and their file identities."""
+    primary, first_revision = approval_ref(gate, "-r")
+    targets = original.copy()
+    moved = set()
+    for ref in args.retire or ():
+        doc_id, revision = approval_ref(ref, "@r")
+        item = targets.get(doc_id)
+        if not item or item["revision"] != revision:
+            sys.exit("canon: {} is not recorded in {}".format(ref, gate))
+        path = repo.root / item["path"]
+        doc = repo.by_path.get(path)
+        if doc is None:
+            if os.path.lexists(str(path)):
+                sys.exit("canon: {} still exists but cannot be read as a document; cannot retire {}".format(
+                    item["path"], ref))
+            moved.add(doc_id)
+        elif not doc.archived and not (revision < doc.reviewed <= doc.revision and doc.as_list("reviewers")):
+            sys.exit("canon: {} is still at {} without a later review; cannot retire it".format(ref, doc.rel))
+        del targets[doc_id]
+    supplied = {}
+    for ref in args.start or args.update or args.recover or ():
+        doc_id, revision = approval_ref(ref, "@r", gate)
+        if doc_id in supplied and supplied[doc_id] != revision:
+            sys.exit("canon: conflicting revisions for {} in {}".format(doc_id, gate))
+        supplied[doc_id] = revision
+        if doc_id in original and revision < original[doc_id]["revision"]:
+            sys.exit("canon: {} would lower a recorded revision in {}".format(ref, gate))
+        rel = targets[doc_id]["path"] if doc_id in targets else repo.get(doc_id).rel
+        targets[doc_id] = {"revision": revision, "path": rel}
+    if args.start is not None and supplied.get(primary) != first_revision:
+        sys.exit("canon: start gate {} with its primary {}@r{}".format(gate, primary, first_revision))
+    if primary[0] == "P":
+        if args.update and not original:
+            sys.exit("canon: verify the settled plan in the reviewed commits and use --recover for " + gate)
+        if len(targets) > 1 or (args.update and supplied.keys() - original.keys() and not moved):
+            sys.exit("canon: a plan gate takes only its own plan: " + gate)
+    return targets
+
+
+def pending_approvals(repo, gate, targets):
+    """The saved revisions still awaiting consent, checked against the work tree before they can be offered."""
+    pending = {}
+    for doc in sorted((repo.get(doc_id) for doc_id in targets), key=Doc.sort_key):
+        doc_id = doc.id
+        item = targets[doc_id]
+        revision = item["revision"]
+        if doc.rel != item["path"]:
+            sys.exit("canon: {} was reviewed at {}; reconcile {} with the reviewed commit".format(
+                doc_id, item["path"], gate))
+        approved = doc.get("approved")
+        if approved is not None:
+            if not (type(approved) is int and 1 <= approved <= doc.reviewed <= doc.revision):
+                sys.exit("canon: invalid approved revision on " + doc_id)
+            if approved >= revision:
+                continue
+        if doc.archived or not revision == doc.revision == doc.reviewed or not doc.as_list("reviewers"):
+            sys.exit("canon: {}@r{} no longer matches a live, currently reviewed revision in {}".format(
+                doc_id, revision, gate))
+        pending[doc_id] = item
+    return pending
+
+
+def gate_approvals(repo, path, args, write=False):
+    gate = path.parent.name
+    approval_ref(gate, "-r")
+    if args.start is not None or args.recover is not None:
+        targets = {}
+        if path.exists():
+            if args.start is not None or gate[0] != "P" or len(args.recover) != 1 or read_approval_record(path):
+                sys.exit("canon: approval record already exists for " + gate)
+    else:
+        targets = read_approval_record(path)
+    if write:
+        targets = merge_approval_round(repo, gate, targets, args)
+    pending = pending_approvals(repo, gate, targets)
+    if write:
+        with tempfile.TemporaryDirectory(dir=path.parent) as tmp:
+            staged = Path(tmp) / path.name
+            staged.write_text(json.dumps(pending, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            staged.replace(path)
+    if pending or args.gate:
+        refs = ["{}@r{}".format(doc_id, item["revision"]) for doc_id, item in pending.items()]
+        print("{}: {}".format(gate, " ".join(refs) or "none"))
+
+
+def cmd_approvals(repo, args):
+    repo.require_readable()
+    directory = repo.root / LOCAL_DIR / "canon-design"
+    writing = any(mode is not None for mode in (args.start, args.update, args.recover))
+    if args.retire and args.update is None:
+        sys.exit("canon: --retire requires --update")
+    if args.gate:
+        approval_ref(args.gate, "-r")
+        path = directory / args.gate / "approvals.json"
+        if writing:
+            timeout = SystemExit("canon: another command is updating approval gate " + args.gate)
+            try:
+                with file_lock(path.with_suffix(".lock"), 60, timeout):
+                    gate_approvals(Repo(repo.root), path, args, write=True)
+            except OSError as error:
+                sys.exit("canon: cannot update approval gate {}: {}".format(args.gate, error))
+        else:
+            gate_approvals(repo, path, args)
+    elif writing:
+        sys.exit("canon: name the approval gate to update")
+    else:
+        status = 0
+        for path in sorted(directory.glob("*/approvals.json")):
+            try:
+                gate_approvals(repo, path, args)
+            except SystemExit as error:
+                print("{} ({})".format(error, path.parent.name), file=sys.stderr)
+                status = 1
+        return status
+    return 0
+
+
 def cmd_rename(repo, args):
     require_clean_merge(repo.root, repo.is_git)
     require_intact_indexes(repo)
@@ -4438,6 +4598,15 @@ def main(argv=None):
     p.add_argument("status", help="; ".join("{}: {}".format(letter, ", ".join(status_moves(letter)))
                                             for letter in TYPES))
     p.set_defaults(func=cmd_status)
+
+    p = command(sub, "approvals", help="list pending L2 approvals or record a reviewed round")
+    p.add_argument("gate", nargs="?", metavar="GATE", help="original gate topic, e.g. D001-r15 or P002-r1")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--start", nargs="+", metavar="ID@rN", help="record the initial round, including the gate's primary")
+    mode.add_argument("--update", nargs="*", metavar="ID@rN", help="merge a follow-up or clear approved entries")
+    mode.add_argument("--recover", nargs="*", metavar="ID@rN", help="rebuild from verified gate and follow-up history")
+    p.add_argument("--retire", nargs="+", metavar="ID@rN", help="with --update, retire a superseded or moved target")
+    p.set_defaults(func=cmd_approvals)
 
     p = command(sub, "init", help="set up canon in a repo or module (idempotent)")
     p.add_argument("--root", help="module directory to set up (default: repo root)")
