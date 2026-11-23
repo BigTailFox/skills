@@ -30,7 +30,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "73"
+CANON_VERSION = "74"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -4577,13 +4577,20 @@ def event_time(event):
     return None
 
 
-def committed_slice_status(root, commit, path, revision, name, env):
-    try:
-        text = trace_git(root, env, "show", commit + ":" + path).decode("utf-8")
-    except (SnapshotSkip, UnicodeDecodeError):
+def committed_slice_status(root, commit, plan, revision, name, env):
+    """Read the traced plan by ID in this commit, including after a rename or move between docs roots."""
+    listing = os.fsdecode(trace_git(root, env, "ls-tree", "-r", "-z", "--name-only", commit))
+    paths = [Path(p) for p in listing.split("\0") if p.rsplit("/", 1)[-1].startswith(plan + "-")]
+    matches = [p for p in paths if FILE_RE.fullmatch(p.name) and
+               (p.parts[-3:-1] == ("docs", "plans") or p.parts[-4:-1] == ("docs", "archived", "plans"))]
+    if len(matches) != 1:
         return None
-    filename = Path(path)
-    doc = Doc(None, root / filename, path, FILE_RE.fullmatch(filename.name), False, text)
+    path = matches[0]
+    try:
+        text = trace_git(root, env, "show", commit + ":" + path.as_posix()).decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    doc = Doc(None, root / path, path.as_posix(), FILE_RE.fullmatch(path.name), False, text)
     if str(doc.revision) != revision:
         return None
     states = [state for heading, state in plan_slices(doc) if re.match(re.escape(name) + r"\b", heading)]
@@ -4597,26 +4604,18 @@ def slice_commit(root, unit):
     if not full_oid(base) or not unit.started or len(plans) != 1 or not plans[0]:
         return None
     plan, revision = plans[0]
-    env = trace_env()
-    try:
-        names = os.fsdecode(trace_git(root, env, "ls-tree", "-r", "-z", "--name-only", base))
-    except SnapshotSkip:
-        return None
-    paths = [p for p in names.split("\0") if path_id(p) == plan and Path(p).parent.name == "plans"
-             and "docs" in Path(p).parts and FILE_RE.fullmatch(Path(p).name)]
-    if len(paths) != 1:
-        return None
-    path = paths[0]
+    env = trace_env(GIT_NO_LAZY_FETCH="1", GIT_ALLOW_PROTOCOL="")
     boundary = unit.boundary or {}
     last = boundary.get("head")
     tips = [last] if full_oid(last) else ["--all", "HEAD"]
-    since = git(root, "log", "--full-history", "--reverse", "--topo-order", "--ancestry-path", "^" + base,
-                *tips, "--format=%H %P %cI", "--", ":(literal)" + path, env=env) or ""
+    since = trace_git(root, env, "log", "--no-patch", "--no-show-signature", "--no-notes", "--full-history",
+                      "--reverse", "--topo-order", "--ancestry-path", "^" + base, *tips, "--format=%H %P %cI",
+                      "--", ":(glob)**/docs/**/plans/" + plan + "-*.md").decode("ascii")
     states = {}
 
     def status(commit):
         if commit not in states:
-            states[commit] = committed_slice_status(root, commit, path, revision, unit.start["slice"], env)
+            states[commit] = committed_slice_status(root, commit, plan, revision, unit.start["slice"], env)
         return states[commit]
 
     first = None
@@ -4918,7 +4917,8 @@ def trace_history(args):
     counts, wall = collections.Counter(), collections.Counter()
     for unit in sorted(units, key=lambda u: (u.started is None, u.started, u.unit)):
         if is_git and unit.kind == "slice":
-            unit.boundary = slice_commit(root, unit) or unit.boundary
+            with contextlib.suppress(SnapshotSkip):  # An unavailable Git object leaves only the event boundary.
+                unit.boundary = slice_commit(root, unit) or unit.boundary
         print(unit.row())
         if args.unit and unit.kind in REVIEW_ROLES:
             unit.print_review()

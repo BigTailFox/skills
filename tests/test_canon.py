@@ -4530,7 +4530,7 @@ class HistoryTest(TraceCase):
                 self.assertIn("latest=unknown (conflicting evidence)", out)
                 self.assertIn("2 malformed", out)
 
-    def test_history_uses_the_plan_slice_completion_commit_before_an_event_boundary(self):
+    def start_plan_slice(self):
         plan = self.plan_file("delivery")
         header = plan.read_text().split("\n# ", 1)[0]
         plan.write_text(header + "\n# P001: Delivery\n\n" + PLAN.format("fixture"))
@@ -4538,6 +4538,10 @@ class HistoryTest(TraceCase):
         self.trace("on")
         parent = self.start("implement", "P001")
         unit = self.start("slice", "P001", "--slice", "S1", "--parent", parent)
+        return plan, parent, unit
+
+    def test_history_uses_the_plan_slice_completion_commit_before_an_event_boundary(self):
+        plan, parent, unit = self.start_plan_slice()
         plan.write_text(plan.read_text().replace("### S1: First", "### S1: Implement delivery"))
         self.commit(check=False)
         self.assertIn("outcome=open", self.trace("history", unit))
@@ -4557,14 +4561,8 @@ class HistoryTest(TraceCase):
         self.assertIn("slice: 1 unit, 13 measured wall seconds", out)
 
     def test_slice_history_rejects_another_plan_revision_and_ambiguous_branch_completions(self):
-        plan = self.plan_file("delivery")
-        header = plan.read_text().split("\n# ", 1)[0]
-        plan.write_text(header + "\n# P001: Delivery\n\n" + PLAN.format("fixture"))
-        self.commit(check=False)
+        plan, _, unit = self.start_plan_slice()
         base = self.git("rev-parse", "HEAD")
-        self.trace("on")
-        parent = self.start("implement", "P001")
-        unit = self.start("slice", "P001", "--slice", "S1", "--parent", parent)
         content = plan.read_text().replace("Status: todo", "Status: done")
         plan.write_text(content.replace("revision: 1", "revision: 2"))
         self.commit(check=False)
@@ -4574,6 +4572,49 @@ class HistoryTest(TraceCase):
             plan.write_text(content + "\n" + branch + "\n")
             self.commit(check=False)
         self.assertIn("outcome=open", self.trace("history", unit))
+
+    def test_history_follows_the_same_plan_id_and_revision_across_a_rename(self):
+        original, _, unit = self.start_plan_slice()
+        self.ok("rename", "P001", "new-delivery")
+        self.commit(check=False)
+        self.assertIn("outcome=open", self.trace("history", unit))
+        renamed = original.with_name("P001-new-delivery.md")
+        renamed.write_text(renamed.read_text().replace("Status: todo", "Status: done"))
+        self.commit(check=False)
+        commit = self.git("rev-parse", "HEAD")
+        self.assertIn("commit=" + commit, self.trace("history", unit))
+        self.assertIn("commit=" + commit, self.row(self.trace("history"), {"id": unit}))
+
+    def test_partial_clone_history_uses_local_plan_blobs_without_fetching_missing_ones(self):
+        plan, parent, unit = self.start_plan_slice()
+        plan.write_text(plan.read_text().replace("Status: todo", "Status: done"))
+        self.commit(check=False)
+        completed = self.git("rev-parse", "HEAD")
+        clone = self.tmpdir()
+        self.git("config", "uploadpack.allowFilter", "true")
+        self.git("-c", "protocol.file.allow=always", "clone", "-q", "--filter=blob:none", "--no-checkout",
+                 self.root.resolve().as_uri(), str(clone))
+        self.install(clone, True)
+        events = clone / ".canon/canon/trace/events.jsonl"
+        self.write_log(self.lines(), events)
+        objects = clone / ".git/objects"
+
+        def stored():
+            return {p.relative_to(objects): p.read_bytes() for p in objects.rglob("*") if p.is_file()}
+
+        before = stored()
+        trace_log = self.config / "history-git-events"
+        self.assertIn("outcome=open", self.trace("history", unit, cwd=clone, GIT_TRACE2_EVENT=str(trace_log)))
+        self.start("code-review", "P001", "--parent", parent)
+        self.write_log(self.lines(), events)
+        line = self.row(self.trace("history", cwd=clone, GIT_TRACE2_EVENT=str(trace_log)), {"id": unit})
+        self.assertIn("upper bound", line)
+        self.assertEqual(stored(), before)
+        calls = [json.loads(line) for line in trace_log.read_text().splitlines()]
+        self.assertFalse(any(e.get("event") == "cmd_name" and e.get("name") == "fetch" for e in calls))
+        for ref in ("HEAD", "HEAD^"):
+            self.git("-C", str(clone), "cat-file", "blob", ref + ":" + plan.relative_to(self.root).as_posix())
+        self.assertIn("commit=" + completed, self.trace("history", unit, cwd=clone))
 
     def test_scoped_open_reviews_and_legacy_reviewers_findings_and_confirmations(self):
         self.trace("on")
