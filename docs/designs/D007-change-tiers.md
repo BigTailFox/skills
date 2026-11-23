@@ -1,15 +1,15 @@
 ---
 status: active
 created: 2026-11-10
-updated: 2026-11-13
-revision: 5
+updated: 2026-11-23
+revision: 6
 modules: [canon]
 summary: Change tiers and their flows, design problems, and the review gate of a change: steps, prompt, merge rules, confirmation and follow-up rounds, status.
 refs: [D001, D002, D003, D006, R003, D004]
 owns: [change-tiers, review-gate, design-problems]
 paths: [skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-implement/SKILL.md]
-reviewed: 5
-reviewers: [claude-opus-5.5, gemini-4-argon-high]
+reviewed: 6
+reviewers: [gpt-6.2-astra]
 approved: 5
 implemented: 5
 ---
@@ -111,7 +111,7 @@ Changes since: {commit} (review what changed; read the rest for context)
 Read the targets, the docs they link to, and the code they govern. Do not read `.canon/`. Do not modify any file or write scratch files; read long command output in parts instead. You may run the canon.py that `AGENTS.md` names with `show`, `find`, `which`, `affected`, or `check` without `--fix`, which only read; when the host blocks one, read the files instead.
 
 Assess:
-- Correctness and feasibility against {the current code | the code it records}.
+- Correctness and feasibility against {the current code | the code it records}. For each guarantee drawn from an experiment, check whether its runs tested or its cited sources cover the conditions the guarantee claims.
 - Completeness: a fresh agent could {implement it | change the code it governs} from this document and its links alone.
 - Consistency: no conflict with other designs; each standard is stated once, in the design that owns it, and linked elsewhere; a design other than D000 states its own scope, not what other designs own.
 - Simplicity: no complexity beyond the goals. A feature's own input validation, permissions and data protection are part of it; security hardening beyond that only where the design or project requires it.
@@ -149,6 +149,7 @@ End with one line: Verdict: approve | revise
 ### Confirmation round
 
 - It runs only when accepted blocker or major findings were fixed: the reviewers that raised them confirm the fixes in one more round, as the `canon-blind-review` skill's confirmation describes ([D003§resuming-and-replacing: resuming and replacing](D003-subagents.md#resuming-and-replacing)).
+- Before sending a fix that changes a guarantee for confirmation, the author searches the affected designs and their sketches for the old claim, equivalent wording and its exceptions. The author corrects inconsistent statements in the targets and their sketches in the same confirmation diff. A conflict with another design follows [Design problems](#design-problems).
 - Blockers still open after it go to the user; there is no third round.
 
 ### Follow-up round
@@ -160,7 +161,7 @@ End with one line: Verdict: approve | revise
 ### Gate status
 
 - L1: a draft becomes `accepted`.
-- L2: the user approves the gate's targets by saying yes to the approval the gate's report asks for, which names the command of the next phase, or by starting that phase on them; nothing else counts, such as a request to go on given to another question. The session that receives the approval sets `approved` as [D006§frontmatter: frontmatter](D006-doc-model.md#frontmatter) states and commits it, and a draft becomes `accepted` at that point; until then it stays a `draft` whose `reviewed` equals `revision`.
+- In L2 the approval question lists every target from the gate and its follow-ups still awaiting approval, each at its latest reviewed revision (`<ID>@r<N>`). When a next phase applies, its command goes on a separate line after the question. A bare yes to the question authorizes recording and committing the listed revisions. The next phase starts when the user requests it. Invoking that phase on the targets also approves them. The session records approval as [D006§frontmatter: frontmatter](D006-doc-model.md#frontmatter) states. A reviewed draft becomes `accepted` when the user approves its current revision.
 - A revised design that is `accepted` or `active`, and a revised plan that is `accepted` or `in-progress`, keeps its status, in both tiers.
 - A design revision that needs no code change, such as D000 written before the project has code, or a rule relaxed that the code already meets, needs no plan or implementation. When it passes its gate, or in L2 once the user approves it, since no next phase starts, its `implemented` rises to it if it equaled the previous revision, and a new design becomes `active` with `implemented` equal to its revision.
 - After a split's gate, the sub-design takes its parent's status, except that it is `accepted` when the parent is `active` but its `implemented` does not cover all the spec the sub-design receives; an `active` sub-design gets `implemented: 1`. The parent's `implemented` rises to its new revision when it equaled the previous one.
