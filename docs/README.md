@@ -16,6 +16,10 @@
 - [D009: Settling decisions](designs/D009-settling-decisions.md) · active · Settling open decisions with the user (canon-grill): triage before asking, open decisions kept in the doc, and small batches of related questions. · owns: settling-decisions · modules: canon
 - [D010: Doc queries and renames](designs/D010-doc-queries-and-renames.md) · active · 1 known issue · Doc queries and renames with canon.py show, find, which and affected, and rename and renumber, with the references and id collisions renumber settles. · owns: doc-queries, doc-renames, doc-renumbering · modules: canon
 
+### Reviews
+
+- [R004: Canon feedback from Silk on design reviews and concurrent work](reviews/R004-silk-canon-field-feedback.md) · open · Silk feedback on L2 approvals, experiment claims, concurrent edits, external reviewers, trace history, renumbering and strict checks. · modules: canon
+
 ### Experiments
 
 - [E001: Precedence of project and user skills across hosts](experiments/E001-skill-scope-precedence.md) · concluded · Same-name user and project skills load both in Cursor and Codex, told apart by path; Claude Code runs the user's. npx skills project installs reach all three. · modules: canon
