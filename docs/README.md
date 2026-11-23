@@ -17,6 +17,10 @@
 - [D010: Doc queries and renames](designs/D010-doc-queries-and-renames.md) · active · 1 known issue · Doc queries and renames with canon.py show, find, which and affected, and rename and renumber, with the references and id collisions renumber settles. · owns: doc-queries, doc-renames, doc-renumbering · modules: canon
 - [D011: Source code embedded in docs](designs/D011-embedded-source.md) · accepted · Embed a repository source file or a named region in Markdown, regenerate its fenced code block and check it against the same Git tree as the document. · owns: source-embeds · modules: canon
 
+### Plans
+
+- [P008: Embedded source and external reviewer integration](plans/P008-embedded-source-and-reviewer-integration.md) · draft · Deliver embedded source, attachment citations, native command review progress, scoped consent and verified skill references in one change. · modules: canon
+
 ### Reviews
 
 - [R004: Canon feedback from Silk on design reviews and concurrent work](reviews/R004-silk-canon-field-feedback.md) · open · Silk feedback on L2 approvals, experiment claims, concurrent edits, external reviewers, trace history, renumbering and strict checks. · modules: canon
