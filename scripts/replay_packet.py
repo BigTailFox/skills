@@ -7,6 +7,7 @@ import posixpath
 import re
 
 from replay_git import ReplayError, json_bytes, sha256
+from replay_markdown import FIELD_START, QUOTED, block_mask
 from replay_protocol import evidence_bytes
 from replay_review_input import review_input
 from replay_storage import decode, publish
@@ -105,14 +106,14 @@ class Packet:
         return "/".join(components)
 
     def excerpt(self, text):
-        lines = self.private_locations(self.source(text)).splitlines(keepends=True)
+        text = self.private_locations(self.source(text))
+        lines = text.splitlines(keepends=True)
+        blocks = block_mask(text, len(lines)) if ">" in text and "raw host" in text.casefold() else bytes(len(lines))
         public = []
         fence = None
         fence_depth = 0
-        quote_fence = None
-        quote_depth = 0
         transcript = None
-        for line in lines:
+        for number, line in enumerate(lines):
             quotation = re.match(r"^[ \t]*>[ \t]?(?:[ \t]*>[ \t]?)*", line)
             depth = quotation[0].count(">") if quotation else 0
             body = (line[quotation.end():] if quotation else line).expandtabs(4)
@@ -120,24 +121,14 @@ class Packet:
                 fence = None
                 if transcript:
                     transcript = "quoted"
-            if transcript and fence is None and depth:
-                # Only a paragraph can continue lazily outside its explicit quote.
-                # Track the quoted fence separately so literal fields inside it stay private.
-                if depth < quote_depth:
-                    quote_fence = None
-                marker = fence_delimiter(body, quote_fence) if not quote_fence or depth == quote_depth else None
-                if marker:
-                    quote_fence = None if quote_fence else marker
-                    quote_depth = depth
-                transcript = "quote-break" if marker or quote_fence or not body.strip() else "quoted"
+            if transcript and blocks[number] & QUOTED:
+                # The parser includes lazy continuations in their original quote.
+                # A quote can also end immediately after a fenced or indented block.
+                transcript = "quoted"
+                fence = None
                 continue
-            quote_fence = None
-            if transcript in ("quoted", "quote-break"):
-                if not body.strip():
-                    transcript = "quote-break"
-                    continue
-                if transcript == "quoted" or not FINDING_FIELD.match(line):
-                    transcript = "quoted"
+            if transcript == "quoted":
+                if not (blocks[number] & FIELD_START and FINDING_FIELD.match(line)):
                     continue
                 transcript = None
             marker = fence_delimiter(body, fence) if fence is None or depth == fence_depth else None
@@ -160,8 +151,9 @@ class Packet:
             label = TRANSCRIPT_LABEL.match(body)
             if label:
                 omitted = label[1].strip(" \t\n*_`[].()").casefold() in {"omitted", "redacted", "withheld", "none"}
-                if depth and fence is None:
+                if blocks[number] & QUOTED:
                     transcript = "quoted"
+                    fence = None
                 else:
                     transcript = "inline" if omitted and fence is None and not transcript else "block"
             if transcript or re.match(r"(?i)^\s*(?:(?:session(?: id)?|tokens?|config_digest|wall_seconds|"

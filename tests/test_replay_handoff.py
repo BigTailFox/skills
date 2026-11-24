@@ -1,6 +1,7 @@
 """Inspect only the published handoff, as a blind adjudicator would."""
 import base64
 import json
+import os
 import shutil
 
 from test_replay_prepare import DESIGN, digest
@@ -73,7 +74,12 @@ class ReviewHandoff(RunnerFixture):
                "\nEvidence: refund() returns 0.\n"
                "Suggestion: check the signed result.\nRaw host transcript: reviewer reply follows\n"
                "> ```text\n> PRIVATE fenced host message\n> ```\n"
-               "Evidence: rounding loses the sign.\nSuggestion: fix the sign.\nVerdict: revise\n")
+               "Evidence: rounding loses the sign.\nSuggestion: fix the sign.\n"
+               "Raw host transcript: reply follows\n> The operator wrote this.\n>     ```\n"
+               "Evidence: PRIVATE after indented backticks\n\nEvidence: first public reason.\n"
+               "Raw host transcript: reply follows\n> The operator wrote this.\n> 2. ```text\n"
+               "Evidence: PRIVATE after noninterrupting ordered marker\n\nEvidence: second public reason.\n"
+               "Verdict: revise\n")
         self.config["settings"]["actions"] = [dict(reports={"spec": log})]
         self.write_config()
         self.replay()
@@ -89,6 +95,66 @@ class ReviewHandoff(RunnerFixture):
         self.assertIn(b"check the signed result.", all_bytes)
         self.assertIn(b"Evidence: rounding loses the sign.", all_bytes)
         self.assertIn(b"Suggestion: fix the sign.", all_bytes)
+        self.assertIn(b"first public reason.", all_bytes)
+        self.assertIn(b"second public reason.", all_bytes)
+
+    def test_private_list_and_nested_quote_boundaries_preserve_public_finding_fields(self):
+        self.code_review()
+        self.prepare()
+        samples = [("> - ```text\n> outside the list", True),
+                   ("> > nested paragraph\n> lazy text\n> =", True),
+                   ("> - item\n>     ```\n>     code\n>     ```", False),
+                   ("> # Finished heading", False),
+                   ("> <pre>closed</pre>\n> =", True),
+                   ("> <!-- comment -->", False)]
+        parts = ["### F1 [major] Incorrect refund\n"]
+        for i, (quote, lazy) in enumerate(samples):
+            marker = "PRIVATE" if lazy else "PUBLIC"
+            parts.append(f"Raw host transcript: reply follows\n{quote}\nEvidence: {marker}-{i}\n"
+                         f"\nEvidence: refund check {i}.\n")
+        parts.append("Raw host transcript: reply follows\n> private quote\n\n"
+                     "```text\nEvidence: PRIVATE within code\n```\n\nEvidence: verified outside code.\n")
+        self.config["settings"]["actions"] = [dict(reports={"spec": "".join(parts) + "Verdict: revise\n"})]
+        self.write_config()
+        # The operator's packages cannot change what the blind adjudicator sees.
+        for module in ("markdown_it", "mdurl"):
+            (self.root / (module + ".py")).write_text("raise RuntimeError('ambient module imported')\n")
+        self.replay(env={**os.environ, "PYTHONPATH": str(self.root)})
+        evidence = b"".join(p.read_bytes() for p in (self.out / "blind/evidence").glob("*.txt"))
+        self.assertNotIn(b"PRIVATE", evidence)
+        self.assertIn(b"verified outside code.", evidence)
+        for i, (_, lazy) in enumerate(samples):
+            self.assertIn(f"refund check {i}".encode(), evidence)
+            if not lazy:
+                self.assertIn(f"PUBLIC-{i}".encode(), evidence)
+
+    def test_report_line_separators_hide_transcripts_and_setext_findings_survive(self):
+        self.code_review()
+        self.prepare()
+        parts = ["### F1 [major] Incorrect refund\n"]
+        separators = ("\v", "\f", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029")
+        for i, sep in enumerate(separators):
+            parts.append(f"Evidence: public detail {i}.{sep}Raw host transcript: PRIVATE user message {i}\n"
+                         f"> PRIVATE quote{sep}{sep}Evidence: PRIVATE physical quotation\n"
+                         f"\r{sep}Evidence: refund calculation {i} returns 0.\n"
+                         f"Suggestion: check sign {i}.\n---\n\n")
+            literals = (f"    operator log{sep}Evidence: PRIVATE indented content",
+                        f"````text\nliteral{sep}````{sep}Evidence: PRIVATE fenced content{sep}````text\n````",
+                        f"<pre>\nliteral{sep}</pre>{sep}Evidence: PRIVATE literal HTML{sep}<pre>\n</pre>")
+            for j, literal in enumerate(literals):
+                parts.append(f"Raw host transcript: follows\n> private quote\n\n{literal}\n\n"
+                             f"Evidence: public field after literal {i}-{j}.\n\n")
+        self.config["settings"]["actions"] = [dict(reports={"spec": "".join(parts) + "Verdict: revise\n"})]
+        self.write_config()
+        self.replay()
+        evidence = b"".join(p.read_bytes() for p in (self.out / "blind/evidence").glob("*.txt"))
+        self.assertNotIn(b"PRIVATE", evidence)
+        for i in range(len(separators)):
+            self.assertIn(f"public detail {i}.".encode(), evidence)
+            self.assertIn(f"refund calculation {i} returns 0.".encode(), evidence)
+            self.assertIn(f"check sign {i}.".encode(), evidence)
+            for j in range(3):
+                self.assertIn(f"public field after literal {i}-{j}.".encode(), evidence)
 
     def test_gate_handoff_binds_separate_as_built_code_to_the_design_scope(self):
         self.repo(self.project)
