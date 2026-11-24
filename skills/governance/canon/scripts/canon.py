@@ -31,7 +31,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "78"
+CANON_VERSION = "79"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -310,14 +310,14 @@ def path_id(rel):
 
 
 def git_run(cwd, *args, env=None, data=None):
-    """The finished `git <args>` run in `cwd`, the bytes `data` on its standard input when given, so that no newline
-    or locale encoding changes them; None when Git is not on PATH."""
+    """Run Git, preserving byte input and NUL-delimited path output. Return None when Git is not on PATH."""
+    text_mode = data is None and "-z" not in args
     try:
         result = subprocess.run(["git", *args], cwd=str(cwd), env=env, input=data, capture_output=True,
-                                text=data is None)
+                                text=text_mode)
     except FileNotFoundError:
         return None
-    if data is not None:
+    if not text_mode:
         result.stdout, result.stderr = result.stdout.decode(), result.stderr.decode(errors="replace")
     return result
 
@@ -1416,26 +1416,49 @@ class SourceEmbeds:
                 selected.add(path)
         return sorted(selected if names else self.starts), errors
 
+    def source_file(self, relative, label, walked=None):
+        rel = resolve_tree_path(self.repo.tree, relative, walked=walked)
+        if rel not in self.inventory:
+            raise ValueError("source is not a repository file: " + label)
+        return self.repo.root / rel
+
     def source(self, path, operand, walked=None):
         parent = path.parent.relative_to(self.repo.root).as_posix()
         relative, region = source_operand(operand)
-        rel = resolve_tree_path(self.repo.tree, parent + "/" + relative, walked=walked)
-        if rel not in self.inventory:
-            raise ValueError("source is not a repository file: " + operand)
-        source = self.repo.root / rel
-        if source == path:
-            raise ValueError("embed source is the consumer itself: " + operand)
-        return source, region
+        return self.source_file(parent + "/" + relative, operand, walked), region
 
     def resolved_blocks(self, path, blocks):
-        """The pairs naming a repository file, for move paths and attachment ownership."""
+        """The pairs with resolvable source paths, independent of whether their blocks can be rendered."""
         for block in blocks:
             walked = set()
             try:
                 source, region = self.source(path, block.operand, walked)
-            except ValueError:
+            except (OSError, ValueError):
                 continue
             yield block, source, region, walked
+
+    def consumers_of(self, name):
+        """Find live documents by the resolved source of their markers, without rendering their blocks."""
+        # Keep the last component literal: "file/" and "file/." both require a directory.
+        directory, filename = os.path.split(name)
+        parent = Path.cwd() / directory
+        if parent == self.repo.root or self.repo.root in parent.parents:
+            parent = parent.relative_to(self.repo.root)
+        try:
+            target = self.source_file(parent.as_posix() + "/" + filename, name)
+        except (OSError, ValueError) as error:
+            sys.exit("canon: " + str(error))
+        matches = []
+        for consumer, start in self.starts.items():
+            try:
+                text = self.repo.tree.read_text(consumer)
+            except (OSError, UnicodeError) as error:
+                sys.exit("canon: cannot read {}: {}".format(posix_rel(consumer, self.repo.root), error))
+            if "<!-- embed:" in text:
+                pairs, _ = embed_blocks(text.split("\n"), start)
+                if any(source == target for _, source, _, _ in self.resolved_blocks(consumer, pairs)):
+                    matches.append(consumer)
+        return sorted(matches, key=lambda p: p.as_posix())
 
     def move_editor(self, moves, adopted, destination):
         """For this move set, find protected lines and edits to marker operands in each original Markdown file."""
@@ -1459,7 +1482,7 @@ class SourceEmbeds:
             edits = {}
             if blocks and archive_dirs.isdisjoint(new_path.parents):
                 for block, source, region, walked in self.resolved_blocks(path, blocks):
-                    if new_path != path or not moved_entries.isdisjoint(walked):
+                    if source != path and (new_path != path or not moved_entries.isdisjoint(walked)):
                         relative = posix_rel(destination(source), new_path.parent)
                         relative = re.sub(r"[%#\s]", lambda m: urllib.parse.quote(m[0], safe=""), relative)
                         marker = EMBED_OPEN.match(lines[block.start])
@@ -1482,6 +1505,8 @@ class SourceEmbeds:
         for start, end, operand in reversed(blocks):
             try:
                 source, region = self.source(path, operand)
+                if source == path:
+                    raise ValueError("embed source is the consumer itself: " + operand)
                 source_text = self.repo.tree.read_text(source)
                 if source in self.starts and any(embed_blocks(source_text.split("\n"), self.starts[source])):
                     raise ValueError("embed source contains an active embed: " + operand)
@@ -1510,14 +1535,24 @@ class SourceEmbeds:
 
 
 def cmd_embed(repo, args):
-    return process_embeds(repo, args.docs, args.check)
+    if args.list_only and args.source is None:
+        sys.exit("canon: --list requires --source FILE")
+    return process_embeds(repo, args.docs, args.check, source=args.source, list_only=args.list_only)
 
 
-def process_embeds(repo, names, check):
+def process_embeds(repo, names, check, source=None, list_only=False):
     """Check the selected live consumers or regenerate them together once every input is valid."""
     embeds = SourceEmbeds(repo)
     updates, problems = {}, []
-    selected, errors = embeds.selected(names)
+    if source is None:
+        selected, errors = embeds.selected(names)
+    else:
+        selected, errors = embeds.consumers_of(source), []
+        if list_only:
+            for path in selected:
+                name = posix_rel(path, repo.root)
+                print(name.replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n"))
+            return 0
     for path in selected:
         updated = embeds.update(path, problems, check=check)
         if updated is not None:
@@ -5656,8 +5691,13 @@ def main(argv=None):
     p.set_defaults(func=cmd_check)
 
     p = command(sub, "embed", help="generate source blocks in live Markdown documents")
-    p.add_argument("docs", nargs="*", metavar="ID|PATH", help="a live document ID or Markdown path")
-    p.add_argument("--check", action="store_true", help="report stale or invalid source blocks without writing")
+    select = p.add_mutually_exclusive_group()
+    select.add_argument("docs", nargs="*", default=[], metavar="ID|PATH", help="a live document ID or Markdown path")
+    select.add_argument("--source", metavar="FILE", help="select live documents embedding this source file")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--check", action="store_true", help="report stale or invalid source blocks without writing")
+    mode.add_argument("--list", dest="list_only", action="store_true",
+                      help="with --source, list matching documents without writing")
     p.set_defaults(func=cmd_embed)
 
     p = command(sub, "new", help="create a doc from its template with the next free id")

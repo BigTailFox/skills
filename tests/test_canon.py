@@ -262,6 +262,166 @@ class CanonTest(unittest.TestCase):
 
 
 class EmbedTest(CanonTest):
+    def test_source_refresh_checks_every_block_in_matching_documents_only(self):
+        self.create("docs/guides/use.md", "docs/guides/other.md", "src/other.py")
+        use = self.root / "docs/guides/use.md"
+        other = use.with_name("other.md")
+        other_block = "<!-- embed: ../../src/other.py -->\n<!-- /embed -->\n"
+        use.write_text("<!-- embed: ../../src/base.py -->\n<!-- /embed -->\n" + other_block)
+        other.write_text(other_block)
+        self.git("add", "docs/guides", "src")
+        index = self.git("ls-files", "--stage")
+
+        before = use.read_bytes()
+        out = self.fails("embed", "--source", "src/base.py", "--check")
+        self.assertIn("docs/guides/use.md:1: stale embed", out)
+        self.assertIn("docs/guides/use.md:3: stale embed", out)
+        self.assertNotIn("docs/guides/other.md", out)
+        self.assertEqual(use.read_bytes(), before)
+        self.assertEqual(self.ok("embed", "--source", "src/base.py"), "updated docs/guides/use.md\n")
+        self.assertIn("```python\nvalue = 1\n```", use.read_text())
+        self.assertEqual(other.read_text(), other_block)
+        self.assertEqual(self.ok("embed", "--source", "src/base.py", "--check"), "")
+        self.assertEqual(self.ok("embed", "--source", "src/base.py"), "")
+        self.assertEqual(self.git("ls-files", "--stage"), index)
+
+    def test_source_list_finds_current_and_stale_references_without_rendering(self):
+        owner = self.design("api")
+        source = owner.parent / "D001/data #%.py"
+        source.parent.mkdir()
+        source.write_text("# region model\nvalue = 1\n# endregion\n")
+        self.create("docs/guides/use.md", "docs/guides/example.md")
+        guide = self.root / "docs/guides/use.md"
+        marker = "<!-- embed: D001/data%20%23%25.py#model -->\n<!-- /embed -->\n"
+        owner.write_text(owner.read_text() + marker)
+        self.ok("embed", owner)
+        marker = marker.replace("D001/", "../designs/D001/")
+        guide.write_text(marker + marker.replace("#model", "#removed"))
+        guide.with_name("example.md").write_text("````markdown\n" + marker + "````\n")
+        archived = self.root / "docs/archived/designs/D048-past.md"
+        archived.parent.mkdir(parents=True, exist_ok=True)
+        archived.write_text(owner.read_text().replace("# D001:", "# D048:").replace("status: active", "status: retired")
+                            .replace("D001/data", "../../designs/D001/data"))
+        files = [owner, guide, archived]
+        before = [p.read_bytes() for p in files]
+        result = self.ok("embed", "--source", source.name, "--list", cwd=source.parent)
+        self.assertEqual(result, "docs/designs/D001-api.md\ndocs/guides/use.md\n")
+        self.assertEqual([p.read_bytes() for p in files], before)
+        source.write_text("# region model\nvalue = 2\n# endregion\n")
+        self.assertIn("removed", self.fails("embed", "--source", source))
+        self.assertEqual([p.read_bytes() for p in files], before)
+
+    @unittest.skipIf(os.name == "nt", "these filenames require POSIX")
+    def test_source_list_escapes_record_separators_and_sorts_by_path_text(self):
+        names = ["z.md", "a/guide.md", "a.md", "line\nfeed.md", "literal\\name\r.md"]
+        for name in names:
+            consumer = self.root / "docs/guides" / name
+            consumer.parent.mkdir(parents=True, exist_ok=True)
+            operand = os.path.relpath(self.root / "src/base.py", consumer.parent)
+            consumer.write_text("<!-- embed: {} -->\n<!-- /embed -->\n".format(operand))
+        self.assertEqual(self.ok("embed", "--source", "src/base.py", "--list").splitlines(), [
+            "docs/guides/a.md", "docs/guides/a/guide.md", "docs/guides/line\\nfeed.md",
+            "docs/guides/literal\\\\name\\r.md", "docs/guides/z.md",
+        ])
+
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_source_aliases_resolve_in_component_order_from_the_working_directory(self):
+        self.create("pkg/nested/keep", "pkg/value.py", "src/value.py", "docs/guides/use.md")
+        (self.root / "src/jump").symlink_to("../pkg/nested", target_is_directory=True)
+        (self.root / "src/alias.py").symlink_to("../pkg/value.py")
+        guide = self.root / "docs/guides/use.md"
+        guide.write_text("<!-- embed: ../../src/alias.py -->\n<!-- /embed -->\n")
+        guide.with_name("other-name.md").symlink_to("use.md")
+        for selector in ("jump/../value.py", self.root / "pkg/value.py"):
+            with self.subTest(selector=selector):
+                self.assertEqual(self.ok("embed", "--list", "--source", selector, cwd=self.root / "src"),
+                                 "docs/guides/use.md\n")
+        self.assertEqual(self.ok("embed", "--list", "--source", "src/value.py"), "")
+
+    def test_source_path_eligibility_is_independent_of_contents_and_validates_selector_combinations(self):
+        self.create("src/unused", "src/ignored", "docs/guides/missing.md")
+        (self.root / ".gitignore").write_text("src/ignored\n")
+        (self.root / "src/unused").write_bytes(b"\0\xff")
+        guide = self.root / "docs/guides/missing.md"
+        guide.write_text("<!-- embed: ../../src/missing -->\n<!-- /embed -->\n")
+        for mode in ([], ["--list"], ["--check"]):
+            self.assertEqual(self.ok("embed", "--source", "src/unused", *mode), "")
+            for invalid in ("src", "src/ignored", "src/missing", self.root.parent):
+                with self.subTest(mode=mode, invalid=invalid):
+                    self.assertIn("source is not a repository file", self.fails("embed", "--source", invalid, *mode))
+        for args in (("--list",), ("--source", "src/unused", "D000"), ("--list", "--source", "src/unused", "--check")):
+            with self.subTest(args=args):
+                result = self.canon("embed", *args)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("--", result.stderr)
+
+    def test_source_discovery_fails_before_output_or_writes_when_a_live_candidate_cannot_be_read(self):
+        self.create("docs/guides/a.md", "docs/concepts/C001-bad.md")
+        doc = self.root / "docs/guides/a.md"
+        before = b"<!-- embed: ../../src/base.py -->\n<!-- /embed -->\n"
+        doc.write_bytes(before)
+        (self.root / "docs/concepts/C001-bad.md").write_bytes(b"\xff")
+        self.assertEqual(self.ok("embed", "--source", "src/base.py", "--list"), "docs/guides/a.md\n")
+        doc.with_name("z.md").write_bytes(b"\xff")
+        for mode in ([], ["--check"], ["--list"]):
+            with self.subTest(mode=mode):
+                result = self.canon("embed", "--source", "src/base.py", *mode)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("docs/guides/z.md", result.stderr)
+                self.assertEqual(result.stdout, "")
+                self.assertEqual(doc.read_bytes(), before)
+
+    @unittest.skipIf(os.name == "nt", "carriage returns in filenames require POSIX")
+    def test_source_with_carriage_return_can_be_staged_and_committed(self):
+        self.create("docs/guides/use.md")
+        source = self.root / "src/a\rb.py"
+        source.write_text("value = 1\n")
+        guide = self.root / "docs/guides/use.md"
+        guide.write_text("<!-- embed: ../../src/a%0Db.py -->\n<!-- /embed -->\n")
+        self.ok("embed", "--source", source)
+        self.ok("check")
+        self.git("add", "-A")
+        self.ok("check", "--staged")
+        self.git("commit", "-qm", "embed a source with a carriage return")
+        self.ok("check", "--rev", "HEAD")
+
+    def test_source_discovery_lists_a_self_reference_and_validation_reports_it(self):
+        self.create("docs/guides/self.md")
+        consumer = self.root / "docs/guides/self.md"
+        marker = "<!-- embed: self.md -->\n<!-- /embed -->\n"
+        consumer.write_text(marker)
+        args = ["embed", "--source", consumer]
+        self.assertEqual(self.ok(*args, "--list"), "docs/guides/self.md\n")
+        for mode in ([], ["--check"]):
+            self.assertIn("docs/guides/self.md:1: embed source is the consumer itself", self.fails(*args, *mode))
+            self.assertEqual(consumer.read_text(), marker)
+
+    def test_source_selector_requiring_a_directory_cannot_refresh_a_file(self):
+        self.create("docs/guides/use.md")
+        consumer = self.root / "docs/guides/use.md"
+        before = b"<!-- embed: ../../src/base.py -->\n<!-- /embed -->\n"
+        consumer.write_bytes(before)
+        for suffix in ("/", "/."):
+            for path in ("src/base.py", str(self.root / "src/base.py")):
+                with self.subTest(path=path, suffix=suffix):
+                    self.assertIn("source is not a repository file", self.fails("embed", "--source", path + suffix))
+                    self.assertEqual(consumer.read_bytes(), before)
+
+    def test_source_discovery_ignores_unresolvable_operands_until_their_document_is_selected(self):
+        self.create("docs/guides/use.md", "docs/guides/bad.md")
+        consumer = self.root / "docs/guides/use.md"
+        bad = consumer.with_name("bad.md")
+        marker = "<!-- embed: ../../src/base.py -->\n<!-- /embed -->\n"
+        bad_marker = "<!-- embed: {} -->\n<!-- /embed -->\n".format("x" * 5000)
+        consumer.write_text(marker)
+        bad.write_text(bad_marker)
+        args = ["embed", "--source", "src/base.py"]
+        self.assertEqual(self.ok(*args, "--list"), "docs/guides/use.md\n")
+        self.assertEqual(self.ok(*args), "updated docs/guides/use.md\n")
+        consumer.write_text(marker + bad_marker)
+        self.assertIn("ERROR docs/guides/use.md:3:", self.fails(*args))
+        self.assertEqual(consumer.read_text(), marker + bad_marker)
+
     def test_nested_project_owns_its_index_and_archived_consumers(self):
         module = self.root / "docs/guides/demo"
         self.init_module(module)

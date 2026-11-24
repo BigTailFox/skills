@@ -18,7 +18,7 @@ Canon can keep source examples in sync with their files and carry a blind review
 
 | Local patch | What to do on 0.9.0 |
 |---|---|
-| Source embed generator and its instructions | Run `canon.py embed --check` against the existing blocks. Once they pass, retire the compatible generator and switch its callers to `canon.py embed`. Keep the CI job that runs `canon.py check` or `check --base REF` to catch drift. |
+| Source embed generator and its instructions | Compare every existing block's marker and location with Canon's supported syntax and live docs roots. In a clean copy, edit an embedded source and confirm `canon.py embed --check` reports the expected stale block. Regenerate and check again. Once coverage matches, retire the old generator and switch its callers to `canon.py embed`. Keep the CI job that checks for drift. |
 | Worktree and L2 approval handoffs | Retire duplicate rules for reporting the branch, tip, target and outstanding commits, and for naming exact pending revisions, recording approvals and giving the next phase's command. |
 | Limits on experimental claims | 0.9.0 checks the tested conditions in design and plan reviews. Keep any writing rule that also covers experiment conclusions, public overviews and reports. |
 | Checking for concurrent edits | 0.9.0 calls for checking work before a repository-wide fix, staging or committing. Keep the local ownership check before a document-scoped `check --fix`. |

@@ -8,6 +8,7 @@ Agents and people both read these docs, usually after reaching them through a po
 - Record only the final state. Leave out the discussion history and superseded drafts, including "X rather than Y" contrasts with an earlier proposal. Keep a rejected alternative only as a one-line Decision when it is likely to be proposed again.
 - State the correct approach. Add a counter-example only for a typical, likely misuse; a prohibition earns its place only as a hard guardrail, paired with the behavior to follow instead.
 - Prefer numbers to adjectives, code (signatures, schemas, commands) to prose for interfaces, and lists to tables unless the facts are short and tabular.
+- In an experiment's conclusion and wherever you use its result, including concepts, public overviews and reports, name the tested conditions that limit the claim. Label any broader inference.
 - Keep a diagram's source with it: Mermaid in the doc, or the generating script in the attachments beside the image it renders, with how to install its dependencies. Keep its labels as text a reviewer can read, never outlines or a raster image, and change it in the commit that changes what it shows.
 - Write `summary` lines, titles and headings as pointers: lead with the words a reader would search for, since they feed `find` and the index.
 - Keep a topic's definition, rules and caveats under one heading so reading one brings the rest.

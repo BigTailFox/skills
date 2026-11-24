@@ -11,7 +11,7 @@ paths: [skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.
 reviewed: 2
 reviewers: [gpt-6.2-astra]
 approved: 1
-implemented: 1
+implemented: 2
 ---
 
 # D011: Source code embedded in docs
