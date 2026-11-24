@@ -2,14 +2,14 @@
 status: active
 created: 2026-11-23
 updated: 2026-11-24
-revision: 1
+revision: 2
 modules: [canon]
 summary: Embed a repository source file or a named region in Markdown, regenerate its fenced code block and check it against the same Git tree as the document.
 refs: [C001, D006, D010, D005]
 owns: [source-embeds]
 paths: [skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, tests/test_canon.py]
-reviewed: 1
-reviewers: [gpt-6.2-astra, gemini-4-neon-xhigh]
+reviewed: 2
+reviewers: [gpt-6.2-astra]
 approved: 1
 implemented: 1
 ---
@@ -46,9 +46,16 @@ The generated lines are the opening fence and language, the selected lines, and 
 
 ```text
 canon.py embed [ID|PATH ...] [--check]
+canon.py embed --source FILE [--list | --check]
 ```
 
-Both forms use the work tree. With no selectors, visit all live consumers. An ID selects the numbered doc and its Markdown attachments. A path selects one eligible Markdown file relative to the working directory. Resolve duplicate selections once. Validate every selected document and source before writing. Any invalid selector or block exits 1 and leaves the documents as found. Print a block diagnostic as `ERROR <document>:<line>: <reason>` with a repository-relative path and one-based marker line. A valid write prints `updated <document>` once per changed file, exits 0 and is quiet on a no-op. Preserve bytes outside replaced blocks, including existing line endings and the last newline. `check --fix` handles the doc's `updated` date. Staging remains a separate operation.
+Both forms use the work tree. With no selectors, visit all live consumers. An ID selects the numbered doc and its Markdown attachments. A path selects one eligible Markdown file relative to the working directory. Resolve duplicate selections once.
+
+`--source FILE` selects live Markdown files containing a well-formed marker pair whose operand resolves to FILE, for the whole source or any named region. FILE is a literal filesystem path, relative to the working directory or absolute inside the repository. Use the same repository inventory and symlink resolution as for marker operands. Discover references from the markers even if a block is stale or a named region no longer exists. Exclude fenced examples and archived consumers. Use the live consumer inventory defined above. A numbered file that cannot be decoded or has no parseable frontmatter never enters it. If an inventoried consumer, including a Markdown guide, cannot be read as UTF-8, fail before listing or writing any document.
+
+`--list` prints the selected documents once each in repository-relative path order, one path per line. Escape a backslash as `\\`, a carriage return as `\r` and a line feed as `\n`. Listing does not render blocks or validate source contents. Checking and generation cover every block in the selected documents. An invalid block elsewhere does not stop a scoped operation. An inventoried regular file with no consumers succeeds quietly in all three modes, regardless of its contents. Validate source contents only when checking or generating a selected block. A missing or ineligible source path is an error. Positional selectors and `--source` are exclusive. `--list` requires `--source` and is exclusive with `--check`.
+
+Validate every selected document and source before writing. Any invalid selector or block exits 1 and leaves the documents as found. Print a block diagnostic as `ERROR <document>:<line>: <reason>` with a repository-relative path and one-based marker line. A valid write prints `updated <document>` once per changed file, exits 0 and is quiet on a no-op. Preserve bytes outside replaced blocks, including existing line endings and the last newline. `check --fix` handles the doc's `updated` date. Staging remains a separate operation.
 
 `embed --check` checks without writing and reports every stale or invalid block in scope. It exits 1 on a problem and otherwise exits 0 quietly. The regular document check reports the same block errors in the selected tree. A stale work-tree block names the scoped `embed` command; a staged error directs the author to generate against the source intended for the commit and stage the matching block. A revision check identifies that commit's stale block. `check --fix` leaves generation to `embed`. Discount the interior lines of a syntactically paired, non-nested embed from a numbered document's line count, even when its source is stale or invalid. Count the two marker lines.
 
