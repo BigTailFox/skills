@@ -37,16 +37,23 @@ def total(values):
     return sum(known) if known else None
 
 
-def observations(values, is_rate):
+def observations(values, is_rate, partial=()):
     known = [v for v in values if v is not None]
     if is_rate:
         return dict(measurements=len(known), numerator=total(v["numerator"] for v in known),
                     denominator=total(v["denominator"] for v in known), known_rates=sum(v["rate"] is not None for v in known))
-    return dict(measurements=len(known), total=total(known))
+    return dict(measurements=len(known), total=total(known),
+                partial_measurements=len(partial), lower_bound=total(partial))
 
 
 def case_metric(key, attempts, pairs):
-    observed = {arm: [a["metrics"][key] for a in attempts if a["arm"] == arm and key in a["metrics"]] for arm in ARMS}
+    observed = {arm: [] for arm in ARMS}
+    partial = {arm: [] for arm in ARMS}
+    for attempt in attempts:
+        value = attempt["metrics"].get(key)
+        if value is not None:
+            target = partial if key in attempt["unknown_metrics"] and not isinstance(value, dict) else observed
+            target[attempt["arm"]].append(value)
     is_rate = any(isinstance(v, dict) for values in observed.values() for v in values)
     comparable, missing = [], []
     for pair in pairs:
@@ -57,7 +64,7 @@ def case_metric(key, attempts, pairs):
             comparable.append(comparison)
     metric = dict(pair_count=len(comparable), unavailable_pairs=missing,
                   mean_difference=mean(v["difference"] for v in comparable) if comparable else None,
-                  observed={arm: observations(values, is_rate) for arm, values in observed.items()})
+                  observed={arm: observations(values, is_rate, partial[arm]) for arm, values in observed.items()})
     if is_rate:
         # A slice's common decided criteria (or later groups) can differ from either arm's overall denominator.
         metric["paired_observed"] = {arm: observations([v[arm] for v in comparable], True) for arm in ARMS}

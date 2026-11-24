@@ -1,10 +1,10 @@
 """Freeze the successfully joined, case-local historical groups separately from new attempts."""
 from collections import Counter, defaultdict
-import re
 
 from replay_git import sha256
+from replay_claims import report_claims
 from trace_records import UNKNOWN
-from trace_review_evidence import Archive, headings
+from trace_review_evidence import Archive
 from trace_review_inputs import first_round_score
 
 
@@ -22,32 +22,29 @@ def inventory(case, row, scope, population):
     refs = defaultdict(list)
     evidence = {}
     unknown = []
+    closing = (case.end or {}).get("dispositions") or {}
+    reviewers = {r.get("key", r["role"]) for r in closing.get("reviewers", [])}
+    contributors = {ref.split(":")[0] for d in review["raw_findings"] for ref in d["by"]}
+    closed_empty = reviewers - contributors if case.data["outcome"] == "delivered" and type(review["raw_rows"]) is int else set()
     for report in review["reports"]:
         name = report["stem"] + ".md"
         blob = archive.read(name)
         if report["identity"] not in {"recorded", "verified"} or blob is None:
             unknown.append(dict(sources=[report["key"]], reason="first-round report unavailable"))
             continue
-        try:
-            found = headings(blob, pinned=bool(review.get("source_findings")))
-            lines = blob.decode().splitlines(keepends=True)
-        except (UnicodeError, ValueError):
-            unknown.append(dict(sources=[report["key"]], reason="invalid report"))
-            continue
-        if not found and not re.search(r"\b(?:no (?:actionable )?findings?|(?:verdict|assessment):\s*sound)\b",
-                                       "".join(lines), re.I):
+        complete, claims = report_claims(blob, report["key"], pinned=bool(review.get("source_findings")),
+                                         corroborated_empty=report["key"] in closed_empty)
+        if not claims and not complete:
             unknown.append(dict(sources=[report["key"]], reason="unverified empty report"))
-        entries = list(found.items())
         file_digest = sha256(blob)
-        for i, (fid, (first, severity)) in enumerate(entries):
-            last = entries[i+1][1][0] - 1 if i+1 < len(entries) else len(lines)
-            ref = report["key"] + ":" + fid
+        for claim in claims:
+            ref = report["key"] + ":" + claim["finding"]
             refs[ref].append(name)
-            text = "".join(lines[first-1:last])
+            text = claim["text"]
             pins = getattr(case, "adjudication_pins", {}).get(("first", ref), {})
             if file_digest == pins.get("report_sha256"):
-                evidence[ref] = dict(source=ref, text=text, sha256=sha256(text.encode()), severity=severity,
-                                     report=name, first_line=first, last_line=last, **pins)
+                evidence[ref] = dict(source=ref, text=text, sha256=sha256(text.encode()), severity=claim["severity"],
+                                     report=name, first_line=claim["first_line"], last_line=claim["last_line"], **pins)
     raw = review["raw_rows"]
     if not review["reports"] or raw == UNKNOWN:
         unknown.append(dict(sources=[], reason="first-round inventory unavailable"))

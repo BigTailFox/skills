@@ -122,10 +122,11 @@ def score_slice(inputs, attempt, packet_row, judgment):
     criteria = {c["id"]: "unavailable" for c in inputs.receipt["criteria"]}
     for test in packet_row["tests"]:
         if reference_key(test["evidence"]) in refs:
-            criteria[test["id"]] = test["outcome"]
+            criteria[inputs.criteria[test["id"]]] = test["outcome"]
     metrics.update(decided_counts(criteria, "slice.criteria", "pass", "fail"))
     metrics["slice.criteria.unavailable"] = sum(v == "unavailable" for v in criteria.values())
-    attempt_evidence = {reference_key(t["evidence"]) for t in packet_row["tests"] if criteria[t["id"]] != "unavailable"}
+    attempt_evidence = {reference_key(t["evidence"]) for t in packet_row["tests"]
+                        if criteria[inputs.criteria[t["id"]]] != "unavailable"}
     if reference_key(packet_row["artifact"]) in refs:
         attempt_evidence.add(reference_key(packet_row["artifact"]))
     later, issues = later_decisions(inputs, judgment, attempt_evidence)
@@ -147,6 +148,10 @@ def score_review(inputs, attempt, packet_row, judgment):
     complete_reports = attempt["outcome"] == "completed" and inputs.verified_reports[ident] == expected
     delivery_missing = inputs.receipt["kind"] == "code-review" and inputs.receipt["delivery"] is None
     allowed = inputs.history_refs | inputs.verified_refs[ident]
+    if inputs.review_input and inputs.review_input_available:
+        allowed.add(inputs.review_input)
+    if not inputs.review_input_available:
+        judgment = None
     metrics, unknowns, partial = review_metrics(judgment, packet_row, inputs.history, complete_reports,
                                                delivery_missing, allowed)
     return dict(metrics=metrics, unknowns=unknowns, unknown_metrics=partial)

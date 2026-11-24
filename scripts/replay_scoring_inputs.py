@@ -1,11 +1,12 @@
 """Bind scoring to the sealed receipts, packet and confined evidence of one case."""
 from pathlib import Path
 
+from replay_attempts import verify_attempts
 from replay_case import load_case
 from replay_git import ReplayError, json_bytes, safe_relative, sha256
 from replay_packet import Packet, opaque
 from replay_protocol import evidence_bytes, require
-from replay_storage import decode
+from replay_storage import case_layout, decode, job_layout
 
 
 def verified(root, ref):
@@ -40,6 +41,7 @@ def private_evidence(attempts):
 
 
 def blind_evidence(packet):
+    yield packet.get("review_input")
     for group in packet["history"]["groups"]:
         yield from group["evidence"]
     for row in packet["attempts"]:
@@ -76,6 +78,7 @@ def legacy_packet_matches(private, receipt, journal, digest):
 
 class ScoreInputs:
     def __init__(self, directory):
+        case_layout(directory)
         private = directory / "private"
         blind = directory / "blind"
         require(not blind.is_symlink(), "invalid blind directory")
@@ -85,6 +88,8 @@ class ScoreInputs:
         run_bytes = (private / "run.json").read_bytes()
         self.run_sha256 = sha256(run_bytes)
         self.journal = decode(run_bytes, "run journal")
+        for row in self.journal["attempts"]:
+            job_layout(directory, row["id"])
         require(type(self.journal.get("schema")) is int and self.journal["schema"] == 1
                 and self.journal.get("receipt_sha256") == self.receipt_sha256, "run receipt does not match case")
         packet_bytes = (blind / "packet.json").read_bytes()
@@ -112,8 +117,18 @@ class ScoreInputs:
                 slot = a["pair"], a["arm"]
                 require(slot not in completed and a["boundary_violation"] is None, "ambiguous or incompatible completed slot")
                 completed.add(slot)
+        verify_attempts(private, self.receipt, self.journal)
         self.private_files, missing_private = evidence_inventory(private, private_evidence(attempts))
         blind_files, missing_blind = evidence_inventory(blind, blind_evidence(self.packet))
+        self.review_input = reference_key(self.packet.get("review_input"))
+        self.review_input_available = self.review_input is None or self.review_input in blind_files
+        ids = {c["id"] for c in self.packet["task"]["criteria"]}
+        self.criteria = {}
+        for item in self.receipt["criteria"]:
+            name = item["id"]
+            public = opaque(self.journal, "criterion", name)
+            self.criteria[public if public in ids else name] = name
+        require(self.criteria.keys() == ids, "packet criteria differ from the frozen task")
         # Only the digest leaves the case. An unjudged artifact can change without altering a single metric.
         self.unavailable_evidence = (sha256(json_bytes([missing_private, missing_blind]))
                                      if missing_private or missing_blind else None)
@@ -137,8 +152,8 @@ class ScoreInputs:
                           for k, r in attempt["roles"].items() if k not in reports for c in r.get("claims", [])}
             refs = [c["evidence"] for c in row["claims"] if c["id"] not in unreadable]
             sealed_tests = {t["id"]: t for t in attempt.get("tests", [])}
-            refs.extend(t["evidence"] for t in row["tests"] if t["id"] in sealed_tests and
-                        reference_key(sealed_tests[t["id"]]["evidence"]) in self.private_files)
+            refs.extend(t["evidence"] for t in row["tests"] if self.criteria.get(t["id"]) in sealed_tests and
+                        reference_key(sealed_tests[self.criteria[t["id"]]]["evidence"]) in self.private_files)
             if row["artifact"] and all(reference_key(attempt.get(k)) in self.private_files for k in ("artifact", "artifact_view")):
                 refs.append(row["artifact"])
             self.verified_refs[row["id"]] = {reference_key(ref) for ref in refs} & blind_files

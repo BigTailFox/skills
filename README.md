@@ -111,20 +111,31 @@ replay prepare --project "$PROJECT" --unit "$UNIT" --candidate "$CANDIDATE" --ou
 
 Inspect the receipt for the role models, host and required files. Set `RUNNER` to your trusted local executable and `PROFILE` to its nonsecret v1 JSON config. The config specifies the host, each role's model and effort, a default effort, provider IDs in `destinations`, workspace-relative grants in `read_paths`, allowed `test_tools` and runner-specific `settings`. Grant the scoped documents or code, applicable project instructions, installed skills, prescribed tools and selected fixtures. The executable reads one v1 request from stdin, enforces those grants and the requested stopping boundary, and writes one JSON result to stdout with observed roles, token measurements and digests of its output files. Reviews stop after first-round reports, slices at the terminal worker report. [Runner configuration](docs/designs/D012-workflow-replay.md#executing-paired-runs) · [Wire protocol](docs/designs/D012-workflow-replay.md#runner-protocol)
 
+With multiple permitted providers, route each unqualified historical model through `settings.role_destinations`. For example, a gate profile can include the following fields. Use the role keys from its receipt. A model named `provider/model` selects its provider by default. A single permitted destination applies to every unmapped role.
+
+```json
+{
+  "destinations": ["openai", "google"],
+  "settings": {
+    "role_destinations": {"parent": "openai", "same-model": "openai", "cross-family": "google"}
+  }
+}
+```
+
 For a slice, pass `--criteria FILE` and `--fixtures DIR` to `prepare` to pin test commands and their ignored inputs. For a dynamically linked test tool, also put its loader and libraries in the fixtures. Map each file to its required absolute path with `settings.test_runtime_files`, for example `[{"fixture":"runtime/loader","target":"/lib64/ld-linux-x86-64.so.2"}]`. The controller runs each command in a clean copy of the artifact. A missing dependency or unavailable sandbox leaves that criterion undecided. [Preparing a slice](docs/designs/D012-workflow-replay.md#reconstructing-a-case)
 
 ```sh
 replay run "$case_dir" --runner "$RUNNER" --runner-config "$PROFILE"
 ```
 
-The default run alternates the first arm across three pairs. Give the adjudicator the contents of `$case_dir/blind/`. They inspect the packet and its referenced evidence, group duplicate claims, and complete a copy of `judgments-template.json`. Save the returned copy as `$case_dir/judgments.json`. A slice with no attributable later-review groups can be scored without `--judgments`. [Judgment format](docs/designs/D012-workflow-replay.md#blinded-scoring)
+The default run alternates the first arm across three pairs. Give the adjudicator the contents of `$case_dir/blind/`. For a review, the packet's `review_input` reference opens the original documents or scoped patch, including untracked files and available as-built code. The adjudicator checks the claims against those inputs, groups duplicates, and completes a copy of `judgments-template.json`. Slice criteria use opaque IDs throughout the handoff. Save the returned copy as `$case_dir/judgments.json`. A slice with no attributable later-review groups can be scored without `--judgments`. [Judgment format](docs/designs/D012-workflow-replay.md#blinded-scoring)
 
 ```sh
 replay score "$case_dir" --judgments "$case_dir/judgments.json"
 replay summarize "$case_dir" > "$case_dir/summary.json"
 ```
 
-Pass additional scored directories to `summarize` to compare cases. Each completed pair contributes a candidate-minus-recorded difference when both arms have a comparable measurement. Each independent case contributes one mean per metric. Project rows precede compatible cross-project rows. Observed arm totals include partial attempts, and `paired_observed` gives the rate counts used in the paired comparisons. The JSON names unavailable pairs, excluded cases and conflicting copies. To exercise all four commands locally with generated trace data, identical and different suites, and an offline executable, run `python3 -m unittest discover -s tests -p test_replay_summary.py -k control_candidate`.
+Pass additional scored directories to `summarize` to compare cases. Each completed pair contributes a candidate-minus-recorded difference when both arms have a comparable measurement. Each independent case contributes one mean per metric. Project rows precede compatible cross-project rows. For counts, `measurements` and `total` cover fully measured attempts. `partial_measurements` and `lower_bound` give the number of partially known attempts and the sum already established for them. For rates, `paired_observed` gives the counts used in paired comparisons. The JSON names unavailable pairs, excluded cases and conflicting copies. To exercise all four commands locally with generated trace data, identical and different suites, and an offline executable, run `python3 -m unittest discover -s tests -p test_replay_summary.py -k control_candidate`.
 
 ## Skills
 

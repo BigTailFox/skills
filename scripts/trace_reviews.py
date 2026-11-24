@@ -5,7 +5,7 @@ import re
 from trace_questions import by_comparison, case_ref, ratio
 from trace_records import REVIEW, UNKNOWN
 from trace_review_evidence import Archive, ReviewEvidence, VALID, recorded_reports
-from trace_reviewer_cost import ReviewerCosts, group_costs
+from trace_reviewer_cost import group_costs
 
 
 def confirmation(case, number, finding):
@@ -168,10 +168,9 @@ def axis_question(delivered):
     return dict(title="Valid code-review contributions per axis and tier", groups=groups)
 
 
-def review_questions(cases, all_cases, args, catalog):
+def review_questions(cases, all_cases, args, costs):
     units = {(c.store, c.history.unit): c for c in all_cases}
     evidence = ReviewEvidence(args.review_evidence, all_cases, args.cursor_state_db)
-    costs = ReviewerCosts(catalog, args.codex_home)
     reviews = [c for c in cases if c.history.kind in REVIEW]
     for c in reviews:
         review = c.data["review"] = describe_review(c)

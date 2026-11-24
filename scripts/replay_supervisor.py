@@ -9,9 +9,10 @@ import time
 sys.dont_write_bytecode = True
 
 from replay_git import ReplayError, sha256
+from replay_attempts import write_terminal
 from replay_protocol import result_for
 from replay_slice import evaluate_slice
-from replay_storage import decode, publish_json
+from replay_storage import decode, job_layout
 
 
 def timestamp():
@@ -19,11 +20,21 @@ def timestamp():
 
 
 def supervise(job):
-    spec = decode((job / "dispatch.json").read_bytes(), "dispatch")
+    case = job.parents[2]
+    job_layout(case, job.name)
+    dispatch_bytes = (job / "dispatch.json").read_bytes()
+    spec = decode(dispatch_bytes, "dispatch")
     request_bytes = (job / "request.json").read_bytes()
     req = decode(request_bytes, "request")
+    area = case / "work" / job.name
+    if (req.get("attempt") != job.name or req.get("workspace") != str(area / "workspace") or
+            req.get("output") != str(area / "output")):
+        raise ReplayError("dispatch request leaves its case path")
     terminal = dict(started=None, ended=None, wall_seconds=None, returncode=None, error=None)
     try:
+        slot = decode((job / "slot.json").read_bytes(), "sealed attempt slot")
+        if slot["dispatch"] != {"dispatch.json": sha256(dispatch_bytes), "request.json": sha256(request_bytes)}:
+            raise ReplayError("sealed attempt request or dispatch changed")
         runner = Path(spec["runner"])
         if (sha256(runner.read_bytes()) != spec["runner_sha256"] or
                 sha256(Path(req["config"]).read_bytes()) != req["config_digest"]):
@@ -38,6 +49,7 @@ def supervise(job):
             terminal["returncode"] = child.returncode
             out.flush()
             os.fsync(out.fileno())
+        job_layout(case, job.name)
         raw = (job / "stdout").read_bytes()
         terminal["stdout_sha256"] = sha256(raw)
         if raw or child.returncode == 0:
@@ -46,7 +58,8 @@ def supervise(job):
                 evaluate_slice(job, spec, terminal["result"])
     except (ReplayError, OSError) as exc:
         terminal["error"] = str(exc)
-    publish_json(job / "terminal.json", terminal)
+    job_layout(case, job.name)
+    write_terminal(job, terminal)
 
 
 if __name__ == "__main__":

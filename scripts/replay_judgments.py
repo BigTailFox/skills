@@ -43,6 +43,8 @@ def blinded_judgments(inputs, judgments):
         return opaque(inputs.journal, "operator identifier", value)
 
     paths = {ref["path"] for g in inputs.packet["history"]["groups"] for ref in g["evidence"]}
+    if inputs.review_input:
+        paths.add(inputs.review_input[0])
     for attempt in inputs.rows.values():
         paths.update(c["evidence"]["path"] for c in attempt["claims"] + attempt["tests"])
         if attempt["artifact"]:

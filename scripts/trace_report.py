@@ -12,6 +12,7 @@ from trace_hosts import attach_hosts
 from trace_workers import codex_workers, cursor_workers
 from trace_questions import apply_tiers, costs, slice_outcomes, tier_changes
 from trace_reviews import review_questions
+from trace_reviewer_cost import ReviewerCosts
 from trace_retro import end_checks, read_notes, retro_fixes
 from trace_replay import replay_units
 from trace_versions import version_inventory
@@ -36,11 +37,12 @@ def read(args, *, scopes=None):
             "sample": "few units" if len(selected) < 20 else "20 or more units"}
     notes = {Path(p): read_notes(Path(p)) for p in dict.fromkeys([*population["projects"], *(str(c.project) for c in selected)])}
     versions = version_inventory(args.skills_repo, selected, cases)
+    reviewers = ReviewerCosts(catalog, args.codex_home)
     report = dict(population=population, cases=[c.data for c in selected], skill_versions=versions,
-                questions={**review_questions(selected, cases, args, catalog), "4": slice_outcomes(selected), "5": tier_changes(selected),
+                questions={**review_questions(selected, cases, args, reviewers), "4": slice_outcomes(selected), "5": tier_changes(selected),
                            "6": costs(selected), "7": retro_fixes(selected, notes), "8": end_checks(selected, notes, cases),
                            "9": replay_units(selected, cases, scopes=scopes)})
-    return report, cases, catalog
+    return report, cases, reviewers.catalog
 
 
 def build(args):

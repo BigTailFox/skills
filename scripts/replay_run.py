@@ -6,12 +6,13 @@ import subprocess
 import sys
 import uuid
 
+from replay_attempts import new_attempt, slot_record, terminal_observation, verify_attempts, write_terminal
 from replay_case import load_case
 from replay_git import ReplayError, sha256
 from replay_profile import profile
 from replay_packet import Packet
 from replay_sandbox import sandbox_grants
-from replay_storage import decode, publish_json, sync_directory
+from replay_storage import case_layout, decode, job_layout, publish_json, sync_directory
 from replay_workspace import workspace_for
 
 
@@ -31,6 +32,9 @@ def save_journal(private, journal):
 
 
 def finalize(job, row):
+    initial = new_attempt(row["id"], row["pair"], row["arm"])
+    row.clear()
+    row.update(initial)
     terminal = job / "terminal.json"
     if not job.is_dir():
         row.update(outcome="uncertain", reason="dispatch has no verified terminal record")
@@ -41,39 +45,23 @@ def finalize(job, row):
             if not terminal.exists():
                 row.update(outcome="uncertain", reason="dispatch has no verified terminal record")
                 return
-    record = decode(terminal.read_bytes(), "terminal record")
-    row.update({k: record.get(k) for k in ("started", "ended", "wall_seconds", "returncode")})
-    if "result" in record:
-        try:
-            raw = (job / "stdout").read_bytes()
-            if sha256(raw) != record["stdout_sha256"]:
-                raise ReplayError("terminal result digest differs")
-            row.update(record["result"])
-        except (OSError, ReplayError, KeyError) as exc:
-            row.update(outcome="failed", reason=str(exc))
-            return
-    code = record.get("returncode")
-    if code and row["outcome"] != "incompatible":
-        detail = row.get("reason") or record.get("error")
-        reason = f"observed runner termination ({code})"
-        row.update(outcome="stopped" if code < 0 else "failed", reason=reason + (": " + detail if detail else ""))
-    elif record.get("error"):
-        row.update(outcome="failed", reason=record["error"])
+    row.update(terminal_observation(job))
 
 
 def dispatch(private, receipt, journal, config_path, pair, arm):
     ident = uuid.uuid4().hex
     area = private.parent / "work" / ident
     workspace = area / "workspace"
-    job = private / "jobs" / ident
+    job = job_layout(private.parent, ident)
     job.mkdir(parents=True)
     sync_directory(job.parent)
-    row = dict(id=ident, pair=pair, arm=arm, outcome="pending", reason=None, roles={}, wall_seconds=None,
-               worker_status=None, boundary_violation=None)
+    row = new_attempt(ident, pair, arm)
     journal["attempts"].append(row)
     try:
         installed, loads, injected = workspace_for(private, workspace, receipt, arm)
     except (ReplayError, OSError) as exc:
+        publish_json(job / "slot.json", slot_record(journal, receipt, row, job), once=True)
+        write_terminal(job, dict(preflight=str(exc)))
         row.update(outcome="incompatible", reason=str(exc))
         save_journal(private, journal)
         return
@@ -89,6 +77,7 @@ def dispatch(private, receipt, journal, config_path, pair, arm):
     if receipt["kind"] == "slice":
         spec["test_grants"] = journal["test_grants"]
     publish_json(job / "dispatch.json", spec)
+    publish_json(job / "slot.json", slot_record(journal, receipt, row, job), once=True)
     with (job / "dispatch.lock").open("ab") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         save_journal(private, journal)
@@ -97,7 +86,7 @@ def dispatch(private, receipt, journal, config_path, pair, arm):
                                       str(lock.fileno())], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                      stderr=subprocess.DEVNULL, start_new_session=True, pass_fds=(lock.fileno(),))
         except OSError as exc:
-            publish_json(job / "terminal.json", dict(error=f"cannot start supervisor: {exc}"))
+            write_terminal(job, dict(error=f"cannot start supervisor: {exc}"))
             child = None
     if child is not None:
         child.wait()
@@ -112,6 +101,9 @@ def paired_run(private, receipt, config, config_path, identity, repetitions):
         for key, val in identity.items():
             if journal.get(key) != val:
                 raise ReplayError(f"pinned {key} changed; cannot resume this run")
+        verify_attempts(private, receipt, journal, resuming=True)
+        if profile(config, private, receipt) != journal["roles"]:
+            raise ReplayError("effective roles differ from the pinned run")
     else:
         roles = profile(config, private, receipt)
         journal = dict(schema=1, case=uuid.uuid4().hex, blind_key=secrets.token_hex(32), **identity, roles=roles,
@@ -125,7 +117,7 @@ def paired_run(private, receipt, config, config_path, identity, repetitions):
         if row["outcome"] in ("pending", "uncertain"):
             finalize(private / "jobs" / row["id"], row)
             save_journal(private, journal)
-    for pair in range(1, repetitions + 1):
+    for pair in range(1, journal["repetitions"] + 1):
         arms = ("recorded", "candidate") if pair % 2 else ("candidate", "recorded")
         for arm in arms:
             if any(a["pair"] == pair and a["arm"] == arm and a["outcome"] not in ("failed", "stopped")
@@ -140,6 +132,9 @@ def run(args):
     if args.repetitions < 3:
         raise ReplayError("at least three paired repetitions are required")
     directory = args.directory.resolve(strict=True)
+    if args.directory.is_symlink():
+        raise ReplayError("invalid case path")
+    case_layout(directory)
     private = directory / "private"
     if private.is_symlink() or not private.is_dir():
         raise ReplayError("invalid private case directory")

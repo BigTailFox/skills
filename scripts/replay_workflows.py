@@ -14,7 +14,7 @@ from replay_score import score
 from replay_summary import summarize
 from replay_git import ReplayError, import_input, json_bytes, oid, save_fixtures, save_suite, sha256
 from replay_task import criteria_for, plan_sections, review_delivery
-from replay_roles import role_evidence
+from replay_roles import role_evidence, workflow_skill
 from replay_history import inventory
 from trace_versions import valid_manifest
 
@@ -83,6 +83,7 @@ def prepare(args):
                     delivery=delivery["text"] if delivery else None,
                     criteria=[{k: c[k] for k in ("id", "text")} for c in criteria])
         receipt = dict(schema=1, project=str(case.project), store=str(case.store), unit=case.history.unit,
+                       workflow_skill=workflow_skill(case, population),
                        kind=case.history.kind, host=case.data["host"], steered=row["steered"],
                        task=task, source=source, suites=suites, fixtures=fixtures, criteria=criteria,
                        slice_plan=section, delivery=delivery, roles=roles, historical_brief=brief,

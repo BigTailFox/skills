@@ -31,7 +31,7 @@ def verify_header(bundle, object_format):
         raise ReplayError("incompatible artifact object format or capability")
 
 
-def read_files(repo, tree, injected):
+def read_files(repo, tree, injected, *, selected=None):
     files, blobs = {}, {}
     for raw in git(repo, "ls-tree", "-rz", tree).split(b"\0"):
         if not raw:
@@ -39,6 +39,8 @@ def read_files(repo, tree, injected):
         meta, raw_name = raw.split(b"\t", 1)
         mode, kind, blob = meta.decode("ascii").split()
         name = os.fsdecode(raw_name)
+        if selected is not None and name not in selected:
+            continue
         path = safe_relative(name)
         if kind != "blob" or mode not in ("100644", "100755", "120000"):
             raise ReplayError(f"unsupported artifact mode for {name}")
@@ -109,9 +111,12 @@ def file_view(files):
     for path, (mode, data) in files.items():
         try:
             content = data.decode()
-            encoding = "utf-8"
         except UnicodeDecodeError:
+            content = None
+        if content is None or "\0" in content:
             content = base64.b64encode(data).decode("ascii")
             encoding = "base64"
+        else:
+            encoding = "utf-8"
         rows.append(dict(path=path, mode=mode, encoding=encoding, content=content))
     return dict(files=rows)

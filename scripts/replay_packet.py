@@ -2,11 +2,15 @@
 import base64
 import hashlib
 import hmac
+from pathlib import Path
+import posixpath
 import re
 
 from replay_git import ReplayError, json_bytes, sha256
 from replay_protocol import evidence_bytes
+from replay_review_input import review_input
 from replay_storage import decode, publish
+from trace_records import canon
 from trace_review_evidence import VALID
 
 
@@ -37,54 +41,113 @@ class Packet:
         models.update(r["model"] for a in journal["attempts"] for r in a["roles"].values()
                       if isinstance(r.get("model"), str) and r["model"])
         versions = {v for suite in receipt["suites"].values() for v in suite.values() if isinstance(v, str)}
-        labels = models | versions | {"candidate", "recorded", "old suite", "new suite"}
-        self.labels = re.compile(r"(?<![a-z0-9])(?:" + "|".join(map(re.escape, sorted(labels, key=len, reverse=True)))
-                                 + r")(?![a-z0-9])", re.I)
-        case_path = case_path or private.parent
-        self.workspace_prefix = re.compile(re.escape(str(case_path / "work")) + r"/[0-9a-f]{32}/workspace/")
-        private_roots = [str(case_path), receipt["project"], receipt["store"], journal["runner"],
-                         "/home", "/Users", "/tmp", "/var/tmp", "/private/var/folders"]
-        self.private_paths = re.compile("(?:" + "|".join(map(re.escape, sorted(private_roots, key=len, reverse=True)))
-                                        + r")(?:/[^\s`'<>\")|]*)?")
+        labels = models | versions
+        self.labels = re.compile(r"(?<!\w)(?:" + "|".join(map(re.escape, sorted(labels, key=len, reverse=True)))
+                                 + r")(?!\w)", re.I)
+        roots = {case_path or private.parent, private.parent}
+        for row in journal["attempts"]:
+            ident = row["id"]
+            if not re.fullmatch("[0-9a-f]{32}", ident):
+                raise ReplayError("invalid sealed attempt ID")
+            request = private / "jobs" / ident / "request.json"
+            if request.is_file():
+                w = Path(decode(request.read_bytes(), "sealed request")["workspace"])
+                if w.is_absolute() and w.parts[-3:] == ("work", ident, "workspace"):
+                    roots.add(w.parents[2])
+        pattern = "|".join(re.escape(str(r / "work")) for r in sorted(roots))
+        self.workspace_prefix = re.compile("(?:" + pattern + r")/[0-9a-f]{32}/workspace/")
+        paths = {str(p) for p in roots} | {receipt["project"], receipt["store"], journal["runner"]}
+        self.private_paths = re.compile("(?:" + "|".join(map(re.escape, sorted(paths, key=len, reverse=True)))
+                                        + r")(?=$|[/\s`'\"<>|)])(?:/[^\s`'<>\"|)]*)?")
 
-    def neutral(self, text):
+    def source(self, text):
         for brief in self.briefs:
             text = text.replace(brief, "[redacted]")
         text = self.workspace_prefix.sub("", text)
         text = self.private_paths.sub("[private path]", text)
         text = self.labels.sub("[redacted]", text)
-        text = re.sub(r"\b(?:arm|suite)\s*[:=_-]?\s*[AB]\b", "[suite]", text, flags=re.I)
-        text = re.sub(r"(?im)^\s*(?:session(?: id)?|model|raw host(?: transcript)?|tokens?|config_digest|"
-                      r"wall_seconds|cached_input|reasoning_output|authorization)\s*[:=].*(?:\n|$)", "", text)
-        return re.sub(r"(?im)^(?:#{1,4}\s+|\*\*)F\d+\b", "Finding", text)
+        return re.sub(r"\b(?:(?:candidate|recorded|old|new)\s+(?:arm|suite)|(?:arm|suite)\s*[:=_-]?\s*"
+                      r"(?:[AB]|candidate|recorded))\b", "[suite]", text, flags=re.I)
+
+    def neutral(self, text):
+        text = self.source(text)
+        text = re.sub(r"(?:/home|/Users|/private/var/folders|/var/tmp|/tmp)/[^\s`'<>\")|]+", "[private path]", text)
+        return re.sub(r"(?<![\w./-])(?:candidate|recorded)(?![\w./-])", "[suite]", text, flags=re.I)
+
+    def name(self, path):
+        clean = self.source(path)
+        # Keep legitimate source names such as src/candidate.py. Alias provenance-bearing
+        # components independently, so two redactions cannot merge distinct file identities.
+        if clean.count("/") != path.count("/"):
+            return "file-" + opaque(self.journal, "path", path)
+        components = []
+        for orig, new in zip(path.split("/"), clean.split("/")):
+            if new != orig or re.match(r"(?i)^(?:candidate|recorded)[-_]", orig):
+                new = "file-" + opaque(self.journal, "component", orig)
+            components.append(new)
+        return "/".join(components)
+
+    def excerpt(self, text):
+        lines = self.source(text).splitlines(keepends=True)
+        for i, _ in canon.code_mask(lines):
+            line = lines[i]
+            if re.match(r"(?i)^\s*(?:session(?: id)?|model|raw host(?: transcript)?|tokens?|config_digest|"
+                        r"wall_seconds|cached_input|reasoning_output|authorization)\s*:", line):
+                lines[i] = ""
+            else:
+                lines[i] = self.neutral(re.sub(r"(?i)^(?:#{1,4}\s+|\*\*)F\d+\b", "Finding", line))
+        return "".join(lines)
 
     def export(self, identity, text):
-        data = self.neutral(text).encode()
+        data = self.excerpt(text).encode()
         return self.export_bytes(identity, data, ".txt")
 
     def export_bytes(self, identity, data, extension):
         digest = sha256(data)
-        # A later worker brief can redact an earlier slice view. Replace that view at its existing opaque path.
-        if self.receipt["kind"] != "slice":
-            identity = (*identity, digest)
         path = "evidence/" + opaque(self.journal, "file", *identity) + extension
         self.exports[path] = data
         return dict(path=path, sha256=digest)
+
+    def files(self, view):
+        for item in view["files"]:
+            original = item["path"]
+            item["path"] = self.name(original)
+            if item["encoding"] == "utf-8":
+                if item["mode"] == "120000":
+                    dest = posixpath.normpath(posixpath.join(posixpath.dirname(original), item["content"]))
+                    if dest.startswith(("/", "../")) or dest == "..":
+                        item["content"] = "[external link]"
+                    elif self.name(dest) != dest or original != item["path"]:
+                        item["content"] = posixpath.relpath(self.name(dest), posixpath.dirname(item["path"]) or ".")
+                    else:
+                        item["content"] = self.source(item["content"])
+                else:
+                    item["content"] = self.source(item["content"])
+            else:
+                data = base64.b64decode(item["content"])
+                decoded = data.decode(errors="surrogateescape")
+                if self.source(decoded) != decoded or item["mode"] == "120000" and data.startswith(b"/"):
+                    item.update(encoding="withheld", content=None)
+        return view
 
     def artifact(self, row):
         if not row.get("artifact_view"):
             return None
         evidence_bytes(self.private, row["artifact"])
-        view = decode(evidence_bytes(self.private, row["artifact_view"]), "artifact view")
-        for item in view["files"]:
-            item["path"] = self.neutral(item["path"])
-            if item["encoding"] == "base64":
-                data = base64.b64decode(item["content"])
-                clean = self.neutral(data.decode(errors="surrogateescape")).encode(errors="surrogateescape")
-                item["content"] = base64.b64encode(clean).decode("ascii")
-            else:
-                item["content"] = self.neutral(item["content"])
+        view = self.files(decode(evidence_bytes(self.private, row["artifact_view"]), "artifact view"))
         return self.export_bytes(("artifact", row["id"]), json_bytes(view), ".json")
+
+    def patch(self, text, names):
+        aliases = [(p, self.name(p)) for p in sorted(names, key=len, reverse=True)]
+        aliases = [(p, alias) for p, alias in aliases if p != alias]
+        lines = text.splitlines(keepends=True)
+        headers = ("diff --git ", "--- ", "+++ ", "rename from ", "rename to ", "copy from ", "copy to ", "Binary files ")
+        for i, line in enumerate(lines):
+            if line.startswith(headers):
+                for path, alias in aliases:
+                    line = line.replace(path, alias)
+                lines[i] = line
+        return self.source("".join(lines))
 
     def tests(self, row):
         tests = []
@@ -98,7 +161,7 @@ class Packet:
                 raw = base64.b64decode(obs[key + "_base64"])
                 data[key] = self.neutral(raw.decode(errors="replace"))
             ref = self.export_bytes(("criterion", row["id"], test["id"]), json_bytes(data), ".json")
-            tests.append(dict(id=test["id"], outcome=obs["outcome"], evidence=ref))
+            tests.append(dict(id=opaque(self.journal, "criterion", test["id"]), outcome=obs["outcome"], evidence=ref))
         return sorted(tests, key=lambda t: t["evidence"]["path"])
 
     def history(self):
@@ -143,8 +206,21 @@ class Packet:
 
     def document(self):
         rows = sorted(self.journal["attempts"], key=lambda a: a["id"])
-        return dict(schema=1, case=self.journal["case"], kind=self.receipt["kind"], task=self.receipt["task"],
-                    history=self.history(), attempts=[self.attempt(row) for row in rows])
+        task = self.receipt["task"].copy()
+        task["input"] = dict(task["input"])
+        for key in ("paths", "untracked"):
+            task["input"][key] = [self.name(p) for p in task["input"][key]]
+        if task["delivery"]:
+            task["delivery"] = self.neutral(task["delivery"])
+        task["criteria"] = [dict(id=opaque(self.journal, "criterion", c["id"]), text=self.neutral(c["text"]))
+                            for c in task["criteria"]]
+        packet = dict(schema=1, case=self.journal["case"], kind=self.receipt["kind"], task=task,
+                      history=self.history(), attempts=[self.attempt(row) for row in rows])
+        if self.receipt["kind"] != "slice":
+            view = review_input(self.private / "input", self.receipt, self.journal["config"]["read_paths"],
+                                self.files, self.patch)
+            packet["review_input"] = self.export_bytes(("review-input",), json_bytes(view), ".json")
+        return packet
 
     def write(self):
         packet = self.document()
@@ -160,8 +236,21 @@ class Packet:
                          for g in packet["history"]["groups"] if g["disposition"] in VALID]
             judgments["attempts"].append(dict(id=row["id"], groups=groups, later=later))
         root = self.private.parent / "blind"
+        for directory in (root, root / "evidence"):
+            if directory.is_symlink() or directory.exists() and not directory.is_dir():
+                raise ReplayError("invalid blind evidence directory")
+        # Read the previous manifest before publishing; migrate older digest-derived names
+        # only when that packet is the one the controller sealed.
+        previous = root / "packet.json"
+        obsolete = set()
+        if previous.is_file() and not previous.is_symlink():
+            old = previous.read_bytes()
+            if sha256(old) == self.journal.get("packet_sha256"):
+                obsolete.update(re.findall(r'"path": "(evidence/[0-9a-f]{32}\.(?:txt|json))"', old.decode()))
         for path, body in sorted(self.exports.items()):
             publish(root / path, body)
         publish(root / "judgments-template.json", json_bytes(judgments))
         publish(root / "packet.json", data)
+        for path in obsolete - self.exports.keys():
+            (root / path).unlink(missing_ok=True)
         return root / "packet.json"

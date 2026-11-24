@@ -208,26 +208,33 @@ def code_scope(case, trees, scope, target, base, pins):
                 paths=paths, options=flags, untracked_files=untracked, patch_sha256=hashlib.sha256(patch).hexdigest())
 
 
-def target_documents(case, trees, target):
-    docs = []
-    files = trees.files(case.store, target["tree"])
-    for name in case.start.get("docs", []):
-        ref = canon.target_reference(name, "@r")
+def revision_documents(revisions, files, read):
+    """Resolve named revisions uniquely in one tree and read their frozen frontmatter."""
+    docs = {}
+    for name in revisions:
+        ref = re.fullmatch(r"([DP]\d{3,}[A-Z]?)@r([1-9]\d*)", name)
         if not ref:
             return None
-        doc, revision = ref
+        doc, revision = ref.groups()
         paths = [p for p in files if Path(p).name.startswith(doc + "-") and canon.FILE_RE.fullmatch(Path(p).name)
                  and re.search(r"(?:^|/)docs/(?:archived/)?(?:designs|plans)/[^/]+$", p)]
         if len(paths) != 1:
             return None
-        data = git_bytes(case.store, "cat-file", "blob", files[paths[0]][1])
+        data = read(paths[0])
         if data is None:
             return None
         fields = canon.parse_frontmatter(data.decode(errors="replace").splitlines())[0] or {}
         if str(fields.get("revision")) != revision:
             return None
-        docs.append((paths[0], fields.get("as_built")))
+        docs[paths[0]] = fields
     return docs
+
+
+def target_documents(case, trees, target):
+    files = trees.files(case.store, target["tree"])
+    docs = revision_documents(case.start.get("docs", []), files,
+                              lambda p: git_bytes(case.store, "cat-file", "blob", files[p][1]))
+    return [(p, f.get("as_built")) for p, f in docs.items()] if docs is not None else None
 
 
 def gate_scope(case, trees, scope, opening, target, base, pins, docs, reasons):

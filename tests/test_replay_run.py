@@ -17,6 +17,8 @@ PEER = Path(__file__).with_name("replay_runner_fixture.py")
 
 
 class RunnerFixture(ReplayFixture):
+    workflows = ("canon-blind-review", "canon-code-review", "canon-implement")
+
     def setUp(self):
         super().setUp()
         self.runner = self.root / "offline-runner"
@@ -101,7 +103,7 @@ class RunnerFixture(ReplayFixture):
         return self.prepare("--review-evidence", evidence)
 
     def different_suite(self, tool="# tool\n"):
-        files = {"canon/SKILL.md": "New suite.\n", "canon/scripts/canon.py": ("100755", tool)}
+        files = self.files | {"canon/SKILL.md": "New suite.\n", "canon/scripts/canon.py": ("100755", tool)}
         new = self.pin(self.skills, self.tree(self.skills, {"skills/governance/" + k: v for k, v in files.items()}))
         self.git(self.skills, "update-ref", "HEAD", new)
 

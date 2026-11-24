@@ -149,7 +149,8 @@ class Archive:
 def headings(blob, phase="first", pinned=False):
     pattern = HEADING if phase == "first" else NEW_BLOCKER
     found = {}
-    for number, line in enumerate(blob.decode().splitlines(), 1):
+    for index, line in canon.code_mask(blob.decode().splitlines()):
+        number = index + 1
         match = pattern.match(line)
         if not match and pinned and phase == "first" and number == 1:
             # Some exports joined the host preamble to the first Markdown heading.

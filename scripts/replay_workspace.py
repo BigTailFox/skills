@@ -80,9 +80,13 @@ def restore_workspace(source, workspace, receipt):
 
 
 def workspace_for(private, workspace, receipt, arm):
+    suite = private / "suites" / arm
+    fallback = {"gate": "canon-blind-review", "code-review": "canon-code-review", "slice": "canon-implement"}
+    workflow = receipt.get("workflow_skill") or fallback[receipt["kind"]]
+    if not NAME.fullmatch(workflow) or not (suite / workflow / "SKILL.md").is_file():
+        raise ReplayError(f"assigned suite lacks the historical workflow entry point: {workflow}")
     restore_workspace(private / "input", workspace, receipt)
     visible = listed(workspace, "ls-files", "--others", "--exclude-standard", "-z")
-    suite = private / "suites" / arm
     installed = workspace / ".agents/skills"
     claude = workspace / ".claude/skills"
     injected, loads = set(), {}

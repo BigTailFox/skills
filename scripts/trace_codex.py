@@ -452,6 +452,13 @@ class CodexSession:
             return values.pop() if before and len(values) == 1 else None
         return agreed(1), agreed(2)
 
+    def turn_model(self, first, last):
+        """Read the context for this child turn, whether emitted before or after task_started."""
+        start = next((n for n, _, _ in self.contexts if first <= n <= last), first)
+        if any(n <= start for n, _, _ in self.contexts):
+            return self.model(start, last)
+        return None
+
 
 class Catalog:
     """Index just the metadata of other rollouts. Read bodies only for selected sessions and receipt lookup."""

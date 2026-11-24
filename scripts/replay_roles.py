@@ -8,10 +8,25 @@ from trace_records import UNKNOWN, stamp
 from trace_review_evidence import Archive
 from trace_reviewer_cost import reviewer_session
 from trace_workers import cursor_children
+from trace_versions import NAME as SKILL_NAME
 
 
 def known(value):
     return value if isinstance(value, str) and value and value != UNKNOWN else None
+
+
+def workflow_skill(case, population):
+    source = case
+    if case.history.kind == "slice" and not case.start.get("skill"):
+        parent = case.start.get("parent")
+        source = next((c for c in population if c.store == case.store and c.history.unit == parent and
+                       c.history.kind == "implement" and not c.ambiguous), None)
+    value = source.start.get("skill") if source else None
+    if isinstance(value, str):
+        name = Path(value.replace("\\", "/")).name
+        if SKILL_NAME.fullmatch(name):
+            return name
+    return None
 
 
 def dispatch(case, attempt):
@@ -62,6 +77,8 @@ def initial_worker(case):
     cid, args, field = bound
     if isinstance(case.host_session, CursorSession):
         model = known(args.get("model"))
+        if model == "inherit":
+            model = known(case.data["model"])
     settings = dict(model=model, effort=effort)
     text = args.get(field)
     if not isinstance(text, str) or not text.strip():
@@ -73,7 +90,7 @@ def initial_worker(case):
 
 def reviewer_interval(case, catalog, report, archive):
     """A later confirmation in the same child rollout can have a different model."""
-    if catalog is None or case.data["host"] != "codex":
+    if catalog is None:
         return None
     session = reviewer_session(catalog, [case], report["session"])
     body = archive.read(report["stem"] + ".md")
@@ -107,12 +124,7 @@ def reviewer_interval(case, catalog, report, archive):
         matches = [intervals[0][:2]]
     if len(matches) != 1:
         return None
-    first, last = matches[0]
-    current = [n for n, _, _ in session.contexts if first <= n <= last]
-    start = current[0] if current else first
-    if not any(n <= start for n, _, _ in session.contexts):
-        return None
-    return session.model(start, last)
+    return session.turn_model(*matches[0])
 
 
 def role_evidence(case, catalog):
@@ -124,6 +136,8 @@ def role_evidence(case, catalog):
     roles = {}
 
     def add(key, model, effort):
+        if model == "inherit":
+            model = None
         if not model or model.startswith("manual:"):
             conflicts.append(f"{key} historical model unavailable for headless comparison")
         roles[key] = dict(model=model, effort=effort)

@@ -79,6 +79,11 @@ def safe_relative(name):
     return Path(name)
 
 
+def paths_overlap(left, right):
+    """Two normalized paths collide when either file would have to be a directory."""
+    return left == right or left.startswith(right + "/") or right.startswith(left + "/")
+
+
 def write_blob(root, name, mode, data):
     path = root / safe_relative(name)
     if not path.parent.resolve().is_relative_to(root.resolve()) or any(
@@ -156,14 +161,15 @@ def save_fixtures(destination, supplied, root, source):
             resolved = entry.resolve(strict=True)
             if not resolved.is_relative_to(supplied) or resolved in seen:
                 raise ReplayError(f"escaping or cyclic fixture: {name}")
-            if any(p.lower() == ".git" for p in Path(name).parts) or any(
-                    name == r or name.startswith(r + "/") for r in reserved):
+            if any(p.lower() == ".git" for p in Path(name).parts):
                 raise ReplayError(f"fixture overlap: {name}")
             mode = resolved.stat().st_mode
             if stat.S_ISDIR(mode):
+                if any(name == r or name.startswith(r + "/") for r in reserved):
+                    raise ReplayError(f"fixture overlap: {name}")
                 copy(resolved, Path(name), seen | {resolved})
             elif stat.S_ISREG(mode):
-                if any(r.startswith(name + "/") for r in reserved):
+                if any(paths_overlap(name, r) for r in reserved):
                     raise ReplayError(f"fixture overlap: {name}")
                 executable = "100755" if mode & stat.S_IXUSR else "100644"
                 data = resolved.read_bytes()

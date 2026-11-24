@@ -140,7 +140,7 @@ def codex_attempt(case, session, d, child, next_at, place, returned):
             start_line = earlier[-1] if earlier else None
         row["child_cost"] = {"wall_seconds": seconds, **child.cost(start_line, t.point.line)}
         if start_line:
-            model, effort = child.model(start_line, t.point.line)
+            model, effort = child.turn_model(start_line, t.point.line) or (None, None)
             row.update(model=model or UNKNOWN, effort=effort or UNKNOWN)
     return row
 

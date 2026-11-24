@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import shutil
 import struct
@@ -9,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 
-from replay_git import ReplayError, safe_relative, sha256, write_blob
+from replay_git import ReplayError, paths_overlap, safe_relative, sha256, write_blob
 from replay_protocol import evidence_bytes
 from replay_storage import publish
 
@@ -52,7 +53,7 @@ def sandbox_grants(config, private, receipt):
         if (not isinstance(target, str) or not target.startswith("/") or "\0" in target or
                 any(p in ("", ".", "..") or p.lower() == ".git" for p in target[1:].split("/"))):
             raise ReplayError("grant requires a normalized absolute target file")
-        if any(target == p or target.startswith(p + "/") or p.startswith(target + "/") for p in reserved):
+        if any(paths_overlap(target, p) for p in reserved):
             raise ReplayError(f"overlapping or reserved test grant: {target}")
         reserved.add(target)
 
@@ -111,8 +112,8 @@ class CriterionSandbox:
                 self.mounts[target] = private / name
                 self.contents[target] = "100755", data
         for name, spec in fixtures.items():
-            path = safe_relative(name)
-            if name in files or any(p.as_posix() in files for p in path.parents):
+            safe_relative(name)
+            if any(paths_overlap(name, path) for path in files):
                 raise ReplayError(f"worker tree obstructs a fixture destination: {name}")
             data = evidence_bytes(private / "fixtures", dict(path=name, sha256=spec["sha256"]))
             self.fixtures[name] = spec["mode"], data
@@ -219,9 +220,29 @@ class CriterionSandbox:
         if loader:
             self.executable(loader)
             result, events = self.invoke(root, [loader, "--list", path], writable=False)
-            if result.returncode or [e["exit-code"] for e in events if "exit-code" in e] != [0]:
-                detail = result.stderr.decode(errors="replace").strip()
+            missing = re.search(rb"^\s*\S+\s+=>\s+not found\s*$", result.stdout, re.M)
+            if missing or result.returncode or [e["exit-code"] for e in events if "exit-code" in e] != [0]:
+                detail = (missing.group() if missing else result.stderr).decode(errors="replace").strip()
                 raise ReplayError("test runtime dependencies unavailable" + (": " + detail if detail else ""))
+
+    def missing_child(self, root, stderr):
+        # A nonzero test exit alone says nothing about its prerequisites. Corroborate
+        # the child-launch diagnostic from the C locale with the pinned filesystem.
+        diagnostic = stderr.decode(errors="replace")
+        for path, digest in self.tools.items():
+            names = (path, Path(path).name)
+            command = "(?:" + "|".join(map(re.escape, names)) + ")"
+            if not re.search(r"(?:^|:\s+)[\x27\x22]?" + command + r"[\x27\x22]?:\s+"
+                             r"(?:command not found|not found|No such file or directory)\s*$|"
+                             r"No such file or directory:\s+[\x27\x22]" + command + r"[\x27\x22]\s*$", diagnostic, re.M):
+                continue
+            if digest is None:
+                return f"granted child executable unavailable: {path}"
+            try:
+                self.check_runtime(root, path)
+            except ReplayError as exc:
+                return str(exc)
+        return None
 
     def run(self, argv):
         entry = self.entry(argv[0])
@@ -236,4 +257,8 @@ class CriterionSandbox:
             exits = [e["exit-code"] for e in events if "exit-code" in e]
             if exits != [result.returncode]:
                 return None, result.stdout, result.stderr, "test sandbox or executable could not start"
+            if result.returncode:
+                reason = self.missing_child(root, result.stderr)
+                if reason:
+                    return None, result.stdout, result.stderr, reason
             return result.returncode, result.stdout, result.stderr, None

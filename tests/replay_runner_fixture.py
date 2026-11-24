@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Deterministic offline peer of the replay v1 wire protocol, copied as an executable by CLI tests."""
+import base64
 import hashlib
 import json
 import os
@@ -30,7 +31,7 @@ def result_bundle(spec):
         if mode == "120000":
             dest.symlink_to(content)
         else:
-            dest.write_bytes(content.encode())
+            dest.write_bytes(base64.b64decode(content["base64"]) if isinstance(content, dict) else content.encode())
             dest.chmod(int(mode, 8) & 0o777)
     git("add", "-A", "--", ".")
     if spec.get("force"):
@@ -69,6 +70,12 @@ entry = Path(request["skills"]) / "canon/SKILL.md"
 data = entry.read_bytes()
 loaded = {"path": entry.resolve().relative_to(workspace).as_posix(),
           "blob": hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()}
+workflow = config["settings"].get("workflow", {"gate": "canon-blind-review", "code-review": "canon-code-review",
+                                                "slice": "canon-implement"}[request["kind"]])
+workflow_entry = Path(request["skills"]) / workflow / "SKILL.md"
+workflow_data = workflow_entry.read_bytes()
+workflow_load = dict(path=workflow_entry.resolve().relative_to(workspace).as_posix(),
+                     blob=hashlib.sha1(b"blob %d\0" % len(workflow_data) + workflow_data).hexdigest())
 observation = {k: request[k] for k in ("attempt", "workspace", "roles", "task", "stop_after")}
 observation.update(suite=data.decode().strip(), skills=Path(request["skills"]).relative_to(workspace).as_posix(),
                    head=git("rev-parse", "HEAD"), pid=os.getpid(), supervisor=os.getppid(),
@@ -94,7 +101,7 @@ for key, settings in request["roles"].items():
     text = action.get("reports", {}).get(key, default)
     text = text.replace("{workspace}", str(workspace))
     report = None if key == "parent" else evidence(key + ".md", text.encode())
-    roles[key] = dict(settings, loaded=[loaded], report=report, brief=None,
+    roles[key] = dict(settings, loaded=[loaded, workflow_load] if key == "parent" else [loaded], report=report, brief=None,
                       tokens=dict(input=11, cached_input=3, output=5, reasoning_output=2))
 result = dict(schema=1, attempt=request["attempt"], config_digest=request["config_digest"], host=request["host"],
               outcome="completed", reason=None, worker_status=None, roles=roles, artifact=None, boundary_violation=None)

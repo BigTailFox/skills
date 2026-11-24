@@ -8,6 +8,7 @@ import stat
 from replay_git import ReplayError, safe_relative, sha1_object, sha256
 from replay_claims import report_claims
 from replay_storage import decode, publish
+from trace_codex import worker_status
 
 
 COMPONENTS = ("input", "cached_input", "output", "reasoning_output")
@@ -122,13 +123,15 @@ def result_for(job, req, spec, raw):
                 if slice_run:
                     require(key == "worker" and report.strip() and result["worker_status"] in ("done", "blocked", "stuck"),
                             "worker terminal report or status missing")
-                    checked["worker_status"] = result["worker_status"]
+                    status = worker_status(report.decode().lower())
+                    require(status == result["worker_status"], "worker status differs from the sealed terminal report")
+                    checked["worker_status"] = status
                     saved["report_valid"] = True
                 else:
                     saved["report_valid"], saved["claims"] = report_claims(report, key)
             elif result["outcome"] == "completed" and key != "parent":
                 errors.append(f"{key} terminal report missing")
-        except (OSError, ReplayError) as exc:
+        except (OSError, UnicodeError, ReplayError) as exc:
             errors.append(str(exc))
     if result["outcome"] == "completed" and req["roles"].keys() - checked["roles"].keys():
         errors.append("completed result is missing expected roles")

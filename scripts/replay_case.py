@@ -1,10 +1,10 @@
 """Open and recheck a prepared receipt without consulting the original project or host."""
-import json
 import os
 from pathlib import Path
 import stat
 
 from replay_git import ReplayError, git, oid, safe_relative, sha256, suite_identity
+from replay_storage import decode
 
 
 def fixture_identity(directory):
@@ -71,7 +71,7 @@ def load_case(directory):
     if sha256(encoded) != (private / "receipt.sha256").read_text().strip():
         raise ReplayError("private receipt digest differs")
     try:
-        receipt = json.loads(encoded)
+        receipt = decode(encoded, "private receipt")
         if type(receipt.get("schema")) is not int or receipt["schema"] != 1:
             raise ReplayError("unsupported case schema")
         for arm in ("recorded", "candidate"):
@@ -82,6 +82,6 @@ def load_case(directory):
         if not fixtures.is_dir() or fixtures.is_symlink() or fixture_identity(fixtures) != receipt["fixtures"]:
             raise ReplayError("prepared fixture modes or bytes differ")
         verify_input(private / "input", receipt)
-    except (KeyError, TypeError, AttributeError, json.JSONDecodeError) as exc:
+    except (KeyError, TypeError, AttributeError) as exc:
         raise ReplayError("invalid private receipt") from exc
     return receipt

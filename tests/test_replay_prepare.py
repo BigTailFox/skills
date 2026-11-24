@@ -24,6 +24,7 @@ def digest(data):
 
 class ReplayFixture(ReportFixture):
     object_format = "sha1"
+    workflows = ()
     git = test_trace_analysis.OfflineAnalysis.git
     repo = test_trace_analysis.OfflineAnalysis.repo
     commit = test_trace_analysis.OfflineAnalysis.commit
@@ -43,6 +44,7 @@ class ReplayFixture(ReportFixture):
         self.assertEqual(self.git(self.store, "rev-parse", "--show-toplevel"), str(self.store))
         self.repo(self.skills)
         self.files = {"canon/SKILL.md": "Old suite.\n", "canon/scripts/canon.py": ("100755", "# tool\n")}
+        self.files.update({name + "/SKILL.md": "Run the " + name + " workflow.\n" for name in self.workflows})
         self.suite = self.tree(self.store, self.files)
         self.candidate = self.pin(self.skills, self.tree(self.skills, {
             "skills/governance/" + k: v for k, v in self.files.items()
@@ -52,7 +54,10 @@ class ReplayFixture(ReportFixture):
                    ["scripts/canon.py", self.git(self.skills, "hash-object", "--stdin", data="# tool\n")]]
         skill = digest(json.dumps(entries, separators=(",", ":")).encode())
         manifest = {"canon": skill}
-        self.manifest = digest(json.dumps(manifest, separators=(",", ":")).encode())
+        for name in self.workflows:
+            blob = self.git(self.skills, "hash-object", "--stdin", data=self.files[name + "/SKILL.md"])
+            manifest[name] = digest(json.dumps([["SKILL.md", blob]], separators=(",", ":")).encode())
+        self.manifest = digest(json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode())
         self.events = [dict(v=1, type="manifest", skills=manifest, digest=self.manifest)]
         self.git(self.store, "update-ref", "refs/skills/" + self.manifest, self.pin(self.store, self.suite))
 

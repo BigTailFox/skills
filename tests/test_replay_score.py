@@ -49,6 +49,24 @@ class ScoreFixture(SliceFixture):
 
 
 class ScoreReviews(ScoreFixture):
+    def test_a_judgment_can_cite_the_original_patch_and_depends_on_its_digest(self):
+        self.prepare_known_review()
+        self.config["settings"]["actions"] = [dict(reports={"spec": self.reports("ABI mismatch")})]
+        self.write_config()
+        self.replay()
+        packet = self.packet()
+        ref = packet["review_input"]
+        judgments = self.packet("judgments-template.json")
+        for row in judgments["attempts"]:
+            self.claim_groups(row, {"ABI mismatch": (packet["history"]["groups"][0]["id"], "valid", "in")})
+            for group in row["groups"]:
+                group["evidence"].append(ref)
+        result = self.score(judgments)
+        self.assertEqual(result["judgments"], judgments)
+        self.assertEqual(result["attempts"][0]["metrics"]["review.recall"]["rate"], 1)
+        (self.out / "blind" / ref["path"]).write_text("different input")
+        self.assertIsNone(self.score(judgments)["attempts"][0]["metrics"]["review.recall"]["rate"])
+
     def test_two_historical_sources_and_a_completed_empty_report_score_zero_of_one(self):
         self.prepare_known_review()
         self.replay()

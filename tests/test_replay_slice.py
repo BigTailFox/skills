@@ -211,7 +211,7 @@ class RunSlices(SliceFixture):
             ("project-command", ["./project-test"]), ("ordinary-failure", [shell, "-c", "exit 1"]),
             ("exit-127", [shell, "-c", "exit 127"]), ("ungranted", ["/usr/bin/git"]),
             ("missing-interpreter", ["./needs-interpreter"]), ("prose", None)])
-        self.prepare("--fixtures", fixtures, "--criteria", mapping)
+        receipt = self.prepare("--fixtures", fixtures, "--criteria", mapping)
         self.replay(env=dict(os.environ, REPLAY_TEST_SECRET="outside-only"))
         expected = {"change-copy": "pass", "clean-copy": "pass", "project-command": "pass",
                     "ordinary-failure": "fail", "exit-127": "fail", "ungranted": "unavailable",
@@ -220,8 +220,10 @@ class RunSlices(SliceFixture):
             self.assertEqual({t["id"]: t["outcome"] for t in a["tests"]}, expected,
                              [(t["id"], t["reason"]) for t in a["tests"]])
         packet = json.loads((self.out / "blind/packet.json").read_bytes())
+        names = {p["id"]: c["id"] for p, c in zip(packet["task"]["criteria"], receipt["criteria"])}
+        self.assertTrue(names.keys().isdisjoint(expected))
         for a in packet["attempts"]:
-            tests = {t["id"]: t for t in a["tests"]}
+            tests = {names[t["id"]]: t for t in a["tests"]}
             self.assertEqual({k: t["outcome"] for k, t in tests.items()}, expected)
             body = json.loads((self.out / "blind" / tests["clean-copy"]["evidence"]["path"]).read_bytes())
             self.assertIn("[redacted]", body["stdout"])
@@ -272,9 +274,11 @@ class RunSlices(SliceFixture):
         (tools / "python3").symlink_to(sys.executable)
         self.replay(env=dict(os.environ, PATH=str(tools)))
         packet = json.loads((self.out / "blind/packet.json").read_bytes())
+        ids = {c["id"] for c in packet["task"]["criteria"]}
+        self.assertEqual(len(ids), 2)
+        self.assertTrue(ids.isdisjoint({"no-command", "executable"}))
         for attempt in packet["attempts"]:
-            self.assertEqual({t["id"]: t["outcome"] for t in attempt["tests"]},
-                             {"no-command": "unavailable", "executable": "unavailable"})
+            self.assertEqual({t["id"]: t["outcome"] for t in attempt["tests"]}, dict.fromkeys(ids, "unavailable"))
         for attempt in self.journal()["attempts"]:
             self.assertEqual(attempt["outcome"], "completed")
             tests = {t["id"]: t for t in attempt["tests"]}

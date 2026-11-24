@@ -11,6 +11,18 @@ from test_trace_reviews import reviewer
 
 
 class Summaries(ScoreFixture):
+    def test_partial_finding_counts_are_reported_as_lower_bounds_in_case_and_cohort(self):
+        self.prepare_known_review()
+        self.config["settings"]["actions"] = [dict(reports={"spec": self.reports("Unjudged claim")})]
+        self.write_config()
+        self.replay()
+        self.score(self.packet("judgments-template.json"))
+        summary = self.summary(self.out)
+        for row in (summary["cases"][0], summary["cohorts"][0]):
+            obs = row["metrics"]["review.false_positive"]["observed"]
+            self.assertEqual(obs["recorded"], dict(measurements=2, total=0, partial_measurements=1, lower_bound=0))
+            self.assertEqual(obs["candidate"], dict(measurements=3, total=0, partial_measurements=0, lower_bound=None))
+
     def finish(self, *prepare_options):
         self.prepare(*prepare_options)
         self.replay()
@@ -153,8 +165,8 @@ class Summaries(ScoreFixture):
             self.assertEqual(m["paired_observed"]["candidate"], dict(measurements=2, numerator=1, denominator=2, known_rates=2))
             token = row["metrics"]["cost.tokens.parent.input"]
             self.assertEqual((token["pair_count"], token["mean_difference"]), (1, 20))
-            self.assertEqual(token["observed"]["recorded"], dict(measurements=2, total=22))
-            self.assertEqual(token["observed"]["candidate"], dict(measurements=3, total=53))
+            self.assertEqual(token["observed"]["recorded"], dict(measurements=2, total=22, partial_measurements=0, lower_bound=None))
+            self.assertEqual(token["observed"]["candidate"], dict(measurements=3, total=53, partial_measurements=0, lower_bound=None))
             for role in ("spec", "standards"):
                 self.assertEqual(row["metrics"][f"cost.tokens.{role}.cached_input"]["observed"]["candidate"]["total"], 9)
             observed_wall = sum(a["metrics"]["cost.wall_seconds"] for a in result["attempts"] if a["arm"] == "recorded")

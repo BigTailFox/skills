@@ -1,10 +1,10 @@
 """Resolve neutral requirements and explicit acceptance criteria from the frozen input."""
-import json
 import os
 from pathlib import Path
 import re
 
 from replay_git import ReplayError, git, oid, sha256
+from replay_storage import decode
 from trace_records import canon
 from trace_review_evidence import Archive
 
@@ -34,7 +34,7 @@ def plan_sections(root, target, revision):
         sid = match[1]
         if sid in sections:
             return {}
-        stop = markers[i + 1].line if i + 1 < len(markers) else span[1]
+        stop = markers[i + 1].line if i + 1 < len(markers) else min(span[1], len(lines))
         text = "".join(lines[h.line:stop])
         sections[sid] = dict(slice=sid, revision=revision, path=path, blob=blob, first_line=h.line + 1,
                              last_line=stop, text=text, sha256=sha256(text.encode()))
@@ -49,6 +49,26 @@ def acceptance_lines(section):
     prose = {idx for idx, _ in canon.code_mask(lines)}
     return [(section["first_line"] + i, line) for i, line in enumerate(lines) if i and
             (i not in prose or not STRUCTURAL.match(line.strip()))]
+
+
+SLICE_SELECTION = re.compile(r"(?<![a-z0-9])(S\d+)\b(?:\s*(?:through|to|[-–—]|\.\.)\s*(S\d+)\b)?", re.I)
+
+
+def selected_sections(sections, phrase):
+    if re.search(r"\b(?:except|excluding|exclude|skip|omit|without|not)\b", phrase, re.I):
+        return []
+    order = list(sections)
+    selected = set()
+    for match in SLICE_SELECTION.finditer(phrase.upper()):
+        first, last = match.groups()
+        if first not in sections or (last and (last not in sections or order.index(first) > order.index(last))):
+            return []
+        if not last and re.match(r"\s*(?:through\b|to\s*[.,;]?$|[-–—]|\.\.)", phrase[match.end():], re.I):
+            return []
+        selected.update(order[order.index(first):order.index(last or first) + 1])
+    if not selected and re.search(r"\b(?:(?:whole|entire|full)[- ]plan|(?:all(?: the)? slices|every slice))\b", phrase, re.I):
+        return list(sections.values())
+    return [section for sid, section in sections.items() if sid in selected]
 
 
 def review_delivery(case, root, target):
@@ -71,16 +91,19 @@ def review_delivery(case, root, target):
     if re.fullmatch(r"(?:(?:task |delivery )?scope (?:is )?)?(?:unknown|unavailable|not provided|unspecified)[.!]?",
                     phrase, re.I):
         return None
-    plans = [r for r in case.data["docs"] if re.fullmatch(r"P\d+@r\d+", r)]
+    plans = [r for r in case.data["docs"] if re.fullmatch(r"P\d+[A-Z]?@r\d+", r)]
     if not plans:
         return dict(text=phrase, source=requirements[phrase], sha256=sha256(phrase.encode())) if phrase else None
     if len(plans) != 1:
         return None
-    sections = plan_sections(root, target, plans[0])
-    names = set(re.findall(r"(?<![A-Za-z0-9])(S\d+)(?![A-Za-z0-9])", phrase.upper()))
-    if not sections or not names <= sections.keys():
+    plan, revision = plans[0].split("@r")
+    named = re.findall(r"(?<![a-z0-9])(P\d{3,}[A-Z]?)(?:@r(\d+))?\b", phrase, re.I)
+    if any(pid.upper() != plan or (rev and rev != revision) for pid, rev in named):
         return None
-    selected = [s for name, s in sections.items() if not names or name in names]
+    sections = plan_sections(root, target, plans[0])
+    selected = selected_sections(sections, phrase)
+    if not selected:
+        return None
     paragraphs, sources = [], []
     for section in selected:
         body = "".join(line for _, line in acceptance_lines(section)).strip()
@@ -97,8 +120,8 @@ def criteria_for(section, mapping):
     if mapping is None:
         return [dict(id=section["slice"], argv=None, **{k: section[k] for k in keys})]
     try:
-        spec = json.loads(mapping.read_bytes())
-    except (ValueError, OSError) as exc:
+        spec = decode(mapping.read_bytes(), "criteria mapping")
+    except OSError as exc:
         raise ReplayError(f"unreadable criteria mapping: {exc}") from exc
     if (not isinstance(spec, dict) or type(spec.get("schema")) is not int or spec["schema"] != 1 or
             spec.get("slice") != section["slice"] or spec.get("plan_blob") != section["blob"] or

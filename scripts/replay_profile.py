@@ -2,6 +2,7 @@
 from pathlib import Path
 
 from replay_git import ReplayError, safe_relative
+from replay_review_input import frozen_documents
 from replay_workspace import project_instructions, scoped_paths, skills_path, tool_paths
 
 
@@ -58,6 +59,7 @@ def profile(config, private, receipt):
     root = private / "input"
     task = receipt["task"]
     required_paths = set(receipt["fixtures"]) | scoped_paths(root, task)
+    required_paths.update(frozen_documents(root, task))
     required_paths.update(p.relative_to(root).as_posix() for p in project_instructions(root, task))
     required_paths.update(str(Path(p)) for p in tool_paths(root, task))
     prefix = skills_path(receipt["host"])
