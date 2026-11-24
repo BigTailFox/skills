@@ -17,6 +17,10 @@
 - [D010: Doc queries and renames](designs/D010-doc-queries-and-renames.md) · active · Doc queries and renames with canon.py show, find, which and affected, and rename and renumber, with the references and id collisions renumber settles. · owns: doc-queries, doc-renames, doc-renumbering · modules: canon
 - [D011: Source code embedded in docs](designs/D011-embedded-source.md) · active · Embed a repository source file or a named region in Markdown, regenerate its fenced code block and check it against the same Git tree as the document. · owns: source-embeds · modules: canon
 
+### Plans
+
+- [P010: Report traced workflows offline](plans/P010-offline-trace-report.md) · accepted · Implement the read-only nine-question trace report with host evidence, verified reviewer contributions and replay eligibility. · modules: canon
+
 ### Experiments
 
 - [E001: Precedence of project and user skills across hosts](experiments/E001-skill-scope-precedence.md) · concluded · Same-name user and project skills load both in Cursor and Codex, told apart by path; Claude Code runs the user's. npx skills project installs reach all three. · modules: canon
