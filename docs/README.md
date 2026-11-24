@@ -19,7 +19,7 @@
 
 ### Plans
 
-- [P009: Reconcile the D001 pilot evidence](plans/P009-trace-pilot-reconciliation.md) · accepted · Verify review attribution, partial Cursor exports and worker boundaries on the frozen D001 pilot and two preselected live slices. · modules: canon
+- [P009: Reconcile the D001 pilot evidence](plans/P009-trace-pilot-reconciliation.md) · in-progress · Verify review attribution, partial Cursor exports and worker boundaries on the frozen D001 pilot and two preselected live slices. · modules: canon
 
 ### Experiments
 
@@ -27,6 +27,7 @@
 - [E002: Ideas from popular agent skill libraries](experiments/E002-skill-library-survey.md) · answered · Ideas from popular skill libraries (mattpocock, superpowers, ECC, anthropics): skill evals against a baseline, trigger tests and review guards lead. · modules: canon
 - [E003: D001 trace pilot on Canon and Silk](experiments/E003-d001-trace-pilot.md) · concluded · A 20-case Canon and Silk pilot found gaps in replay inputs, finding attribution, Cursor transcripts and worker boundaries before trace analysis. · modules: canon
 - [E004: D001 review input revalidation](experiments/E004-d001-review-input-revalidation.md) · concluded · All three recovered review inputs survived an independent trace clone. Three other pilot criteria still fail on the frozen Canon and Silk cohort. · modules: canon
+- [E005: D001 pilot evidence reconciliation](experiments/E005-d001-pilot-evidence-reconciliation.md) · running · Reconcile review attribution, Cursor anchors and worker chronology for the frozen Canon and Silk pilot and two preselected Codex slices. · modules: canon
 
 ### Concepts
 

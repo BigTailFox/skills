@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: in-progress
 created: 2026-11-24
 updated: 2026-11-24
 revision: 1
@@ -7,7 +7,7 @@ reviewed: 1
 reviewers: [gpt-6.2-astra]
 modules: [canon]
 summary: Verify review attribution, partial Cursor exports and worker boundaries on the frozen D001 pilot and two preselected live slices.
-refs: [D001]
+refs: [D001, E005]
 based_on: [D001@r18]
 ---
 
@@ -17,13 +17,13 @@ Implements [D001: Skill telemetry with canon trace](../designs/D001-skill-teleme
 
 ## Current state
 
-Next: S1.
+Next: S2.
 
 ## Slices
 
 ### S1: Reconcile the original review findings
 
-Status: todo
+Status: done
 
 Risk: A duplicate claim credited as exclusive would change the conclusion about either review axis.
 
@@ -50,3 +50,5 @@ The experiment checkers validate the specific pilot evidence. They run outside t
 ## Log
 
 - Planned against D001@r18.
+- Started at d1454e9b0dea2ee6139034f766e219ddd46ce7c8. The [E005: pilot evidence reconciliation](../experiments/E005-d001-pilot-evidence-reconciliation.md) records the frozen and prospective outcomes.
+- S1 done. The 20 review ends contain 157 raw rows. The checker verified 39 first-round reports, including the two omitted reports, and separated three confirmation-only claims. The 19 delivered reviews support 113 valid groups. The two fully shared commit-title defects give neither axis exclusive credit. The evidence retains disputed groups and compound dispositions. Eighteen checker tests passed. The parent received the worker's final report and verified its terminal event before this commit.
