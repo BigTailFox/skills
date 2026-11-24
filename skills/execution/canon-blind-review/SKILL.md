@@ -79,7 +79,7 @@ For a source with one confirmer, save its prompt, report and fresh run ID under 
 
 Save a host subagent's terminal report verbatim and merge it in its original language. Once that report is saved and newer than its prompt, ignore repeated or late completion notices for that run.
 
-Before dispatch, save the first round's target commit in `snapshot.txt` and its resolved baseline in `baseline.txt` (`none` for a full-document review). For a live review, take the target with `canon.py snapshot` from the checkout root. For a prepared patch, save the two commits that generated it and supply that scoped patch and its paths. Preserve both through confirmation and handoff. Save the input snapshot for each report in `<key>-snapshot.txt`. Take a fresh snapshot for a late or supplemental pass. For a single confirmer save the fixed snapshot in `<key>-snapshot-confirm.txt`. Keep the round's latest fixed snapshot in `snapshot-confirm.txt`. Check a snapshot with `git -C .canon/canon/snapshots cat-file -e <commit>`. When tracing supplies an ID, keep it with the round's evidence as the `canon` skill's `trace.md` directs.
+Before dispatch, save the first round's target commit in `snapshot.txt` and its resolved baseline in `baseline.txt` (`none` for a full-document review). A follow-up without one shared verified baseline omits that pin and saves the actual inputs in each prompt. For a live review, take the target with `canon.py snapshot` from the checkout root. For a prepared patch, save the two commits that generated it and supply that scoped patch and its paths. Preserve both through confirmation and handoff. Save the input snapshot for each report in `<key>-snapshot.txt`. Take a fresh snapshot for a late or supplemental pass. For a single confirmer save the fixed snapshot in `<key>-snapshot-confirm.txt`. Keep the round's latest fixed snapshot in `snapshot-confirm.txt`. Check a snapshot with `git -C .canon/canon/snapshots cat-file -e <commit>`. When tracing supplies an ID, keep it with the round's evidence as the `canon` skill's `trace.md` directs.
 
 ## Stopped runs
 
@@ -101,7 +101,9 @@ When an applicable `none` is configured, setup cannot write the reviewer file, o
 
 ## Merge
 
-Accept and fix each finding, decline it with a one-line reason for the user, or escalate it to the user. A finding raised by two reviewers is accepted unless it is clearly wrong. The `canon` skill's workflow (Review gate) adds the gate's merge rules.
+Compare each finding with the requested delivery and the evidence. Fix an in-scope finding, decline it with a one-line reason or escalate it to the user. Agreement by two reviewers favors accepting an in-scope finding. Ask the user before expanding the task or adding a target outside it.
+
+Decline requests for future code or unwritten docs outside the task. For an unrelated defect in existing work, decline the expansion and record the defect under the `canon` skill's Deferred findings. Use the deferred disposition when the user chooses to defer. A design problem blocking this task follows that skill's workflow (Design problems).
 
 ## Confirmation
 
@@ -128,13 +130,14 @@ On a separate request, snapshot the version to check. Use the confirmation promp
 
 ## Follow-up round
 
-A gate's follow-up round, which the `canon` skill's workflow says when to run, sends a later revision of its targets to the gate's reviewers. Each reviews what changed since the last snapshot of the gate or its previous round, at the gate's tier and with its first-round criteria, and reports as in a first round.
+A gate's follow-up uses its original tier and criteria. For each reviewer, list the targets they previously reviewed in full. Send an added target in a separate full-criteria pass to each missing role, following the `canon` skill's workflow (Target coverage).
 
-- Once the new revisions are made, write the round's `snapshot.txt` in `<topic>/followup-<k>/` ([Review files](#review-files)). The diff command is `git -C .canon/canon/snapshots diff <last> <new> -- <paths>`: `<last>` the commit in the round before's `snapshot-confirm.txt`, else in its `snapshot.txt`, that round being the gate's in `<topic>/` for round 1 and `followup-<k-1>/` after it; `<new>` the commit in this round's `snapshot.txt`; `<paths>` the revised targets. Run it yourself first; when a snapshot is missing or the command fails, send the no-diff choice, naming the revised sections.
+- Save the new snapshot in `<topic>/followup-<k>/snapshot.txt`. For each covered path, find that reviewer's last assessed input in its reports and per-source snapshots, including supplemental passes. Advance to a confirmation snapshot only if the reviewer assessed every intervening change to the path. Otherwise keep the last fully reviewed input and name any already-confirmed claims.
+- Group that reviewer's paths by baseline. Verify each `git -C .canon/canon/snapshots diff <last> <new> -- <paths>` and include the scoped commands in the prompt. For paths whose baseline or diff is unavailable, name the revised sections to read. Keep the original branch base confined to the first-round or supplemental pass that used it.
 - Send only this prompt, filled as the confirmation prompt is:
 
 ```text
-After your last review, the author revised {paths}. Review what changed, at the same tier and with the same criteria and rules as your first-round prompt, reading the rest of the repository for context as that prompt allows. {Diff since your last review: {diff command}, which reads the review snapshots in `.canon/`. | No diff is available; read the revised sections: {sections}.} Read nothing else in `.canon/`.
+Review the changes to {covered paths} at the same tier and with the same criteria as your first round. Use only the following inputs for this round, reading the rest for context as the original prompt allows. {For each group, give its paths and verified snapshot diff command, or its paths and revised sections if no diff is available. Name claims already confirmed within these diffs.} Read nothing else in `.canon/`.
 Do not modify any file or write scratch files; read long command output in parts instead.
 Report as your first-round prompt asks, numbering findings from F1, with Questions, in {documentation language}, even where your instructions set another reply language.
 End with one line: Verdict: approve | revise

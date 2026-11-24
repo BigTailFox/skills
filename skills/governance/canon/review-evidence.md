@@ -2,7 +2,7 @@
 
 ## First-round review input
 
-Pin the prompt's actual baseline once in `baseline.txt` as a full commit ID. Use it for the diff, including a prepared patch from the review snapshot store. A full-document review uses `none`. A code review needs a baseline. Keep it and the first-round `snapshot.txt` intact when later inputs change. Close the review from its checkout with the round's `--dir`.
+Pin the prompt's actual baseline once in `baseline.txt` as a full commit ID. Use it for the diff, including a prepared patch from the review snapshot store. A full-document review uses `none`. When one verified baseline does not cover every follow-up input, omit the shared pin and retain each path's diff command or revised-section fallback in its prompt. A code review needs a baseline. Keep it and the first-round `snapshot.txt` intact when later inputs change. Close the review from its checkout with the round's `--dir`.
 
 Scoped `trace history UNIT` shows the retained commit at close, or `unknown`. In a mirror clone of the trace store, `refs/review-input/UNIT` holds the target tree. Its single parent holds the diff baseline when one was used. Apply the prompt's path scope and diff options. For a live diff in that bare clone, set `GIT_WORK_TREE` to an empty scratch directory and `GIT_INDEX_FILE` to a new file path for the following commands. Load the target with `git read-tree <review_input>`. Feed the prompt's untracked paths, NUL-delimited, to `git update-index --force-remove -z --stdin` in that index. Compare `git diff --cached <review_input>^ -- <scope>` using the original options. This preserves staged deletions whose files remain on disk. Read the listed files and modes from the complete target tree.
 
