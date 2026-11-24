@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 created: 2026-11-24
 updated: 2026-11-24
 revision: 1
@@ -13,11 +13,11 @@ based_on: [D001@r18]
 
 # P010: Report traced workflows offline
 
-Implements [D001: Skill telemetry with canon trace](../designs/D001-skill-telemetry.md).
+Implements [D001: Skill telemetry with canon trace](../../designs/D001-skill-telemetry.md).
 
 ## Current state
 
-All three slices are done. The full change is ready for code review.
+All three slices are done. Both reviewers approved the full change. The offline report passed the real-project checks for D001 step 3.
 
 ## Slices
 
@@ -59,7 +59,7 @@ Test at the CLI with redacted host records, small isolated Git projects and trac
 
 ## Notes
 
-Implement [D001§analysis: offline report](../designs/D001-skill-telemetry.md#analysis) after [E005: pilot evidence reconciliation](../experiments/E005-d001-pilot-evidence-reconciliation.md). The report may share narrowly scoped internal modules in `scripts/` and checked-in redacted fixtures under `tests/`. Its normal entry point is `python3 scripts/trace_report.py`; the installed skills and trace schema require no change. Limit output to identifiers, counts, digests, record locations and documented categories. The private paths used in the experiment are available to the orchestrator for acceptance. Use the default Python standard library and Git. Verify the whole change in one code review. The docs step adds `scripts/trace_report.py` and its owned implementation/test files to D001 paths, updates the capability and usage entry, and verifies that `canon.py which scripts/trace_report.py` names D001. Record the tests and real-project checks alongside step 3 delivery.
+Implement [D001§analysis: offline report](../../designs/D001-skill-telemetry.md#analysis) after [E005: pilot evidence reconciliation](../../experiments/E005-d001-pilot-evidence-reconciliation.md). The report may share narrowly scoped internal modules in `scripts/` and checked-in redacted fixtures under `tests/`. Its normal entry point is `python3 scripts/trace_report.py`; the installed skills and trace schema require no change. Limit output to identifiers, counts, digests, record locations and documented categories. The private paths used in the experiment are available to the orchestrator for acceptance. Use the default Python standard library and Git. Verify the whole change in one code review. The docs step adds `scripts/trace_report.py` and its owned implementation/test files to D001 paths, updates the capability and usage entry, and verifies that `canon.py which scripts/trace_report.py` names D001. Record the tests and real-project checks alongside step 3 delivery.
 
 ## Log
 
@@ -68,3 +68,5 @@ Implement [D001§analysis: offline report](../designs/D001-skill-telemetry.md#an
 - S1 delivered the CLI and questions 4 and 6. Its 11 CLI tests passed. On Canon and Silk it located 46/48 frozen starts from exports and both remaining starts with the supplied Cursor database. It reproduced 9/11 contained workers in the historical sample and 2/2 in the separately preselected sample. Both late workers retain their observed endpoints and have unknown full-worker costs. Host-internal service sessions are excluded from worker launches. The worker's final report and native completion arrived before commit.
 - S2 delivered questions 1, 2, 3 and 5. All 29 CLI tests passed. The command reproduced all 20 frozen reviews, 39 first-round reports and 193 first-round findings. The 19 delivered reviews contained 113 accepted or deferred defect groups. Of these, 23 had multiple sources, 64 had verified exclusive credit and 26 had one source of unknown exclusivity. All four L0 cases matched E005. The four-source gate retained its original reviewers and recovered the other two by their model dispatches. Without the optional database it withheld those claims. The source receipts for both projects, trace stores and the Cursor database matched before and after the read. The worker's final report and native completion arrived before commit.
 - S3 delivered questions 7–9 and skill-version matching. All 42 CLI tests passed, including a partial clone, retained inputs after loss of the original pins, and a later confirmation at a separate snapshot. Both real projects reproduced the frozen findings and worker intervals in the final report. Before this change's own review, 42 of 99 candidates across the full two-project population had verifiable replay inputs, and 3 end checks raised an item across 79 ended roots. The text and JSON reports exposed all nine questions. Source receipts matched across a complete run. The worker's final report and native completion arrived before commit.
+- The code review on both axes accepted 25 first-round sources as 21 distinct findings. The first confirmation found one additional blocker in replay scoring. The final rechecks verified all 21 findings and the blocker. The archive preserves both original reports, the initial confirmation and the later verdicts. Fixes landed in `03fa31d`.
+- All 58 public CLI tests passed. The final text and JSON reports answered all nine questions. Across the 20 pilot workflows, the report reproduced the 46 export starts, both additional database starts, the 9/11 historical worker result and the two preselected compliant runs. All 20 reviews and their contributor groups matched E005, including the four L0 changes. A before-and-after read of the two projects and the Cursor database and sidecars matched. With the P010 code review still open, the full two-project report listed 41 of 100 replay candidates as eligible. The report verifies eligibility for the separate replay harness.

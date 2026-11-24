@@ -13,6 +13,7 @@
 - [P007: Blind review recovery and history](plans/P007-blind-review-recovery-and-history.md) · done · Recover interrupted blind reviews, credit the reports each revision received and query the complete trace history of findings and rechecks. · modules: canon
 - [P008: Embedded source and external reviewer integration](plans/P008-embedded-source-and-reviewer-integration.md) · done · Deliver embedded source, attachment citations, native command review progress, scoped consent and verified skill references in one change. · modules: canon
 - [P009: Reconcile the D001 pilot evidence](plans/P009-trace-pilot-reconciliation.md) · done · Verify review attribution, partial Cursor exports and worker boundaries on the frozen D001 pilot and two preselected live slices. · modules: canon
+- [P010: Report traced workflows offline](plans/P010-offline-trace-report.md) · done · Implement the read-only nine-question trace report with host evidence, verified reviewer contributions and replay eligibility. · modules: canon
 
 ### Reviews
 

@@ -87,6 +87,17 @@ No commit or push of the project can carry the directory: `.canon/canon/.gitigno
 
 The directory is not scratch: until it is pruned, it holds the only copy of its data. The project's own worktrees in `.worktrees/` share their main checkout's, its `off` file included, so removing one keeps its units; a call in such a worktree that cannot write there, as in a sandbox limited to the worktree, uses the worktree's own, which removing the worktree deletes. Every other checkout, a linked worktree elsewhere or a submodule, has its own, so removing it removes its trace data. `trace prune --days N` deletes the snapshots and archives of units started more than N days ago, keeps every event line, and runs `git gc` in the snapshot repository so the space comes back at once. A unit that starts while a prune runs waits up to 5 seconds for it, then skips its snapshot.
 
+### Offline report
+
+From a checkout of this skills repository, run the offline report to compare traced workflow outcomes, reviewer contributions, measured time and tokens, retro outcomes and replay eligibility across projects. Give each project its own `--project` argument. The current directory is the default.
+
+```sh
+python3 scripts/trace_report.py --project /path/to/project-a --project /path/to/project-b
+python3 scripts/trace_report.py --project /path/to/project-a --since 2026-01-01 --json
+```
+
+The report reads local trace stores, Git history and Cursor or Codex session files. Its figures identify the contributing cases and the records behind them. Use `--cursor-state-db FILE` to verify starts missing from a Cursor export. Supply `--review-evidence TSV` with the optional companion tables to reconcile first-round findings against their sources. The report marks missing measurements and uncertain reviewer credit as `unknown`. [Pilot evidence](docs/experiments/E005/review-reconciliation.md) · [Report questions and options](docs/designs/D001-skill-telemetry.md#analysis)
+
 ## Skills
 
 Auto skills load when the context calls for them. Manual skills run only as commands: `/canon-init` in Cursor and Claude Code, `$canon-init` in Codex.
@@ -135,9 +146,11 @@ Auto skills load when the context calls for them. Manual skills run only as comm
 │           ├── agents/openai.yaml  # manual skills: keeps Codex from invoking them implicitly
 │           └── LICENSE, NOTICE     # ported skills: upstream license and provenance
 ├── scripts/
+│   ├── trace_report.py     # offline text and JSON reports for traced projects
 │   └── validate.py         # checks skills, stray SKILL.md files, links, the Skills tables, CANON_VERSION and D001's text budgets, then runs tests/
 └── tests/
     ├── test_canon.py       # regression tests for canon.py
+    ├── test_trace_*.py     # offline report regressions
     └── test_validate.py    # regression tests for validate.py
 ```
 
