@@ -62,6 +62,18 @@ class OfflineAnalysis(ReportFixture):
                          [("slow-check", str(note) + "#L2"), ("missing-label", str(note) + "#L4")])
         self.assertIn("End-check cost and interruptions", self.cli(text=True))
 
+    def test_outside_interruption_and_date_filtered_root(self):
+        for closed in (False, True):
+            events = [start(PRIOR, at="2025-12-31T23:59:00Z"), start(kind="end-check", parent=PRIOR),
+                      end(kind="end-check", outcome="raised")]
+            if closed:
+                events.append(end(PRIOR))
+            write_lines(self.log, events)
+            args = ("--since", "2026-01-01") if closed else ()
+            rate = self.cli(*args)["questions"]["8"]["interruptions"]
+            self.assertEqual((rate["numerator"], rate["denominator"]), (0, 0))
+            self.assertIn(UNIT, str(rate["outside_eligible_cases"]))
+
     def test_retro_fix_uses_snapshot_patch_and_traced_session_or_start_minute(self):
         self.repo(self.project)
         self.commit(self.project, "old")
@@ -132,6 +144,36 @@ class OfflineAnalysis(ReportFixture):
         self.assertEqual([r["count"] for r in counts["after"]], [0])
         self.assertEqual((fix_row["recurrences"]["numerator"], fix_row["recurrences"]["denominator"]), (0, 1))
 
+    def test_undecoded_codex_shell_calls_leave_repetition_count_unknown(self):
+        from test_trace_report import TraceReport
+        self.repo(self.project)
+        self.commit(self.project, "old")
+        fix = self.commit(self.project, "new", "2026-01-01T01:00:00Z")
+        self.notes(f"## repeated: applied {fix}\n")
+        write_lines(self.log, [start(host="codex", conversation=CONV), end()])
+        host = TraceReport()
+        host.project, host.codex = self.project, self.codex
+        missing = host.native(14, "response_item", type="custom_tool_call", name="exec", call_id="dynamic",
+                              input="const options={cmd:'PRIVATE'};await tools.exec_command(options)")
+        rows = [*host.boundary(4, "start implement --tier L1", "trace " + UNIT), missing, missing,
+                *host.boundary(64, "end " + UNIT + " delivered", "trace " + UNIT + " ended", "close")]
+        path = host.rollout(CONV, rows)
+        result, = self.cli()["questions"]["7"]["fixes"][0]["repeated_commands"]["before"]
+        self.assertEqual(result["count"], "unknown")
+        self.assertEqual(result["undecoded_locations"], [str(path) + "#L4", str(path) + "#L5"])
+        for code in ("const {exec_command}=tools; await exec_command({cmd:'private'})",
+                     "for (const i of [0,1]) { await tools.exec_command({cmd:'private'}); }",
+                     "await Promise.all([1,2].map(() => tools.exec_command({cmd:'private'})))",
+                     "[1,2].forEach(() => tools.exec_command({cmd:'private'}))"):
+            missing["payload"]["input"] = code
+            host.rollout(CONV, rows)
+            result, = self.cli()["questions"]["7"]["fixes"][0]["repeated_commands"]["before"]
+            self.assertEqual(result["count"], "unknown", code)
+        missing["payload"]["input"] = "const x=await tools.exec_command({cmd:'private'});text(x)"
+        host.rollout(CONV, rows)
+        result, = self.cli()["questions"]["7"]["fixes"][0]["repeated_commands"]["before"]
+        self.assertEqual(result["count"], 1)
+
     def test_version_inventory_finds_reversions_local_content_and_mixed_children(self):
         skills = self.root / "skills-repo"
         self.repo(skills)
@@ -166,6 +208,12 @@ class OfflineAnalysis(ReportFixture):
         self.assertEqual(units[PRIOR]["version"]["status"], "mixed")
         self.assertIn(str(self.log) + "#L5", units[UNIT]["version"]["locations"])
         self.assertIn("Skill versions", self.cli("--skills-repo", skills, text=True))
+        shallow = self.root / "shallow"
+        self.git(self.root, "clone", "--quiet", "--depth=1", skills.as_uri(), str(shallow))
+        inventory = self.cli("--skills-repo", shallow)["skill_versions"]
+        self.assertEqual(inventory["history"], "unknown")
+        self.assertEqual(matches("manifests")[local["digest"]]["status"], "unknown")
+        self.assertEqual(matches("manifests")[one["digest"]]["status"], "matched")
 
     def test_applied_note_without_a_commit_has_only_a_reason_and_location(self):
         write_lines(self.log, [start()])
@@ -223,6 +271,32 @@ class OfflineAnalysis(ReportFixture):
         row, = self.cli()["questions"]["9"]["units"]
         self.assertIn("slice or plan revision unavailable", row["reasons"])
 
+    def test_slice_score_joins_review_by_plan_parent_and_revision(self):
+        sibling = "20260101T000019Z-555555"
+        store = self.log.parent
+        self.repo(store)
+        path = "docs/plans/P001-example.md"
+        plan = "---\nrevision: 2\n---\n# Plan\n\n## Slices\n\n### S1: First\n\nStatus: done\n\n### S2: Second\n\nStatus: done"
+        opened = self.commit(store, plan, path=path)
+        self.git(store, "update-ref", "refs/trace/" + UNIT, opened)
+        people = [reviewer("spec", "one")]
+        claim = dict(by=["spec:F1"], severity="major", axis="spec", disposition="accepted")
+        self.archived_review(GATE, opened, None, people, {}, {"spec":"Target: fixture"})
+        (store / GATE / "spec.md").write_text("### F1 [major] PRIVATE")
+        events = [start(PRIOR), start(UNIT, "slice", parent=PRIOR, docs=["P001@r2"], slice="S1", snapshot=opened),
+                  start(GATE, "code-review", "2026-01-01T00:01:00Z", parent=PRIOR, docs=["P001@r2"]),
+                  review_end(GATE, "code-review", people, [claim]), end(PRIOR)]
+        def score():
+            write_lines(self.log, events)
+            return self.cli()["questions"]["9"]["units"][0]["score"]["following_code_review"]
+        self.assertEqual(score()["attribution"], "verified")
+        self.assertIn("spec:F1", str(score()["findings"]))
+        events.insert(2, start(sibling, "slice", "2026-01-01T00:00:19Z", parent=PRIOR, docs=["P001@r2"], slice="S2"))
+        self.assertEqual(score()["attribution"], "unknown")
+        self.assertIn(GATE, str(score()["candidate_reviews"]))
+        events[3]["docs"] = ["P001@r3"]
+        self.assertEqual(score()["candidate_reviews"], [])
+
     def tree(self, root, entries):
         self.git(root, "read-tree", "--empty")
         for name, data in entries.items():
@@ -238,7 +312,7 @@ class OfflineAnalysis(ReportFixture):
                 (directory / (stem + ".txt")).write_text(value + "\n")
         for person in people:
             stem = person.get("key", person["role"])
-            (directory / (stem + ".md")).write_text("### F1 [minor] PRIVATE\n")
+            (directory / (stem + ".md")).write_text("No findings.\n")
             (directory / (stem + "-id.txt")).write_text(person["id"] or "")
             (directory / (stem + "-prompt.md")).write_text(prompts[stem])
             if stem in pins:
@@ -270,6 +344,7 @@ class OfflineAnalysis(ReportFixture):
             keys = [p.get("key", p["role"]) for p in members]
             pins = {k: original_target if k != "spec-2" else "a" * 40 for k in keys}
             self.archived_review(uid, original_target, original_base, members, pins, {k: prompt for k in keys})
+            (store / uid / "spec.md").write_text("### F1 [minor] PRIVATE\n")
             self.git(store, "update-ref", "refs/trace/" + uid, opening)
             self.git(store, "update-ref", "refs/review-input/" + uid, retained)
             events += [start(uid, "code-review", snapshot=opening),
@@ -284,6 +359,20 @@ class OfflineAnalysis(ReportFixture):
         self.assertEqual(rows[UNIT]["score"]["dispositions"][0]["disposition"], "declined")
         self.assertIn("supplemental input unverified", rows[GATE]["reasons"])
         self.assertEqual(replay["eligible"]["numerator"], 1)
+        archive = store / UNIT
+        (archive / "standards-prompt.md").write_text(prompt + "Paths: absent.py\n")
+        row = self.cli()["questions"]["9"]["units"][0]
+        self.assertIn("archived prompt scope unverified", row["reasons"])
+        for label in ("**Paths:**", "__Paths:__", "## Paths"):
+            (archive / "standards-prompt.md").write_text(prompt + label + "\n- absent.py\n")
+            row = self.cli()["questions"]["9"]["units"][0]
+            self.assertIn("archived prompt scope unverified", row["reasons"], label)
+        (archive / "standards-prompt.md").write_text(prompt)
+        events[1]["dispositions"]["findings"][0]["by"] = ["spec:F99"]
+        write_lines(self.log, events)
+        row = self.cli()["questions"]["9"]["units"][0]
+        self.assertFalse(row["eligible"])
+        self.assertIn("spec:F99", str(row["score"]["unverified_sources"]))
 
     def test_gate_verifies_the_reviewed_as_built_tree_against_the_opening_second_parent(self):
         self.repo(self.project)

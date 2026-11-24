@@ -4,8 +4,8 @@ from datetime import timedelta
 import re
 import shlex
 
-from trace_codex import CodexSession, worker_status
-from trace_hosts import CursorSession, parts, records, shell_lines
+from trace_codex import CodexSession, report_model, worker_status
+from trace_hosts import CursorSession, observed_lines, parts, records, shell_lines
 from trace_records import UNKNOWN, git_bytes, loc, stamp
 
 
@@ -18,6 +18,9 @@ def empty_attempt(mode, location):
 def slice_tag(case):
     plans = [d.partition("@")[0] for d in case.data["docs"] if re.fullmatch(r"P\d{3,}@r\d+", d)]
     return f"{plans[0]}/{case.start['slice']}" if len(plans) == 1 and case.history.kind == "slice" else None
+
+
+TAG = re.compile(r"(?<![A-Za-z0-9])(P\d{3,})(?:@r\d+)?[\s_:/-]+(S\d+)(?![A-Za-z0-9])", re.I)
 
 
 def stored_worker(case):
@@ -154,6 +157,20 @@ def codex_workers(cases, catalog):
             name = uid or returned or d.target
             next_start[d.point.line] = next_start.get(name)
             next_start[name] = d.point.at
+        owners = defaultdict(set)
+        for d, uid, returned in links:
+            if d.tag:
+                owners[uid or returned or d.target].add(d.tag)
+        for case in group:
+            stored = stored_worker(case)
+            if stored:
+                for d, uid, returned in links:
+                    if stored[0] in (uid, returned, d.target):
+                        owners[uid or returned or d.target].add(slice_tag(case))
+        for d, uid, returned in links:
+            key = uid or returned or d.target
+            if d.verb == "spawn_agent" and not owners[key]:
+                owners[key].update(slice_tag(c) for c in group if slice_tag(c) and codex_position(c, d.point) == "within")
         for case in group:
             tag = slice_tag(case)
             stored = stored_worker(case)
@@ -162,22 +179,27 @@ def codex_workers(cases, catalog):
             first, last = case.host_span
             if case.data["commit"]:
                 case.data["host_end"] = {"source": "git", "location": case.data["end_location"]}
-                cutoff = stamp(case.closing["at"])
-                earlier = [p.line for p in session.times if p.at < cutoff]
-                same = [p for p in session.times if cutoff <= p.at < cutoff + timedelta(seconds=1)]
-                if first and earlier and not any(n == p.line for n, _ in session.tokens for p in same):
-                    case.data["parent_cost"].update(session.cost(first, earlier[-1]))
+                if first:
+                    cost_lines, covered = observed_lines(case, [n for n, _ in session.tokens])
+                    if cost_lines:
+                        cost = session.cost(first, max(cost_lines))
+                        case.data["parent_cost"].update(cost if covered else dict(cost, tokens=UNKNOWN))
+                    contexts, covered = observed_lines(case, [n for n, _, _ in session.contexts])
+                    report_model(case, session, first, max(contexts, default=first), covered)
+            _, launch_coverage = observed_lines(case, [d.point.line for d, _, _ in links if d.verb == "spawn_agent"])
             for d, uid, returned in links:
                 place = codex_position(case, d.point)
-                named = bool(tag and (d.tag == tag or stored and stored[0] in (uid, returned, d.target)))
-                # Out-of-span dispatches can only be assigned if there is one matching unit of this slice.
-                if place != "within" and not (named and sum(slice_tag(c) == tag for c in group) == 1):
-                    continue
                 if d.verb == "spawn_agent" and place == "within":
                     if uid or returned:
                         launches.add(uid or returned)
                     else:
                         uncertain = True
+                owner = owners[uid or returned or d.target]
+                if tag and owner and owner != {tag}:
+                    continue
+                named = bool(tag and owner == {tag} and sum(slice_tag(c) == tag for c in group) == 1)
+                if place != "within" and not named:
+                    continue
                 child = catalog.session(uid) if uid else None
                 row = codex_attempt(case, session, d, child, next_start[d.point.line], place, returned)
                 if stored and stored[0] in (uid, returned, d.target):
@@ -199,8 +221,7 @@ def codex_workers(cases, catalog):
                 a = empty_attempt(UNKNOWN, UNKNOWN)
                 a.update(session=uid, child_location=loc(path, 1))
                 attempts.append(a)
-            if (first and (last or case.data["commit"]) and not uncertain and
-                not any(first < n < (last or float("inf")) for n in session.holes)):
+            if launch_coverage and not uncertain:
                 case.data["fresh_subagents"] = len(launches)
 
 
@@ -306,25 +327,52 @@ def cursor_workers(cases):
                 boundary = case.closing
                 last = (starts if boundary["type"] == "start" else ends).get(boundary["id"])
             case.host_span = first, last
+        # A resume inherits its original dispatch. The child's exported opening
+        # prompt and the recorded worker ID can identify it across slice boundaries.
+        owners, explicit = defaultdict(set), {}
+        for case in group:
+            stored = stored_worker(case)
+            if stored:
+                owners[stored[0]].add(slice_tag(case))
+        for line, args, child, _ in links:
+            labels = " ".join(v for k in ("description", "prompt") if isinstance((v := args.get(k)), str))
+            tags = {"/".join(m).upper() for m in TAG.findall(labels)}
+            explicit[line] = tags
+            child_id = child.stem if child else args.get("resume")
+            if child_id and tags:
+                owners[child_id].update(tags)
+        for line, args, child, _ in links:
+            if child and not args.get("resume") and not owners[child.stem]:
+                owners[child.stem].update(slice_tag(c) for c in group if slice_tag(c) and all(c.host_span) and
+                                          c.host_span[0] < line < c.host_span[1])
+        for case in group:
+            first, last = case.host_span
             if not first or not last or first >= last:
                 continue
             launched, uncertain = set(), False
             for line, args, child, ordinal in links:
                 inside = first < line < last
                 sid = slice_tag(case)
-                named = sid and re.search(r"\b" + sid.replace("/", r"[\s_:/-]+") + r"\b", str(args.get("description", "")), re.I)
-                if not inside and not (named and sum(slice_tag(c) == sid for c in group) == 1):
-                    continue
                 mode = "resume" if args.get("resume") else "launch"
+                if inside and mode == "launch":
+                    if child:
+                        launched.add(child.stem)
+                    else:
+                        uncertain = True
+                owner = owners[child.stem if child else args.get("resume")]
+                if line in explicit:
+                    owner = owner | explicit[line]
+                if sid and owner and owner != {sid}:
+                    continue
+                named = sid and owner == {sid} and sum(slice_tag(c) == sid for c in group) == 1
+                if not inside and not named:
+                    continue
                 a = empty_attempt(mode, loc(session.path, line))
                 case.data["worker_attempts"].append(a)
                 if not child:
-                    uncertain = uncertain or (inside and mode == "launch")
                     continue
                 a["session"] = child.stem
                 a["child_location"] = loc(child, 1)
-                if inside and mode == "launch":
-                    launched.add(child.stem)
                 evidence = turns[child]
                 if ordinal >= len(evidence) or len(evidence) != seen[child] or not evidence[ordinal]:
                     continue
@@ -336,5 +384,5 @@ def cursor_workers(cases):
                     a["containment"] = "outside"
                 elif args.get("run_in_background") is False and (case.history.kind != "slice" or case.data["commit"]):
                     a["containment"] = "contained"
-            if not uncertain:
+            if not uncertain and observed_lines(case, [n for n, _, _, _ in links])[1]:
                 case.data["fresh_subagents"] = len(launched)

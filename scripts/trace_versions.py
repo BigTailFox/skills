@@ -85,7 +85,8 @@ def version_inventory(repo, selected, cases):
                     if rec["_location"] not in skill["locations"]:
                         skill["locations"].append(rec["_location"])
     commits = git_bytes(repo, "log", "--all", "--no-show-signature", "--format=%H %T") if manifests else b""
-    complete = commits is not None
+    shallow = git_bytes(repo, "rev-parse", "--is-shallow-repository")
+    complete = commits is not None and shallow == b"false\n"
     if commits:
         trees = defaultdict(list)
         for line in commits.decode("ascii").splitlines():

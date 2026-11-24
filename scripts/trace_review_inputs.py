@@ -6,11 +6,10 @@ import shlex
 from pathlib import Path
 
 from trace_records import UNKNOWN, canon, git_bytes, loc, snapshot_index
-from trace_review_evidence import Archive
+from trace_review_evidence import Archive, headings, scope_lines
 
 HEX = re.compile(r"[0-9a-fA-F]{4,64}")
-LABEL = re.compile(r"^\s*[*# ]*(target(?:s)?|follow-on targets|changes since|as-built|diff(?: command)?|"
-                   r"untracked(?: [^:]{1,45})?|paths)\s*[*]*:\s*(.*)$", re.I)
+
 
 
 def archive_pin(archive, name):
@@ -43,31 +42,10 @@ def input_commit(case, trees, pin):
     return next(iter(resolved.values())) if len(resolved) == 1 else None
 
 
-def scope_lines(archive, stem):
-    name = stem + "-prompt.md"
-    data = archive.read(name)
-    if not data:
-        return []
-    rows = []
-    continuation = False
-    for n, line in enumerate(data.decode("utf-8", errors="replace").splitlines(), 1):
-        if line.strip().lower().startswith("assess:"):
-            break
-        match = LABEL.match(line)
-        if match:
-            label = match[1].lower()
-            label = "untracked" if label.startswith("untracked") else label
-            rows.append((label, match[2], loc(archive.files[name], n)))
-            continuation = label in {"untracked", "paths", "target", "targets"} and not match[2].strip()
-        elif continuation and re.match(r"^\s*[-*]\s+", line):
-            rows.append((rows[-1][0], line.lstrip(" -*"), loc(archive.files[name], n)))
-        else:
-            continuation = False
-    return rows
-
-
 def diff_scope(rows):
     """Parse only a literal Git diff and safe, reproducible options. Never execute prompt commands."""
+    if any(label == "unverified scope" for label, _, _ in rows):
+        return None
     candidates = []
     for label, value, _ in rows:
         if label not in {"target", "targets", "diff", "diff command"}:
@@ -101,7 +79,29 @@ def diff_scope(rows):
             if len(revisions) not in {1, 2} or any("\0" in p for p in paths):
                 return None
             candidates.append((revisions, flags, paths))
-    return candidates[0] if candidates and all(c == candidates[0] for c in candidates) else None
+    if not candidates or not all(c == candidates[0] for c in candidates):
+        return None
+    revisions, flags, paths = candidates[0]
+    declared = []
+    for label, value, _ in rows:
+        if label != "paths" or not value.strip():
+            continue
+        lexer = shlex.shlex(value, posix=True)
+        lexer.quotes += chr(96)
+        lexer.whitespace += ","
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        try:
+            declared.extend(lexer)
+        except ValueError:
+            return None
+    if any(label == "paths" for label, _, _ in rows) and not declared:
+        return None
+    paths = sorted(set(paths))
+    declared = sorted(set(declared))
+    if paths and declared and paths != declared:
+        return None
+    return revisions, flags, paths or declared
 
 
 def revision_pin(case, token):
@@ -309,14 +309,81 @@ def round_pair(case, trees, opening, archive, reports, reasons):
     return "retained first round", target, base, base_pin, target_pin
 
 
+def first_round_score(case, archive, review):
+    """Resolve each source in the original dispositions to a first-round finding."""
+    sources, later, unknown = {}, {}, []
+    if "source_findings" in review:
+        identified = {r["key"] for r in review["reports"] if r["identity"] in {"recorded", "verified"}}
+        for claim in review["source_findings"]:
+            store = sources if claim["phase"] == "first" else later
+            store[claim["source"]] = claim
+            if claim["phase"] == "first" and (claim["key"] not in identified or claim["disposition"] == UNKNOWN):
+                unknown.append(dict(source=claim["source"], locations=claim["locations"]))
+    else:
+        for r in review["reports"]:
+            name = r["stem"] + ".md"
+            blob = archive.read(name)
+            if r["identity"] != "recorded" or blob is None:
+                unknown.append(dict(key=r["key"], locations=r["locations"]))
+                continue
+            def collect(blob, phase, target, name):
+                try:
+                    found = headings(blob, phase)
+                except (ValueError, UnicodeError):
+                    unknown.append(dict(key=r["key"], locations=[str(archive.files[name])]))
+                    return
+                for fid, (line, severity) in found.items():
+                    ref = r["key"] + ":" + fid
+                    target[ref] = dict(source=ref, severity=severity, locations=[loc(archive.files[name], line)])
+            collect(blob, "first", sources, name)
+            name = r["stem"] + "-confirm.md"
+            confirmed = archive.read(name)
+            if confirmed is not None:
+                collect(confirmed, "confirmation", later, name)
+    scored, seen, confirmation = [], set(), []
+    for raw in review["raw_findings"]:
+        by_decision = {}
+        for ref in raw["by"]:
+            if ref in later and ref not in sources:
+                confirmation.append(dict(raw_row=raw["raw_row"], source=ref, locations=later[ref]["locations"]))
+                continue
+            if ref in seen or ref not in sources or ref in later:
+                unknown.append(dict(source=ref, locations=[raw["location"]]))
+                continue
+            seen.add(ref)
+            claim = sources[ref]
+            decision = claim.get("disposition", raw["disposition"])
+            if (review.get("evidence_mode") == "standalone table" and decision != raw["disposition"]
+                and not claim.get("decision_location")):
+                unknown.append(dict(source=ref, locations=claim["locations"], recorded=raw["disposition"]))
+                decision = raw["disposition"]
+            if decision != UNKNOWN:
+                by_decision.setdefault(decision, []).append(ref)
+        for decision, refs in by_decision.items():
+            scoped = {k: raw[k] for k in ("raw_row", "location", "axis") if k in raw}
+            severity = raw["severity"] if refs == raw["by"] else UNKNOWN
+            if len(refs) == 1:
+                severity = sources[refs[0]].get("severity", severity)
+            scored.append(dict(scoped, by=refs, severity=severity, disposition=decision,
+                               source_locations=[p for ref in refs for p in sources[ref]["locations"]]))
+    for ref, claim in sources.items():
+        if ref in seen:
+            continue
+        verified_decision = review.get("evidence_mode") != "standalone table" or claim.get("decision_location")
+        if verified_decision and claim.get("raw_row") is None and claim.get("disposition") not in {None, UNKNOWN}:
+            scored.append(dict(raw_row=None, by=[ref], severity=claim["severity"], disposition=claim["disposition"],
+                               source_locations=claim["locations"]))
+        else:
+            unknown.append(dict(source=ref, locations=claim["locations"]))
+    return dict(dispositions=scored, confirmation_only=confirmation, unverified_sources=unknown)
+
+
 def review_input(case, trees, opening, row):
     reasons = row["reasons"]
     archive = Archive(case, {})
     review = case.data["review"]
     row["parameters"]["reviewers"] = [{k: r[k] for k in ("key", "role", "model", "session", "targets")} for r in review["reports"]]
-    row["score"] = dict(dispositions=[{k: v for k, v in f.items() if k in
-                                       {"raw_row", "by", "severity", "disposition", "axis", "location"}}
-                                      for f in review["raw_findings"]])
+    row["score"] = first_round_score(case, archive, review)
     if case.start.get("continues"):
         reasons.append("continuation")
     if case.history.kind == "follow-up":
@@ -325,7 +392,10 @@ def review_input(case, trees, opening, row):
         reasons.append("handoff" if case.data["outcome"] == "handoff" else "review not delivered")
     if not case.end or case.end.get("dispositions") is None:
         reasons.append("original dispositions unavailable")
-    if reasons:
+    no_input = bool(reasons)
+    if row["score"]["unverified_sources"]:
+        reasons.append("first-round scoring sources unverified")
+    if no_input:
         return
     reports = review["reports"]
     result = round_pair(case, trees, opening, archive, reports, reasons)

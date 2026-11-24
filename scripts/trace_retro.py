@@ -40,7 +40,10 @@ def read_notes(project):
     return causes
 
 
-def end_checks(cases, notes):
+def end_checks(cases, notes, all_cases):
+    index = {(c.store, c.history.unit): c for c in all_cases}
+    eligible = {c.id for c in cases if not c.start.get("parent") and c.end}
+    outside = []
     roots = [case_ref(c, c.end["_location"]) for c in cases if not c.start.get("parent") and c.end]
     checks, raised, unknown = [], [], []
     for c in cases:
@@ -50,7 +53,15 @@ def end_checks(cases, notes):
         ref = case_ref(c, c.data["end_location"], *cost["locations"])
         checks.append(dict(ref, wall_seconds=c.data["wall_seconds"], tokens=cost["tokens"], outcome=c.data["outcome"]))
         if c.data["outcome"] == "raised":
-            raised.append(ref)
+            root, seen = c, set()
+            while root and root.start.get("parent") and root.id not in seen:
+                seen.add(root.id)
+                root = index.get((root.store, root.start["parent"]))
+            if root and root.id in eligible:
+                raised.append(dict(ref, root=root.id))
+            else:
+                target = outside if root and not root.start.get("parent") else unknown
+                target.append(dict(ref, root=root.id if target is outside else UNKNOWN))
         elif c.data["outcome"] != "quiet":
             unknown.append(ref)
     declined = []
@@ -61,7 +72,7 @@ def end_checks(cases, notes):
                 declined.append(dict(project=str(project), cause=cause["cause"], location=r["location"]))
     return dict(title="End-check cost and interruptions", checks=checks, declined=declined,
                 interruptions=dict(ratio(len(raised), len(roots), raised, len(roots)),
-                                   eligible_cases=roots, unknown_cases=unknown))
+                                   eligible_cases=roots, unknown_cases=unknown, outside_eligible_cases=outside))
 
 
 def commit_patch(project, short):
@@ -120,11 +131,13 @@ def repeated_commands(case):
     session = case.host_session
     calls = session.shells if isinstance(session, CursorSession) else getattr(session, "commands", [])
     lines, complete = observed_lines(case, [n for n, _ in calls])
+    gaps, gaps_covered = observed_lines(case, getattr(session, "undecoded", []))
     selected = set(lines)
     entries = [(n, command) for n, command in calls if n in selected]
     counts = Counter(command for _, command in entries)
     places = [loc(session.path, n) for n, command in entries if counts[command] > 1]
-    return dict(case=case.id, count=sum(n - 1 for n in counts.values()) if complete else UNKNOWN,
+    return dict(case=case.id, count=sum(n - 1 for n in counts.values()) if complete and gaps_covered and not gaps else UNKNOWN,
+                observed_repetitions=sum(n - 1 for n in counts.values()), undecoded_locations=[loc(session.path, n) for n in gaps],
                 locations=places, boundaries=[case.data["host_start"]["location"], case.data["host_end"]["location"]])
 
 

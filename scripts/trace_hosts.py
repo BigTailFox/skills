@@ -8,7 +8,7 @@ import re
 import shlex
 import sqlite3
 
-from trace_records import UNKNOWN, canon, loc, stamp
+from trace_records import UNKNOWN, canon, git_bytes, loc, stamp
 from trace_sqlite import cursor_db
 
 UUID = re.compile(r"[a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}")
@@ -56,7 +56,7 @@ def shell_lines(command):
         yield line, body
 
 
-def commands(command):
+def commands(command, *, require_status=False):
     """Yield actual canon shell invocations, including the locally bound shorthand used in older exports."""
     if not isinstance(command, str) or "trace " not in command:
         return
@@ -85,13 +85,35 @@ def commands(command):
         if first and not SPLIT.fullmatch(words[first - 1]):
             continue
         after = next((n for n in range(i + 2, len(words)) if SPLIT.fullmatch(words[n])), len(words))
+        if require_status and any(SPLIT.fullmatch(w) and w.strip() not in {"", "&&"} for w in words[after:]):
+            continue
+        if require_status and any("\n" in w and any(x.strip() for x in words[n + 1:])
+                                  for n, w in enumerate(words[after:], after) if SPLIT.fullmatch(w)):
+            continue
         args = words[i + 2:after]
         if "$base" in args and "base=$(git rev-parse --short HEAD)" in command:
             args = ["HEAD" if w == "$base" else w for w in args]
         yield words[i + 1], args
 
 
-def matching_start(words, event, cwd):
+def fixed_base(argument, event, project):
+    if argument == "HEAD":
+        argument = event.get("head")
+    head, recorded = event.get("head"), event.get("base")
+    if not (isinstance(argument, str) and re.fullmatch("[a-fA-F0-9]{4,64}", argument) and canon.full_oid(recorded)):
+        return False
+    if canon.full_oid(argument) and argument.lower() == recorded.lower():
+        return True
+    if not project or not canon.full_oid(head):
+        return False
+    tip = git_bytes(project, "rev-parse", "--verify", "--quiet", argument + "^{commit}")
+    if not tip or not tip.decode("ascii").strip().startswith(argument.lower()):
+        return False
+    base = git_bytes(project, "merge-base", tip.decode("ascii").strip(), head)
+    return bool(base and base.decode("ascii").strip() == recorded.lower())
+
+
+def matching_start(words, event, cwd, project=None, paired=False):
     if not words or words[0] != event["kind"]:
         return False
     flags, targets = {}, []
@@ -106,7 +128,11 @@ def matching_start(words, event, cwd):
         else:
             targets.append(word)
             i += 1
-    if targets != [doc.partition("@")[0] for doc in event.get("docs", [])]:
+    def agrees(arg, value):
+        return arg == value or bool(paired and value and isinstance(arg, str) and re.fullmatch(r"\$\{[^}]+\}", arg))
+
+    docs = [doc.partition("@")[0] for doc in event.get("docs", [])]
+    if len(targets) != len(docs) or not all(agrees(a, d) for a, d in zip(targets, docs)):
         return False
     for key in ("slice", "parent", "continues", "tier", "model"):
         arg = flags.pop("--" + key, None)
@@ -115,7 +141,7 @@ def matching_start(words, event, cwd):
             continue
         if key == "model" and arg:
             arg = arg.lower()
-        if arg != value:
+        if not agrees(arg, value):
             return False
     skill = flags.pop("--skill", None)
     if skill:
@@ -130,10 +156,9 @@ def matching_start(words, event, cwd):
     elif event.get("skill") and event["kind"] != "slice":
         return False
     base = flags.pop("--base", None)
-    if base == "HEAD":
-        base = event.get("head") or ""
     if base is not None:
-        if not re.fullmatch("[a-fA-F0-9]{4,64}", base) or not (event.get("base") or "").startswith(base):
+        moving = paired and event.get("base") and re.fullmatch(r"[A-Za-z][A-Za-z0-9/_.-]*", base) and base != "HEAD"
+        if not moving and not fixed_base(base, event, project):
             return False
     elif event.get("base"):
         return False
@@ -192,7 +217,7 @@ def cursor_hits(case, session, verb):
     if not e:
         return []
     return [c for c in session.calls if c.verb == verb and
-            (matching_start(c.words, e, c.cwd) if verb == "start" else
+            (matching_start(c.words, e, c.cwd, case.project) if verb == "start" else
              c.words[:2] == [e["id"], e.get("outcome")])]
 
 
@@ -246,7 +271,7 @@ def db_start(path, case, peers):
                     not (cmd == full or cmd.startswith(full + " && ")) or cmd.count(" trace start ") != 1):
                     continue
                 inv = list(commands(full))
-                if len(inv) != 1 or inv[0][0] != "start" or not matching_start(inv[0][1], event, cwd):
+                if len(inv) != 1 or inv[0][0] != "start" or not matching_start(inv[0][1], event, cwd, case.project):
                     continue
                 a, z = b.get("startedAtMs"), b.get("completedAtMs")
                 if type(a) is not int or type(z) is not int or ms(b.get("createdAt")) != a:
@@ -255,7 +280,7 @@ def db_start(path, case, peers):
                 if not (before <= a < at + 1000 and a <= z < after and z >= at):
                     continue
                 possible = [c for c in peers if c.history.started and a < ms(c.start["at"]) + 1000 and
-                            z >= ms(c.start["at"]) and matching_start(inv[0][1], c.start, cwd)]
+                            z >= ms(c.start["at"]) and matching_start(inv[0][1], c.start, cwd, c.project)]
                 hits.append(key if possible == [case] and db_result(t, event["id"]) else None)
     except (OSError, ValueError, TypeError, sqlite3.Error):
         return None

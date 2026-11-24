@@ -5,7 +5,7 @@ import re
 import sqlite3
 
 from trace_hosts import CursorSession, UUID, object_value, parts
-from trace_records import canon, loc
+from trace_records import identifier, canon, loc
 from trace_sqlite import cursor_db
 
 
@@ -47,7 +47,7 @@ def model_dispatch(database, receipt, conversation, session, model, prompt):
     except sqlite3.Error:
         raise EvidenceError("model dispatch unavailable") from None
     require(len(matches) == 1 and matches[0][:2] == (receipt["line"], receipt["sha256"]) and
-            canon.short_field(matches[0][2]) and (model is None or matches[0][2] == model),
+            identifier(matches[0][2]) and (model is None or matches[0][2] == model),
             "missing or ambiguous model dispatch")
     return f"{database}#{matches[0][0]}", matches[0][2]
 

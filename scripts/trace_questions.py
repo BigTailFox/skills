@@ -22,6 +22,8 @@ def by_comparison(cases, starting_tier=False):
     groups = defaultdict(list)
     for case in cases:
         fields = comparison(case)
+        if starting_tier:
+            fields = (fields[0], case.data["tier"], *fields[2:])
         # Unknown model or version cannot establish comparability with a second case.
         unmatched = UNKNOWN in fields or case.data["version"]["status"] != "single"
         groups[(fields, case.data["tier"] if starting_tier else None, case.id if unmatched else None)].append(case)
@@ -78,24 +80,27 @@ def tier_changes(cases):
         for target in (("L2",) if key["kind"] == "design" else ("L1", "L2", "plan")):
             hits = [case_ref(c, *c.data["tier_targets"][target]) for c in members if target in c.data["tier_targets"]]
             targets[target] = ratio(len(hits), len(members), hits, len(members))
-        groups.append(dict(**key, cases=[case_ref(c) for c in members], targets=targets))
+        breakdown = defaultdict(list)
+        for c in members:
+            breakdown[c.data["effective_tier"]].append(case_ref(c))
+        groups.append(dict(**key, cases=[case_ref(c) for c in members], targets=targets, effective_tiers=dict(breakdown)))
     return dict(title="Tier changes and requests for a plan", groups=groups)
 
 
-def measurement(rows):
+def measurement(rows, units=None):
     measured = [(c, v) for c, v in rows if isinstance(v, (int, float))]
     unknown = [c for c, v in rows if not isinstance(v, (int, float))]
     values = [v for _, v in measured]
     return dict(known=len(values), unknown=len(unknown), numerator=len(values), denominator=len(rows),
                 total=sum(values) if values else UNKNOWN, median=median(values) if values else UNKNOWN,
                 known_cases=[c for c, _ in measured], unknown_cases=unknown,
-                sample="few units" if len(rows) < 20 else "20 or more units")
+                sample="few units" if (len(rows) if units is None else units) < 20 else "20 or more units")
 
 
-def token_components(rows):
+def token_components(rows, units=None):
     names = sorted({name for _, tokens in rows if isinstance(tokens, dict) for name in tokens})
     return {name: measurement([(case, tokens.get(name) if isinstance(tokens, dict) else None)
-                               for case, tokens in rows]) for name in names}
+                               for case, tokens in rows], units) for name in names}
 
 
 def costs(cases):
@@ -103,19 +108,21 @@ def costs(cases):
     for key, group in by_comparison(cases):
         rows = [c.data for c in group]
         parent_tokens = [(r["case"], r["parent_cost"]["tokens"]) for r in rows]
-        attempts = [(r["case"] + " @ " + (a["dispatch_location"] if a["dispatch_location"] != UNKNOWN else
+        attempts = [(r["case"], r["case"] + " @ " + (a["dispatch_location"] if a["dispatch_location"] != UNKNOWN else
                      a.get("child_location", UNKNOWN)), a) for r in rows for a in r["worker_attempts"]]
         intervals, children = {}, defaultdict(list)
         for state in ("contained", "outside", UNKNOWN):
-            matched = [label for label, a in attempts if a["containment"] == state]
+            matched = [label for _, label, a in attempts if a["containment"] == state]
             intervals[state] = dict(numerator=len(matched), denominator=len(attempts), cases=matched,
                                     sample="few units" if len(rows) < 20 else "20 or more units")
-        for label, a in attempts:
-            children[(a["session"], a.get("model", UNKNOWN))].append((label, a["child_cost"]))
-        child_costs = [dict(session=session, model=model,
-                            wall_seconds=measurement([(label, cost["wall_seconds"]) for label, cost in runs]),
-                            tokens=token_components([(label, cost["tokens"]) for label, cost in runs]))
-                       for (session, model), runs in children.items()]
+        for case_id, label, a in attempts:
+            children[(a["session"], a.get("model", UNKNOWN))].append((case_id, label, a["child_cost"]))
+        child_costs = []
+        for (session, model), runs in children.items():
+            units = len({case_id for case_id, _, _ in runs})
+            child_costs.append(dict(session=session, model=model,
+                            wall_seconds=measurement([(label, cost["wall_seconds"]) for _, label, cost in runs], units),
+                            tokens=token_components([(label, cost["tokens"]) for _, label, cost in runs], units)))
         result.append(dict(**key, cases=[r["case"] for r in rows], count=len(rows),
                            wall_seconds=measurement([(r["case"], r["wall_seconds"]) for r in rows]),
                            fresh_subagents=measurement([(r["case"], r["fresh_subagents"]) for r in rows]),

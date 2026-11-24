@@ -42,7 +42,7 @@ class ReviewReport(ReportFixture):
         for person in people:
             stem = person["role"]
             body = f"### F1 [major] PRIVATE {stem}\n### F2 [minor] PRIVATE {stem}"
-            prompt = "Target: same two files"
+            prompt = "Targets: alpha.py and beta.py"
             self.archive_report(UNIT, stem, body, person["id"], prompt)
             common = dict(project="Example", unit=UNIT, report_stem=stem, reviewer_key=stem,
                           phase="first", report_sha256=sha(body), prompt_sha256=sha(prompt), scope_lines="1-1")
@@ -231,6 +231,103 @@ class ReviewReport(ReportFixture):
         (self.log.parent / UNIT / "spec-prompt.md").write_text("Different target.")
         self.assertEqual(review()["valid_first_groups"], "unknown")
 
+    def test_partial_prompt_range_and_disputed_accepted_sources(self):
+        rows, catalog, _ = self.paired_review()
+        for r in rows + catalog:
+            stem = r["report_stem"]
+            prompt = "Target: primary.py\nFollow-on targets: " + stem + ".py"
+            (self.log.parent / UNIT / (stem + "-prompt.md")).write_text(prompt)
+            r["prompt_sha256"] = sha(prompt)
+            if "groups" in r:
+                r["groups"] = "F1=unknown F2=" + stem
+            else:
+                r["defect_group"] = "unknown" if r["finding_id"] == "F1" else stem
+        table(self.evidence, rows)
+        table(self.catalog, catalog)
+        result = self.cli("--review-evidence", self.evidence)
+        review = result["cases"][0]["review"]
+        self.assertEqual((review["attribution"], review["comparable_scope"]), ("partial", False))
+        axes = result["questions"]["3"]["groups"][0]["axes"]
+        for axis in ("spec", "standards"):
+            self.assertEqual(review["exclusive"][axis], 0)
+            self.assertEqual(axes[axis]["verified"]["known_numerator"], 1)
+            self.assertIn(axis + ":F1", str(axes[axis]["verified"]["unknown_cases"]))
+
+    def test_rates_use_starting_tier_and_distinct_eligible_units(self):
+        skill = "a" * 64
+        manifest = sha(json.dumps({"canon": skill}, separators=(",", ":")))
+        common = dict(tier="L0", model="m", host="other", manifest=manifest, skill="/skills/canon")
+        events = [dict(v=1, type="manifest", skills={"canon":skill}, digest=manifest)]
+        for i, uid in enumerate((UNIT, PRIOR)):
+            events.append(start(uid, **common))
+            if not i:
+                events.append(start(GATE, "gate", parent=uid, **dict(common, tier="L1")))
+            events.append(end(uid, manifest=manifest))
+        person = reviewer("cross-family", "/root/reviewer")
+        for i in range(22):
+            uid = f"20260101T010000Z-{i:06x}"
+            claim = dict(by=["cross-family:F1"], severity="major", disposition="accepted", confirmed="resolved")
+            events.extend([start(uid, "gate", conversation=f"session-{i}", **common),
+                           review_end(uid, "gate", [person], [claim] if not i else [], manifest=manifest)])
+            self.archive_report(uid, "cross-family", "### F1 [major]" if not i else "No findings.", "/root/reviewer")
+        write_lines(self.log, events)
+        q = self.cli()["questions"]
+        rate = q["5"]["groups"][0]["targets"]["L1"]
+        self.assertEqual((rate["numerator"], rate["denominator"]), (1, 2))
+        self.assertEqual(q["2"]["groups"][0]["new_blockers"]["sample"], "few units")
+        group = q["1"]["groups"][0]
+        self.assertEqual(len(group["reviewer_cost"]["sessions"]), 22)
+
+    def test_prompt_range_covers_each_bulleted_target_and_follow_on(self):
+        rows, catalog, _ = self.paired_review()
+        for heading, entry in (("Target: review the files below", "- {}"), ("**Targets:**", "- {}"),
+                               ("Targets: nested list", "- {}"), ("Target: review the files below", "-\t{}"),
+                               ("Target: review the files below", "```text\n{}\n```"),
+                               ("Target: common.py\n## Paths", "- {}"), ("Target: common.py\n__Paths:__", "- {}")):
+            for source in rows + catalog:
+                stem = source["report_stem"]
+                prompt = heading + "\n\n" + entry.format(stem + ".py")
+                (self.log.parent / UNIT / (stem + "-prompt.md")).write_text(prompt)
+                source["prompt_sha256"] = sha(prompt)
+            table(self.evidence, rows)
+            table(self.catalog, catalog)
+            result = self.cli("--review-evidence", self.evidence)["cases"][0]["review"]
+            self.assertIs(result["comparable_scope"], False, heading)
+
+    def test_same_agent_path_in_handoff_and_delivery_keeps_both_parent_sessions(self):
+        first, second = reviewer("cross-family", "/root/reviewer"), reviewer("cross-family", "/root/reviewer", key="cross-family-2")
+        self.archive_report(UNIT, "cross-family", "No findings.", "/root/reviewer")
+        self.archive_report(GATE, "cross-family-2", "No findings.", "/root/reviewer")
+        write_lines(self.log, [start(UNIT, "gate", conversation=CONV), review_end(UNIT, "gate", [first], [], outcome="handoff"),
+                               start(GATE, "gate", conversation="different-parent", continues=UNIT),
+                               review_end(GATE, "gate", [first, second], [])])
+        group = self.cli()["questions"]["1"]["groups"][0]
+        self.assertEqual(group["reviewer_cost"]["distinct_known_sessions"], 2)
+        self.assertEqual(len(group["cross_family_cost"]["sessions"]), 2)
+        for suffix in (".md", "-id.txt", "-prompt.md"):
+            shutil.copyfile(self.log.parent / UNIT / ("cross-family" + suffix), self.log.parent / GATE / ("cross-family" + suffix))
+        group = self.cli()["questions"]["1"]["groups"][0]
+        self.assertEqual(group["reviewer_cost"]["distinct_known_sessions"], 2)
+        self.assertEqual(len(group["cross_family_cost"]["sessions"]), 2)
+        from test_trace_report import TraceReport
+        fixtures = TraceReport()
+        fixtures.project, fixtures.codex = self.project, self.codex
+        ids = ["10000000-0000-4000-8000-000000000001", "10000000-0000-4000-8000-000000000002"]
+        for sid, parent in zip(ids, [CONV, "different-parent"]):
+            fixtures.rollout(sid, [], parent=parent, key="reviewer")
+        group = self.cli()["questions"]["1"]["groups"][0]
+        self.assertEqual({s["session"] for s in group["reviewer_cost"]["sessions"]}, set(ids))
+
+    def test_replay_with_a_standalone_disputed_decision_preserves_recorded_credit(self):
+        rows, _, _ = self.paired_review()
+        self.catalog.rename(self.catalog.with_suffix(".disabled"))
+        rows[0]["disposition"] = "declined"
+        table(self.evidence, rows)
+        score = self.cli("--review-evidence", self.evidence)["questions"]["9"]["units"][0]["score"]
+        assigned = {ref: f["disposition"] for f in score["dispositions"] for ref in f["by"]}
+        self.assertNotEqual(assigned.get("spec:F1"), "declined")
+        self.assertIn("spec:F1", str(score["unverified_sources"]))
+
     def test_confirmation_only_blockers_and_documented_partial_decisions_stay_out_of_first_round_credit(self):
         rows, catalog, event = self.paired_review()
         archive = self.log.parent / UNIT
@@ -265,6 +362,10 @@ class ReviewReport(ReportFixture):
         self.assertIn("merge-notes.md#L1", first["decision_location"])
         self.assertEqual(review.get("raw_dispositions"), {"accepted": 5})
         self.assertEqual({g["group"] for g in review["groups"]}, {"merge-amendment", "template-comment"})
+        score = result()["questions"]["9"]["units"][0]["score"]
+        self.assertEqual(len(score["confirmation_only"]), 1)
+        confirmation = score["confirmation_only"][0]["source"]
+        self.assertNotIn(confirmation, [key for row in score["dispositions"] for key in row["by"]])
         (archive / "merge-notes.md").write_text("PRIVATE different decision")
         self.assertEqual(result()["cases"][0]["review"]["valid_first_groups"], "unknown")
 
@@ -324,7 +425,7 @@ class ReviewReport(ReportFixture):
             stem, key, model = f"cross-family-author{n}", f"cross-family-{n}", f"model-{n}"
             sid = f"10000000-0000-4000-8000-00000000000{n}"
             body = f"### F1 [major] PRIVATE source {n}"
-            prompt = "Target: same two files"
+            prompt = "Targets: alpha.py and beta.py"
             fixed, terminal = "Fixed findings: F1 (section 1).", "- **F1**: resolved. PRIVATE"
             self.archive_report(UNIT, stem, body, sid, prompt)
             (self.log.parent / UNIT / (stem + "-confirm-prompt.md")).write_text(fixed)
@@ -366,7 +467,7 @@ class ReviewReport(ReportFixture):
             return self.cli("--review-evidence", self.evidence, "--cursor-state-db", database)
         output = result()
         review = output["cases"][0]["review"]
-        self.assertEqual(review.get("attribution"), "verified")
+        self.assertEqual(review.get("attribution"), "partial")
         self.assertEqual({r["key"] for r in review["reports"]}, {"spec", "standards", "cross-family-2", "cross-family-3"})
         self.assertEqual(review["omitted"], 2)
         self.assertEqual(review["first_dispositions"], {"accepted": 5, "unknown": 1})
@@ -378,6 +479,21 @@ class ReviewReport(ReportFixture):
         with sqlite3.connect(database) as db:
             db.execute("DELETE FROM cursorDiskKV WHERE key=?", (dispatches[-1][0],))
         self.assertEqual(result()["cases"][0]["review"]["valid_first_groups"], "unknown")
+        with sqlite3.connect(database) as db:
+            db.execute("INSERT INTO cursorDiskKV VALUES (?,?)", dispatches[-1])
+        self.catalog.rename(self.catalog.with_suffix(".standalone"))
+        invalid = json.loads(dispatches[-1][1])
+        tool = invalid["toolFormerData"]
+        tool["params"] = json.dumps(dict(json.loads(tool["params"]), model="PRIVATE sentence in recovered model"))
+        value = json.dumps(invalid)
+        with sqlite3.connect(database) as db:
+            db.execute("UPDATE cursorDiskKV SET value=? WHERE key=?", (value, dispatches[-1][0]))
+        receipts[-1]["sha256"] = sha(value)
+        table(self.root / "review-host.tsv", receipts)
+        self.assertEqual(result()["cases"][0]["review"]["valid_first_groups"], "unknown")
+        self.catalog.with_suffix(".standalone").rename(self.catalog)
+        with sqlite3.connect(database) as db:
+            db.execute("DELETE FROM cursorDiskKV WHERE key=?", (dispatches[-1][0],))
         # Standalone receipts can still describe both recovered authors without granting them credit.
         self.catalog.rename(self.catalog.with_suffix(".absent"))
         # The surviving host companion must still be checked against the selected database.
@@ -454,7 +570,12 @@ class ReviewReport(ReportFixture):
         self.assertIn("#L5", initial["ordered"][-1]["location"])
         history += [dict(check, order=None, report="later"), dict(check, order=1, report="other", result="resolved")]
         write_lines(self.log, history)
-        updated = self.cli()["cases"][1]["review"]["confirmations"][0]
+        history.append(dict(check, model="other", order=3, report="incompatible"))
+        write_lines(self.log, history)
+        report = self.cli()
+        self.assertIn({"reason": "recheck identity mismatch", "location": str(self.log) + "#L11"},
+                      report["population"]["skipped"])
+        updated = report["cases"][1]["review"]["confirmations"][0]
         self.assertEqual(updated["latest"], "unknown")
         self.assertEqual(len(updated["unordered"]), 1)
         self.assertEqual({r["report"] for r in updated["conflicting"]}, {"other", "cross-family-recheck1"})

@@ -5,7 +5,8 @@ import re
 from trace_hosts import observed_lines
 from trace_questions import case_ref, ratio, slice_plan
 from trace_records import canon, git_bytes, loc, UNKNOWN
-from trace_review_inputs import review_input
+from trace_review_inputs import first_round_score, review_input
+from trace_review_evidence import Archive
 
 
 class Trees:
@@ -72,7 +73,34 @@ def steering(case):
     return (True if lines else False if complete else UNKNOWN), locations
 
 
-def replay_units(cases):
+def following_review(case, population, plans):
+    result = dict(attribution=UNKNOWN, findings=[], candidate_reviews=[])
+    parent = case.start.get("parent")
+    if len(plans) != 1 or not parent or not case.history.started:
+        return result
+    family = [c for c in population if c.store == case.store and c.start.get("parent") == parent]
+    reviews = [c for c in family if c.history.kind == "code-review" and c.data["outcome"] == "delivered"
+               and not c.start.get("continues") and plans[0] in c.data["docs"] and c.history.started
+               and c.history.started > case.history.started]
+    for c in reviews:
+        result["candidate_reviews"].append(case_ref(c, c.end["_location"]))
+    if len(reviews) != 1:
+        return result
+    review = reviews[0]
+    candidates = [c for c in family if c.history.kind == "slice" and (plans[0] in c.data["docs"] or not c.data["docs"])
+                  and (not c.history.started or c.history.started <= review.history.started)]
+    if candidates != [case] or review.ambiguous or (case.data["commit"] and
+            case.closing["at"] and review.history.started <= canon.event_time(case.closing)):
+        return result
+    evidence = review.data.get("review")
+    if evidence and evidence["raw_rows"] != UNKNOWN:
+        score = first_round_score(review, Archive(review, {}), evidence)
+        result.update(attribution=UNKNOWN if score["unverified_sources"] else "verified",
+                      findings=score["dispositions"], unverified_sources=score["unverified_sources"])
+    return result
+
+
+def replay_units(cases, population):
     trees = Trees()
     rows, eligible = [], []
     for c in cases:
@@ -102,6 +130,7 @@ def replay_units(cases):
             if not match:
                 reasons.append("slice or plan revision unavailable")
             row["score"] = dict(test_criteria=match["location"] if match else UNKNOWN,
+                                following_code_review=following_review(c, population, plans),
                                 worker_outcomes=[{k: a[k] for k in ("terminal", "report_status", "containment",
                                                                      "terminal_location")} for a in c.data["worker_attempts"]])
         else:

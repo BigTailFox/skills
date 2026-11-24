@@ -37,8 +37,8 @@ def build(args):
     versions = version_inventory(args.skills_repo, selected, cases)
     return dict(population=population, cases=[c.data for c in selected], skill_versions=versions,
                 questions={**review_questions(selected, cases, args, catalog), "4": slice_outcomes(selected), "5": tier_changes(selected),
-                           "6": costs(selected), "7": retro_fixes(selected, notes), "8": end_checks(selected, notes),
-                           "9": replay_units(selected)})
+                           "6": costs(selected), "7": retro_fixes(selected, notes), "8": end_checks(selected, notes, cases),
+                           "9": replay_units(selected, cases)})
 
 
 def text_value(label, value, depth=0):

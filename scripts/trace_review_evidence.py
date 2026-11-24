@@ -4,7 +4,7 @@ import csv
 from pathlib import Path
 import re
 
-from trace_records import UNKNOWN, canon, loc
+from trace_records import UNKNOWN, canon, identifier, loc
 from trace_review_receipts import EvidenceError, assignments, decision_record, digest, require, verified_dispatches
 
 VALID = {"accepted", "deferred"}
@@ -14,6 +14,73 @@ NEW_BLOCKER = re.compile(r"^\s*(?:- )?\*\*(?:New blocker — )?(F[1-9]\d*)\.", r
 ROLE_PREFIX = re.compile(r"^(?:same-model|spec|standards|cross-family)(?:-|$)")
 STEM = re.compile(r"[A-Za-z0-9_-]{1,100}")
 GROUP = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,99}")
+
+
+LABEL = re.compile(r"^(targets?|follow-on targets|changes since|as-built|diff(?: command)?|"
+                   r"untracked(?: [^:]{1,45})?|paths)(?:\s*:\s*(.*))?$", re.I)
+LIST_FIELDS = {"target", "targets", "follow-on targets", "untracked", "paths"}
+LIST_ITEM = re.compile(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)(.+)$")
+CONCRETE_SCOPE = re.compile(r"\bgit\s+(?:-C\s+\S+\s+)?diff\b|\b[DP]\d{3,}[A-Z]?\b|"
+                            r"(?:[\w.-]+/)+[\w.*-]+|[\w_-]+\.[A-Za-z][\w-]*|`[\w./*-]+`", re.I)
+
+
+def scope_lines(archive, stem):
+    name = stem + "-prompt.md"
+    data = archive.read(name)
+    if not data:
+        return []
+    rows, field, fence = [], None, None
+    pending = None
+    for n, raw in enumerate(data.decode("utf-8", errors="replace").splitlines(), 1):
+        line = raw.strip()
+        where = loc(archive.files[name], n)
+        marker = re.match(r"^(`{3,}|~{3,})", line)
+        if fence:
+            if marker and marker[1][0] == fence[0] and len(marker[1]) >= len(fence):
+                fence = None
+                rows.append((field, "", where))
+            elif field:
+                rows.append((field, line, where))
+                if line:
+                    pending = None
+            continue
+        if marker and field:
+            fence = marker[1]
+            rows.append((field, "", where))
+            continue
+        header = re.sub(r"^#{1,6}\s+|\s+#+$", "", line)
+        header = re.sub(r"^(?:[-*+]\s+)?(\*{1,3}|_{1,3})(.+?)\1(?=\s|:|$)", r"\2", header)
+        if re.match(r"assess(?:\s*:|$)", header, re.I):
+            break
+        declaration = LABEL.fullmatch(header)
+        if declaration:
+            if pending:
+                rows.append(("unverified scope", "", pending))
+                pending = None
+            label = declaration[1].lower()
+            label = "untracked" if label.startswith("untracked") else label
+            rows.append((label, declaration[2] or "", where))
+            field = label if label in LIST_FIELDS else None
+            value = declaration[2] or ""
+            if field and (not value.strip() or re.search(r"\b(?:below|as follows|following (?:files|paths|targets))\b", value, re.I)):
+                pending = where
+        elif (re.search(r"\breview\b[^\n]*?\bagainst\b", line, re.I)
+              and re.search(r"`git\s+(?:-C\s+\S+\s+)?diff\s+[^`]+`", line)):
+            rows.append(("diff command", line, where))
+            field = None
+        elif field and line:
+            item = LIST_ITEM.match(raw)
+            if item or raw.startswith(("    ", "\t")) or re.fullmatch(r"[`\w./*-]+", line) and CONCRETE_SCOPE.search(line):
+                rows.append((field, item[1] if item else line, where))
+                pending = None
+            elif line.startswith(">"):
+                rows.append(("unverified scope", "", where))
+                field = None
+            else:
+                field = None
+    if pending or fence:
+        rows.append(("unverified scope", "", pending or loc(archive.files[name], n)))
+    return rows
 
 
 class Archive:
@@ -69,7 +136,7 @@ class Archive:
         return None
 
     def first_stems(self):
-        return {Path(name).stem for name in self.files if name.endswith(".md") and
+        return {Path(name).stem for name in self.files if name.endswith(".md") and STEM.fullmatch(Path(name).stem) and
                 (ROLE_PREFIX.match(Path(name).stem) or name[:-3] + "-prompt.md" in self.files)
                 and not re.search(r"-(?:confirm|recheck\d*)(?:[-.]|$)|-(?:prompt|pending)\.md$", name)
                 and Path(name).stem not in self.rechecks | self.later_confirmations}
@@ -220,6 +287,14 @@ def prompt_scope(archive, stem, source):
     require(lo <= hi <= len(lines), "invalid prompt scope")
     target = b"\n".join(lines[lo-1:hi]).strip()
     require(target, "empty prompt scope")
+    declarations = scope_lines(archive, stem)
+    if any(label == "unverified scope" for label, _, _ in declarations):
+        return None
+    if not any(label in {"target", "targets", "diff", "diff command"} and CONCRETE_SCOPE.search(value)
+               for label, value, _ in declarations):
+        return None
+    if not all(lo <= int(place.rsplit("#L", 1)[1]) <= hi for _, _, place in declarations):
+        return None
     return target
 
 
@@ -242,7 +317,7 @@ def source_inventory(case, archive, catalog, registered):
             pending.append(key)
         elif phase == "first":
             require(key not in first, "ambiguous independent report key")
-            require(canon.short_field(src["model"]) and (not src["reviewer_id"] or canon.short_field(src["reviewer_id"])),
+            require(identifier(src["model"]) and (not src["reviewer_id"] or identifier(src["reviewer_id"])),
                     "invalid report identity")
             identity = archive.read(stem + "-id.txt")
             require(identity is not None and identity.decode().strip() == (src["reviewer_id"] or ""),
@@ -401,7 +476,9 @@ def summarize(claims, reports, pending, comparable, outcome):
                 counts = {"joint": joint, "exclusive": exclusive, "single_source_unknown": single}[category]
                 for k in contributors:
                     counts[k] += 1
-    return dict(attribution="verified" if all(g["attribution"] != "unverified" for g in groups) else "partial",
+    complete = (all(g["attribution"] != "unverified" and g["disposition"] != UNKNOWN for g in groups)
+                and all(c["group"] != UNKNOWN and c["disposition"] != UNKNOWN for c in first))
+    return dict(attribution="verified" if complete else "partial",
                 reports=reports, pending=pending, comparable_scope=comparable, first_findings=len(first),
                 omitted=sum(c["raw_row"] is None for c in first), confirmation_only=len(claims) - len(first),
                 first_dispositions=dict(Counter(c["disposition"] for c in first)), source_findings=claims, groups=groups,

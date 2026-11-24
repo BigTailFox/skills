@@ -22,6 +22,12 @@ CAVEAT = "Untraced work is unknown, not absent."
 REVIEW = canon.REVIEW_ROLES
 
 
+def identifier(value):
+    if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_./:-]{1,200}", value):
+        return value
+    return None
+
+
 def stamp(value):
     return canon.event_time({"at": value})
 
@@ -84,8 +90,16 @@ def load_events(store, population):
                 if e["v"] != 1 or e.get("type") not in {"start", "end", "manifest", "recheck"}:
                     skip("unsupported")
                     continue
+                if e["type"] in {"start", "end"}:
+                    formats = {"conversation": identifier, "model": identifier, "snapshot": canon.full_oid,
+                               "head": canon.full_oid, "base": canon.full_oid, "review_input": canon.full_oid,
+                               "manifest": lambda v: isinstance(v, str) and re.fullmatch(r"[0-9a-f]{64}", v)}
+                    for key, valid in formats.items():
+                        if e.get(key) is not None and not valid(e[key]):
+                            e[key] = None
+                            skip("malformed " + key)
                 if e["type"] == "manifest":
-                    if not isinstance(e.get("skills"), dict) or not isinstance(e.get("digest"), str):
+                    if not isinstance(e.get("skills"), dict) or not isinstance(e.get("digest"), str) or not re.fullmatch(r"[0-9a-f]{64}", e["digest"]):
                         raise ValueError()
                 else:
                     if (not canon.UNIT_RE.fullmatch(e["id"]) or e["kind"] not in canon.TRACE_KINDS or
@@ -98,8 +112,13 @@ def load_events(store, population):
                                                   not canon.SLICE_RE.fullmatch(e.get("slice", ""))):
                         raise ValueError()
                     if e["type"] == "start":
-                        if any(not re.fullmatch(r"[CDPREI]\d{3,}[A-Z]?(?:@r\d+)?", d) for d in e.get("docs", [])):
-                            raise ValueError()
+                        docs = [d for d in e.get("docs", []) if re.fullmatch(r"[CDPREI]\d{3,}[A-Z]?(?:@r\d+)?", d)]
+                        if docs != e.get("docs", []):
+                            e["docs"] = docs
+                            skip("malformed document reference")
+                        if e["kind"] != "slice" and e.get("slice") is not None:
+                            e["slice"] = None
+                            skip("unexpected slice")
                         for key in ("skill", "conversation", "model", "head", "base", "snapshot", "manifest"):
                             if e.get(key) is not None and not isinstance(e[key], str):
                                 raise ValueError()
@@ -120,9 +139,16 @@ def load_events(store, population):
                             skip("malformed archive")
                     if e["type"] == "recheck":
                         canon.check_recheck(e)
+                        if not identifier(e["model"]):
+                            raise ValueError()
                     if e["type"] == "end" and e.get("dispositions") is not None:
                         try:
                             canon.check_dispositions(e["kind"], e["dispositions"], allow_repeated_sources=True)
+                            for author in e["dispositions"]["reviewers"]:
+                                for key in ("model", "id"):
+                                    if author[key] is not None and not identifier(author[key]):
+                                        author[key] = UNKNOWN
+                                        skip("malformed reviewer " + key)
                         except (canon.TraceError, KeyError, TypeError, ValueError):
                             e["dispositions"] = None
                             skip("malformed dispositions")
@@ -234,7 +260,12 @@ def read_store(project, store, population):
         if predecessor:
             predecessor.history.continuation = h.unit
         issues = Counter()
+        submitted = {source: list(events) for source, events in h.rechecks.items()}
         h.verify_rechecks(issues)
+        for source, events in submitted.items():
+            retained = {(e["report"], canon.recheck_claim(e)) for e in [*h.rechecks[source], *h.conflicts[source]]}
+            population["skipped"].extend(dict(reason="recheck identity mismatch", location=e["_location"])
+                                         for e in events if (e["report"], canon.recheck_claim(e)) not in retained)
         for conflicts in h.conflicts.values():
             population["skipped"].extend(dict(reason="conflicting recheck", location=e["_location"]) for e in conflicts)
     for case in cases.values():

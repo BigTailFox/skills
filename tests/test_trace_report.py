@@ -155,6 +155,38 @@ class TraceReport(ReportFixture):
         db.commit()
         self.assertEqual(row(*with_db)["host_start"]["source"], "cursor-db")
 
+    def test_divergent_immutable_cursor_base_matches_export_and_database(self):
+        import sqlite3
+        fork = self.base_plan()
+        self.git("checkout", "-qb", "change")
+        self.git("commit", "--allow-empty", "-qm", "work")
+        head = self.git("rev-parse", "HEAD")
+        self.git("checkout", "-qb", "independent", fork)
+        self.git("commit", "--allow-empty", "-qm", "other")
+        other = self.git("rev-parse", "HEAD")
+        command = "python3 .agents/skills/canon/scripts/canon.py trace start implement --tier L1 --base " + other[:12]
+        write_lines(self.log, [start(host="cursor", conversation=CONV, head=head, base=fork), end()])
+        export = self.cursor / "projects/redacted/agent-transcripts" / CONV / (CONV + ".jsonl")
+        write_lines(export, [dict(role="assistant", message=dict(content=[dict(type="tool_use", name="Shell",
+                                    input=dict(command=command, working_directory=str(self.project)))]))])
+        self.assertEqual(self.cli()["cases"][0]["host_start"]["source"], "export")
+        write_lines(export, [])
+        database = self.root / "state.vscdb"
+        bubble = SECOND + "/t:toolu_One"
+        args = dict(command=command, workingDirectory=str(self.project), conversationId=CONV)
+        params = dict(command=command, cwd=str(self.project), parsingResult=dict(executableCommands=[
+            dict(name="python3", fullText=command, args=[dict(type="word", value=w) for w in command.split()[1:]])]))
+        row = dict(type=2, bubbleId=bubble, createdAt="2026-01-01T00:00:04Z", startedAtMs=1767225604000,
+                   completedAtMs=1767225606000, toolFormerData=dict(name="run_terminal_command_v2",
+                   toolCallId="toolu_One", status="completed", rawArgs=args, params=params,
+                   result=dict(rejected=False, output="trace " + UNIT)))
+        with sqlite3.connect(database) as db:
+            db.execute("CREATE TABLE cursorDiskKV (key TEXT PRIMARY KEY, value BLOB)")
+            db.execute("INSERT INTO cursorDiskKV VALUES (?,?)", ("bubbleId:" + CONV + ":" + bubble, json.dumps(row)))
+        self.assertEqual(self.cli("--cursor-state-db", database)["cases"][0]["host_start"]["source"], "cursor-db")
+        write_lines(self.log, [start(host="cursor", conversation=CONV, head=head, base=other), end()])
+        self.assertEqual(self.cli("--cursor-state-db", database)["cases"][0]["host_start"]["source"], "unknown")
+
     @staticmethod
     def native(second, kind, **p):
         return {"timestamp": f"2026-01-01T00:{second // 60:02}:{second % 60:02}.100Z", "type": kind, "payload": p}
@@ -206,6 +238,17 @@ class TraceReport(ReportFixture):
         self.assertEqual(c["parent_cost"]["locations"], [str(path) + "#L3", str(path) + "#L6"])
         self.rollout(CONV, [ctx, self.counters(3, 4), *a, self.counters(59, 8, extra_tokens=5), *z], home=second_home, archived=True)
         self.assertEqual(self.cli(*opts)["cases"][0]["parent_cost"]["tokens"], "unknown")
+
+        different_total = self.counters(59, 5)
+        different_total["payload"]["info"]["total_token_usage"]["total_tokens"] = 21
+        self.rollout(CONV, [ctx, self.counters(3, 4), *a, different_total, *z], home=second_home, archived=True)
+        self.assertEqual(self.cli(*opts)["cases"][0]["parent_cost"]["tokens"], "unknown")
+        torn = self.counters(59, 5)
+        torn["payload"]["info"]["total_token_usage"]["cached_input_tokens"] = 12
+        self.rollout(CONV, [ctx, self.counters(3, 4), *a, torn, *z], home=second_home, archived=True)
+        cost = self.cli(*opts)["cases"][0]["parent_cost"]
+        self.assertEqual(cost["tokens"], "unknown")
+        self.assertEqual(len(cost["locations"]), 2)
         self.rollout(CONV, [ctx, self.counters(3, 4), *a, self.counters(24, 1), self.counters(59, 8), *z],
                      home=second_home, archived=True)
         self.assertEqual(self.cli(*opts)["cases"][0]["parent_cost"]["tokens"], "unknown")
@@ -215,6 +258,39 @@ class TraceReport(ReportFixture):
         return [self.native(t, "response_item", type="function_call", namespace="collaboration", name=verb,
                             arguments=json.dumps(args), call_id=call),
                 self.native(t, "response_item", type="function_call_output", call_id=call, output=receipt)]
+
+    def test_batch_receipt_belongs_to_the_successful_matching_command(self):
+        write_lines(self.log, [start(host="codex", conversation=CONV, docs=["P001@r1"]), end()])
+        cmd = "python3 .agents/skills/canon/scripts/canon.py trace start implement P001 --tier L1"
+        source = 'const jobs=[' + json.dumps(cmd) + ',"cat saved"]; const rs=await Promise.all(jobs.map(cmd=>tools.exec_command({cmd})));for(const r of rs)text(r)'
+        def check(executions, code=source):
+            self.rollout(CONV, [self.native(4, "response_item", type="custom_tool_call", namespace="functions",
+                                            name="exec", call_id="batch", input=code),
+                                self.native(5, "response_item", type="custom_tool_call_output", call_id="batch",
+                                            output=[{"type":"text","text":json.dumps(x)} for x in executions])])
+            return self.cli()["cases"][0]["host_start"]["source"]
+        bad = {"exit_code":1, "output":"failed"}
+        hit = {"exit_code":0, "output":"trace " + UNIT}
+        self.assertEqual(check([bad, hit]), "unknown")
+        self.assertEqual(check([hit, bad]), "export")
+        self.assertEqual(check([bad, hit], 'if(false)text(0);' + source), "unknown")
+        self.assertEqual(check([hit, bad], source.replace("P001", "P002")), "unknown")
+        self.assertEqual(check([hit, bad], source.replace("--tier L1", "--tier L1 || cat saved")), "unknown")
+        ambiguous = 'if(false)text(0);const x=await tools.exec_command({cmd:' + json.dumps(cmd) + '});text(x);text(await tools.exec_command({cmd:"cat saved"}))'
+        self.assertEqual(check([bad, hit], ambiguous), "unknown")
+        conditional = 'text(false ? await tools.exec_command({cmd:' + json.dumps(cmd) + '}) : "unused");text(await tools.exec_command({cmd:"cat saved"}))'
+        self.assertEqual(check([bad, hit], conditional), "unknown")
+
+    def test_malformed_metadata_is_located_without_rendering_its_contents(self):
+        write_lines(self.log, [start(host="codex", conversation="PRIVATE\ntext", manifest="PRIVATE words",
+                                     docs=["PRIVATE material"], model="PRIVATE\nmodel"), end()])
+        report = self.cli()
+        case, = report["cases"]
+        for field in ("conversation", "manifest", "recorded_model"):
+            self.assertEqual(case[field], "unknown")
+        self.assertTrue(report["population"]["skipped"])
+        self.assertIn("#L1", str(report["population"]["skipped"]))
+        self.cli(text=True)
 
     def worker_turn(self, first, last, lo, hi, status="done"):
         return [self.counters(first, lo), self.native(first + 1, "event_msg", type="task_started"),
@@ -293,6 +369,8 @@ class TraceReport(ReportFixture):
         self.assertIn(str(command), str(external["locations"]))
         group, = output["questions"]["1"]["groups"]
         self.assertEqual(group["reviewer_cost"]["tokens"]["total_tokens"]["total"], 40)
+        self.assertEqual(group["cross_family_cost"]["tokens"]["total_tokens"]["total"], 20)
+        self.assertEqual(group["cross_family_cost"]["distinct_known_sessions"], 1)
         self.assertEqual(group["reviewer_cost"]["wall_seconds"]["unknown"], 1)
 
     def git(self, *args, at=None):
@@ -410,6 +488,10 @@ class TraceReport(ReportFixture):
         self.assertEqual((a["session"], a["containment"], a["report_status"]), (SECOND, "contained", "done"))
         self.assertEqual(a["terminal_location"], str(child) + "#L3")
         self.assertEqual(a["child_cost"]["wall_seconds"], "unknown")
+        clean = parent.read_text().splitlines()
+        write_lines(parent, [*clean[:2], "damaged", *clean[2:]])
+        self.assertEqual(read()["fresh_subagents"], "unknown")
+        write_lines(parent, clean)
         write_lines(child, [record("user", text("Envelope: PRIVATE brief")), record("assistant", text("Status: done"))])
         self.assertEqual(read()["worker_attempts"][0]["containment"], "unknown")
 
@@ -435,6 +517,118 @@ class TraceReport(ReportFixture):
                 attempt, = unit["worker_attempts"]
                 self.assertEqual((attempt["containment"], attempt["child_cost"]["tokens"]), ("unknown", "unknown"))
                 self.assertEqual(report["questions"]["4"]["slices"][0]["stop"], "unknown")
+
+    def test_slice_coverage_model_changes_and_other_slices_dispatch(self):
+        base = self.base_plan()
+        self.plan("done")
+        self.git("commit", "-qam", "complete S1", at="2026-01-01T00:00:50Z")
+        write_lines(self.log, [start(PRIOR, at="2025-12-31T23:59:59Z", host="codex", conversation=CONV, head=base),
+                               start(kind="slice", host="codex", conversation=CONV, docs=["P001@r1"],
+                                     slice="S1", parent=PRIOR, head=base),
+                               end(PRIOR, head=self.git("rev-parse", "HEAD"))])
+        rows = [self.native(1, "turn_context", model="first", effort="high"), self.counters(2, 1),
+                *self.boundary(4, "start slice P001 --slice S1 --parent " + PRIOR, "trace " + UNIT),
+                *self.dispatch(10, "spawn_agent", "p001_s2", "other", json.dumps({"agent_id": SECOND})),
+                self.counters(12, 2)]
+        self.rollout(SECOND, self.worker_turn(11, 18, 1, 5, "blocked"), parent=CONV, key="p001_s2")
+        def measure():
+            return next(c for c in self.cli()["cases"] if c["unit"] == UNIT)
+        self.rollout(CONV, rows)
+        case = measure()
+        self.assertEqual((case["fresh_subagents"], case["parent_cost"]["tokens"]), ("unknown", "unknown"))
+        self.assertEqual(case["worker_attempts"], [])
+        self.rollout(CONV, rows + [self.native(30, "turn_context", model="second", effort="low"),
+                                  self.native(55, "event_msg", type="task_complete")])
+        case = measure()
+        self.assertEqual(case["fresh_subagents"], 1)
+        self.assertEqual((case["model"], case["effort"]), ("unknown", "unknown"))
+        self.assertEqual(len(case["model_locations"]), 2)
+
+    def test_late_resume_with_an_unrelated_target_name_keeps_original_slice_owner(self):
+        parent = start(PRIOR, at="2025-12-31T23:59:59Z", host="codex", conversation=CONV)
+        first = start(kind="slice", host="codex", conversation=CONV, docs=["P001@r1"], parent=PRIOR, slice="S1")
+        second = start(GATE, "slice", "2026-01-01T00:00:25Z", host="codex", conversation=CONV,
+                       docs=["P001@r1"], parent=PRIOR, slice="S2")
+        write_lines(self.log, [parent, first, second, end(PRIOR)])
+        launch = self.dispatch(9, "spawn_agent", "builder", "a", json.dumps({"agent_id": SECOND}))
+        args = json.loads(launch[0]["payload"]["arguments"])
+        launch[0]["payload"]["arguments"] = json.dumps(dict(args, message="Implement P001 S1"))
+        self.rollout(CONV, [*self.boundary(4, "start slice P001 --slice S1 --parent " + PRIOR, "trace " + UNIT),
+                            *launch, *self.boundary(24, "start slice P001 --slice S2 --parent " + PRIOR, "trace " + GATE, "b"),
+                            *self.dispatch(30, "followup_task", "/root/builder", "resume", "Follow-up to /root/builder"),
+                            *self.boundary(64, "end " + PRIOR + " delivered", "trace " + PRIOR + " ended", "close")])
+        self.rollout(SECOND, [*self.worker_turn(10, 18, 1, 2), *self.worker_turn(31, 40, 2, 4, "blocked")],
+                     parent=CONV, key="builder")
+        cases = {c["unit"]: c for c in self.cli()["cases"]}
+        self.assertEqual([(a["mode"], a["containment"]) for a in cases[UNIT]["worker_attempts"]],
+                         [("launch", "unknown"), ("resume", "outside")])
+        self.assertEqual(cases[GATE]["worker_attempts"], [])
+
+    def test_cursor_resume_in_next_slice_is_owned_by_the_original_worker_prompt(self):
+        parent = start(PRIOR, at="2025-12-31T23:59:59Z", host="cursor", conversation=CONV)
+        one = start(kind="slice", host="cursor", conversation=CONV, docs=["P001@r1"], parent=PRIOR, slice="S1")
+        two = start(GATE, "slice", "2026-01-01T00:00:25Z", host="cursor", conversation=CONV,
+                    docs=["P001@r1"], parent=PRIOR, slice="S2")
+        write_lines(self.log, [parent, one, two, end(PRIOR)])
+        path = self.cursor / "projects/fixture/agent-transcripts" / CONV / (CONV + ".jsonl")
+        def shell(cmd):
+            return dict(role="assistant", message=dict(content=[dict(type="tool_use", name="Shell", input={
+                "command": "python3 .agents/skills/canon/scripts/canon.py trace " + cmd})]))
+        def task(**args):
+            return dict(role="assistant", message=dict(content=[dict(type="tool_use", name="Task",
+                input=dict(description="Develop the slice", run_in_background=False, **args))]))
+        for brief in ("Implement P001 S1", "Implement the requested change"):
+            write_lines(path, [shell("start implement --tier L1"), shell("start slice P001 --slice S1 --parent " + PRIOR),
+                               task(prompt=brief), shell("start slice P001 --slice S2 --parent " + PRIOR),
+                               task(resume=SECOND), shell("end " + PRIOR + " delivered")])
+            def utterance(role, value):
+                return dict(role=role, message=dict(content=[dict(type="text", text=value)]))
+            write_lines(path.parent / "subagents" / (SECOND + ".jsonl"),
+                        [utterance("user", brief), utterance("assistant", "Status: done"), dict(type="turn_ended", status="success"),
+                         utterance("user", "continue"), utterance("assistant", "Status: blocked"), dict(type="turn_ended", status="success")])
+            cases = {c["unit"]: c for c in self.cli()["cases"]}
+            self.assertEqual([a["mode"] for a in cases[UNIT]["worker_attempts"]], ["launch", "resume"])
+            self.assertEqual(cases[UNIT]["worker_attempts"][-1]["containment"], "outside")
+            self.assertEqual(cases[GATE]["worker_attempts"], [])
+
+    def test_one_gate_with_twenty_sessions_has_a_one_unit_cost_sample(self):
+        people = [dict(role="cross-family", model="example", id=f"session-{i}",
+                       key="cross-family" if i == 1 else f"cross-family-{i}") for i in range(1, 21)]
+        directory = self.log.parent / UNIT
+        directory.mkdir(parents=True)
+        for person in people:
+            (directory / (person["key"] + ".md")).write_text("No findings.")
+        write_lines(self.log, [start(kind="gate"), end(kind="gate", archive="ok",
+                               dispositions=dict(reviewers=people, findings=[], new_blockers=0))])
+        cost = self.cli()["questions"]["1"]["groups"][0]["reviewer_cost"]
+        self.assertEqual((cost["wall_seconds"]["denominator"], cost["wall_seconds"]["sample"]), (20, "few units"))
+
+    def test_child_cost_sample_uses_unit_ids_even_in_project_paths_with_at_signs(self):
+        self.project = self.root / "project @ work"
+        self.log = self.project / TRACE / "events.jsonl"
+        skills = {"canon": "a" * 64}
+        digest = hashlib.sha256(json.dumps(skills, separators=(",", ":")).encode()).hexdigest()
+        events = [dict(v=1, type="manifest", skills=skills, digest=digest)]
+        parent, child = [], []
+        for i in range(20):
+            offset = 20 * i
+            uid = f"20260101T000005Z-{i:06x}"
+            def at(seconds):
+                return self.native(seconds, "event_msg")["timestamp"].split(".")[0] + "Z"
+            events.extend([start(uid, "gate", at(offset+5), host="codex", conversation=CONV, manifest=digest,
+                                 model="example", skill=str(self.project / "canon")),
+                           end(uid, "gate", at(offset+18), manifest=digest)])
+            parent.extend(self.boundary(offset+4, "start gate --tier L1 --skill canon --model example", "trace " + uid, f"s{i}"))
+            verb, name = ("followup_task", "/root/reviewer") if i else ("spawn_agent", "reviewer")
+            parent.extend(self.dispatch(offset+7, verb, name, f"d{i}", json.dumps({"agent_id": SECOND})))
+            parent.extend(self.boundary(offset+17, f"end {uid} delivered", f"trace {uid} ended", f"e{i}"))
+            child.extend(self.worker_turn(offset+8, offset+14, 2*i+1, 2*i+2))
+        write_lines(self.log, events)
+        self.rollout(CONV, parent)
+        self.rollout(SECOND, child, parent=CONV, key="reviewer")
+        group, = self.cli()["questions"]["6"]["groups"]
+        sample, = group["child_costs"]
+        self.assertEqual((sample["wall_seconds"]["denominator"], sample["wall_seconds"]["sample"]), (20, "20 or more units"))
 
     def test_pause_requires_matching_log_stash_and_the_same_plan_revision(self):
         base = self.base_plan()

@@ -68,8 +68,8 @@ def confirmation_question(delivered):
                 rounds.append(dict(case_ref(c, c.end["_location"], *review["confirmation_reports"]), new_blockers=review["new_blockers"]))
                 blockers += review["new_blockers"]
         groups.append(dict(**key, cases=[case_ref(c, c.end["_location"]) for c in cases], unknown=unknown,
-                           confirmed=confirmed, initial_not_resolved=ratio(len(unresolved), len(confirmed), unresolved, len(cases)),
-                           new_blockers=ratio(blockers, len(rounds), rounds, len(cases))))
+                           confirmed=confirmed, initial_not_resolved=ratio(len(unresolved), len(confirmed), unresolved, len({r["case"] for r in confirmed})),
+                           new_blockers=ratio(blockers, len(rounds), rounds, len({r["case"] for r in rounds}))))
     return dict(title="Initial confirmation verdicts and new blockers per round", groups=groups)
 
 
@@ -119,7 +119,7 @@ def cross_family_question(delivered):
             if uncertain_credit:
                 unknown_credit.append(label)
         groups.append(dict(**key, cases=actual, unknown_reviews=uncertain,
-                           reviewer_cost=group_costs(participating),
+                           reviewer_cost=group_costs(participating), cross_family_cost=group_costs(participating, "cross-family"),
                            recorded=ratio(len(raw), len(actual), raw, len(actual)),
                            adjudicated=review_rate(adjudicated, actual, unknown_groups),
                            verified=review_rate(verified, actual, unknown_credit)))
@@ -140,7 +140,14 @@ def axis_question(delivered):
                 for r in review["raw_findings"]:
                     if r["axis"] == axis and r["disposition"] in VALID:
                         buckets["recorded"].append(dict(case_ref(c, r["location"]), raw_row=r["raw_row"]))
+                for claim in review.get("source_findings", []):
+                    source_axis = claim["role"] if claim["role"] in {"spec", "standards"} else claim["axis"]
+                    if (claim["phase"] == "first" and source_axis == axis and claim["disposition"] in VALID | {UNKNOWN}
+                        and (claim["group"] == UNKNOWN or claim["disposition"] == UNKNOWN)):
+                        contested.append(dict(case_ref(c, *claim["locations"]), source=claim["source"]))
                 for g in review["groups"]:
+                    if axis in g["axes"] and g["disposition"] == UNKNOWN:
+                        contested.append(dict(case_ref(c, *g["locations"]), group=g["group"]))
                     if axis in g["axes"] and g["disposition"] in VALID:
                         ref = dict(case_ref(c, *g["locations"]), group=g["group"])
                         buckets["adjudicated"].append(ref)
@@ -153,7 +160,7 @@ def axis_question(delivered):
             axes[axis] = {}
             for name, items in buckets.items():
                 missing = raw_unknown if name == "recorded" else unknown
-                if name in ("verified", "joint", "exclusive", "single_source_unknown"):
+                if name in ("adjudicated", "verified", "joint", "exclusive", "single_source_unknown"):
                     missing = [*missing, *contested]
                 axes[axis][name] = review_rate(items, cases, missing)
         groups.append(dict(**key, cases=[case_ref(c, c.end["_location"]) for c in cases], axes=axes,
