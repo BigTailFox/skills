@@ -20,7 +20,7 @@
 
 ### Plans
 
-- [P011: Paired workflow replay](plans/P011-paired-workflow-replay.md) · draft · Prepare, run, score and summarize paired historical replays with verified inputs, isolated slice tests and blinded judgments. · modules: canon
+- [P011: Paired workflow replay](plans/P011-paired-workflow-replay.md) · accepted · Prepare, run, score and summarize paired historical replays with verified inputs, isolated slice tests and blinded judgments. · modules: canon
 
 ### Reviews
 

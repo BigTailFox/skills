@@ -1,5 +1,5 @@
 ---
-status: draft
+status: accepted
 created: 2026-11-25
 updated: 2026-11-25
 revision: 1
@@ -9,6 +9,7 @@ refs: [D012]
 based_on: [D012@r1]
 reviewed: 1
 reviewers: [gpt-6.2-astra, gemini-4-neon-xhigh]
+approved: 1
 ---
 
 # P011: Paired workflow replay
