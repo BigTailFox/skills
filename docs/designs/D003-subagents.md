@@ -103,7 +103,7 @@ After a wait times out, check the original job. If it is still running, continue
 
 ## Decisions
 
-- Machine-local routes expose activity, early identity and same-session recovery where supported. Silk had a buffered review lasting nearly 15 minutes and a separate caller deadline that required manual recovery. [R004: Silk feedback](../reviews/R004-silk-canon-field-feedback.md)
+- Machine-local routes expose activity, early identity and same-session recovery where supported. Silk had a buffered review lasting nearly 15 minutes and a separate caller deadline that required manual recovery. [R004: Silk feedback](../archived/reviews/R004-silk-canon-field-feedback.md)
 
 - Subagents are new, never forks of the session: a fork carries the conversation, which would unblind a reviewer and fill a worker's context window (`canon-blind-review`'s definition of a blind reviewer; e71dae1). The rule covers the subagents other skills launch too, since a fork would carry the session's assumptions into a researcher, a search or designs meant to differ, and some hosts fork by default, Codex for one (mattpocock/skills 7739eae).
 - Subagents run on the session's model and effort, which the user sets: in Cursor a Task subagent runs on the session's model unless the user asks for another, from a fixed list whose names fix the effort, so workers and same-model reviewers need no setup (README, Host verification). It replaced per-role effort tables and the Reviewers and Workers lines (3c560ed).

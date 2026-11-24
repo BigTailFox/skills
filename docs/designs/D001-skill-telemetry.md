@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-10-15
-updated: 2026-11-23
+updated: 2026-11-24
 revision: 15
 modules: [canon]
 summary: Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions.
@@ -320,7 +320,7 @@ Calls and latency are measured in the pilot; `canon.py` enforces the sizes, and 
 
 ## Decisions
 
-- One original confirmation and subsequent report-addressed rechecks preserve both what a gate concluded and what later evidence changed. Silk found three old unresolved results with resolved rechecks, and reviewing a 31-start inventory required matching its ends and archives by hand. [R004: Silk feedback](../reviews/R004-silk-canon-field-feedback.md)
+- One original confirmation and subsequent report-addressed rechecks preserve both what a gate concluded and what later evidence changed. Silk found three old unresolved results with resolved rechecks, and reviewing a 31-start inventory required matching its ends and archives by hand. [R004: Silk feedback](../archived/reviews/R004-silk-canon-field-feedback.md)
 
 - Agents make only mechanical `trace` calls, plus the review dispositions: written reports cost tokens and attention and are unreliable, and everything else already exists in docs, Git and host records.
 - `trace` lives in the project's `canon.py`: agents already run it from a known path with standing permission, and the in-project part is small. The analysis lives in the skills repository, where skill changes are made.

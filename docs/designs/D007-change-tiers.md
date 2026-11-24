@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-11-10
-updated: 2026-11-23
+updated: 2026-11-24
 revision: 9
 modules: [canon]
 summary: Change tiers and their flows, design problems, and the review gate of a change: steps, prompt, merge rules, confirmation and follow-up rounds, status.
@@ -194,7 +194,7 @@ Each L2 gate keeps its own worktree-local record, including when tracing is off.
 
 ## Decisions
 
-- The user can grant a scoped exception after the independent route is exhausted. A Silk gate retained seven confirmed fixes after two HTTP 429 responses, and a later target in another gate was credited to reviewers who had not read it. [R004: Silk feedback](../reviews/R004-silk-canon-field-feedback.md)
+- The user can grant a scoped exception after the independent route is exhausted. A Silk gate retained seven confirmed fixes after two HTTP 429 responses, and a later target in another gate was credited to reviewers who had not read it. [R004: Silk feedback](../archived/reviews/R004-silk-canon-field-feedback.md)
 
 - The user can approve an L2 design or plan by starting the next phase on it, and until approved it stays a `draft` whose `reviewed` equals `revision` (6fc017c; reason unknown, kept as found).
 - A revision that rewrites a design's goals or core approach is L2, even inside one design's owned topics (6fc017c; reason unknown, kept as found).
@@ -203,7 +203,7 @@ Each L2 gate keeps its own worktree-local record, including when tracing is off.
 - A gate commits its targets before any further edit that changes their meaning, a later edit in the same session is a new revision that goes to the gate's reviewers as a follow-up round on what changed, and the gate asks first whether the user's content feedback is finished: one design passed 5 gates in a day, edits made after confirmation rounds reached no reviewer, and committing each revision gives each content its own revision ([R003§r003-f2-edits-after-a-gate-passes: R003-F2](../archived/reviews/R003-silk-design-phase.md#r003-f2-edits-after-a-gate-passes); the user's decision, 2026-11-11). The commit need not follow the gate at once, so setup keeps its single commit after all its gates unless a later gate revises an earlier target, and a revision whose prompt differs from the gate's passes a new gate, since resumed reviewers keep the gate's criteria (P003's gate; the user's decision, 2026-11-11).
 - A change to docs alone that bumps no revision takes no tier, and a design revision that needs no code change needs no plan: as L0 work, a concept edit would take a code review of no code, sessions disagreed whether such edits were L0 or L1, and an L2 D000 written before any code needed a plan with no slice to build ([R003§r003-f21-tiers-for-docs-only-work: R003-F21](../archived/reviews/R003-silk-design-phase.md#r003-f21-tiers-for-docs-only-work); the user's decision, 2026-11-11).
 - L2 approval is an answer to the gate's request or the start of the next phase, recorded in `approved`: sessions guessed whether "please continue" approved a doc, and the approval of a revised active design, whose status does not change, left no record. Only the user starts the next phase's skills, which are manual ([R003§r003-f24-revision-and-approval-bookkeeping: R003-F24](../archived/reviews/R003-silk-design-phase.md#r003-f24-revision-and-approval-bookkeeping); the user's decision, 2026-11-11).
-- A gate records pending approvals across rounds because the final follow-up in Silk listed three targets while a fourth, `D002@r6`, still required approval. The gate key preserves the scope of that change when a fresh session recovers it ([R004: Silk feedback](../reviews/R004-silk-canon-field-feedback.md), F1).
+- A gate records pending approvals across rounds because the final follow-up in Silk listed three targets while a fourth, `D002@r6`, still required approval. The gate key preserves the scope of that change when a fresh session recovers it ([R004: Silk feedback](../archived/reviews/R004-silk-canon-field-feedback.md), F1).
 - L2 gates require a cross-family reviewer subject to the [single-gate exception](#unavailable-cross-family-review), and an L1 gate runs one only when the user asks (2c3bc26; the user's decision, 2026-11-11). In one project's gates, each family caught majors the other passed ([R003§works-well: works well](../archived/reviews/R003-silk-design-phase.md#works-well)).
 - The prompt asks for every blocker and major finding and at most 10 minor ones: a cap of 10 findings in all could cut real problems in a large change (b387f60).
 - The prompt sets no word cap and asks for each finding as short as a reader can still verify: a cap limits how many findings fit and could force out a blocker or major one, and a report in Chinese cannot be counted in words (869e499).

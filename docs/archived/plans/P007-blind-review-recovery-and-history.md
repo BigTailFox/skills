@@ -1,7 +1,7 @@
 ---
 status: done
 created: 2026-11-23
-updated: 2026-11-23
+updated: 2026-11-24
 revision: 1
 modules: [canon]
 summary: Recover interrupted blind reviews, credit the reports each revision received and query the complete trace history of findings and rechecks.
@@ -14,7 +14,7 @@ based_on: [D003@r11, D007@r9, D001@r15]
 
 # P007: Blind review recovery and history
 
-Deliver findings F4, F5, F6, F10 and F11 in [R004: field feedback](../../reviews/R004-silk-canon-field-feedback.md). Read historical records first, then capture findings and rechecks. Select and recover external reviewers through the installed skills. Finally, link the trace of a handed-off review and finish the gate with the reports each target received.
+Deliver findings F4, F5, F6, F10 and F11 in [R004: field feedback](../reviews/R004-silk-canon-field-feedback.md). Read historical records first, then capture findings and rechecks. Select and recover external reviewers through the installed skills. Finally, link the trace of a handed-off review and finish the gate with the reports each target received.
 
 ## Current state
 
