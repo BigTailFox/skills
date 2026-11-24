@@ -31,7 +31,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "77"
+CANON_VERSION = "78"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -357,7 +357,8 @@ def parse_value(key, raw):
     if key in LIST_FIELDS and raw.startswith("[") and raw.endswith("]"):
         return [item.strip().strip("'\"") for item in raw[1:-1].split(",") if item.strip()]
     if key in INT_FIELDS and raw.isdigit():
-        return int(raw)
+        with contextlib.suppress(ValueError):
+            return int(raw)
     return raw.strip("'\"")
 
 
@@ -889,7 +890,7 @@ class Doc:
         return (TYPE_ORDER.index(self.type), self.number, self.suffix)
 
 
-Problem = collections.namedtuple("Problem", "level rel line msg fix also")
+Problem = collections.namedtuple("Problem", "level rel line msg fix also tree_hint")
 
 
 class Repo:
@@ -937,10 +938,10 @@ class Repo:
         if self.unreadable:
             sys.exit("canon: cannot read the history of HEAD in {}: {}".format(*self.unreadable))
 
-    def problem(self, level, rel, msg, line=None, fix=None, also=()):
+    def problem(self, level, rel, msg, line=None, fix=None, also=(), tree_hint=""):
         """Record a problem on the file at `rel`; `also` holds the paths of the other docs a problem between docs
         involves."""
-        self.problems.append(Problem(level, rel, line, msg, fix, also))
+        self.problems.append(Problem(level, rel, line, msg, fix, also, tree_hint))
 
     def _scan(self):
         aliases = {}
@@ -981,8 +982,8 @@ class Repo:
                         where = root.docs_rel + ("/archived/" if archived else "/") + parts[0]
                         self.problem("ERROR", where, "unknown entry; allowed: README.md, "
                                      + ("" if archived else "archived/, guides/, assets/, ")
-                                     + ", ".join(i["dir"] + "/" for i in TYPES.values()) + "; "
-                                     + self.unknown_entry_step(where, len(parts) > 1, archived))
+                                     + ", ".join(i["dir"] + "/" for i in TYPES.values()),
+                                     tree_hint="; " + self.unknown_entry_step(where, len(parts) > 1, archived))
                     continue
                 id_match = FULL_ID_RE.match(parts[1]) if len(parts) >= 3 else None
                 if id_match and id_match.group(1) == letter:
@@ -1145,7 +1146,7 @@ class Repo:
         if self.compared:
             ranges.append((self.diff_args, self.compared))
         if base and (self.rev or self.has_head):
-            ranges.append(((base + "..." + self.head,), None))
+            ranges.append(((base.commit + "..." + self.head,), None))
         deleted = []
         for revs, commit in ranges:
             args = ("diff", "-z", "-M", "--name-status", "--diff-filter=D", *revs, "--", DOCS_PATHSPEC)
@@ -1154,12 +1155,12 @@ class Repo:
             else:
                 result = git_run(self.root, *args)
                 if result is None or result.returncode != 0:
-                    sys.exit(diff_failure(self, base, result, "diff"))
+                    sys.exit(diff_failure(self, base.ref, result, "diff"))
                 out = result.stdout
             fields = out.split("\0")
             paths = sorted(path for status, path in zip(fields[::2], fields[1::2]) if status.startswith("D"))
             if paths:
-                commit = commit or git(self.root, "merge-base", self.head, base).strip()
+                commit = commit or base.fork
                 deleted += [(path, commit) for path in paths]
         return deleted
 
@@ -1186,7 +1187,7 @@ class Repo:
         outs = [git_checked(self.root, "diff", "-z", "--name-only", "--no-renames", "HEAD").stdout,
                 git_checked(self.root, "ls-files", "-z", "-o", "--exclude-standard").stdout]
         if base:
-            merge_base(self, base)
+            branch_base(self, base)
             result = git_run(self.root, "diff", "-z", "--name-only", "--no-renames", base + "..." + self.head)
             if result is None or result.returncode != 0:
                 sys.exit(diff_failure(self, base, result, "diff"))
@@ -1491,16 +1492,21 @@ class SourceEmbeds:
             if block == [line.rstrip("\r\n") for line in lines[start + 1:end]]:
                 continue
             if check:
-                reason = "stale embed"
-                if self.repo.reads_work_tree:
-                    repair = shlex.quote(posix_rel(path, Path.cwd()))
-                    reason += "; run `canon.py embed {}`".format(repair)
-                problems.append((path, start + 1, reason))
+                problems.append((path, start + 1, "stale embed"))
                 continue
             eol = lines[start][len(lines[start].rstrip("\r\n")):]
             lines[start + 1:end] = [line + eol for line in block]
         result = "".join(lines)
         return result if result != text else None
+
+    def diagnostic_hint(self, path, reason):
+        if self.repo.staged:
+            return "; generate against the source intended for the commit and stage the matching block"
+        if self.repo.rev:
+            return " in commit " + self.repo.rev
+        if reason == "stale embed":
+            return "; run `canon.py embed {}`".format(shlex.quote(posix_rel(path, Path.cwd())))
+        return ""
 
 
 def cmd_embed(repo, args):
@@ -1520,7 +1526,8 @@ def process_embeds(repo, names, check):
         for error in errors:
             print(error, file=sys.stderr)
         for path, line, reason in sorted(problems):
-            print("ERROR {}:{}: {}".format(posix_rel(path, repo.root), line, reason))
+            print("ERROR {}:{}: {}{}".format(posix_rel(path, repo.root), line, reason,
+                                             embeds.diagnostic_hint(path, reason)))
         return 1
     for path, text in updates.items():
         # Replacing this directory entry leaves even an unselected hard link untouched.
@@ -2093,24 +2100,28 @@ def unknown_ref(ref):
 
 
 def require_commit(repo, ref):
-    """End the command when `ref`, a `--base` value, names no commit."""
-    if ref.startswith("-") or git(repo.root, "rev-parse", "--verify", "-q", ref + "^{commit}") is None:
+    """Resolve a --base value to its commit, or end the command."""
+    commit = None if ref.startswith("-") else git(repo.root, "rev-parse", "--verify", "-q", ref + "^{commit}")
+    if commit is None:
         sys.exit(unknown_ref(ref))
+    return commit.strip()
 
 
 def diff_failure(repo, base, result, subcommand):
     return "canon: cannot diff against {}...{}: {}".format(base, repo.tip, git_failure(result, subcommand))
 
 
-def merge_base(repo, base):
-    """The merge base of the branch's tip and `base`; else the end of the command with the `--base` error that
-    applies."""
+BranchBase = collections.namedtuple("BranchBase", "ref commit fork")
+
+
+def branch_base(repo, base):
+    """Resolve the named base and its merge base with the selected tip once for the branch comparison."""
     if not (repo.rev or repo.has_head):
         sys.exit("canon: no merge base with " + base)
-    require_commit(repo, base)
-    result = git_run(repo.root, "merge-base", repo.head, base)
+    commit = require_commit(repo, base)
+    result = git_run(repo.root, "merge-base", repo.head, commit)
     if result is not None and result.returncode == 0:
-        return result.stdout.strip()
+        return BranchBase(base, commit, result.stdout.strip())
     if result is not None and result.returncode == 1:
         if (git(repo.root, "rev-parse", "--is-shallow-repository") or "").strip() == "true":
             sys.exit("canon: no merge base with {} in this shallow clone; fetch the full history with "
@@ -2138,16 +2149,16 @@ def attachment_dirs(repo, docs):
     return tuple(posix_rel(doc.path.parent / doc.id, repo.root) + "/" for doc in docs)
 
 
-def run_check(repo, base=None, named=None):
+def run_check(repo, base=None, named=None, strict=False):
     """Record the problems `check` finds in `repo`; with `named`, the docs the command names, only those on their
     files, those between docs that involve one of them, and those on the `.md` files in their attachment directories,
     leaving `AGENTS.md`, guides, indexes, old copies and deleted docs unchecked. Every doc is checked either way, since
     a problem recorded on one doc may involve a named one."""
-    fork = merge_base(repo, base) if base else None
+    strict = strict or base is not None
     changed = repo.checked_changes()
     embeds = SourceEmbeds(repo)
     for doc in repo.docs:
-        check_doc(repo, doc, changed, embeds, strict=bool(base))
+        check_doc(repo, doc, changed, embeds, strict=strict)
 
     owners = {}
     for doc in repo.docs:
@@ -2170,11 +2181,7 @@ def run_check(repo, base=None, named=None):
         if named is None or path in named_paths or posix_rel(path, repo.root).startswith(attached):
             embeds.update(path, problems, check=True)
     for path, line, reason in problems:
-        if repo.staged:
-            reason += "; generate against the source intended for the commit and stage the matching block"
-        elif repo.rev:
-            reason += " in commit " + repo.rev
-        repo.problem("ERROR", posix_rel(path, repo.root), reason, line)
+        repo.problem("ERROR", posix_rel(path, repo.root), reason, line, tree_hint=embeds.diagnostic_hint(path, reason))
     scope = repo.scope_md if named is None else \
         [path for path in repo.scope_md if posix_rel(path, repo.root).startswith(attached)]
     for path in scope:
@@ -2203,13 +2210,13 @@ def run_check(repo, base=None, named=None):
     for path in broken_indexes(repo):
         repo.problem("ERROR", posix_rel(path, repo.root),
                      "index start marker with no end marker after it; fix the markers")
-    stale = "index out of date" + ("; stage the commit's files, run canon.py index --staged and commit with no paths"
-                                   if repo.staged else "")
+    index_hint = ("; stage the commit's files, run canon.py index --staged and commit with no paths"
+                  if repo.staged else "")
     for path, text in expected_indexes(repo).items():
         current = repo.tree.read_text(path) if repo.tree.is_file(path) else None
         if current != text:
-            repo.problem("ERROR" if base or not repo.reads_work_tree else "WARN", posix_rel(path, repo.root), stale,
-                         fix=("index",))
+            repo.problem("ERROR" if strict or not repo.reads_work_tree else "WARN", posix_rel(path, repo.root),
+                         "index out of date", fix=("index",), tree_hint=index_hint)
         elif current:
             check_links(repo, path, current.split("\n"), 0)
 
@@ -2224,12 +2231,12 @@ def run_check(repo, base=None, named=None):
             repo.problem("ERROR", rel, "{} was deleted; restore it and archive it instead".format(doc_id))
 
     if base:
-        at_fork, theirs = repo.tree_ids(fork), repo.tree_ids(base)
+        at_fork, theirs = repo.tree_ids(base.fork), repo.tree_ids(base.commit)
         for doc in repo.docs:
             other = theirs.get(doc.id)
             if other and doc.id not in at_fork:
                 repo.problem("ERROR", doc.rel, "{} was also added on {} as {}; run `canon.py renumber {} --base {}`"
-                             .format(doc.id, base, other, doc.rel, base))
+                             .format(doc.id, base.ref, other, doc.rel, base.ref))
 
 
 def apply_fixes(repo):
@@ -2247,11 +2254,32 @@ def apply_fixes(repo):
     return done, index
 
 
-def print_problems(repo):
+def diagnostic_key(problem):
+    return problem.level, problem.rel, problem.line, problem.msg
+
+
+def base_diagnostics(repo, base):
+    """Count the matches available on the named base without losing the selected tree's results."""
+    if base and repo.problems:
+        try:
+            baseline = Repo(repo.root, rev=base.commit)
+            run_check(baseline, strict=True)
+            return collections.Counter(diagnostic_key(problem) for problem in baseline.problems)
+        except (OSError, UnicodeError, SystemExit) as error:
+            print("canon: cannot compare diagnostics with {}: {}".format(base.ref, error), file=sys.stderr)
+    return collections.Counter()
+
+
+def print_problems(repo, on_base):
     errors = warnings = 0
     for problem in sorted(repo.problems, key=lambda p: (p.rel, p.line or 0)):
-        print("{} {}{}: {}".format(problem.level, problem.rel, ":" + str(problem.line) if problem.line else "",
-                                   problem.msg))
+        key = diagnostic_key(problem)
+        marker = ""
+        if on_base[key]:
+            on_base[key] -= 1
+            marker = " [also on base]"
+        print("{} {}{}: {}{}".format(problem.level, problem.rel, ":" + str(problem.line) if problem.line else "",
+                                     problem.msg + problem.tree_hint, marker))
         if problem.level == "ERROR":
             errors += 1
         else:
@@ -2504,7 +2532,8 @@ def cmd_check(repo, args):
     named = named_docs(repo, args.docs) if args.docs else None
     if args.fix and named is None:
         require_intact_indexes(repo)
-    run_check(repo, args.base, named)
+    base = branch_base(repo, args.base) if args.base else None
+    run_check(repo, base, named)
     if args.fix:
         done, index = apply_fixes(repo)
         repo = Repo()
@@ -2514,10 +2543,11 @@ def cmd_check(repo, args):
         for line in done:
             print("fixed " + line)
         named = named_docs(repo, args.docs) if args.docs else None
-        run_check(repo, args.base, named)
+        run_check(repo, base, named)
+    on_base = base_diagnostics(repo, base)
     if args.version_notice:
         repo.problem("WARN", "AGENTS.md", args.version_notice)
-    errors, warnings = print_problems(repo)
+    errors, warnings = print_problems(repo, on_base)
     fixable = sum(1 for p in repo.problems if p.fix)
     tail = "; {} fixable with --fix".format(fixable) if fixable and repo.reads_work_tree and not args.fix else ""
     print("canon check: {} docs, {} errors, {} warnings{}".format(len(repo.docs if named is None else named), errors,
@@ -5618,7 +5648,8 @@ def main(argv=None):
     p.add_argument("--fix", action="store_true",
                    help="apply mechanical fixes (refs, updated, implemented, as_built, indexes)")
     p.add_argument("--base", help="also check this branch against a ref, e.g. origin/main: deleted docs, id "
-                                  "collisions, revisions pending review and unfinished docs fail")
+                                  "collisions, revisions pending review and unfinished docs fail. Mark problems also "
+                                  "present on that ref")
     p.add_argument("--staged", action="store_true",
                    help="check the staged tree, what `git commit` records, instead of the work tree")
     p.add_argument("--rev", metavar="REV", help="check the tree of commit REV instead of the work tree")

@@ -2132,6 +2132,144 @@ class GitFailureTest(CanonTest):
 class RevCheckTest(CanonTest):
     """`check --rev REV` checks the tree of commit REV, whatever the work tree holds."""
 
+    def complete_overview(self):
+        overview = self.root / self.OVERVIEW
+        overview.write_text(re.sub(r"<!-- canon:.*?-->", "Fixture.", overview.read_text(), flags=re.S))
+        self.set(overview, summary="Fixture overview")
+
+    def test_strict_check_marks_only_matching_diagnostics_at_the_named_base_tip(self):
+        self.complete_overview()
+        shared = self.design("shared")
+        base_only = self.design("base-only")
+        branch_only = self.design("branch-only")
+        self.commit()
+        self.git("branch", "base")
+        self.set(shared, revision=2)
+        self.set(branch_only, revision=2)
+        self.commit()
+        self.git("checkout", "-q", "base")
+        self.set(shared, revision=2)
+        self.set(base_only, revision=2)
+        self.commit()
+
+        self.git("checkout", "-q", "main")
+        for tree in ((), ("--staged",), ("--rev", "main")):
+            with self.subTest(tree=tree):
+                out = self.fails("check", *tree, "--base", "base")
+                errors = [p for p in self.problems(out) if p.startswith("ERROR ")]
+                self.assertEqual(len(errors), 2, out)
+                self.assertIn("D001-shared.md: revision 2 is not reviewed", errors[0])
+                self.assertTrue(errors[0].endswith(" [also on base]"), errors[0])
+                self.assertIn("D003-branch-only.md: revision 2 is not reviewed", errors[1])
+                self.assertNotIn("[also on base]", errors[1])
+                self.assertIn("4 docs, 2 errors,", out)
+        self.assertNotIn("[also on base]", self.ok("check", "--rev", "main"))
+
+    def test_strict_check_matches_embed_and_index_problems_across_tree_specific_hints(self):
+        self.commit()
+        self.create("docs/guides/example.md")
+        (self.root / "docs/guides/example.md").write_text("<!-- embed: ../../src/base.py -->\n<!-- /embed -->\n")
+        (self.root / "docs/README.md").write_text("# Docs\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "stale example and index")
+        self.git("tag", "base")
+        self.git("commit", "--allow-empty", "-qm", "other commit")
+        tip = self.git("rev-parse", "HEAD")
+
+        for tree, hint in (((), ""), (("--staged",), "stage the matching block"), (("--rev", "HEAD"), "in commit " + tip)):
+            with self.subTest(tree=tree):
+                problems = self.problems(self.fails("check", *tree, "--base", "base"))
+                embed, = [line for line in problems if "stale embed" in line]
+                index, = [line for line in problems if "index out of date" in line]
+                self.assertIn(hint, embed)
+                self.assertTrue(embed.endswith(" [also on base]"), embed)
+                self.assertTrue(index.endswith(" [also on base]"), index)
+                if tree == ("--staged",):
+                    self.assertIn("index --staged", index)
+        after_fix = self.problems(self.fails("check", "--fix", "--base", "base"))
+        self.assertFalse(any("index out of date" in line for line in after_fix))
+        self.assertTrue(any("stale embed" in line and line.endswith(" [also on base]") for line in after_fix))
+
+    def test_strict_check_matches_each_location_and_occurrence_only_once(self):
+        self.create("docs/guides/read.md")
+        guide = self.root / "docs/guides/read.md"
+        link = "[missing](absent.md)"
+        guide.write_text(link + "\n")
+        self.commit(check=False)
+        guide.write_text(link + " " + link + "\n" + link + "\n")
+        out = self.fails("check", "--base", "HEAD")
+        first = "ERROR docs/guides/read.md:1: broken link absent.md"
+        second = "ERROR docs/guides/read.md:2: broken link absent.md"
+        self.assertEqual([p for p in self.problems(out) if "broken link" in p],
+                         [first + " [also on base]", first, second])
+
+    def test_an_inherited_layout_error_shows_the_selected_directorys_repair_hint(self):
+        self.create("docs/notes/item.md")
+        self.commit(check=False)
+        item = self.root / "docs/notes/item.md"
+        item.rename(item.with_suffix(".txt"))
+        problems = self.problems(self.fails("check", "--base", "HEAD"))
+        layout, = [line for line in problems if line.startswith("ERROR docs/notes: unknown entry")]
+        self.assertTrue(layout.endswith("; move it into guides/ or assets/ [also on base]"), layout)
+
+    def test_strict_check_uses_a_shallow_bases_tree_and_keeps_explicit_rev_validation(self):
+        design = self.design()
+        self.commit()
+        self.set(design, revision=2)
+        self.commit()
+        clone = self.tmpdir()
+        self.git("clone", "-q", "--depth", "1", self.root.as_uri(), str(clone))
+        result = self.canon("check", "--base", "HEAD", cwd=clone)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        problem, = [p for p in self.problems(result.stdout) if "revision 2 is not reviewed" in p]
+        self.assertTrue(problem.endswith(" [also on base]"), problem)
+        result = self.canon("check", "--rev", "HEAD", "--base", "HEAD", cwd=clone)
+        self.assertIn("HEAD is a shallow commit", result.stderr)
+
+    def test_a_base_that_cannot_be_checked_keeps_the_selected_trees_results(self):
+        self.complete_overview()
+        self.modules("not-built/")
+        design = self.design()
+        self.commit()
+        index = self.root / "docs/README.md"
+        original = index.read_bytes()
+        index.write_bytes(b"\xff")
+        self.git("add", "docs/README.md")
+        self.git("commit", "-qm", "undecodable historical index")
+        index.write_bytes(original)
+        self.set(design, revision=2)
+        result = self.canon("check", "--base", "HEAD")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("revision 2 is not reviewed", result.stdout)
+        self.assertIn("canon check:", result.stdout)
+        self.assertNotIn("[also on base]", result.stdout)
+        self.assertIn("cannot compare diagnostics with HEAD", result.stderr)
+        self.set(design, revision=1)
+        result = self.canon("check", "--base", "HEAD")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("0 errors, 1 warnings", result.stdout)
+        self.assertIn("cannot compare diagnostics with HEAD", result.stderr)
+
+    def test_malformed_numeric_metadata_on_a_divergent_base_preserves_a_warning_only_check(self):
+        self.complete_overview()
+        self.modules("not-built/")
+        self.commit()
+        self.git("checkout", "-qb", "base")
+        invalid = self.design("invalid")
+        self.set(invalid, revision="²")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "invalid revision")
+        self.git("checkout", "-q", "main")
+        self.git("commit", "--allow-empty", "-qm", "selected tip")
+
+        result = self.canon("check", "--base", "base")
+        self.assertEqual((result.returncode, result.stderr), (0, ""))
+        warning, = self.problems(result.stdout)
+        self.assertIn("not-built/", warning)
+        self.assertTrue(warning.endswith(" [also on base]"), warning)
+        self.assertIn("0 errors, 1 warnings", result.stdout)
+        self.assertIn("`revision` must be a positive integer", self.fails("check", "--rev", "base"))
+
     def checked(self, *args):
         """The exit status and output of `check args`, the output without its fixable tail."""
         result = self.canon("check", *args)
