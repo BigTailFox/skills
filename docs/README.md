@@ -18,6 +18,10 @@
 - [D011: Source code embedded in docs](designs/D011-embedded-source.md) · active · Embed a repository source file or a named region in Markdown, regenerate its fenced code block and check it against the same Git tree as the document. · owns: source-embeds · modules: canon
 - [D012: Paired replay of Canon workflows](designs/D012-workflow-replay.md) · accepted · Restore one verified unit, compare two skill suites on paired headless runs, and blind the scoring of review findings, slice outcomes and costs. · owns: workflow-replay · modules: canon
 
+### Plans
+
+- [P011: Paired workflow replay](plans/P011-paired-workflow-replay.md) · draft · Prepare, run, score and summarize paired historical replays with verified inputs, isolated slice tests and blinded judgments. · modules: canon
+
 ### Reviews
 
 - [R006: Silk feedback on review scope and commit checks](reviews/R006-silk-review-scope-and-commit-checks.md) · open · Silk reported repeated review work, scope expansion in design and scaffold reviews, and a CI gap for required commit trailers. · modules: canon
