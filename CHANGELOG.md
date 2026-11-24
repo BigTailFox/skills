@@ -2,6 +2,14 @@
 
 Notable changes in each release. Versions follow [Semantic Versioning](https://semver.org); while the major version is 0, a minor release may change how skills behave.
 
+## 0.9.2 - 2026-11-24
+
+- Traced blind reviews and code reviews now retain the baseline and target the reviewers actually saw in the first round. `canon.py trace history UNIT` identifies the saved input. You can reproduce the review diff from a mirror clone of the trace store, even after the original worktree is gone.
+- From a checkout of this repository, run `python3 scripts/trace_report.py --project PATH` to inspect reviewer contributions, worker time and token usage, and which reviews can be replayed. Repeat `--project` to compare projects or add `--json` for machine-readable output. [Offline report](README.md#offline-report)
+- The report counts a verified issue once when multiple reviewers found it and marks uncertain credit as `unknown`. It excludes incomplete worker measurements from full-cost totals. Use `--cursor-state-db FILE` to verify starts missing from a Cursor session export.
+
+When upgrading from 0.9.1, install the updated skills and run `/canon-init` to record canon version 80.
+
 ## 0.9.1 - 2026-11-24
 
 - Find the live documents that embed a file with `canon.py embed --source FILE --list`. Use `--check` in place of `--list` to check every block in those documents, or omit both flags to refresh them.
