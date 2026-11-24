@@ -5,8 +5,11 @@ import csv
 import hashlib
 import json
 import re
+import sqlite3
 from collections import Counter, defaultdict
 from pathlib import Path
+
+from check_starts import cursor_database
 
 HERE = Path(__file__).resolve().parent
 REVIEW_KINDS = {"gate", "follow-up", "code-review"}
@@ -40,7 +43,7 @@ def group_units(rows):
     return grouped
 
 
-def contribution_counts(rows, reviewers, outcome):
+def contribution_counts(rows, reviewers, outcome, comparable):
     if outcome != "delivered":
         return {"coverage": "partial-" + outcome}
     groups = defaultdict(list)
@@ -49,17 +52,19 @@ def contribution_counts(rows, reviewers, outcome):
             groups[row["defect_group"]].append(row)
     joint = dict.fromkeys(reviewers, 0)
     exclusive = joint.copy()
+    single_unknown = joint.copy()
     valid = 0
     for claims in groups.values():
         dispositions = {r["disposition"] for r in claims}
         if dispositions not in ({"accepted"}, {"deferred"}):
             continue
         keys = {r["reviewer_key"] for r in claims}
-        counts = joint if len(keys) > 1 else exclusive
+        counts = joint if len(keys) > 1 else (exclusive if comparable else single_unknown)
         for key in keys:
             counts[key] += 1
         valid += 1
-    return dict(coverage="delivered", valid_first_groups=valid, joint=joint, exclusive=exclusive)
+    return dict(coverage="delivered", comparable_scope=comparable, valid_first_groups=valid,
+                joint=joint, exclusive=exclusive, single_source_unknown=single_unknown)
 
 
 def assignments(cell):
@@ -129,6 +134,8 @@ def verify_claims(archive, catalog, rows, recorded, registered, receipts):
                     "report identity or phase")
             require(row["report_sha256"] == source["report_sha256"] and
                     row["source_locator"] == f"{stem}.md:L{line}", "source digest or locator")
+            require(all((row.get(k) or "") == (source.get(k) or "") for k in ("prompt_sha256", "scope_lines")),
+                    "scope receipt does not match the report")
             require(row["defect_group"] == groups[fid], "disputed defect grouping")
             require(row["disposition"] in DISPOSITIONS and
                     row["disposition"] == decisions.get(fid, disposition), "disposition differs from adjudication")
@@ -165,6 +172,43 @@ def verify_inventory(archive, catalog, recorded):
     return first
 
 
+def comparable_scope(archive, sources):
+    scopes = []
+    for stem, source in sources.items():
+        prompt = (archive / (stem + "-prompt.md")).read_bytes()
+        if source.get("prompt_sha256"):
+            require(digest(prompt) == source["prompt_sha256"], "archived dispatch prompt changed")
+        span = source.get("scope_lines")
+        if not span:
+            continue
+        require(source.get("prompt_sha256") and re.fullmatch(r"[1-9]\d*-[1-9]\d*", span), "invalid scope receipt")
+        low, high = map(int, span.split("-"))
+        lines = prompt.splitlines()
+        require(low <= high <= len(lines), "missing target lines in dispatch prompt")
+        scope = b"\n".join(lines[low-1:high]).strip()
+        require(scope, "empty dispatch scope")
+        scopes.append(scope)
+    return len(scopes) == len(sources) and len(scopes) >= 2 and len(set(scopes)) == 1
+
+
+def verify_model_dispatch(database, receipt, conversation, session, model, prompt):
+    require(database and receipt["conversation"] == conversation and receipt["session"] == session,
+            "missing model dispatch evidence")
+    with cursor_database(database) as db:
+        query = """SELECT key, value FROM cursorDiskKV WHERE key GLOB ?
+                   AND json_extract(value, '$.toolFormerData.name') = 'task_v2'"""
+        matches = []
+        for key, value in db.execute(query, ("bubbleId:" + conversation + ":*",)):
+            record = json.loads(value)
+            tool = record["toolFormerData"]
+            params, result = json.loads(tool["params"]), json.loads(tool["result"])
+            if (tool.get("status") == "completed" and result.get("agentId") == session
+                    and params.get("prompt", "").strip() == prompt.strip()):
+                blob = value.encode() if isinstance(value, str) else value
+                matches.append((key, digest(blob), params.get("model")))
+        require(matches == [(receipt["line"], receipt["sha256"], model)], "model and original dispatch disagree")
+
+
 def confirmed_fixed(prompt, terminal):
     fixed_line = next((line.partition("Fixed findings:")[2] for line in prompt.splitlines()
                        if "Fixed findings:" in line), "")
@@ -181,7 +225,7 @@ def confirmed_fixed(prompt, terminal):
     return fixed & resolved
 
 
-def verify_supplements(archive, start, first, registered, receipts, cursor_home):
+def verify_supplements(archive, start, first, registered, receipts, cursor_home, database):
     extra = {stem for stem, s in first.items() if s["reviewer_key"] not in registered}
     require({r["report_stem"] for r in receipts} == extra, "supplemental host evidence inventory")
     if not extra:
@@ -198,7 +242,7 @@ def verify_supplements(archive, start, first, registered, receipts, cursor_home)
         require(re.fullmatch(r"[0-9a-f-]{36}", sid), "supplemental dispatch identity")
         subset = [r for r in receipts if r["report_stem"] == stem]
         by_action = {r["evidence"]: r for r in subset}
-        require(len(subset) == len(actions) and by_action.keys() == set(actions), "missing dispatch or verdict")
+        require(len(subset) == len(actions) + 1 and by_action.keys() == set(actions) | {"model-dispatch"}, "missing dispatch or verdict")
         child_lines = (parent.parent / "subagents" / (sid + ".jsonl")).read_bytes().splitlines()
         parent_lines = parent.read_bytes().splitlines()
         positions, records = [], {}
@@ -224,6 +268,8 @@ def verify_supplements(archive, start, first, registered, receipts, cursor_home)
             if action in {"dispatch", "fixed"} and "<user_query>" in host:
                 host = host.split("<user_query>", 1)[1].split("</user_query>", 1)[0].strip()
             require(archived == host, "host and archive disagree")
+        verify_model_dispatch(database, by_action["model-dispatch"], conv, sid, src["model"],
+                              (archive / (stem + "-prompt.md")).read_text())
         approved = {fid for fid, d in assignments(src["decisions"]).items() if d == "accepted"}
         require(approved <= confirmed_fixed(records["fixed"], records["terminal"]), "uncorroborated disposition")
 
@@ -241,7 +287,7 @@ def read_events(trace):
     return lines, boundaries
 
 
-def check_unit(case, trace, events, rows, catalog, receipts, cursor_home):
+def check_unit(case, trace, events, rows, catalog, receipts, cursor_home, database):
     lines, boundaries = events
     for kind in ("start", "end"):
         require(boundaries.get((case["unit"], kind)) == [int(case[kind + "_event"])],
@@ -260,7 +306,8 @@ def check_unit(case, trace, events, rows, catalog, receipts, cursor_home):
     require(len(registered) == len(reviewers), "duplicate recorded reviewer key")
     archive = trace / case["unit"]
     first = verify_inventory(archive, catalog, registered)
-    verify_supplements(archive, start, first, registered, receipts, cursor_home)
+    comparable = comparable_scope(archive, first)
+    verify_supplements(archive, start, first, registered, receipts, cursor_home, database)
     verify_claims(archive, catalog, rows, recorded, registered, receipts)
     require(all(r["end_sha256"] == digest(end_line) for r in rows), "end digest")
     first_rows = [r for r in rows if r["phase"] == "first"]
@@ -271,7 +318,7 @@ def check_unit(case, trace, events, rows, catalog, receipts, cursor_home):
                 disputed_first_sources=sum(r["defect_group"] == "unknown" for r in first_rows),
                 first_dispositions=dict(Counter(r["disposition"] for r in first_rows)),
                 raw_dispositions=dict(Counter(f["disposition"] for f in recorded)),
-                **contribution_counts(rows, [s["reviewer_key"] for s in first.values()], end["outcome"]))
+                **contribution_counts(rows, [s["reviewer_key"] for s in first.values()], end["outcome"], comparable))
 
 
 def main():
@@ -282,6 +329,7 @@ def main():
     parser.add_argument("--adjudications", type=Path, default=HERE / "review-adjudications.tsv")
     parser.add_argument("--host-receipts", type=Path, default=HERE / "review-host.tsv")
     parser.add_argument("--cursor-home", type=Path)
+    parser.add_argument("--cursor-state-db", type=Path, help="verify omitted reviewers against local task dispatches")
     args = parser.parse_args()
     projects = {}
     for value in args.project:
@@ -313,9 +361,9 @@ def main():
             key = (name, case["unit"])
             review = dict(project=name, unit=case["unit"], kind=case["kind"], outcome=case["outcome"])
             try:
-                review.update(check_unit(case, trace, events, tables[key], catalogs[key], receipts[key], args.cursor_home))
+                review.update(check_unit(case, trace, events, tables[key], catalogs[key], receipts[key], args.cursor_home, args.cursor_state_db))
                 review["status"] = "verified"
-            except (ValueError, KeyError, IndexError, OSError, TypeError) as error:
+            except (ValueError, KeyError, IndexError, OSError, TypeError, sqlite3.Error) as error:
                 review.update(status="unknown", reason=str(error) if isinstance(error, EvidenceError) else type(error).__name__)
             reviews.append(review)
     print(json.dumps({"reviews": reviews}, indent=2))

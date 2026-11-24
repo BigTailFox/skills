@@ -1,6 +1,7 @@
 import csv
 import hashlib
 import json
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -76,6 +77,7 @@ class ArchiveCheck(unittest.TestCase):
         self.catalog = self.base / "review-adjudications.tsv"
         self.host = self.base / "review-host.tsv"
         self.cursor = self.base / "cursor"
+        self.database = self.base / "state.vscdb"
         self.host.write_text("project\tunit\n")
         self.case = dict(project="Example", unit=self.unit, kind="code-review",
                          outcome="delivered", start_event=1, end_event=2, findings=4)
@@ -120,7 +122,8 @@ class ArchiveCheck(unittest.TestCase):
         return subprocess.run([sys.executable, str(HERE / "check_reviews.py"),
                                "--project", f"Example={self.project}", "--ledger", str(self.ledger),
                                "--review-evidence", str(self.evidence), "--adjudications", str(self.catalog),
-                               "--host-receipts", str(self.host), "--cursor-home", str(self.cursor)],
+                               "--host-receipts", str(self.host), "--cursor-home", str(self.cursor),
+                               "--cursor-state-db", str(self.database)],
                               capture_output=True, text=True)
 
     def test_two_reports_share_two_distinct_defects(self):
@@ -262,6 +265,16 @@ class ArchiveCheck(unittest.TestCase):
                               phase="first", reviewer_key="cross-family-2"))
         self.write_end()
         write_table(self.catalog, self.sources)
+        model_record = {"toolFormerData": {"name": "task_v2", "status": "completed",
+                        "params": json.dumps({"model": "additional-model", "prompt": content[0]}),
+                        "result": json.dumps({"agentId": session})}}
+        key = "bubbleId:" + conversation + ":fixture-call"
+        raw = json.dumps(model_record)
+        with sqlite3.connect(self.database) as db:
+            db.execute("CREATE TABLE cursorDiskKV (key TEXT PRIMARY KEY, value BLOB)")
+            db.execute("INSERT INTO cursorDiskKV VALUES (?,?)", (key, raw))
+        receipts.append(dict(project="Example", unit=self.unit, report_stem=stem, evidence="model-dispatch",
+                             conversation=conversation, session=session, line=key, sha256=digest(raw.encode())))
         write_table(self.host, receipts)
         return children / (session + ".jsonl")
 
@@ -284,6 +297,35 @@ class ArchiveCheck(unittest.TestCase):
             receipts = list(csv.DictReader(stream, delimiter="\t"))
         next(r for r in receipts if r["evidence"] == "terminal")["sha256"] = digest(lines[-1].encode())
         write_table(self.host, receipts)
+        self.assert_unknown()
+
+    def test_swapped_model_cannot_claim_an_independently_bound_dispatch(self):
+        self.add_supplement()
+        self.sources[-1]["model"] = "different-model"
+        write_table(self.catalog, self.sources)
+        self.assert_unknown()
+
+    def test_disjoint_targets_withhold_single_source_exclusivity(self):
+        for common in (True, False):
+            with self.subTest(common=common):
+                for i, src in enumerate(self.sources):
+                    prompt = "Target: same" if i == 0 or common else "Target: another"
+                    (self.archive / (src["report_stem"] + "-prompt.md")).write_text(prompt)
+                    src.update(prompt_sha256=digest(prompt.encode()), scope_lines="1-1",
+                               groups=("F1=only-spec F2=group-b" if i == 0 else "F1=only-standards F2=group-b"))
+                    for row in self.rows:
+                        if row["report_stem"] == src["report_stem"]:
+                            row.update(prompt_sha256=src["prompt_sha256"], scope_lines="1-1")
+                            if row["finding_id"] == "F1":
+                                row["defect_group"] = "only-" + src["report_stem"]
+                write_table(self.catalog, self.sources)
+                write_table(self.evidence, self.rows)
+                run = self.run_check()
+                self.assertEqual(run.returncode, 0, run.stdout)
+                record, = json.loads(run.stdout)["reviews"]
+                self.assertEqual(record["exclusive"], {"spec": int(common), "standards": int(common)})
+                self.assertEqual(sum(record["single_source_unknown"].values()), 0 if common else 2)
+        (self.archive / "spec-prompt.md").write_text("Target: changed after adjudication")
         self.assert_unknown()
 
 

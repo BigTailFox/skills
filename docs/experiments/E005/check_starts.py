@@ -8,7 +8,7 @@ import re
 import shlex
 import sqlite3
 from collections import defaultdict
-from contextlib import closing
+from contextlib import closing, contextmanager
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -105,6 +105,22 @@ def neighboring_times(event, events):
     return max((t for t in times if t < at), default=0), min((t for t in times if t > at), default=float("inf"))
 
 
+@contextmanager
+def cursor_database(path):
+    uri = path.resolve().as_uri() + "?mode=ro"
+    with path.open("rb") as file:
+        uses_wal = file.read(20)[18:19] == b"\x02"
+    if uses_wal:
+        wal, shm = (Path(str(path) + suffix).exists() for suffix in ("-wal", "-shm"))
+        if wal != shm:
+            raise sqlite3.OperationalError("incomplete WAL sidecars")
+        if not wal:
+            uri += "&immutable=1"  # A checkpoint without sidecars must not acquire new ones.
+    with closing(sqlite3.connect(uri, uri=True)) as db:
+        db.execute("PRAGMA query_only=ON")
+        yield db
+
+
 def database_start(path, event, events):
     if not path:
         return
@@ -122,17 +138,7 @@ def database_start(path, event, events):
                AND coalesce(json_extract(value, '$.startedAtMs'), 0) < ?
                AND coalesce(json_extract(value, '$.completedAtMs'), 9223372036854775807) >= ?"""
     hits = []
-    uri = path.resolve().as_uri() + "?mode=ro"
-    with path.open("rb") as file:
-        uses_wal = file.read(20)[18:19] == b"\x02"
-    if uses_wal:
-        wal, shm = (Path(str(path) + suffix).exists() for suffix in ("-wal", "-shm"))
-        if wal != shm:
-            return None
-        if not wal:
-            uri += "&immutable=1"  # A checkpoint without sidecars must not acquire new ones.
-    with closing(sqlite3.connect(uri, uri=True)) as db:
-        db.execute("PRAGMA query_only=ON")
+    with cursor_database(path) as db:
         for key, bubble, created, start, finish, encoded, value in db.execute(query, (prefix + "*/t:*", at + 1000, at)):
             if key != prefix + bubble or not re.fullmatch(UUID + r"/t:toolu_[a-zA-Z0-9]{1,64}", bubble):
                 continue
@@ -193,14 +199,57 @@ def invocations(command, verb):
         yield args
 
 
-def cursor_start(case, event, events, cursor_home, cursor_db=None):
+def cursor_bounds(case, event, events, cases):
+    """Use already located starts and ends to bound an invocation in this conversation."""
+    low, high = 0, float("inf")
+    position = int(case["start_event"])
+    starts = {e.get("id"): e for e in events if e.get("type") == "start"}
+    occupied = set()
+    for item in cases:
+        if item["project"] != case["project"] or starts.get(item["unit"], {}).get("conversation") != event["conversation"]:
+            continue
+        for phase in ("start", "end"):
+            source = str(item["host_" + phase])
+            at = str(item[phase + "_event"])
+            if not source.isdigit() or not at.isdigit():
+                continue
+            line = int(source)
+            if phase == "start" and item["unit"] != event["id"]:
+                occupied.add(line)
+            if int(at) < position:
+                low = max(low, line)
+            elif int(at) > position:
+                high = min(high, line)
+    return low, high, occupied
+
+
+def cursor_start(case, event, events, cases, cursor_home, cursor_db=None):
     calls = cursor_shells(cursor_home, event["conversation"])
     local_gap = case["host_start"] == "local-db"
+    low, high, occupied = cursor_bounds(case, event, events, cases)
     if local_gap:
         end_line = int(case["host_end"])
-        candidates = [c for c in calls if c[0] <= end_line]
+        candidates = [c for c in calls if low < c[0] <= min(high, end_line) and c[0] not in occupied]
+        # A second missing start with indistinguishable arguments cannot claim this execution.
+        other_starts = {e["id"]: e for e in events if e.get("type") == "start"
+                        and e.get("conversation") == event["conversation"] and e["id"] != event["id"]}
+        other_cases = {r["unit"]: r for r in cases if r["project"] == case["project"]}
+        def available(candidate):
+            line, command, cwd, _ = candidate
+            for uid, other in other_starts.items():
+                peer = other_cases.get(uid)
+                if peer and peer["host_start"] != "local-db":
+                    continue
+                if peer:
+                    left, right, _ = cursor_bounds(peer, other, events, cases)
+                    if not left < line <= right:
+                        continue
+                if any(same_start(words, other, cwd) for words in invocations(command, "start")):
+                    return False
+            return True
+        candidates = [c for c in candidates if available(c)]
     else:
-        candidates = [c for c in calls if c[0] == int(case["host_start"])]
+        candidates = [c for c in calls if c[0] == int(case["host_start"]) and c[0] not in occupied]
     hits = [(line, sha) for line, command, cwd, sha in candidates for words in invocations(command, "start")
             if same_start(words, event, cwd)]
     if len(hits) == 1:
@@ -289,7 +338,7 @@ def codex_start(case, event, home):
     return dict(source="export", location=f"L{line}/L{output_line}", record_sha256=call_sha, result_sha256=output_sha)
 
 
-def locate(case, project, args):
+def locate(case, project, args, cases):
     events = json_lines(project / ".canon/canon/trace/events.jsonl")
     line = int(case["start_event"])
     starts = [i for i, e in enumerate(events, 1) if e.get("type") == "start" and e.get("id") == case["unit"]]
@@ -301,7 +350,7 @@ def locate(case, project, args):
             or not re.fullmatch(UUID, event["conversation"])):
         return {}
     if event["host"] == "cursor":
-        return dict(conversation=event["conversation"], **cursor_start(case, event, events, args.cursor_home, args.cursor_db))
+        return dict(conversation=event["conversation"], **cursor_start(case, event, events, cases, args.cursor_home, args.cursor_db))
     if event["host"] == "codex":
         return dict(conversation=event["conversation"], **codex_start(case, event, args.codex_home))
     return {}
@@ -341,7 +390,7 @@ def main():
     for case in cases:
         row = dict(project=case["project"], unit=case["unit"], source="unknown")
         try:
-            found = locate(case, projects[case["project"]], args)
+            found = locate(case, projects[case["project"]], args, cases)
             receipt = receipts.get((case["project"], case["unit"]))
             if receipt is None or all(found.get(f, "") == receipt[f] for f in
                                       ("source", "conversation", "location", "record_sha256", "result_sha256")):

@@ -203,6 +203,27 @@ class StartEvidence(unittest.TestCase):
         jsonl(self.events, [self.event, self.end, earlier])
         self.check("unknown")
 
+    def test_prior_unit_owns_the_only_identical_exported_start(self):
+        earlier_id = "20260101T000000Z-aaaaaa"
+        early = dict(self.event, at="2026-01-01T00:00:00Z", id=earlier_id)
+        early_end = dict(self.end, id=earlier_id, at="2026-01-01T00:00:01Z")
+        jsonl(self.events, [early, early_end, self.event, self.end])
+        jsonl(self.export, [shell(COMMAND), shell(self.end_command.replace(UNIT, earlier_id)), shell(self.end_command)])
+        prior = dict(self.case, unit=earlier_id, host_start=1, host_end=2)
+        self.case.update(start_event=3, end_event=4, host_end=3)
+        with self.ledger.open("w", newline="") as stream:
+            writer = csv.DictWriter(stream, fieldnames=self.case, delimiter="\t")
+            writer.writeheader()
+            writer.writerows([prior, self.case])
+        argv = [sys.executable, str(HERE / "check_starts.py"), "--project", "Example=" + str(self.project),
+                "--ledger", str(self.ledger), "--cursor-home", str(self.home), "--cursor-db", str(self.db)]
+        for expected, status in [("unknown", 1), ("cursor-db", 0)]:
+            if expected == "cursor-db":
+                self.record()
+            run = subprocess.run(argv, capture_output=True, text=True)
+            self.assertEqual(run.returncode, status, run.stderr)
+            self.assertEqual([r["source"] for r in json.loads(run.stdout)], ["export", expected])
+
     def test_named_export_takes_precedence_over_a_database_hit(self):
         self.record()
         jsonl(self.export, [shell(COMMAND), shell(self.end_command)])

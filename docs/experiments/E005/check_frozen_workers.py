@@ -35,16 +35,19 @@ def git(project, *args):
     return subprocess.check_output(["git", *args], cwd=project, text=True, stderr=subprocess.DEVNULL).strip()
 
 
-def closing_commit(project, row, start, events):
-    commit = row["commit"]
+def slice_transition(project, commit, plan_id, sid):
     files = git(project, "ls-tree", "-r", "--name-only", commit).splitlines()
-    path, = [p for p in files if "/plans/" + row["plan"] + "-" in p and p.endswith(".md")]
+    path, = [p for p in files if "/plans/" + plan_id + "-" in p and p.endswith(".md")]
     def status(revision):
         plan = git(project, "show", revision + ":" + path)
-        section = plan.split("### " + row["slice"] + ":", 1)[1].split("\n### ", 1)[0]
+        section = plan.split("### " + sid + ":", 1)[1].split("\n### ", 1)[0]
         return re.search(r"^Status: (\S+)$", section, re.M)[1]
-    require(status(commit) == "done" and status(commit + "^") != "done")
-    close = time(git(project, "show", "-s", "--format=%cI", commit))
+    require(status(commit) == "done" and status(commit + "^") in {"todo", "paused", "in-progress"})
+    return time(git(project, "show", "-s", "--format=%cI", commit))
+
+
+def closing_commit(project, row, start, events):
+    close = slice_transition(project, row["commit"], row["plan"], row["slice"])
     require(close == time(row["commit_utc"]))
     # Each of the eleven Git seconds precedes the next sibling start or enclosing end.
     later = [time(e["at"]) for e in events
@@ -191,7 +194,7 @@ def verify(project, cursor, codex):
         require(sum(e.get("type") == "start" and e.get("parent") == start["parent"]
                     and e.get("slice") == r["slice"] for e in events) == 1)
         if r["host"] == "cursor":
-            anchor = cursor_start(case, start, events, cursor)
+            anchor = cursor_start(case, start, events, ledger, cursor)
         else:
             anchor = codex_start(case, start, codex)
         require(anchor.get("source") == "export")

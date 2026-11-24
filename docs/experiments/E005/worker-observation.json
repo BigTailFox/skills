@@ -1,0 +1,36 @@
+{
+  "parent": "01a20768-5de9-7313-89bc-736d971d3404",
+  "line": 18403,
+  "at": "2026-11-24T09:01:24.461Z",
+  "sha256": "139952634d2de1860051e14e870103cf3dfa943620871b5e968ca0a94fbf8373",
+  "review_calls": [
+    {
+      "line": 17941,
+      "sha256": "cc57554de70a8b9eebc600e51e692a137f35838fef365f9ea4549294858cf5e0",
+      "review_unit": "20261124T084250Z-94eaa6",
+      "axis": "spec",
+      "session": "01a20cb9-0aba-7792-a3f6-765f2e3c14b3"
+    },
+    {
+      "line": 17947,
+      "sha256": "8e9c0da3c70996d559067b9909aee771c237de18f05db2c209667be02eb84d06",
+      "review_unit": "20261124T084250Z-94eaa6",
+      "axis": "standards",
+      "session": "01a20cb9-3ac6-77b1-9525-48380bcdef7d"
+    },
+    {
+      "line": 18296,
+      "sha256": "b98be9fc42b968e162f047f6523ffc8991cfe00048731539fb73eadc776111c3",
+      "review_unit": "20261124T084250Z-94eaa6",
+      "axis": "spec",
+      "session": "01a20cb9-0aba-7792-a3f6-765f2e3c14b3"
+    },
+    {
+      "line": 18301,
+      "sha256": "09221bbfa0db4b1e642c3601bf99c0b69d0cbeaf89103e5718e53e504512ca9a",
+      "review_unit": "20261124T084250Z-94eaa6",
+      "axis": "standards",
+      "session": "01a20cb9-3ac6-77b1-9525-48380bcdef7d"
+    }
+  ]
+}
