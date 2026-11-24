@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: in-progress
 created: 2026-11-25
 updated: 2026-11-25
 revision: 1
@@ -18,13 +18,13 @@ Implements [D012: Paired replay of Canon workflows](../designs/D012-workflow-rep
 
 ## Current state
 
-Next: S1.
+Next: S2.
 
 ## Slices
 
 ### S1: Prepare a historical case that survives loss of the source checkout
 
-Status: todo
+Status: done
 
 Risk: The retained first-round tree can differ from the opening snapshot. Restoring a whole source repository would also expose later history.
 
@@ -97,3 +97,5 @@ Check each cohort dimension (project, kind, tier, host, role settings, runner co
 ## Log
 
 - 2026-11-25: Drafted against D012@r1.
+- 2026-11-25: Started at 77f4720f1ca3d11107526210cbf9b08e9a84f1bb.
+- 2026-11-25: S1 completed. The 14 public prepare tests and 58 existing trace tests pass. Preparing the real D003@r9 gate reproduced the independently obtained patch SHA-256 be8e17dd129bd885fe35ebb4aad9d13338300ee059b310a4b9640b10291c4b3a. Both installations matched their expected, distinct canonical trees. Three historical sources remain provisional.

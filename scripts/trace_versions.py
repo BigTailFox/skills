@@ -10,11 +10,12 @@ SHA256 = re.compile(r"[0-9a-f]{64}")
 NAME = re.compile(r"canon(?:-[a-z0-9-]+)?")
 
 
-def manifest_at(repo, tree):
-    listing = git_bytes(repo, "ls-tree", "-rz", tree, "--", "skills")
+def suite_entries(repo, tree, *, recorded=False):
+    """Select exactly the trace manifest's regular files, grouped by installed name."""
+    listing = git_bytes(repo, "ls-tree", "-rz", tree, *(("--", "skills") if not recorded else ()))
     if listing is None:
         return None
-    dirs = defaultdict(list)
+    dirs = defaultdict(dict)
     for record in listing.split(b"\0"):
         if not record:
             continue
@@ -22,24 +23,37 @@ def manifest_at(repo, tree):
         mode, _, blob = meta.split()
         parts = os.fsdecode(path).split("/")
         # Also recognize the historical flat skills/<name>/ layout.
-        index = next((i for i in (1, 2) if i < len(parts) - 1 and NAME.fullmatch(parts[i])), None)
+        indices = (0,) if recorded else (1, 2)
+        index = next((i for i in indices if i < len(parts) - 1 and NAME.fullmatch(parts[i])), None)
         if index is None or mode not in (b"100644", b"100755"):
             continue
         rest = parts[index + 1:]
         if any(p.startswith(".") or p in ("LICENSE", "NOTICE", "__pycache__") or p.endswith(".pyc") for p in rest):
             continue
-        oid = blob.decode("ascii")
-        if len(oid) == 64:  # Capture always uses the SHA-1 Git blob identity.
-            data = git_bytes(repo, "cat-file", "blob", oid)
-            if data is None:
-                return None
-            oid = hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
-        dirs[tuple(parts[:index + 1])].append(["/".join(rest), oid])
+        dirs[tuple(parts[:index + 1])]["/".join(rest)] = (mode.decode("ascii"), blob.decode("ascii"))
     skills = {}
     for prefix, entries in sorted(dirs.items()):
-        if any(p == "SKILL.md" for p, _ in entries):
-            skills.setdefault(prefix[-1], canon.sha256_json(sorted(entries)))
+        if "SKILL.md" in entries:
+            skills.setdefault(prefix[-1], entries)
     return skills
+
+
+def manifest_at(repo, tree):
+    entries = suite_entries(repo, tree)
+    if entries is None:
+        return None
+    manifest = {}
+    for name, files in entries.items():
+        digests = []
+        for path, (_, oid) in sorted(files.items()):
+            if len(oid) == 64:  # Capture always uses the SHA-1 Git blob identity.
+                data = git_bytes(repo, "cat-file", "blob", oid)
+                if data is None:
+                    return None
+                oid = hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+            digests.append([path, oid])
+        manifest[name] = canon.sha256_json(digests)
+    return manifest
 
 
 def valid_manifest(case, digest):

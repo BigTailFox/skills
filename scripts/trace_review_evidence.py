@@ -381,6 +381,7 @@ def adjudicate(case, archive, rows, catalog, receipts, has_catalog, database):
     indexed = {(r["report_stem"], r["finding_id"]): r for r in rows}
     require(len(indexed) == len(rows), "duplicate table finding")
     claims, reports, covered = [], [], set()
+    pins = {}
     for src in catalog:
         stem, key, phase = src["report_stem"], src["reviewer_key"], src["phase"]
         if phase == "pending":
@@ -425,6 +426,8 @@ def adjudicate(case, archive, rows, catalog, receipts, has_catalog, database):
                                raw_disposition=raw_disposition or None, decision_location=decision_location,
                                locations=[loc(path, line), row["_location"], src["_location"], case.end["_location"],
                                           *([decision_location] if decision_location else []), *dispatches.get(key, [])]))
+            pins[phase, ref] = dict(report_sha256=src["report_sha256"], decision_sha256=src.get("decision_sha256") or None,
+                                    decision_location=decision_location)
     require(not indexed and covered == raw.keys(), "unmatched table or raw finding")
     if not has_catalog:
         grouped = defaultdict(set)
@@ -436,6 +439,7 @@ def adjudicate(case, archive, rows, catalog, receipts, has_catalog, database):
             if (c["key"] not in registered or c["disposition"] != f.get("disposition") or
                 set(f.get("by", [])) != grouped[c["group"]]):
                 c["independent_group"] = UNKNOWN
+    case.adjudication_pins = pins
     return summarize(claims, reports, pending, comparable, case.data["outcome"])
 
 

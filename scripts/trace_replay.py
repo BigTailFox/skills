@@ -73,7 +73,7 @@ def steering(case):
     return (True if lines else False if complete else UNKNOWN), locations
 
 
-def following_review(case, population, plans):
+def following_review(case, population, plans, detail=None):
     result = dict(attribution=UNKNOWN, findings=[], candidate_reviews=[])
     parent = case.start.get("parent")
     if len(plans) != 1 or not parent or not case.history.started:
@@ -92,6 +92,8 @@ def following_review(case, population, plans):
     if candidates != [case] or review.ambiguous or (case.data["commit"] and
             case.closing["at"] and review.history.started <= canon.event_time(case.closing)):
         return result
+    if detail is not None:
+        detail["following_case"] = review.id
     evidence = review.data.get("review")
     if evidence and evidence["raw_rows"] != UNKNOWN:
         score = first_round_score(review, Archive(review, {}), evidence)
@@ -100,7 +102,7 @@ def following_review(case, population, plans):
     return result
 
 
-def replay_units(cases, population):
+def replay_units(cases, population, *, scopes=None):
     trees = Trees()
     rows, eligible = [], []
     for c in cases:
@@ -129,12 +131,15 @@ def replay_units(cases, population):
             match = slice_plan(c, c.store, opening["commit"], plans[0]) if opening and len(plans) == 1 else None
             if not match:
                 reasons.append("slice or plan revision unavailable")
+            detail = scopes.setdefault(c.id, {"form": "slice"}) if scopes is not None else None
             row["score"] = dict(test_criteria=match["location"] if match else UNKNOWN,
-                                following_code_review=following_review(c, population, plans),
+                                following_code_review=following_review(c, population, plans, detail),
                                 worker_outcomes=[{k: a[k] for k in ("terminal", "report_status", "containment",
                                                                      "terminal_location")} for a in c.data["worker_attempts"]])
         else:
-            review_input(c, trees, opening, row)
+            verified = review_input(c, trees, opening, row)
+            if scopes is not None and verified and not reasons:
+                scopes[c.id] = verified
         row["reasons"] = list(dict.fromkeys(reasons))
         row["eligible"] = not reasons
         if row["eligible"]:

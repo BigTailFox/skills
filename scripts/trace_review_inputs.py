@@ -450,3 +450,4 @@ def review_input(case, trees, opening, row):
     if scopes:
         pair["form"] = scopes[0]["form"]
         pair.update({k: v for k, v in scopes[0].items() if k in {"patch_sha256", "untracked_files", "as_built_tree", "as_built_commit"}})
+        return scopes[0]
