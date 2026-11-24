@@ -1,5 +1,5 @@
 ---
-status: running
+status: concluded
 created: 2026-11-24
 updated: 2026-11-24
 revision: 1

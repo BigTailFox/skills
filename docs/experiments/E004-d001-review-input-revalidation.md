@@ -47,4 +47,4 @@ The latency check used the E003 fixture with 20,000 tracked files and 20 skill d
 
 ## Conclusion
 
-D001-K3 passes the three recovered cases and one live review. D001's report gate remains closed on attribution, host lookup and worker boundaries. Counts of independent reviewer contributions and timings based on complete host spans still need those repairs. [D001§known-issues: remaining pilot criteria](../designs/D001-skill-telemetry.md#known-issues)
+D001-K3 passes the three recovered cases and one live review. D001's report gate remains closed on attribution, host lookup and worker boundaries. Counts of independent reviewer contributions and timings based on complete host spans still need those repairs. [D001§delivery-and-acceptance: pilot criteria](../designs/D001-skill-telemetry.md#delivery-and-acceptance)

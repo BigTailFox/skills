@@ -5,13 +5,13 @@ updated: 2026-11-24
 revision: 18
 modules: [canon]
 summary: Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions.
-refs: [D002, D003, D000, D007, R002, R003, D004, D006, R004, E003, E004]
+refs: [D002, D003, D000, D007, R002, R003, D004, D006, R004, E003, E004, E005]
 owns: [skill-telemetry]
 paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py, skills/governance/canon/trace.md, skills/governance/canon/review-evidence.md, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/execution/canon-blind-review/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-handoff/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-investigate/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-retro/SKILL.md, skills/execution/canon-review/SKILL.md]
 reviewed: 18
 reviewers: [gpt-6.2-astra]
 approved: 15
-implemented: 16
+implemented: 18
 ---
 
 # D001: Skill telemetry with canon trace
@@ -330,7 +330,7 @@ Pilot exit:
 - Every worker run, resumed and replacement runs included, falls within one unit of its slice, and no slice's unit is ended by another `start` of the same slice. Keep the frozen result. The user approved a corrective check for its two late Codex workers: identify every historical outside run and exclude its incomplete worker span from duration, cost and contribution measures that require containment. Preselect the next two consecutive real plan slices on that same host. Record the project, plan revision and slice IDs in a commit or timestamped host event before either starts and cite it with the outcomes. Each must have a uniquely linked, verified dispatch and terminal event for every worker attempt inside its own slice, with the final report received before commit or the next slice. An unknown endpoint, extra unaccounted run or new violation fails the corrective check. A passing corrective check together with all six other exit conditions authorizes step 3. Report the frozen verdict, the two prospective outcomes and the resulting readiness decision separately.
 - No host in use has a snapshot skipped because its sandbox could not write the trace directory.
 
-If capture falls short, it is fixed before the report is built. [E003: Canon and Silk pilot](../experiments/E003-d001-trace-pilot.md) records the frozen cohort and its original results. [E004: review input revalidation](../experiments/E004-d001-review-input-revalidation.md) verifies the three recovered inputs through independent clones and records the remaining exit failures.
+If capture falls short, it is fixed before the report is built. [E003: Canon and Silk pilot](../experiments/E003-d001-trace-pilot.md) records the frozen cohort and its original results. [E004: review input revalidation](../experiments/E004-d001-review-input-revalidation.md) verifies the three recovered inputs through independent clones. [E005: pilot evidence reconciliation](../experiments/E005-d001-pilot-evidence-reconciliation.md) records the seven-condition pass at r18, including the frozen 9/11 worker verdict, the two identified exclusions and the preselected 2/2 corrective check.
 
 ## Budgets
 
@@ -371,11 +371,3 @@ Calls and latency are measured in the pilot; `canon.py` enforces the sizes, and 
 - Evidence feeds human-reviewed experiments, never automatic skill changes.
 - A gate's review files go in a directory named by its target and revision, with each follow-up round in a subdirectory: saving D001 revision 8's reports overwrote revision 7's, and sessions invented layouts for joint gates and extra rounds ([R002: Open items from local retro and review records](../archived/reviews/R002-local-records.md), F3; [R003§r003-f10-gate-directory-layout: R003-F10](../archived/reviews/R003-silk-design-phase.md#r003-f10-gate-directory-layout)).
 - A follow-up round is a kind of its own, not a gate: returning reviewers assess changes since their prior pass. New targets and previously waived coverage can require a full review. Counting an ordinary follow-up as a gate would skew the gate questions and replay its findings against a full review.
-
-## Known issues
-
-| ID | Severity | Issue | Source | Since | Next |
-|---|---|---|---|---|---|
-| D001-K4 | major | Historical dispositions can count the same defect separately by axis or omit supplemental reviewers. Preserve raw rows and establish which attributions have independent evidence before computing reviewer contributions. | E003 at `1b9d5cf` | 2026-11-24 | L1 |
-| D001-K5 | major | Two Cursor start commands survive in local application storage and are absent from the documented transcript export. Their ends alone cannot identify the start of either span. | E003 at `1b9d5cf` | 2026-11-24 | L1 |
-| D001-K6 | major | Two workers returned their final reports after the commits that closed their slices. Verify the existing wait-before-commit rule against the host's terminal worker event. | E003 at `1b9d5cf` | 2026-11-24 | fix |
