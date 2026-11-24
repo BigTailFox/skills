@@ -18,7 +18,7 @@ Use the user's fixed point (a commit, branch, tag or `HEAD~5`). Otherwise use th
 
 For a handed-off review, recover its evidence directory, exact plan revision if any, source snapshots and completed reports. Use its recorded base commit as the fixed point. Add `--continues <handoff-unit>` to the start below as the `canon` skill's review evidence directs. Keep the printed unit ID with the evidence.
 
-Diff the working tree against the merge base so uncommitted work is included: `git diff $(git merge-base <fixed-point> HEAD)`. Untracked new files are missing from that diff; list them with `git ls-files --others --exclude-standard` and pass them as files to read in full. Note the commits with `git log --oneline <fixed-point>..HEAD`. Confirm the ref resolves and the change is non-empty before spawning anything.
+For a live review, resolve `git merge-base <fixed-point> HEAD` once. Put that full commit ID in the prompt's `git diff <baseline>` so the review includes uncommitted work. Untracked new files are missing from that diff; list them with `git ls-files --others --exclude-standard` and pass them as files to read in full. Note the commits with `git log --oneline <fixed-point>..HEAD`. For a prepared patch, supply the patch and paths from its pinned baseline and target as the `canon-blind-review` skill directs. Verify the selected change before spawning.
 
 Run `canon.py trace start code-review [<P id>] --base <fixed-point> --tier <tier> --skill <skill> --model <model> [--parent <parent>]`.
 

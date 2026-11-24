@@ -79,7 +79,7 @@ For a source with one confirmer, save its prompt, report and fresh run ID under 
 
 Save a host subagent's terminal report verbatim and merge it in its original language. Once that report is saved and newer than its prompt, ignore repeated or late completion notices for that run.
 
-Before the first launch in each round, run `canon.py snapshot` from the checkout root and keep its output in the round's `snapshot.txt`. Preserve it through a handoff. Save the input snapshot for each report in `<key>-snapshot.txt`. Take a fresh snapshot for a late or supplemental pass. For a single confirmer save the fixed snapshot in `<key>-snapshot-confirm.txt`. Keep the round's latest fixed snapshot in `snapshot-confirm.txt`. Check a snapshot with `git -C .canon/canon/snapshots cat-file -e <commit>`. When tracing supplies an ID, keep it with the round's evidence as the `canon` skill's `trace.md` directs.
+Before dispatch, save the first round's target commit in `snapshot.txt` and its resolved baseline in `baseline.txt` (`none` for a full-document review). For a live review, take the target with `canon.py snapshot` from the checkout root. For a prepared patch, save the two commits that generated it and supply that scoped patch and its paths. Preserve both through confirmation and handoff. Save the input snapshot for each report in `<key>-snapshot.txt`. Take a fresh snapshot for a late or supplemental pass. For a single confirmer save the fixed snapshot in `<key>-snapshot-confirm.txt`. Keep the round's latest fixed snapshot in `snapshot-confirm.txt`. Check a snapshot with `git -C .canon/canon/snapshots cat-file -e <commit>`. When tracing supplies an ID, keep it with the round's evidence as the `canon` skill's `trace.md` directs.
 
 ## Stopped runs
 

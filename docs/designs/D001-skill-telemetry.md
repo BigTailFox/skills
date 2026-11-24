@@ -11,7 +11,7 @@ paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py, skills/go
 reviewed: 16
 reviewers: [gpt-6.2-astra]
 approved: 15
-implemented: 15
+implemented: 16
 ---
 
 # D001: Skill telemetry with canon trace
@@ -98,7 +98,7 @@ Each call runs the project's `canon.py`. `<skill>` is the directory of the `SKIL
 $XDG_CONFIG_HOME/canon/trace      machine switch, present = on (default ~/.config/canon/trace)
 .canon/canon/trace/off            this checkout opts out
 .canon/canon/trace/events.jsonl   event lines, appended
-.canon/canon/trace/events.lock    held by start, end and recheck from their final checks to their append
+.canon/canon/trace/events.lock    held by start, end and recheck through append, and by prune while removing evidence
 .canon/canon/trace/snapshot.lock  held during opening snapshots, skill storage, review-input publication and prune
 .canon/canon/trace/<id>/          archived review files of unit <id>, and its snapshot-error.txt
 .canon/canon/trace/.git           snapshot repository: refs/trace/<id>, refs/review-input/<id> for retained rounds, refs/skills/<manifest>
@@ -178,7 +178,7 @@ No push, clone or bundle of the project reaches the snapshot repository, `git pu
 
 A review's start snapshot captures the opening work tree. A gate, follow-up or code review can send a different tree or diff to its first-round reviewers. Before dispatch, the session saves the actual target snapshot commit in `snapshot.txt` and the resolved baseline commit from the prompt in `baseline.txt`, alongside it in the round directory. The baseline can be a project commit or a separately prepared review snapshot. Write `none` for a full-document review with no diff. A code review requires a baseline. Resolve a moving ref when preparing the prompt and use that same commit in the prompt. For a prepared snapshot pair, the host can supply the scoped patch and paths as review input. Recording its pins grants no new reviewer access to the snapshot store. Keep these first-round files through confirmation.
 
-When `trace end --dir` successfully archives these two regular files for this review, retain their trees from the closing checkout's review snapshot store, including project objects it borrows. Each pin holds one full 40- or 64-hex commit ID, apart from the explicit `none`. Preserve just the reachable contents of the pinned trees in the unit's independent trace repository. Publish a synthetic commit at `refs/review-input/<unit>` with the target tree and, for a diff, one parentless commit holding the baseline tree as its only parent. The end event's `review_input` is the synthetic commit ID. A mirror clone can read its target with `git ls-tree -r <review_input>` and its exact diff with `git diff <review_input>^ <review_input>`, using any path scope from the prompt. For a live code review, compare the tracked patch on its tracked paths and verify the separately listed untracked files' blobs and modes. For a prepared patch, compare the same diff options and path scope.
+When `trace end --dir` successfully archives these two regular files for this review, retain their trees from the closing checkout's review snapshot store, including project objects it borrows. Each pin holds one full 40- or 64-hex commit ID, apart from the explicit `none`. Preserve just the reachable contents of the pinned trees in the unit's independent trace repository. Publish a synthetic commit at `refs/review-input/<unit>` with the target tree and, for a diff, one parentless commit holding the baseline tree as its only parent. The end event's `review_input` is the synthetic commit ID. A mirror clone can read its target with `git ls-tree -r <review_input>` and its exact diff with `git diff <review_input>^ <review_input>`, using any path scope from the prompt. For a live code review, remove the listed untracked paths from a temporary index of the target only, diff it against the baseline and verify those files' blobs and modes in the complete target. For a prepared patch, compare the same diff options and path scope.
 
 Missing, malformed, unarchived or unavailable pins, a non-commit object, or failed retention leave the review end and its evidence usable with unknown input. An old end without the field also has unknown retained input. Keep opening snapshots and historical event lines intact. Serialize publication with trace snapshot pruning and the accepted end. A rejected competing end cannot replace the accepted pair. Prune the review-input ref at the unit's age cutoff along with its start ref. Scoped history reports the retained ID or unknown. An ID records what was retained at close, including after pruning.
 
@@ -317,7 +317,7 @@ Pilot exit:
 - Every worker run, resumed and replacement runs included, falls within one unit of its slice, and no slice's unit is ended by another `start` of the same slice.
 - No host in use has a snapshot skipped because its sandbox could not write the trace directory.
 
-If capture falls short, it is fixed before the report is built.
+If capture falls short, it is fixed before the report is built. [E003: Canon and Silk pilot](../experiments/E003-d001-trace-pilot.md) records the frozen cohort and its original results.
 
 ## Budgets
 
@@ -363,7 +363,6 @@ Calls and latency are measured in the pilot; `canon.py` enforces the sizes, and 
 
 | ID | Severity | Issue | Source | Since | Next |
 |---|---|---|---|---|---|
-| D001-K3 | blocker | Three original first-round targets differ from their trace trees. One also uses a separately prepared baseline. Bind the actual pair to durable trace objects and verify the reviewed diff from an isolated clone. | [E003: trace pilot](../experiments/E003-d001-trace-pilot.md) at `1b9d5cf` | 2026-11-24 | L1 |
 | D001-K4 | major | Historical dispositions can count the same defect separately by axis or omit supplemental reviewers. Preserve raw rows and establish which attributions have independent evidence before computing reviewer contributions. | E003 at `1b9d5cf` | 2026-11-24 | L1 |
 | D001-K5 | major | Two Cursor start commands survive in local application storage and are absent from the documented transcript export. Their ends alone cannot identify the start of either span. | E003 at `1b9d5cf` | 2026-11-24 | L1 |
 | D001-K6 | major | Two workers returned their final reports after the commits that closed their slices. Verify the existing wait-before-commit rule against the host's terminal worker event. | E003 at `1b9d5cf` | 2026-11-24 | fix |

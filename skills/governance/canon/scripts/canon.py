@@ -31,7 +31,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "79"
+CANON_VERSION = "80"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -4334,13 +4334,12 @@ def append_event(trace_dir, line, check, manifest=None, store=None):
     entry = event_bytes(manifest) if manifest else b""
     with events_lock(trace_dir):
         check()
-        if store:
-            store()
-        data = event_bytes(line)
-        if entry and not any(event.get("type") == "manifest" and event.get("digest") == manifest["digest"]
-                             for event in read_events(trace_dir, manifest["digest"].encode())):
-            data = entry + data
-        write_event_bytes(trace_dir, data)
+        with store() if store else contextlib.nullcontext():
+            data = event_bytes(line)
+            if entry and not any(event.get("type") == "manifest" and event.get("digest") == manifest["digest"]
+                                 for event in read_events(trace_dir, manifest["digest"].encode())):
+                data = entry + data
+            write_event_bytes(trace_dir, data)
 
 
 def trace_env(**extra):
@@ -4532,10 +4531,9 @@ def borrow_objects(git_dir, objects):
         raise SnapshotSkip("alternates: " + errno_name(error))
 
 
-def copy_borrowed(root, steps, trace_dir, env, commit):
-    """Copy into the snapshot repository the objects `commit` reaches that it lacks, which the snapshot steps
-    borrowed from the project, so the snapshot repository depends on nothing outside it."""
-    listing = trace_git(root, steps, "rev-list", "--objects", commit)
+def copy_borrowed(root, steps, trace_dir, env, *tips):
+    """Copy the missing objects reachable from these commits or trees into the independent snapshot repository."""
+    listing = trace_git(root, steps, "rev-list", "--objects", *tips)
     found = snapshot_git(trace_dir, env, "cat-file", "--batch-check",
                          data=b"".join(line.split(b" ", 1)[0] + b"\n" for line in listing.splitlines()))
     missing = b"".join(line.split(b" ", 1)[0] + b"\n" for line in found.splitlines() if line.endswith(b" missing"))
@@ -4895,7 +4893,7 @@ def unit_started(unit):
 
 def archive_files(source, target, since_ns):
     """Copy the regular files directly in `source` modified at the archive cutoff or later into `target` when they total
-    at most 2 MiB; return the end line's `archive`."""
+    at most 2 MiB; return the end line's `archive` and the bytes successfully archived by this call."""
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
     written = []
     try:
@@ -4910,9 +4908,9 @@ def archive_files(source, target, since_ns):
                 files[name] = file.read(MAX_ARCHIVE + 1 - total)
             total += len(files[name])
             if total > MAX_ARCHIVE:
-                return "over-2MiB"
+                return "over-2MiB", {}
         if not files:
-            return "none"
+            return "none", {}
         target.mkdir(parents=True, exist_ok=True)
         for name, data in files.items():
             written.append(target / name)
@@ -4921,8 +4919,43 @@ def archive_files(source, target, since_ns):
         for path in written:
             with contextlib.suppress(OSError):
                 path.unlink()
-        return "copy: " + errno_name(error)
-    return "ok"
+        return "copy: " + errno_name(error), {}
+    return "ok", files
+
+
+def retain_review_input(root, trace_dir, line, files):
+    """Bind the archived first-round pins to independent trees before publishing the accepted review end."""
+    baseline = files.get("baseline.txt", b"").strip()
+    target = files.get("snapshot.txt", b"").strip()
+    pins = [target] if baseline == b"none" and line["kind"] != "code-review" else [baseline, target]
+    if not all(full_oid(pin.decode("ascii", "replace")) for pin in pins):
+        return
+    review_dir = root / REVIEW_SNAPSHOT_DIR
+    env = trace_env(**SNAPSHOT_IDENTITY)
+    # An optional pin must not displace a valid end near the 16 KiB limit.
+    try:
+        if not (review_dir / ".git").is_dir():
+            return
+        event_bytes(dict(line, review_input=target.decode("ascii")))
+    except (OSError, TraceError):
+        return
+    unit = line["id"]
+    with contextlib.suppress(OSError, SnapshotSkip), snapshot_lock(review_dir), snapshot_lock(trace_dir):
+        objects = snapshot_git(review_dir, env, "cat-file", "--batch-check=%(objectname) %(objecttype)",
+                               data=b"\n".join(pins) + b"\n").splitlines()
+        if objects != [pin.lower() + b" commit" for pin in pins]:
+            return
+        trees = snapshot_git(review_dir, env, "rev-parse", *(pin.decode() + "^{tree}" for pin in pins)).decode().split()
+        snapshot_repo(trace_dir, unit, env, sha256=len(target) == 64)
+        copy_borrowed(review_dir, dict(env, GIT_DIR=str(review_dir / ".git")), trace_dir, env, *trees)
+        parents = []
+        if len(trees) == 2:
+            parent = snapshot_git(trace_dir, env, "commit-tree", trees[0], "-m", "review baseline " + unit)
+            parents = ["-p", parent.decode().strip()]
+        commit = snapshot_git(trace_dir, env, "commit-tree", trees[-1], *parents, "-m", "review input " + unit)
+        oid = commit.decode().strip()
+        snapshot_git(trace_dir, env, "update-ref", "refs/review-input/" + unit, oid)
+        line["review_input"] = oid
 
 
 def trace_end(args):
@@ -4950,10 +4983,29 @@ def trace_end(args):
         line["dispositions"] = dispositions
     line["archive"] = None
 
+    @contextlib.contextmanager
     def archive():
+        files = {}
         if source:
             cutoff = start.get("archive_since_ns", unit_started(args.unit) * 10 ** 9)
-            line["archive"] = archive_files(source, trace_dir / args.unit, cutoff)
+            line["archive"], files = archive_files(source, trace_dir / args.unit, cutoff)
+        if kind not in REVIEW_ROLES:
+            yield
+            return
+        ref = "refs/review-input/" + args.unit
+        retain_review_input(root, trace_dir, line, files)
+        oid = line.get("review_input")
+        if not oid:
+            # An interrupted end may already have published this unit's ref.
+            with contextlib.suppress(SnapshotSkip):
+                snapshot_git(trace_dir, trace_env(), "update-ref", "-d", ref)
+        try:
+            yield
+        except BaseException:
+            if oid:
+                with contextlib.suppress(SnapshotSkip):
+                    snapshot_git(trace_dir, trace_env(), "update-ref", "-d", ref, oid)
+            raise
 
     append_event(trace_dir, line, lambda: end_unit(trace_dir, args), manifest, archive)
     print("trace {} ended".format(args.unit))
@@ -5285,6 +5337,8 @@ class HistoryUnit:
 
     def print_review(self):
         """Report the evidence this review recorded; a legacy aggregate does not identify any confirmer."""
+        oid = (self.end or {}).get("review_input")
+        print("  review_input=" + (oid if full_oid(oid) else "unknown"))
         if not self.end:
             print("  dispositions=pending")
             return
@@ -5552,11 +5606,17 @@ def trace_prune(args):
     now = datetime.datetime.now(datetime.timezone.utc)
     cutoff = (now - datetime.timedelta(days=args.days)).strftime(UNIT_TIME_FORMAT)
     hour_ago = (now - datetime.timedelta(hours=1)).strftime(UNIT_TIME_FORMAT)
-    repo = (trace_dir / ".git").is_dir()
-    held = file_lock(trace_dir / "snapshot.lock", TRACE_LOCK_WAIT, TraceError("timed out waiting for snapshot.lock")) \
-        if repo else contextlib.nullcontext()
-    with held:
+    with contextlib.ExitStack() as held:
+        # A review end holds events.lock from archive selection through its ref and event publication.
+        if (trace_dir / "events.lock").exists():
+            held.enter_context(events_lock(trace_dir))
+        repo = (trace_dir / ".git").is_dir()
+        if repo:
+            held.enter_context(file_lock(trace_dir / "snapshot.lock", TRACE_LOCK_WAIT,
+                                         TraceError("timed out waiting for snapshot.lock")))
         snapshots = prune_snapshots(trace_dir, cutoff) if repo else 0
+        if repo:
+            prune_snapshots(trace_dir, cutoff, "refs/review-input/")
         archives = remove_stale(trace_dir, "", cutoff)
         copies = remove_stale(trace_dir / ".git", "index-", hour_ago) if repo else 0
         builds = remove_stale(trace_dir, ".init-", hour_ago)

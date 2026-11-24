@@ -6257,6 +6257,183 @@ class SnapshotTest(TraceCase):
         self.assertEqual([line["snapshot"], line["skipped"]], [None, "changes-over-10MiB"])
 
 
+class ReviewInputTest(TraceCase):
+    def setUp(self):
+        super().setUp()
+        self.trace("on")
+        self.commit()
+
+    def close_review(self, unit, checkout, base, target):
+        topic = checkout / ".canon/review" / unit
+        topic.mkdir(parents=True, exist_ok=True)
+        for name, value in (("baseline", base), ("snapshot", target)):
+            if value is not None:
+                (topic / (name + ".txt")).write_text(value + "\n")
+        self.assertIn(" ended", self.trace("end", unit, "delivered", "--dir", str(topic), cwd=checkout))
+        return self.lines()[-1].get("review_input")
+
+    def test_independent_clone_replays_the_linked_checkouts_review_after_the_source_is_gone(self):
+        tree = self.worktree()
+        unit = self.start("code-review", "--base", "HEAD", cwd=tree)
+        opening = self.lines()[-1]["snapshot"]
+        (tree / "src/base.py").write_text("review baseline\n")
+        baseline = self.tool("snapshot", cwd=tree).stdout.strip()
+        (tree / "src/base.py").write_text("first round target\n")
+        (tree / "untracked.bin").write_bytes(bytes(range(256)))
+        target = self.tool("snapshot", cwd=tree).stdout.strip()
+        review_store = tree / ".canon/canon/snapshots"
+        expected = subprocess.check_output(["git", "-C", str(review_store), "diff", "--binary", "--full-index",
+                                            baseline, target])
+        self.assertIn(b"GIT binary patch", expected)
+        (tree / "src/base.py").write_text("confirmation\n")
+        fixed = self.tool("snapshot", cwd=tree).stdout.strip()
+        topic = tree / ".canon/review" / unit
+        topic.mkdir(parents=True)
+        (topic / "snapshot-confirm.txt").write_text(fixed + "\n")
+        review_input = self.close_review(unit, tree, baseline, target)
+        self.assertIsNotNone(review_input)
+        self.assertIn("review_input=" + review_input, self.trace("history", unit, cwd=tree))
+        clone = self.tmpdir() / "trace.git"
+        trace_store = self.tmpdir() / "trace"
+        self.events.parent.rename(trace_store)
+        moved = self.tmpdir() / "source"
+        self.root.rename(moved)
+        try:
+            self.assertFalse((trace_store / ".git/objects/info/alternates").exists())
+            subprocess.run(["git", "clone", "-q", "--mirror", "--no-local", str(trace_store / ".git"), str(clone)],
+                           cwd=str(trace_store), check=True)
+            self.assertFalse((clone / "objects/info/alternates").exists())
+
+            def cloned(*args):
+                return subprocess.check_output(["git", "--git-dir=" + str(clone), *args])
+            self.assertEqual(cloned("rev-parse", "refs/review-input/" + unit).decode().strip(), review_input)
+            self.assertEqual(cloned("rev-parse", "refs/trace/" + unit).decode().strip(), opening)
+            self.assertEqual(cloned("rev-list", "--count", review_input), b"2\n")
+            self.assertEqual(cloned("diff", "--binary", "--full-index", review_input + "^", review_input), expected)
+            cloned("fsck", "--strict", "--no-dangling")
+        finally:
+            moved.rename(self.root)
+
+    def test_full_document_has_no_parent_and_a_project_commit_can_supply_the_baseline(self):
+        target = self.tool("snapshot").stdout.strip()
+        for kind, base, count in (("gate", "none", "1"), ("code-review", self.git("rev-parse", "HEAD"), "2")):
+            with self.subTest(kind=kind):
+                unit = self.start(kind)
+                review_input = self.close_review(unit, self.root, base, target)
+                self.assertIsNotNone(review_input)
+                self.assertEqual(self.snap("rev-list", "--count", review_input), count)
+                self.assertEqual(self.snap("rev-parse", review_input + "^{tree}"), self.git("rev-parse", "HEAD^{tree}"))
+
+    def test_unavailable_or_invalid_pins_leave_the_closed_review_unknown(self):
+        target = self.tool("snapshot").stdout.strip()
+        tree = self.git("rev-parse", "HEAD^{tree}")
+        for kind, base, end in (("gate", None, target), ("gate", "none", None), ("code-review", "none", target),
+                                ("gate", "HEAD", target), ("gate", tree, target), ("gate", "none", tree),
+                                ("gate", "none", "a" * 40), ("gate", "none", target + "\n" + target)):
+            with self.subTest(kind=kind, base=base, end=end):
+                unit = self.start(kind)
+                self.assertIsNone(self.close_review(unit, self.root, base, end))
+                self.assertIn("review_input=unknown", self.trace("history", unit))
+                self.assertEqual(self.snap("for-each-ref", "refs/review-input/" + unit), "")
+
+    def test_live_review_replays_the_tracked_patch_and_separately_listed_untracked_blob_and_mode(self):
+        baseline = self.git("rev-parse", "HEAD")
+        unit = self.start("code-review", "--base", baseline)
+        (self.root / "src/base.py").write_text("after opening\n")
+        fresh = self.root / "fresh.txt"
+        fresh.write_bytes(b"new file\n")
+        fresh.chmod(0o755)
+        self.git("rm", "--cached", "src/base.py")
+        untracked = subprocess.check_output(["git", "ls-files", "--others", "--exclude-standard", "-z"], cwd=self.root)
+        self.assertEqual(set(untracked.split(b"\0")[:-1]), {b"fresh.txt", b"src/base.py"})
+        tracked = subprocess.check_output(["git", "diff", "--binary", "--full-index", baseline], cwd=self.root)
+        target = self.tool("snapshot").stdout.strip()
+        retained = self.close_review(unit, self.root, baseline, target)
+        clone = self.tmpdir() / "trace.git"
+        self.git("clone", "-q", "--mirror", "--no-local", str(self.events.parent / ".git"), str(clone))
+        env = dict(os.environ, GIT_WORK_TREE=str(self.tmpdir()), GIT_INDEX_FILE=str(self.tmpdir() / "replay-index"))
+
+        def replay(*args, data=None):
+            return subprocess.check_output(["git", "--git-dir=" + str(clone), *args], input=data, env=env, cwd=clone)
+        replay("read-tree", retained)
+        replay("update-index", "--force-remove", "-z", "--stdin", data=untracked)
+        self.assertEqual(replay("diff", "--cached", "--binary", "--full-index", retained + "^"), tracked)
+        for path in ("fresh.txt", "src/base.py"):
+            self.assertEqual(self.snap("ls-tree", retained, path),
+                             self.git("-C", ".canon/canon/snapshots", "ls-tree", target, path))
+            self.assertEqual(replay("show", retained + ":" + path), (self.root / path).read_bytes())
+
+    @unittest.skipIf(os.name == "nt" or getattr(os, "geteuid", lambda: 0)() == 0, "requires Unix file permissions")
+    def test_inaccessible_review_store_still_closes_and_archives_the_review(self):
+        unit = self.start("gate")
+        target = self.tool("snapshot").stdout.strip()
+        review = self.root / ".canon/canon/snapshots"
+        mode = review.stat().st_mode
+        review.chmod(0)
+        try:
+            self.assertIsNone(self.close_review(unit, self.root, "none", target))
+            self.assertEqual(self.lines()[-1]["archive"], "ok")
+            self.assertIn("review_input=unknown", self.trace("history", unit))
+        finally:
+            review.chmod(mode)
+
+    @unittest.skipIf(os.name == "nt" or getattr(os, "geteuid", lambda: 0)() == 0, "requires Unix file permissions")
+    def test_failed_append_and_retry_without_pins_cannot_leave_a_public_pair(self):
+        unit = self.start("gate")
+        target = self.tool("snapshot").stdout.strip()
+        topic = self.root / ".canon/review"
+        topic.mkdir()
+        (topic / "baseline.txt").write_text("none\n")
+        (topic / "snapshot.txt").write_text(target + "\n")
+        mode = self.events.stat().st_mode
+        self.events.chmod(0o444)
+        try:
+            self.rejects("end", unit, "delivered", "--dir", str(topic))
+            self.assertEqual(self.snap("for-each-ref", "refs/review-input/" + unit), "")
+        finally:
+            self.events.chmod(mode)
+        # Model termination between publishing the ref and handling a failed append.
+        self.snap("update-ref", "refs/review-input/" + unit, "refs/trace/" + unit)
+        self.assertIn(" ended", self.trace("end", unit, "delivered"))
+        self.assertEqual(self.snap("for-each-ref", "refs/review-input/" + unit), "")
+        self.assertIn("review_input=unknown", self.trace("history", unit))
+
+    def test_changed_as_built_document_preserves_the_distinct_code_inputs_for_eligibility_checks(self):
+        design = self.design("area")
+        self.commit()
+        earlier = self.git("rev-parse", "HEAD")
+        (self.root / "src/base.py").write_text("changed code\n")
+        self.git("commit", "-qam", "new code")
+        later = self.git("rev-parse", "HEAD")
+        self.set(design, revision=2, as_built=earlier)
+        opening = self.start_line("gate", "D001", "--base", earlier)
+        self.set(design, as_built=later)
+        target = self.tool("snapshot").stdout.strip()
+        retained = self.close_review(opening["id"], self.root, earlier, target)
+        path = ":" + design.relative_to(self.root).as_posix()
+        self.assertIn("as_built: " + earlier, self.snap("show", opening["snapshot"] + path))
+        self.assertIn("as_built: " + later, self.snap("show", retained + path))
+        self.assertNotEqual(self.snap("rev-parse", opening["snapshot"] + "^2^{tree}"),
+                            self.git("rev-parse", later + "^{tree}"))
+
+    def test_only_current_archived_pins_can_publish_the_pair(self):
+        target = self.tool("snapshot").stdout.strip()
+        for scenario in ("stale", "oversize"):
+            with self.subTest(scenario=scenario):
+                unit = self.start("gate")
+                topic = self.root / ".canon/review" / unit
+                topic.mkdir(parents=True)
+                (topic / "baseline.txt").write_text("none\n")
+                if scenario == "stale":
+                    old = self.started(unit).timestamp() - 10
+                    os.utime(str(topic / "baseline.txt"), (old, old))
+                else:
+                    (topic / "oversize").write_bytes(b"x" * (2 * 1024 * 1024 + 1))
+                self.assertIsNone(self.close_review(unit, self.root, None, target))
+                self.assertEqual(self.lines()[-1]["archive"], "ok" if scenario == "stale" else "over-2MiB")
+                self.assertEqual(self.snap("for-each-ref", "refs/review-input/" + unit), "")
+
+
 class ReviewSnapshotTest(TraceCase):
     def setUp(self):
         super().setUp()
@@ -7180,9 +7357,10 @@ class PruneTest(TraceCase):
                 line.update(id=old, at=(datetime.datetime.fromisoformat(line["at"]) - ago).isoformat())
         (trace_dir / "events.jsonl").write_text("".join(json.dumps(line, separators=(",", ":")) + "\n"
                                                         for line in lines), encoding="utf-8")
-        if self.snapshot_refs(trace_dir, unit):
-            self.git("-C", str(trace_dir), "update-ref", "refs/trace/" + old, "refs/trace/" + unit)
-            self.git("-C", str(trace_dir), "update-ref", "-d", "refs/trace/" + unit)
+        for prefix in ("refs/trace/", "refs/review-input/"):
+            if self.git("-C", str(trace_dir), "for-each-ref", "--format=%(refname)", prefix + unit):
+                self.git("-C", str(trace_dir), "update-ref", prefix + old, prefix + unit)
+                self.git("-C", str(trace_dir), "update-ref", "-d", prefix + unit)
         if (trace_dir / unit).exists():
             (trace_dir / unit).rename(trace_dir / old)
         return old
@@ -7192,17 +7370,50 @@ class PruneTest(TraceCase):
         return sorted(self.git("-C", str(trace_dir or self.trace_dir), "for-each-ref", "--format=%(refname)",
                                "refs/trace/" + unit).splitlines())
 
+    @unittest.skipIf(fcntl is None, "requires a process-held snapshot lock")
+    def test_prune_waits_for_an_expired_reviews_archive_publication_and_end(self):
+        unit = self.backdate(self.start("gate"), 2)
+        topic = self.root / ".canon/review"
+        topic.mkdir()
+        (topic / "baseline.txt").write_text("none\n")
+        (topic / "snapshot.txt").write_text(self.tool("snapshot").stdout)
+        env = dict(os.environ, XDG_CONFIG_HOME=str(self.config))
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            with self.lock_held("snapshot.lock", self.root / ".canon/canon/snapshots"):
+                end = pool.submit(self.tool, "trace", "end", unit, "delivered", "--dir", str(topic))
+                archive = self.trace_dir / unit / "snapshot.txt"
+                deadline = time.monotonic() + 3
+                while not archive.exists() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(archive.exists())
+                prune = self.canon_process("trace", "prune", "--days", "1", env=env, start=subprocess.Popen)
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    prune.wait(timeout=0.4)
+            self.assertIn(" ended", end.result(timeout=6).stdout)
+            output, errors = prune.communicate(timeout=6)
+        self.assertEqual(prune.returncode, 0, errors)
+        self.assertIn("removed 1 snapshot and 1 archive", output)
+        self.assertFalse(archive.exists())
+        self.assertEqual(self.snap("for-each-ref", "refs/review-input/" + unit), "")
+        self.assertIsNotNone(self.lines()[-1].get("review_input"))
+
     def test_full_sha1_and_sha256_recheck_evidence_still_attaches_after_pruning(self):
         unit = self.start("code-review")
         topic = self.root / ".canon/review"
         topic.mkdir()
         (topic / "original.md").write_text("Original evidence.\n")
+        (topic / "baseline.txt").write_text(self.git("rev-parse", "HEAD") + "\n")
+        (topic / "snapshot.txt").write_text(self.tool("snapshot").stdout)
         self.trace("end", unit, "delivered", "--dir", ".canon/review", "--input", "-",
                    stdin=json.dumps(DispositionsTest.CODE_REVIEW))
+        retained = self.lines()[-1]["review_input"]
         old = self.backdate(unit, 2)
+        self.assertEqual(self.snap("rev-parse", "refs/review-input/" + old), retained)
         self.assertIn("removed 1 snapshot and 1 archive", self.trace("prune", "--days", "1"))
         self.assertFalse((self.trace_dir / old).exists())
         self.assertEqual(self.snapshot_refs(), [])
+        self.assertEqual(self.snap("for-each-ref", "refs/review-input/"), "")
+        self.assertIn("review_input=" + retained, self.trace("history", old))
         for order, oid in (("1", "AB" * 20), ("2", "CD" * 32)):
             self.assertEqual(self.trace("recheck", old, "spec:F1", "--reviewer", "standards", "--snapshot", oid,
                                         "--report", "later-" + order, "--order", order, "--result", "resolved"),
