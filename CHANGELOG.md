@@ -2,6 +2,18 @@
 
 Notable changes in each release. Versions follow [Semantic Versioning](https://semver.org); while the major version is 0, a minor release may change how skills behave.
 
+## 0.9.0 - 2026-11-24
+
+Canon can keep source examples in sync with their files and carry a blind review across sessions with its evidence intact.
+
+- Mark a whole source file or a named region in a Markdown document and run `canon.py embed` to regenerate the fenced code. `check` detects stale examples in the work tree, index or selected commit. Document moves update source references and attachment citations. Archiving freezes the rendered example so historical documents stay readable.
+- `check --base REF` labels matching errors and warnings already present in REF. It still reports every problem in the selected tree and fails on any error.
+- `canon.py approvals` lists the exact document revisions awaiting an L2 decision across review rounds. A partial approval covers the named revisions. Approving a design or plan starts the next phase when the user requests it.
+- External command reviews reuse an explicitly granted repository, provider and input scope. The Codex App shows live progress in its native command view. Supported launchers retain a session for recovery, and a handoff identifies the reviews already received and the coverage still required.
+- `canon.py trace history` shows older units, elapsed time and missing archives. Review records identify who read each revision, preserve independent reports and include the outcomes of targeted rechecks.
+- Reviewers check experimental claims against the conditions tested. Confirmation prompts specify the accepted findings. Worktree handoffs report whether the target branch contains the delivery commit, and `renumber` reports leftover literal attachment paths in experiment instructions.
+- `canon.py` is now canon version 78. Install this release in each project and run `/canon-init` to update its recorded version.
+
 ## 0.8.2 - 2026-11-13
 
 Every subagent a canon skill launches starts as a new one, never a fork of your session.
