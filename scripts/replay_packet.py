@@ -1,11 +1,13 @@
 """Export first-round evidence under case-local opaque IDs, independently of dispatch order."""
+import base64
 import hashlib
 import hmac
 import re
 
 from replay_git import ReplayError, json_bytes, sha256
 from replay_protocol import evidence_bytes
-from replay_storage import publish
+from replay_storage import decode, publish
+from trace_review_evidence import VALID
 
 
 def opaque(journal, *identity):
@@ -19,6 +21,18 @@ class Packet:
         self.receipt = receipt
         self.journal = journal
         self.exports = {}
+        briefs = set()
+        if receipt["kind"] == "slice":
+            historical = receipt["historical_brief"].get("text")
+            if historical and historical.strip():
+                briefs.add(historical.strip())
+            for row in journal["attempts"]:
+                ref = row["roles"].get("worker", {}).get("brief")
+                if ref:
+                    text = evidence_bytes(private, ref).decode(errors="surrogateescape").strip()
+                    if text:
+                        briefs.add(text)
+        self.briefs = sorted(briefs, key=lambda brief: (-len(brief), brief))
         models = {r["model"] for r in journal["roles"].values()}
         models.update(r["model"] for a in journal["attempts"] for r in a["roles"].values()
                       if isinstance(r.get("model"), str) and r["model"])
@@ -33,19 +47,58 @@ class Packet:
                                         + r")(?:/[^\s`'<>\")|]*)?")
 
     def neutral(self, text):
+        for brief in self.briefs:
+            text = text.replace(brief, "[redacted]")
         text = self.workspace_prefix.sub("", text)
         text = self.private_paths.sub("[private path]", text)
         text = self.labels.sub("[redacted]", text)
         text = re.sub(r"\b(?:arm|suite)\s*[:=_-]?\s*[AB]\b", "[suite]", text, flags=re.I)
         text = re.sub(r"(?im)^\s*(?:session(?: id)?|model|raw host(?: transcript)?|tokens?|config_digest|"
-                      r"authorization)\s*[:=].*(?:\n|$)", "", text)
+                      r"wall_seconds|cached_input|reasoning_output|authorization)\s*[:=].*(?:\n|$)", "", text)
         return re.sub(r"(?im)^(?:#{1,4}\s+|\*\*)F\d+\b", "Finding", text)
 
     def export(self, identity, text):
         data = self.neutral(text).encode()
-        path = "evidence/" + opaque(self.journal, "file", *identity, sha256(data)) + ".txt"
+        return self.export_bytes(identity, data, ".txt")
+
+    def export_bytes(self, identity, data, extension):
+        digest = sha256(data)
+        # A later worker brief can redact an earlier slice view. Replace that view at its existing opaque path.
+        if self.receipt["kind"] != "slice":
+            identity = (*identity, digest)
+        path = "evidence/" + opaque(self.journal, "file", *identity) + extension
         self.exports[path] = data
-        return dict(path=path, sha256=sha256(data))
+        return dict(path=path, sha256=digest)
+
+    def artifact(self, row):
+        if not row.get("artifact_view"):
+            return None
+        evidence_bytes(self.private, row["artifact"])
+        view = decode(evidence_bytes(self.private, row["artifact_view"]), "artifact view")
+        for item in view["files"]:
+            item["path"] = self.neutral(item["path"])
+            if item["encoding"] == "base64":
+                data = base64.b64decode(item["content"])
+                clean = self.neutral(data.decode(errors="surrogateescape")).encode(errors="surrogateescape")
+                item["content"] = base64.b64encode(clean).decode("ascii")
+            else:
+                item["content"] = self.neutral(item["content"])
+        return self.export_bytes(("artifact", row["id"]), json_bytes(view), ".json")
+
+    def tests(self, row):
+        tests = []
+        for test in row.get("tests", []):
+            obs = decode(evidence_bytes(self.private, test["evidence"]), "criterion evidence")
+            if any(test[key] != obs[key] for key in ("id", "argv", "outcome", "reason")):
+                raise ReplayError("criterion outcome differs from its sealed evidence")
+            data = dict(outcome=obs["outcome"], exit_code=obs["exit_code"], reason=self.neutral(obs["reason"] or ""),
+                        argv=[self.neutral(a) for a in obs["argv"]] if obs["argv"] else None)
+            for key in ("stdout", "stderr"):
+                raw = base64.b64decode(obs[key + "_base64"])
+                data[key] = self.neutral(raw.decode(errors="replace"))
+            ref = self.export_bytes(("criterion", row["id"], test["id"]), json_bytes(data), ".json")
+            tests.append(dict(id=test["id"], outcome=obs["outcome"], evidence=ref))
+        return sorted(tests, key=lambda t: t["evidence"]["path"])
 
     def history(self):
         original = self.receipt["history"]
@@ -85,7 +138,7 @@ class Packet:
                     ident = opaque(self.journal, "claim", row["id"], key, c["finding"])
                     claims.append(dict(id=ident, severity=c["severity"], evidence=self.export(("claim", ident), text)))
         return dict(id=row["id"], outcome=row["outcome"], claims=sorted(claims, key=lambda c: c["id"]),
-                    artifact=None, tests=[])
+                    artifact=self.artifact(row), tests=self.tests(row))
 
     def write(self):
         rows = sorted(self.journal["attempts"], key=lambda a: a["id"])
@@ -96,7 +149,12 @@ class Packet:
         for row in packet["attempts"]:
             groups = [dict(id=opaque(self.journal, "judgment", c["id"]), claims=[c["id"]], historical=None,
                            verdict="unknown", scope="unknown", evidence=[c["evidence"]]) for c in row["claims"]]
-            judgments["attempts"].append(dict(id=row["id"], groups=groups, later=[]))
+            later = []
+            if self.receipt["kind"] == "slice":
+                refs = [row["artifact"]] if row["artifact"] else []
+                later = [dict(historical=g["id"], match="unknown", evidence=refs)
+                         for g in packet["history"]["groups"] if g["disposition"] in VALID]
+            judgments["attempts"].append(dict(id=row["id"], groups=groups, later=later))
         root = self.private.parent / "blind"
         for path, body in sorted(self.exports.items()):
             publish(root / path, body)

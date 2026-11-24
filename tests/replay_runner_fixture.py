@@ -18,6 +18,49 @@ def git(*args):
     return subprocess.check_output(["git", "-C", str(workspace), *args]).decode().strip()
 
 
+def result_bundle(spec):
+    for name in spec.get("delete", []):
+        (workspace / name).unlink()
+    for name, entry in spec.get("files", {}).items():
+        dest = workspace / name
+        mode, content = entry if isinstance(entry, list) else ("100644", entry)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if dest.is_symlink() or dest.is_file():
+            dest.unlink()
+        if mode == "120000":
+            dest.symlink_to(content)
+        else:
+            dest.write_bytes(content.encode())
+            dest.chmod(int(mode, 8) & 0o777)
+    git("add", "-A", "--", ".")
+    if spec.get("force"):
+        git("add", "-f", "--", spec["force"])
+    if spec.get("gitlink"):
+        git("update-index", "--add", "--cacheinfo", "160000," + git("rev-parse", "HEAD") + ",module")
+    for name, target in spec.get("links", {}).items():
+        blob = subprocess.check_output(["git", "-C", workspace, "hash-object", "-w", "--stdin"], input=target.encode())
+        git("update-index", "--add", "--cacheinfo", "120000," + blob.decode().strip() + "," + name)
+    parents = ["-p", "HEAD"] if spec.get("history") or spec.get("prerequisite") else []
+    commit = git("-c", "user.name=Peer", "-c", "user.email=peer@localhost", "commit-tree", git("write-tree"),
+                 *parents, "-m", "Sealed terminal tree")
+    ref = spec.get("ref", "refs/replay/result")
+    git("update-ref", ref, commit)
+    path = output / "result.bundle"
+    refs = [ref]
+    if spec.get("extra"):
+        git("update-ref", "refs/heads/extra", commit)
+        refs.append("refs/heads/extra")
+    if spec.get("prerequisite"):
+        refs.append("^HEAD")
+    git("bundle", "create", "--version=" + str(spec.get("version", 3)), str(path), *refs)
+    if spec.get("wrong_format"):
+        raw = path.read_bytes()
+        path.write_bytes(raw.replace(b"@object-format=sha1\n", b"@object-format=sha256\n", 1))
+    if spec.get("corrupt"):
+        return dict(path=path.name, sha256="1" * 64)
+    return dict(path=path.name, sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+
+
 request = json.load(sys.stdin)
 workspace = Path(request["workspace"])
 output = Path(request["output"])
@@ -45,13 +88,23 @@ if hold:
         time.sleep(0.025)
 roles = {}
 for key, settings in request["roles"].items():
-    text = action.get("reports", {}).get(key, "No findings.\n\nVerdict: approve\n")
+    default = "No findings.\n\nVerdict: approve\n"
+    if key == "worker":
+        default = "Status: " + str(action.get("envelope", {}).get("worker_status", "done")) + "\n"
+    text = action.get("reports", {}).get(key, default)
     text = text.replace("{workspace}", str(workspace))
     report = None if key == "parent" else evidence(key + ".md", text.encode())
     roles[key] = dict(settings, loaded=[loaded], report=report, brief=None,
                       tokens=dict(input=11, cached_input=3, output=5, reasoning_output=2))
 result = dict(schema=1, attempt=request["attempt"], config_digest=request["config_digest"], host=request["host"],
               outcome="completed", reason=None, worker_status=None, roles=roles, artifact=None, boundary_violation=None)
+if request["kind"] == "slice":
+    result["worker_status"] = "done"
+    brief = action.get("brief", "PRIVATE initial worker brief")
+    roles["worker"]["brief"] = evidence("worker-brief.txt", brief.encode()) if brief is not None else None
+    bundle = action.get("bundle", config["settings"].get("bundle"))
+    if bundle is not None:
+        result["artifact"] = result_bundle(bundle)
 result.update(action.get("envelope", {}))
 for key, patch in action.get("roles", {}).items():
     roles[key].update(patch)

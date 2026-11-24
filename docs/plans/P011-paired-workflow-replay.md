@@ -18,7 +18,7 @@ Implements [D012: Paired replay of Canon workflows](../designs/D012-workflow-rep
 
 ## Current state
 
-Next: S3.
+Next: S4.
 
 ## Slices
 
@@ -52,7 +52,7 @@ Bind claim text and severity to the line ranges returned by the first-round head
 
 ### S3: Evaluate slice artifacts and pinned tests without exposing the controller
 
-Status: todo
+Status: done
 
 Risk: Worker output and commands can change their checkout. The private receipt, arm mapping and the other arm must remain inaccessible to them.
 
@@ -100,3 +100,4 @@ Check each cohort dimension (project, kind, tier, host, role settings, runner co
 - 2026-11-25: Started at 77f4720f1ca3d11107526210cbf9b08e9a84f1bb.
 - 2026-11-25: S1 completed. The 14 public prepare tests and 58 existing trace tests pass. Preparing the real D003@r9 gate reproduced the independently obtained patch SHA-256 be8e17dd129bd885fe35ebb4aad9d13338300ee059b310a4b9640b10291c4b3a. Both installations matched their expected, distinct canonical trees. Three historical sources remain provisional.
 - 2026-11-25: S2 completed. Thirteen public run tests and 72 preparation and trace regressions pass. The real D003@r9 case completed all three alternating pairs via a local protocol peer. Each assigned installation was observed three times. Resuming dispatched no extra attempts and reproduced the blind packet. The private supervisor uses POSIX advisory locks and measures only the runner subprocess.
+- 2026-11-25: S3 completed. Fourteen public slice tests passed without skips on a Linux host with Bubblewrap, alongside 85 preparation, review-run and trace regressions. Verified clean test copies, SHA-1 and SHA-256 artifacts, a genuine exit 127 versus missing runtime, independent worker statuses and brief privacy. An unavailable isolation boundary leaves the criterion undecided.

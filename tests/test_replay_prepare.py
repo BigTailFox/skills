@@ -98,8 +98,8 @@ class ReplayFixture(ReportFixture):
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads((dest / "private/receipt.json").read_bytes())
 
-    def slice(self):
-        target = self.pin(self.store, self.tree(self.store, {PLAN: PLAN_BODY}))
+    def slice(self, entries=None):
+        target = self.pin(self.store, self.tree(self.store, {PLAN: PLAN_BODY, **(entries or {})}))
         self.git(self.store, "update-ref", "refs/trace/" + UNIT, target)
         self.events.extend([start(PRIOR), start(UNIT, "slice", parent=PRIOR, docs=["P001@r2"], slice="S1",
                                                 host="codex", conversation=CONV, model="model-a",

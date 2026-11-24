@@ -36,8 +36,8 @@ class RunnerFixture(ReplayFixture):
         return [sys.executable, str(SCRIPT), "run", str(out or self.out), "--runner", str(self.runner),
                 "--runner-config", str(self.config_path), *map(str, extra)]
 
-    def replay(self, *extra, out=None, error=None):
-        result = subprocess.run(self.command(*extra, out=out), text=True, capture_output=True, timeout=45)
+    def replay(self, *extra, out=None, error=None, env=None):
+        result = subprocess.run(self.command(*extra, out=out), text=True, capture_output=True, timeout=45, env=env)
         if error:
             self.assertNotEqual(result.returncode, 0)
             self.assertIn(error, result.stderr)

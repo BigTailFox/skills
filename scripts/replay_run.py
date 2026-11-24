@@ -10,6 +10,7 @@ from replay_case import load_case
 from replay_git import ReplayError, sha256
 from replay_profile import profile
 from replay_packet import Packet
+from replay_sandbox import sandbox_grants
 from replay_storage import decode, publish_json, sync_directory
 from replay_workspace import workspace_for
 
@@ -80,10 +81,14 @@ def dispatch(private, receipt, journal, config_path, pair, arm):
     output.mkdir()
     request = dict(schema=1, attempt=ident, config_digest=journal["config_sha256"], workspace=str(workspace),
                    skills=str(installed), output=str(output), config=str(config_path), host=receipt["host"],
-                   kind=receipt["kind"], roles=journal["roles"], stop_after="first_round_reports", task=receipt["task"])
+                   kind=receipt["kind"], roles=journal["roles"], task=receipt["task"],
+                   stop_after="worker_report" if receipt["kind"] == "slice" else "first_round_reports")
     publish_json(job / "request.json", request)
-    publish_json(job / "dispatch.json", dict(runner=journal["runner"], runner_sha256=journal["runner_sha256"],
-                                              loads=loads, injected=injected))
+    spec = dict(runner=journal["runner"], runner_sha256=journal["runner_sha256"],
+                receipt_sha256=journal["receipt_sha256"], loads=loads, injected=injected)
+    if receipt["kind"] == "slice":
+        spec["test_grants"] = journal["test_grants"]
+    publish_json(job / "dispatch.json", spec)
     with (job / "dispatch.lock").open("ab") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         save_journal(private, journal)
@@ -111,6 +116,8 @@ def paired_run(private, receipt, config, config_path, identity, repetitions):
         roles = profile(config, private, receipt)
         journal = dict(schema=1, case=uuid.uuid4().hex, blind_key=secrets.token_hex(32), **identity, roles=roles,
                        config=config, attempts=[])
+        if receipt["kind"] == "slice":
+            journal["test_grants"] = sandbox_grants(config, private, receipt)
     journal["repetitions"] = max(repetitions, journal.get("repetitions", 0))
     save_journal(private, journal)
     (private.parent / "work").mkdir(mode=0o700, exist_ok=True)
@@ -141,8 +148,8 @@ def run(args):
     with (private / "run.lock").open("ab") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         receipt = load_case(directory)
-        if receipt["kind"] not in ("gate", "code-review"):
-            raise ReplayError("a paired review requires a gate or code-review case")
+        if receipt["kind"] not in ("gate", "code-review", "slice"):
+            raise ReplayError("unsupported prepared case kind")
         runner = args.runner.resolve(strict=True)
         if not runner.is_file() or not os.access(runner, os.X_OK):
             raise ReplayError("runner must be an executable regular file")

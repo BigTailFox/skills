@@ -42,9 +42,14 @@ def evidence_bytes(root, ref):
 
 def seal_evidence(job, output, ref):
     data = evidence_bytes(output, ref)
-    path = job / "evidence" / ref["sha256"]
+    return save_evidence(job, data)
+
+
+def save_evidence(job, data):
+    digest = sha256(data)
+    path = job / "evidence" / digest
     publish(path, data)
-    return dict(path=path.relative_to(job.parents[1]).as_posix(), sha256=ref["sha256"])
+    return dict(path=path.relative_to(job.parents[1]).as_posix(), sha256=digest)
 
 
 def token_counts(raw):
@@ -69,9 +74,17 @@ def result_for(job, req, spec, raw):
     for key, label in (("config_digest", "configuration"), ("host", "host")):
         if result[key] != req[key]:
             mismatches.append(f"observed {label} differs")
-    if result["artifact"] is not None or result["worker_status"] is not None:
+    slice_run = req["kind"] == "slice"
+    if not slice_run and (result["artifact"] is not None or result["worker_status"] is not None):
         errors.append("unexpected worker status or artifact on a review")
+    if slice_run and result["worker_status"] not in (None, "done", "blocked", "stuck"):
+        errors.append("invalid worker status")
     output = Path(req["output"])
+    if slice_run and result["artifact"] is not None:
+        try:
+            checked["artifact"] = seal_evidence(job, output, result["artifact"])
+        except (OSError, ReplayError) as exc:
+            checked["artifact_reason"] = str(exc)
     workspace = Path(req["workspace"])
     verified_loads = {}
     for key, role in result["roles"].items():
@@ -99,17 +112,28 @@ def result_for(job, req, spec, raw):
                                             if path.resolve() == path and path.is_file() else None)
                 if spec["loads"].get(name) != blob or verified_loads.get(name) != blob:
                     mismatches.append(f"{key} loaded a path or blob outside its assigned suite")
-            require(role["brief"] is None, "unexpected review brief")
+            if role["brief"] is not None:
+                require(slice_run and key == "worker", "only the slice worker may supply a brief")
+                saved["brief"] = seal_evidence(job, output, role["brief"])
             if role["report"] is not None:
                 require(key != "parent", "parent supplied a terminal report")
                 saved["report"] = seal_evidence(job, output, role["report"])
-                saved["report_valid"], saved["claims"] = report_claims(evidence_bytes(job.parents[1], saved["report"]), key)
+                report = evidence_bytes(job.parents[1], saved["report"])
+                if slice_run:
+                    require(key == "worker" and report.strip() and result["worker_status"] in ("done", "blocked", "stuck"),
+                            "worker terminal report or status missing")
+                    checked["worker_status"] = result["worker_status"]
+                    saved["report_valid"] = True
+                else:
+                    saved["report_valid"], saved["claims"] = report_claims(report, key)
             elif result["outcome"] == "completed" and key != "parent":
                 errors.append(f"{key} terminal report missing")
         except (OSError, ReplayError) as exc:
             errors.append(str(exc))
     if result["outcome"] == "completed" and req["roles"].keys() - checked["roles"].keys():
         errors.append("completed result is missing expected roles")
+    if slice_run and result["worker_status"] is not None and checked["worker_status"] is None:
+        errors.append("worker status without a verified terminal report")
     boundary = result["boundary_violation"]
     if boundary is not None:
         try:
