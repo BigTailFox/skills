@@ -2,13 +2,13 @@
 status: active
 created: 2026-10-15
 updated: 2026-11-24
-revision: 16
+revision: 17
 modules: [canon]
 summary: Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions.
 refs: [D002, D003, D000, D007, R002, R003, D004, D006, R004, E003, E004]
 owns: [skill-telemetry]
 paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py, skills/governance/canon/trace.md, skills/governance/canon/review-evidence.md, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/execution/canon-blind-review/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-handoff/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-investigate/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-retro/SKILL.md, skills/execution/canon-review/SKILL.md]
-reviewed: 16
+reviewed: 17
 reviewers: [gpt-6.2-astra]
 approved: 15
 implemented: 16
@@ -45,7 +45,7 @@ Most answers already exist and are read offline:
 
 - Docs and Git: slice `Status:` and `Risk:` lines, Log entries and the `Started at` commit; `revision`, `reviewed`, `reviewers` and `implemented`; R-doc findings and dispositions; known issues; I-doc resolutions; commit times and `Refs:` trailers. Every done slice ends in its own commit.
 - `.canon/canon-blind-review/<topic>/`: each reviewer's prompt, output and agent id, and its confirmation verdicts, in [files named by its reviewer key](#review-files). A later review of the same topic overwrites them, so trace archives the files each review wrote when it ends.
-- Cursor: `<cursor home>/projects/<project>/agent-transcripts/<conversation>/` holds the conversation, the arguments of every tool call and one file per subagent; each user message carries a `<timestamp>` to the minute. It records no tool output, tokens or per-call times. The agent's shell exposes `CURSOR_CONVERSATION_ID` and `CURSOR_AGENT=1`.
+- Cursor: `<cursor home>/projects/<project>/agent-transcripts/<conversation>/` holds the exported conversation and tool calls and may have a file per subagent. Some starts are absent from the export; each user message carries a `<timestamp>` to the minute. It records no tool output, tokens or per-call times. The agent's shell exposes `CURSOR_CONVERSATION_ID` and `CURSOR_AGENT=1`.
 - Codex: `$CODEX_HOME/sessions/**/rollout-*.jsonl` timestamps every line and records tool calls with their output, `turn_context` with `model` and `effort`, `token_count` events with cumulative input, cached, output and reasoning tokens, and `session_meta` with `cwd`, `parent_thread_id` and, for a subagent, `agent_path`.
 - Retro: `.canon/canon-retro/notes.md` (causes, events with `fix=present|absent|unverified`, raised and declined items) and `skills.jsonl`, both keyed by session.
 
@@ -226,14 +226,15 @@ A start whose manifest the snapshot repository lacks also stores the files each 
 
 ```text
 python3 scripts/trace_report.py [--project PATH ...] [--since YYYY-MM-DD] [--skills-repo PATH]
-                                [--cursor-home DIR] [--codex-home DIR ...] [--json]
+                                [--cursor-home DIR] [--cursor-state-db FILE] [--codex-home DIR ...]
+                                [--review-evidence TSV] [--json]
 ```
 
 It reads each project's events, archives, docs, Git history and retro records, and the host records in place, and writes nothing. `--cursor-home` defaults to `~/.cursor`; `--codex-home` defaults to `$CODEX_HOME`, else `~/.codex`, and repeats for a second Codex home such as the Windows side of WSL. Records of other hosts are not read, so their tokens are unknown.
 
 Units link to host records this way:
 
-- Cursor: the transcript named by `conversation`. A unit spans the tool calls from its `trace start` command, matched by its arguments in order, to the `trace end` command that names its id.
+- Cursor: the transcript named by `conversation`. A unit spans its matched start through its end or slice boundary. For incomplete exports, follow [Reconciling pilot evidence](#reconciling-pilot-evidence).
 - Codex: the rollout whose file name holds `conversation`, else the one whose tool output contains `trace <id>`. A unit's tokens are the difference between the cumulative `token_count` totals at its start and its end. Subagent rollouts, found by `parent_thread_id`, are reported separately and never added to the parent.
 - A reviewer's tokens come from the Codex rollout its `id` names: a subagent's `agent_path`, or the session id of a command run.
 
@@ -257,6 +258,18 @@ Rules:
 - List the cases behind every number with their unit ids and record locations.
 - Start with the projects read, the lines skipped, the open and incomplete units, and a reminder that untraced work is unknown, not absent.
 - A gate or code review that ended `handoff` is incomplete: list it with its dispositions so far, and leave it out of questions 1 to 3 and of replay scoring, since a continuing unit may record the completed review. Count a completed review once at the delivered end for questions 1 to 3, including one with results from different input snapshots. An absent continuation remains incomplete. Question 9 lists continuations and mixed or unknown review inputs as excluded from scoring.
+
+### Reconciling pilot evidence
+
+Keep the project's original events, review archives, host records and Git times intact. Record a correction separately with the project, unit, raw finding or boundary, source location and result. Report the raw and reconciled counts with their denominators. Keep unresolved evidence visible as `unknown`.
+
+**Review attribution.** Compare each delivered first-round report with the end's reviewer entries and finding sources. A report's key identifies its independent numbering, even when another report has the same role, model or finding number. Use the original report and its run or dispatch evidence to recover missing authorship. A shared finding requires evidence that the reports describe the same defect and required correction. Preserve every reporting source and disposition. Equivalent wording, a common file or the same finding number alone cannot establish equivalence. Count a verified defect once and credit each contributor jointly. Count an exclusive contribution only with complete source coverage for that defect. Keep disputed merges, missing authorship and unverified dispositions out of the corresponding contribution totals. A handoff retains its partial coverage.
+
+`--review-evidence TSV` supplies a locally adjudicated table, also used for a pilot. Key rows by the selected project, review unit, one-based raw disposition row (empty for an omitted source), report stem and finding ID. Record a unit-local defect group or `unknown`, the adjudicated disposition or `unknown`, a source locator and the SHA-256 digests of the end line (excluding its newline) and source report bytes. For Silk's commit-title unit, raw row 1 `spec:F1` and row 3 `standards:F1` map to the same group. Match each unit and its evidence unambiguously to the selected project before applying a correction. Conflicting, stale or incomplete mappings leave affected attribution unknown. Without a table, retain the end's explicit groupings and distinguish raw totals from independently verified contributions. A pilot table can be used directly from the experiment attachments.
+
+**Cursor boundaries.** Look first in the named conversation's export. For a missing start, a caller may supply a local Cursor state database for read-only verification. Limit the lookup to tool-call records of that conversation. Match the executed start's kind, targets, slice, parent, tier and other distinguishing arguments to the event, using the host timestamp and surrounding boundaries to disambiguate. Require one execution and one matching unit. Record which source established each boundary. Missing, ambiguous, inaccessible or unsupported evidence yields unknown. A database start locates that boundary only. Count tokens and intermediate tool calls only where their own records support them.
+
+**Worker chronology.** Link each actual run, including resumes and replacements, to its plan, slice and parent session. Compare dispatch and the worker's terminal report with the slice's recorded start and its earliest closing boundary. For an interrupted or failed attempt with no report, a verified host termination closes that run. Record the missing report and assess a replacement from its own dispatch. Use the host's event order or timestamps at their recorded precision. An intermediate update or a delayed parent notification cannot establish when the worker finished. Record each interval as contained, outside, or unknown. Keep an outside run with its observed boundary and exclude its incomplete span from full worker-duration comparisons. A new real slice can verify that the existing wait-before-commit rule works when followed. Report prospective results separately from the frozen cohort and retain every original exception in the pilot verdict.
 
 ### Replay
 
@@ -283,7 +296,7 @@ Each version runs at least three times per unit. The replay harness is its own d
 
 1. `canon.py trace`, with tests in `tests/test_canon.py` and a `CANON_VERSION` bump in every commit that changes `canon.py`; `trace.md` in the `canon` skill, and a line in its layout saying `.canon/canon/trace/` is not scratch; the call sites and the [review file](#review-files) names; a README section on turning tracing on and what it stores.
 2. A pilot on real work: at least 20 top-level units across at least two projects and every host in use.
-3. `scripts/trace_report.py`, tested on redacted real Cursor transcripts and Codex rollouts.
+3. `scripts/trace_report.py`, tested on redacted real Cursor transcripts and Codex rollouts, plus a minimal database fixture for missing, unique, ambiguous and cross-conversation start candidates.
 4. The replay harness, as its own design.
 
 Delivery is staged: each step starts once the one before it has ended, so [Analysis](#analysis) specifies step 3 ahead of its code, and [Replay](#replay) states what step 4 can rely on. Until step 3 lands, `implemented` is the latest revision whose step 1 the repository fully implements, and step 1 ends when `implemented` reaches `revision`. Only units traced after that count toward the pilot, and neither a capture fix during the pilot nor a revision that changes no capture restarts it; the check of the text [budgets](#budgets) lies outside the staged steps. Step 3 is written against the revision current when the pilot ends; the change that delivers it adds `scripts/trace_report.py` to `paths`, and from then on `implemented` counts steps 1 and 3. Step 4 starts once step 3 has ended and 20 replayable units exist.
@@ -310,11 +323,11 @@ Scenarios for step 1, tested through the commands:
 Pilot exit:
 
 - At least 18 of 20 top-level units have a start and an end, or a genuine interruption.
-- Every review's dispositions match its conversation.
+- Every review's dispositions match its conversation. Compare raw and reconciled dispositions using the source reports. Mark any unverifiable claim explicitly.
 - Every unit's parent, tier and outcome match its conversation, tier changes included.
 - From an independent trace clone, verify opening documents and slice plans at the start ref, and reviewed documents and patches at the retained first-round ref, with the prompt's scope and verified as-built code where applicable. For older records count an opening snapshot as equivalent only with independent evidence for the actual input. To test a capture repair, submit the independently recovered historical inputs to fresh units, verify their clones and report them separately from the original capture results.
 - Every Cursor and Codex unit is found in its host record.
-- Every worker run, resumed and replacement runs included, falls within one unit of its slice, and no slice's unit is ended by another `start` of the same slice.
+- Every worker run, resumed and replacement runs included, falls within one unit of its slice, and no slice's unit is ended by another `start` of the same slice. A prospective run verifies the execution procedure. It cannot clear a failure of this condition in the frozen cohort or authorize step 3 on its own.
 - No host in use has a snapshot skipped because its sandbox could not write the trace directory.
 
 If capture falls short, it is fixed before the report is built. [E003: Canon and Silk pilot](../experiments/E003-d001-trace-pilot.md) records the frozen cohort and its original results. [E004: review input revalidation](../experiments/E004-d001-review-input-revalidation.md) verifies the three recovered inputs through independent clones and records the remaining exit failures.
