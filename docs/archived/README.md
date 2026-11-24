@@ -19,5 +19,6 @@
 - [R002: Open items from local retro and review records](reviews/R002-local-records.md) · closed · Open findings from the retro notes, canon friction log and blind-review outputs kept only in .canon/, and what to restore when moving machines. · modules: canon
 - [R003: Canon friction in Silk's design phase](reviews/R003-silk-design-phase.md) · closed · Canon friction in a docs-only bilingual project: review gates per doc, parallel sessions, archived experiments, translations, check gaps, tool drift. · modules: canon
 - [R004: Canon feedback from Silk on design reviews and concurrent work](reviews/R004-silk-canon-field-feedback.md) · closed · Fourteen findings from Silk on approvals, experiment claims, concurrent edits, external reviews, trace history and CLI diagnostics, with upstream fixes. · modules: canon
+- [R005: Silk upgrade to Canon 0.9.0](reviews/R005-silk-upgrade-090.md) · closed · Silk's 0.9.0 upgrade identified two remaining project rules, missing patch retirement guidance and a need to find documents by embedded source. · modules: canon
 
 <!-- canon:index:end -->
