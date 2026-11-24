@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 created: 2026-11-25
 updated: 2026-11-25
 revision: 1
@@ -14,11 +14,11 @@ approved: 1
 
 # P011: Paired workflow replay
 
-Implements [D012: Paired replay of Canon workflows](../designs/D012-workflow-replay.md).
+Implements [D012: Paired replay of Canon workflows](../../designs/D012-workflow-replay.md).
 
 ## Current state
 
-All five slices are done. Next: complete code review and docs closeout.
+All five slices are done. The three code reviewers finished confirmation and targeted rechecks. The public CLI and the historical acceptance case passed final verification.
 
 ## Slices
 
@@ -90,7 +90,7 @@ Check each cohort dimension (project, kind, tier, host, role settings, runner co
 
 ## Notes
 
-- The four public operations and the v1 wire formats come from [D012§interface: replay commands](../designs/D012-workflow-replay.md#interface), [D012§runner-protocol: runner protocol](../designs/D012-workflow-replay.md#runner-protocol) and [D012§blinded-scoring: adjudication](../designs/D012-workflow-replay.md#blinded-scoring). The operator supplies the machine-local executable and nonsecret configuration. The tests supply a deterministic runner at that same boundary.
+- The four public operations and the v1 wire formats come from [D012§interface: replay commands](../../designs/D012-workflow-replay.md#interface), [D012§runner-protocol: runner protocol](../../designs/D012-workflow-replay.md#runner-protocol) and [D012§blinded-scoring: adjudication](../../designs/D012-workflow-replay.md#blinded-scoring). The operator supplies the machine-local executable and nonsecret configuration. The tests supply a deterministic runner at that same boundary.
 - Keep both the prepared input and run state local. Publish receipts, reports, packets and results atomically. A workspace gets only its selected synthetic objects, tools and fixtures. Never expose alternates or the original Git history. Preserve the project's source object format for input trees and D012's canonical SHA-1 for comparable installation identity.
 - Use the existing trace readers, Git primitives and first-round report grammar. Project-local `scripts/` and `tests/` carry replay code and public CLI regression fixtures. Leave installed skill dependencies unchanged. Operational examples must work with explicitly selected local inputs.
 
@@ -103,3 +103,5 @@ Check each cohort dimension (project, kind, tier, host, role settings, runner co
 - 2026-11-25: S3 completed. Fourteen public slice tests passed without skips on a Linux host with Bubblewrap, alongside 85 preparation, review-run and trace regressions. Verified clean test copies, SHA-1 and SHA-256 artifacts, a genuine exit 127 versus missing runtime, independent worker statuses and brief privacy. An unavailable isolation boundary leaves the criterion undecided.
 - 2026-11-25: S4 completed. Fifteen public scoring tests and the 99 preparation, execution and trace regressions passed. With one common criterion, both arms can score 1/2 overall while the paired difference is +1. Repeated scoring of the real gate produced byte-identical result.json, preserved three complete pairs, withheld recall on the provisional inventory, and kept unmeasured role token counts unknown.
 - 2026-11-25: S5 completed. Seven public CLI tests passed. Equal case weighting produced a 10-token difference where pooling pairs would give 5. All 624 repository tests passed across complementary runs, D001 text budgets were measured and discovery found 19 skills. Offline acceptance of the real D003@r9 gate 20261113T130221Z-45876c with candidate 8478e130d51b58bf4549f406e35ec5629118134b produced three comparable pairs from six verified dispatches. A second copy counted once. Historical recall and role token measurements were unavailable.
+- 2026-11-25: Spec and Standards (GPT-6.2 Astra) and cross-family (Gemini 4 Neon) reported 34 first-round findings, merged into 25 accepted fixes. The original reviewers verified the fixes and the additional issues they found during confirmation. Regressions cover untracked named inputs, blinded source and transcript boundaries, original v1 judgments across case relocation, and unavailable build tools versus worker test failures.
+- 2026-11-25: Final validation passed all 674 repository tests across complementary hosts. D001 text budgets were measured and discovery listed 19 skills. A fresh offline replay of D003@r9 produced three comparable pairs, stable scores on repeat, and one independent case after deduplication. Its three historical sources remained provisional and its role token measurements remained unknown. D012@r1 is implemented.

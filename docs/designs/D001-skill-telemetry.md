@@ -1,11 +1,11 @@
 ---
 status: active
 created: 2026-10-15
-updated: 2026-11-24
+updated: 2026-11-25
 revision: 18
 modules: [canon]
 summary: Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions.
-refs: [D002, D003, D000, D007, R002, R003, D004, D006, R004, E003, E004, E005, P010]
+refs: [D002, D003, D000, D007, R002, R003, D004, D006, R004, E003, E004, E005, P010, D012]
 owns: [skill-telemetry]
 paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py, scripts/trace_report.py, scripts/trace_codex.py, scripts/trace_hosts.py, scripts/trace_questions.py, scripts/trace_records.py, scripts/trace_replay.py, scripts/trace_retro.py, scripts/trace_review_evidence.py, scripts/trace_review_inputs.py, scripts/trace_review_receipts.py, scripts/trace_reviewer_cost.py, scripts/trace_reviews.py, scripts/trace_sqlite.py, scripts/trace_versions.py, scripts/trace_workers.py, tests/test_trace_analysis.py, tests/test_trace_report.py, tests/test_trace_reviews.py, skills/governance/canon/trace.md, skills/governance/canon/review-evidence.md, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/execution/canon-blind-review/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-handoff/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-investigate/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-retro/SKILL.md, skills/execution/canon-review/SKILL.md]
 reviewed: 18
@@ -297,7 +297,7 @@ Each version runs at least three times per unit. The replay harness is its own d
 1. `canon.py trace`, with tests in `tests/test_canon.py` and a `CANON_VERSION` bump in every commit that changes `canon.py`; `trace.md` in the `canon` skill, and a line in its layout saying `.canon/canon/trace/` is not scratch; the call sites and the [review file](#review-files) names; a README section on turning tracing on and what it stores.
 2. A pilot on real work: at least 20 top-level units across at least two projects and every host in use.
 3. `scripts/trace_report.py`, tested on redacted real Cursor transcripts and Codex rollouts, plus a minimal database fixture for missing, unique, ambiguous and cross-conversation start candidates.
-4. The replay harness, as its own design.
+4. The repository replay CLI prepares, runs, scores and summarizes paired cases. [D012: Paired replay of Canon workflows](D012-workflow-replay.md)
 
 Delivery is staged: each step starts once the one before it has ended, so [Analysis](#analysis) specifies step 3 ahead of its code, and [Replay](#replay) states what step 4 can rely on. Until step 3 lands, `implemented` is the latest revision whose step 1 the repository fully implements, and step 1 ends when `implemented` reaches `revision`. Only units traced after that count toward the pilot, and neither a capture fix during the pilot nor a revision that changes no capture restarts it; the check of the text [budgets](#budgets) lies outside the staged steps. Step 3 is written against the revision current when the pilot ends; the change that delivers it adds `scripts/trace_report.py` to `paths`, and from then on `implemented` counts steps 1 and 3. Step 4 starts once step 3 has ended and 20 replayable units exist.
 

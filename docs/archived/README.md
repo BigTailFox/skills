@@ -14,6 +14,7 @@
 - [P008: Embedded source and external reviewer integration](plans/P008-embedded-source-and-reviewer-integration.md) · done · Deliver embedded source, attachment citations, native command review progress, scoped consent and verified skill references in one change. · modules: canon
 - [P009: Reconcile the D001 pilot evidence](plans/P009-trace-pilot-reconciliation.md) · done · Verify review attribution, partial Cursor exports and worker boundaries on the frozen D001 pilot and two preselected live slices. · modules: canon
 - [P010: Report traced workflows offline](plans/P010-offline-trace-report.md) · done · Implement the read-only nine-question trace report with host evidence, verified reviewer contributions and replay eligibility. · modules: canon
+- [P011: Paired workflow replay](plans/P011-paired-workflow-replay.md) · done · Prepare, run, score and summarize paired historical replays with verified inputs, isolated slice tests and blinded judgments. · modules: canon
 
 ### Reviews
 
