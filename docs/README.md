@@ -19,7 +19,7 @@
 
 ### Plans
 
-- [P010: Report traced workflows offline](plans/P010-offline-trace-report.md) · accepted · Implement the read-only nine-question trace report with host evidence, verified reviewer contributions and replay eligibility. · modules: canon
+- [P010: Report traced workflows offline](plans/P010-offline-trace-report.md) · in-progress · Implement the read-only nine-question trace report with host evidence, verified reviewer contributions and replay eligibility. · modules: canon
 
 ### Experiments
 

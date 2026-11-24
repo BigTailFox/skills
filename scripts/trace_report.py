@@ -1,0 +1,86 @@
+"""Report evidence from local canon traces without changing the projects or host profiles."""
+import argparse
+from datetime import date
+import json
+import os
+from pathlib import Path
+import sys
+
+sys.dont_write_bytecode = True
+from trace_records import collect, select
+from trace_hosts import attach_hosts
+from trace_workers import codex_workers, cursor_workers
+from trace_questions import costs, slice_outcomes
+
+
+def build(args):
+    population, cases = collect(args.project or [Path.cwd()])
+    catalog = attach_hosts(cases, args)
+    codex_workers(cases, catalog)
+    cursor_workers(cases)
+    selected = select(cases, args.since, population)
+    population.update(units=len(selected), since=args.since.isoformat() if args.since else None,
+                      cursor_home=str(args.cursor_home), cursor_state_db=str(args.cursor_state_db) if args.cursor_state_db else None,
+                      codex_homes=[str(path) for path in args.codex_home])
+    population["host_starts"] = {}
+    for source in ("export", "cursor-db", "unknown"):
+        members = [c.id for c in selected if c.data["host_start"]["source"] == source]
+        population["host_starts"][source] = {
+            "numerator": len(members), "denominator": len(selected), "cases": members,
+            "sample": "few units" if len(selected) < 20 else "20 or more units"}
+    return dict(population=population, cases=[c.data for c in selected],
+                questions={"4": slice_outcomes(selected), "6": costs(selected)})
+
+
+def text_value(label, value, depth=0):
+    prefix = "  " * depth
+    if isinstance(value, dict):
+        props = dict(value)
+        ratio = ""
+        if "numerator" in props and "denominator" in props:
+            ratio = f" {props.pop('numerator')}/{props.pop('denominator')}"
+        print(prefix + label + ratio)
+        for key, member in props.items():
+            text_value(key.replace("_", " "), member, depth + 1)
+    elif isinstance(value, list):
+        if not value or all(not isinstance(x, (list, dict)) for x in value):
+            print(prefix + label + "  " + (", ".join(str(x) for x in value) or "none"))
+        else:
+            print(prefix + label)
+            for item in value:
+                text_value("•", item, depth + 1)
+    else:
+        print(prefix + label + "  " + ("none" if value is None else str(value)))
+
+
+def text_report(report):
+    text_value("Source population", report["population"])
+    for number, question in report["questions"].items():
+        print()
+        text_value("Q" + str(number) + "  " + question["title"],
+                   {k: v for k, v in question.items() if k != "title"})
+    print()
+    text_value("Cases and record locations", report["cases"])
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--project", type=Path, action="append", metavar="PATH")
+    parser.add_argument("--since", type=date.fromisoformat, metavar="YYYY-MM-DD", help="inclusive UTC start date")
+    parser.add_argument("--skills-repo", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument("--cursor-home", type=Path, default=Path.home() / ".cursor")
+    parser.add_argument("--cursor-state-db", type=Path)
+    parser.add_argument("--codex-home", type=Path, action="append")
+    parser.add_argument("--review-evidence", type=Path)
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+    args.codex_home = args.codex_home or [Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")]
+    report = build(args)
+    if args.json:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        text_report(report)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: in-progress
 created: 2026-11-24
 updated: 2026-11-24
 revision: 1
@@ -17,13 +17,13 @@ Implements [D001: Skill telemetry with canon trace](../designs/D001-skill-teleme
 
 ## Current state
 
-Next: S1.
+Next is S2, the reviewer contribution and tier questions.
 
 ## Slices
 
 ### S1: Report unit boundaries, worker outcomes and measured cost
 
-Status: todo
+Status: done
 
 Risk: Pairing an incomplete host export or an overlapping worker with the wrong unit changes both cost and outcome comparisons.
 
@@ -64,3 +64,5 @@ Implement [D001§analysis: offline report](../designs/D001-skill-telemetry.md#an
 ## Log
 
 - Planned against D001@r18.
+- Started at 3a8ed089480a7cb5e049e15b3daf5ac7dcdabdb5.
+- S1 delivered the CLI and questions 4 and 6. Its 11 CLI tests passed. On Canon and Silk it located 46/48 frozen starts from exports and both remaining starts with the supplied Cursor database. It reproduced 9/11 contained workers in the historical sample and 2/2 in the separately preselected sample. Both late workers retain their observed endpoints and have unknown full-worker costs. Host-internal service sessions are excluded from worker launches. The worker's final report and native completion arrived before commit.
