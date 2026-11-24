@@ -1,0 +1,137 @@
+---
+status: draft
+created: 2026-11-24
+updated: 2026-11-24
+revision: 1
+modules: [canon]
+summary: Restore one verified unit, compare two skill suites on paired headless runs, and blind the scoring of review findings, slice outcomes and costs.
+refs: [D001, D003, D004, P010]
+owns: [workflow-replay]
+paths: [scripts/replay_workflows.py]
+reviewed: 1
+reviewers: [gpt-6.2-astra, gemini-4-neon-xhigh]
+---
+
+# D012: Paired replay of Canon workflows
+
+## Goals
+
+1. Compare a candidate Canon skill suite with the recorded suite on the same historical review or plan slice. Preserve the original input, host, models and measured effort so that a difference can be attributed to the suite under test.
+2. Give maintainers inspectable, paired evidence for valid findings recovered, scope mistakes, slice outcomes, elapsed time and available token costs. An unavailable input or an ambiguous judgment stays visible in the result.
+
+## Spec
+
+This design covers preparing, running and scoring the comparisons in [D001§replay: replay inputs and scoring population](D001-skill-telemetry.md#replay). A **case** is one unit in one project's trace store. An **arm** is the recorded or candidate skill suite for that case. A **pair** contains one attempt from each arm with the same case and repetition number.
+
+### Interface
+
+An operator prepares and inspects each case locally before dispatching runs, scores each case, then selects the cases to report together.
+
+```text
+python3 scripts/replay_workflows.py prepare --project PATH --unit ID --candidate REF --out DIR
+                                           [--store PATH] [--skills-repo PATH] [--fixtures DIR]
+                                           [--criteria FILE] [--review-evidence TSV]
+                                           [--cursor-home DIR] [--cursor-state-db FILE] [--codex-home DIR ...]
+python3 scripts/replay_workflows.py run DIR --runner EXECUTABLE --runner-config FILE [--repetitions N]
+python3 scripts/replay_workflows.py score DIR [--judgments FILE]
+python3 scripts/replay_workflows.py summarize DIR [DIR ...]
+```
+
+`prepare` uses the skills checkout's `scripts/trace_report.py` as its [D001§analysis: report reader](D001-skill-telemetry.md#analysis), with the same host and evidence options, including repeatable `--codex-home`. Match the project, exact store when supplied, and unit. Reject ambiguity across stores. Verify Q9 eligibility and resolve the candidate ref to a commit in `--skills-repo` (this checkout by default). An excluded or unreadable case produces a reason before dispatch. A case prepared with different inputs needs a fresh output directory. Keep immutable input IDs and content digests in a private receipt and recheck them before running and scoring. Outputs stay in the operator's case directory and its run workspaces.
+
+### Reconstructing a case
+
+- Require the unit's `version.status` to be `single` and restore its verified flat `refs/skills/<manifest>` tree. A verified local suite remains usable when shallow skills history leaves its originating commit unknown. Apply the same [D001§skill-digests: manifest file selection](D001-skill-telemetry.md#skill-digests) to the candidate commit, accepting the categorized and historical flat layouts that the report reader recognizes. Flatten both by skill name with identical file selection, bytes and executable bits. Record the D001 manifest digest and a canonical Git **SHA-1** tree ID computed from those paths, modes and bytes for each installed suite, irrespective of either source repository's object format.
+- Materialize the verified Q9 input in a fresh repository with the source object format. Give its baseline tree a parentless synthetic commit when present. Set `HEAD` to a synthetic commit for the target tree, with that baseline as its only parent or no parent for a full document. A slice instead starts at a parentless commit of its opening tree with the exact plan revision. For a verified as-built gate, put the approved code tree in its own parentless commit at `refs/replay/as-built`. The private receipt maps original identities to restored trees and commits. Generate prompts against the local commit IDs. [D001§first-round-review-input: retained review inputs](D001-skill-telemetry.md#first-round-review-input)
+- For a Q9 `live diff`, materialize `HEAD` and the index from the target **minus** the listed untracked paths. Put those exact blobs and modes in the working directory as untracked files. This retains tracked additions in the patch and keeps a staged deletion visible even when an untracked file occupies its old path. For a `prepared diff`, compare the complete baseline and target commits. For `document diff` and `full document`, use the verified document paths and optional baseline. Keep Q9's literal diff options and scope. Compare the reconstructed patch bytes to its recorded SHA-256 wherever available and verify every listed untracked blob and mode before dispatch.
+- For a **code review**, pin the neutral delivery from the frozen plan's named slice deliverables and test criteria (for a whole-plan change, all its slices), or the unambiguous archived task requirement such as the prompt's `Requested delivery` line. Record text, source and digest. Give both arms and the adjudicator the same requirements. If missing or contradictory, scope-dependent claims are unknown and excluded from rates. Contracts decidable from the diff remain checkable. A gate takes its scope from the named documents, a slice from its named plan section. Both set `delivery` to null. [D003§input-and-reports: review inputs](D003-subagents.md#input-and-reports)
+- Keep historical reports, dispositions, later commits, the other arm, trace store and original checkout outside the model's readable workspace. Install the selected suite under `.agents/skills/<name>` for Codex and Cursor, with the project-local `.claude/skills/<name>` links for Claude Code. Put injected paths in the scratch repo's `.git/info/exclude`. Reuse tracked files only when their bytes, modes and effective resolution already match the assigned suite. A conflicting tracked path makes that arm incompatible. Resolve each role's actual skill and prescribed tool paths before dispatch, including the one named in `AGENTS.md`, and verify the target and patch remain identical. Check observed loads before crediting the attempt. A Canon self-review that must execute a different working-tree `canon.py` is incompatible. [D004§install: project-local skill paths](D004-project-setup.md#install)
+- The operator supplies any required ignored inputs as a local directory laid out relative to the run root. Copy identical bytes and executable modes into each clean arm. Reject overlap with tracked input, tool installations or Git metadata and entries that escape the directory. Record relative paths and digests in the private receipt. The operator explicitly chooses the permitted files and the runner's access scope. A run missing a dependency records the missing prerequisite. Never draw it silently from the live project.
+- For a slice, read the frozen plan blob at Q9's selected `### S<n>` heading up to the next slice or end of the Slices section. Pin its prose and line span. An optional `--criteria` JSON file has `{schema:1, plan_blob, slice, criteria:[{id, first_line, last_line, argv}]}`. IDs are unique strings, lines are inclusive, one-based and within that section, and `argv` is a nonempty string array or null. The operator identifies the acceptance clauses and explicitly supplies each command. Preserve uncovered acceptance text as an unavailable criterion. With no mapping, keep the entire section as one composite criterion with null `argv`. The controller pins this mapping and its text in the private receipt. It never infers a shell command from prose.
+
+### Executing paired runs
+
+Apply the historic host, model and effort rules of [D001§replay: replay requirements](D001-skill-telemetry.md#replay) per role. Reserve `parent` for the orchestrator and `worker` for a slice. Reviewers use Q9's recorded source keys. Resolve the parent from the case, reviewers from registered sessions, and the initial slice worker from the matching case's `worker_attempts`. For a uniquely bound Codex role, read its model and effort from the matching rollout interval using the report reader's host parsing. Conflicting or missing model identity, a `manual:<model>` review, or an unavailable role or host makes the case incompatible with headless comparison. An unobserved effort stays historically unknown and both arms use the same pinned effective setting. The arm's installed workflow builds fresh prompts from the neutral task parameters. Exclude historical reviewer output, author reasoning and interactive steering. Report the original steering state, including unknown.
+
+Pin the machine-local runner's resolved path and SHA-256 and the SHA-256 of the operator's JSON config bytes. Recheck all three on resume. Config v1 has `{schema:1, host, default_effort, roles, destinations, read_paths, test_tools, settings}`. `roles` maps role keys to `{model, effort}` (null effort selects `default_effort`). Use recorded effort when verified, else the role setting, else the default. Match the verified model. `destinations` lists permitted provider IDs, `read_paths` the workspace-relative inputs granted for this run, and `test_tools` the allowed local test executables. `settings` holds nonsecret runner-specific routing and isolation settings. The runner checks the effective environment against the file. The invocation and config must cover each destination and input before any host call. Keep credentials outside the workspaces.
+
+`--repetitions` defaults to the D001 minimum of three pairs and rejects smaller values. Alternate the first arm in successive pairs. Every dispatch has a fresh workspace, session and opaque attempt ID. Persist its slot (pair, arm) and ID before launch. Resume against identical receipts, reattach to a live attempt, and leave an uncertain dispatch pending until its terminal state is known. A stopped, failed or verified interrupted dispatch can retry the slot with a fresh ID. Keep every attempt, use at most one completed result per slot, and leave incompatibility visible until a fresh preparation fixes its prerequisite. Report incomplete pairs and flag cases with fewer than three comparable pairs.
+
+### Runner protocol
+
+The controller sends one JSON object on stdin per attempt. The runner writes one JSON object on stdout. Version 1 uses the following fields. An ID, digest, path, model and host are strings. Optional evidence is explicitly null when unavailable.
+
+| Request field | Value |
+|---|---|
+| `schema`, `attempt`, `config_digest` | Integer `1`, opaque attempt ID, SHA-256 of the verified config file bytes |
+| `workspace`, `skills`, `output`, `config` | Absolute paths to the checkout, installation, runner-owned evidence directory and operator config. Only the inputs granted to a role enter its view. |
+| `host`, `kind`, `roles` | Recorded host, `gate` / `code-review` / `slice`, and a map from each participating role key (including the parent) to `{model, effort}`. Effort is the effective string setting. |
+| `stop_after` | `first_round_reports` for a gate or code review, `worker_report` for a slice. |
+| `task` | `{docs, slice, tier, delivery, input, criteria}`. `docs` is an array of revision IDs, `slice` is `S<n>` or null, and `tier` and `delivery` are strings or null. `criteria` contains only `{id, text}` from the frozen plan. |
+| `task.input` | `{form, paths, target, baseline, as_built, diff_args, untracked}`. `form` is the Q9 review form or `slice`. `target` is the local `HEAD` commit, `baseline` and `as_built` are local commit IDs or null. The three arrays contain workspace-relative paths, verified diff arguments and untracked paths respectively. |
+
+| Result field | Value |
+|---|---|
+| `schema`, `attempt`, `config_digest`, `host` | Echo the version and attempt ID and report the observed configuration digest and host. |
+| `outcome`, `reason`, `worker_status` | Execution is `completed`, `stopped`, `failed` or `incompatible`. Supply a reason string or null. A terminal slice worker report sets `worker_status` to `done`, `blocked` or `stuck`. All three can complete the attempt. A review or a missing worker report has null worker status. Preserve partial evidence. |
+| `roles` | Observed role keys map to `{model, effort, loaded, report, brief, tokens}`. `loaded` lists `{path, blob}` for every skill entry read and suite tool actually invoked, using resolved workspace-relative paths and the Git SHA-1 blob digest of the bytes. Record an empty list when no suite file was used. `report` is a verbatim terminal report reference for each reviewer or worker, null for the parent. Only `worker.brief` holds the dispatched brief reference. `tokens: {input, cached_input, output, reasoning_output}` has integer counts or null per component. |
+| `artifact`, `boundary_violation` | Final slice Git bundle evidence reference or null. A boundary violation is null or `{reason, evidence, wall_seconds, tokens}` for work after the stopping boundary. Separately observed seconds may be null. Its tokens map role keys to the same nullable components as `roles`. |
+
+An evidence reference is `{path, sha256}` relative to the runner-owned output. Verify confinement and bytes before importing it. Parse review claims once from the verified report using the repository's first-round heading parser. Keep role, finding ID, severity, text and line. Malformed reports yield unknown scoring evidence. Omit arm labels, historical scoring material and credentials from model inputs. Give reviewers scoped read access and workers write access to their disposable workspace. A malformed envelope, wrong attempt ID or invalid evidence leaves an unscored attempt with a reason. An observed host, role, tool, configuration or effective model/effort mismatch is incompatible. Stopped attempts can report partial roles. Completion requires the parent settings and a terminal report for each expected reviewer or the worker. The parent supplies no terminal report of its own.
+
+For a review, permit only the named first-round reviewer dispatches. Seal their reports and end the attempt upon the last first-round terminal report. Stop before merging findings, editing the input or dispatching any confirmation or follow-up. The runner enforces this boundary even when the installed workflow asks to continue. If the host makes a later call, retain that deviation and its observed cost separately and exclude the attempt from comparable pairs.
+
+The slice `artifact` is a self-contained Git bundle v3. Its sole advertised ref, `refs/replay/result`, points to one parentless commit. Its tree records the final tracked project files and new nonignored project files with their Git paths, modes and blob contents, including symlink targets. Deleted paths are absent. Keep fixture paths, injected skills and Git metadata outside the artifact. Import into a fresh, empty repository of the indicated object format, verify the bundle has no prerequisites, check the sole ref and parent count, and read the tree there. Mark the artifact unavailable when required contents cannot be restored. The adjudicator receives the frozen tree through a neutral view.
+
+The runner freezes the slice brief and final tree at the worker's terminal report, including a `blocked` or `stuck` report. The **controller** imports that bundle and runs each available pinned criterion in its own restricted copy of the verified tree with clean fixtures from the private receipt. Start the command from the checkout root using its `argv`. The process sees that copy and the granted test tools. Keep the receipt, mapping, evidence store and credentials outside it. The controller captures `{id, argv, outcome, evidence}` for each criterion. Exit zero is `pass`, a completed nonzero test is `fail`, and a missing artifact, fixture, executable or conclusive result is `unavailable`. Seal the command, output and result before producing the scorer packet. Missing artifacts leave an observed worker status usable.
+
+Compare each dispatched slice brief privately with the initial historical `launch` only when the dispatch, child and terminal boundary identify one contained attempt. Match the precise dispatched tool call by its ID or unambiguous message and call position within the host record. Ambiguity, a missing initial brief or an outside initial attempt yields `unavailable`. A later resume or replacement cannot supply that first brief. Keep text and the requirements diff solely in the private receipt. Share only comparison status and digests with the operator's scored result.
+
+### Blinded scoring
+
+`prepare` freezes the historical inventory separately from replay claims. Join the case's Q9 first-round disposition source IDs to `cases[].review.groups` for that same store and unit. Accept a group's stable case-local ID only when its source membership and disposition are corroborated, every member resolves uniquely to a first-round source, and the report bytes and adjudication digests match. Preserve explicit historical disposition under [D001§questions: valid findings](D001-skill-telemetry.md#questions) and [D001§replay: historical scoring](D001-skill-telemetry.md#replay). Without a corroborating table or group, retain the recorded source groupings and raw counts as provisional. Standalone `unverified` attribution, conflicting membership and `escalated` dispositions also stay unknown. Never assign one reference defect per raw row. Keep confirmation-only sources separate. Complete first-round reports and dispositions with zero findings establish a verified empty inventory. For a slice, build a later-review inventory only from the uniquely attributed review identified by Q9, subject to the same checks.
+
+After sealing run evidence, `run` writes `DIR/blind/packet.json`, its referenced evidence and `DIR/blind/judgments-template.json`. An identical resume reproduces the packet. New attempts rebuild it and invalidate judgments bound to the old digest. The controller retains the arm mapping privately. Remove model, suite and arm labels from report text, identifiers, paths and artifact views before exposing them. Costs, brief diffs and raw host transcripts stay private.
+
+The packet is UTF-8 JSON with `{schema:1, case, kind, task, history, attempts}`. `case` is an opaque ID and `task` the frozen neutral task. `history: {groups, unknown, confirmation_only}` lists verified `{id, disposition, sources, evidence}` groups and the separate unknown and confirmation-only sources. Each `attempts` row contains `{id, outcome, claims, artifact, tests}`. Claims carry an opaque source ID, severity and a reference to their anonymized text. Artifact and test evidence use blinded references or null. Each reference contains a packet-relative path and the SHA-256 of its exported bytes. A completed review with no findings has `claims: []`.
+
+Judgments v1 is `{schema:1, packet_sha256, attempts:[{id, groups, later}]}`. Bind it to the SHA-256 of the exact packet bytes and verify every referenced evidence digest. Each attempt-local group is `{id, claims, historical, verdict, scope, evidence}`. Partition claim IDs by violated contract, location and correction. Duplicate reports of a novel defect share one group. `historical` is a reference group ID or null. `verdict` is `valid`, `false_positive` or `unknown`, and `scope` is `in`, `out` or `unknown`. `evidence` lists blinded evidence references. A zero-claim review supplies an explicit row with empty groups and later lists. A slice uses empty groups and one `{historical, match, evidence}` per eligible later-review defect, with `match` equal to `present`, `absent` or `unknown`. A review has an empty later list. `--judgments` is optional only for a slice without attributable later-review groups. Missing rows, repeated or unmapped claim IDs, inconsistent verdicts or stale evidence make the affected comparisons unknown. `score` reads sealed inputs only, so the same packet and judgments reproduce the same result.
+
+### Metrics
+
+| Metric per attempt | Calculation |
+|---|---|
+| Review recall | Distinct verified valid historical groups recovered / distinct verified valid historical groups eligible to match. A completed zero-claim report misses all such groups. If unknown inventory or matching could change the result, retain the known counts and withhold the full rate. |
+| Review findings | Count distinct adjudicated false-positive groups, novel valid groups, and groups with unknown verdict separately. Count a novel valid group only when the available history establishes novelty. Show out-of-scope groups / groups with a known scope judgment. |
+| Slice execution | For each `done`, `blocked` and `stuck`, score one when the completed worker reported that status, otherwise zero. A host-stopped attempt contributes no worker score. |
+| Slice criteria | Show pass, fail and unavailable counts. The pass rate is passes / (passes + failures). A paired comparison uses only criterion IDs with conclusive results in both arms, showing its common denominator. |
+| Later defects in a slice | For Q9-attributed valid groups with a decisive blinded match, count distinct groups present and report present / (present + absent). Compare only common decided groups. |
+| Cost | Measure wall seconds around the runner call. Report each role's token components separately. Input includes cached input and output includes reasoning output where measured on that basis. The subset counters stay separate and are never added again. Missing or differently defined components are unknown. Do not sum parent and child sessions. |
+
+Give every rate's numerator and denominator. Zero denominators have no rate. Retain scope uncertainty, partial evidence, host stops and post-boundary costs in the local result. For each comparison subtract the recorded arm's count, indicator, rate, seconds or role-specific component from the candidate's on the same pair. An unavailable measurement on either side leaves that difference unknown.
+
+### Comparing cases
+
+`score` writes `DIR/result.json` with receipt identifiers and digests, brief comparison status, blinded judgments, each arm's metrics and unknowns, and paired differences for comparable completed attempts. Keep the private receipt and raw transcript material out of this file. `summarize` reads the selected case directories. Deduplicate copies by project/store and unit identity. Count identical copies once and report a conflict if that identity has competing inputs or judgments for the same suite comparison.
+
+First report each case's complete pairs and the mean of their candidate-minus-recorded differences for each available metric. For a cohort give each independent case's mean equal weight. Group by project, kind, tier, host, role settings, runner configuration and suite pair, showing the case count and available pair count per metric. Combine projects only for otherwise matching cohorts, retaining the per-project rows. List incomplete pairs, unknown metrics and cases excluded from a mean. Show the observed numerator and denominator for rates, wall time and measured token components alongside the differences.
+
+## Verification
+
+- Two arms reconstruct the same scoped patch with an untracked file even after the source checkout has moved on. Swapping the installed suite changes its digest and leaves the patch identical.
+- An identical-suite control restores the same modes and tree in both arms. In a Canon self-review a candidate changing `canon.py` must resolve to the changed tool or be marked incompatible. Changing the runner config or returning an unexpected role or effort prevents a completed pair.
+- A plan-less scaffold's archived delivery distinguishes an ABI mismatch from a future feature. Without that delivery, the ABI remains checkable and the scope-dependent finding is unknown.
+- An ineligible mixed-input review, a missing baseline object and an escaping fixture each stop before any runner invocation. A single eligible plan slice with unavailable tests reports that outcome explicitly.
+- With a deterministic test runner, three paired repetitions preserve both orderings, observed models and costs. An interrupted attempt remains distinguishable from a completed one after a retry.
+- A review workflow that requests a confirmation produces only first-round dispatches, reports and costs. A host that violates the boundary yields an incompatible attempt.
+- Two historical rows for one ABI defect create one reference group. A completed zero-claim attempt scores 0/1 recall. Two reviewers reporting the same novel defect create one novel group. A future feature outside the task counts once as a scope error. A later change to an adjudicated report invalidates its judgment.
+- A slice criterion that writes to the checkout can change only its disposable copy. Scoring the sealed evidence twice yields identical output. The post-run brief comparison detects a changed instruction and records an unavailable historical brief explicitly.
+- A blocked worker with a terminal report and a done worker form one completed pair. The blocked-status indicators are 1 and 0. A host stop yields an incomplete pair. A prose-only plan stays measurable for worker status even when no test command is available.
+- Changing a judgment's packet digest invalidates it. Missing historical group evidence keeps recall unknown. A slice without an attributable review can score its sealed tests without a judgment file. Neither its summary nor its blinded packet contains the historical worker brief.
+- Import a slice result bundle in an empty Git repository and check a changed executable, a new symlink and a deleted file. The consumer reconstructs the tree from the artifact alone.
+- Two compatible cases with different repetition counts each contribute one case mean. A duplicate directory adds no case, conflicting judgments are reported, and a different host remains a separate cohort.
+
+## Decisions
+
+- During P010's acceptance run, while its code review was still open, the offline two-project report marked 41 of 100 Q9 candidates eligible, clearing the 20-case threshold. Run-time inputs and runner compatibility are checked per case during preparation and execution. [P010§log: two-project acceptance run](../archived/plans/P010-offline-trace-report.md#log) · [D001§delivery-and-acceptance: staged delivery](D001-skill-telemetry.md#delivery-and-acceptance)
+- Use separate run and scoring workspaces so the runner can exercise the same skills maintainers distribute while the adjudicator can compare outputs before learning their versions. The observed uncertainty in finding attribution makes source-level matching necessary. [D001§reconciling-pilot-evidence: reconciled scoring evidence](D001-skill-telemetry.md#reconciling-pilot-evidence)

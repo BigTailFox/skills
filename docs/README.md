@@ -16,6 +16,7 @@
 - [D009: Settling decisions](designs/D009-settling-decisions.md) · active · Settling open decisions with the user (canon-grill): triage before asking, open decisions kept in the doc, and small batches of related questions. · owns: settling-decisions · modules: canon
 - [D010: Doc queries and renames](designs/D010-doc-queries-and-renames.md) · active · Doc queries and renames with canon.py show, find, which and affected, and rename and renumber, with the references and id collisions renumber settles. · owns: doc-queries, doc-renames, doc-renumbering · modules: canon
 - [D011: Source code embedded in docs](designs/D011-embedded-source.md) · active · Embed a repository source file or a named region in Markdown, regenerate its fenced code block and check it against the same Git tree as the document. · owns: source-embeds · modules: canon
+- [D012: Paired replay of Canon workflows](designs/D012-workflow-replay.md) · draft · Restore one verified unit, compare two skill suites on paired headless runs, and blind the scoring of review findings, slice outcomes and costs. · owns: workflow-replay · modules: canon
 
 ### Reviews
 

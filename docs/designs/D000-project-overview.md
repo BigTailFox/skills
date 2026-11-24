@@ -5,7 +5,7 @@ updated: 2026-11-24
 revision: 4
 modules: []
 summary: Agent skills built around canon, a documentation system kept in the repository; one module, its capabilities and the designs that own them.
-refs: [D001, D002, D003, D004, D005, D006, D007, D008, D009, D010, D011]
+refs: [D001, D002, D003, D004, D005, D006, D007, D008, D009, D010, D011, D012]
 owns: [architecture]
 paths: []
 reviewed: 4
@@ -48,6 +48,7 @@ The module, `canon`, and the repository tooling, `scripts/validate.py`, share th
 | As-built designs, and the backfill before a change to behavior no design states | canon | [D002: Project overview and as-built designs](D002-overview-and-as-built.md) |
 | Blind reviews by fresh subagents, a cross-family reviewer included, for the review gate, code review or any request (`canon-blind-review`), and a fresh worker for each plan slice | canon | [D003: Subagents](D003-subagents.md), [D007: Change tiers and the review gate](D007-change-tiers.md) |
 | Opt-in workflow capture and history (`canon.py trace`), with an offline report on reviewer contributions, outcomes, measured costs and replay eligibility (`scripts/trace_report.py`) | canon | [D001: Skill telemetry with canon trace](D001-skill-telemetry.md) |
+| Paired replay of recorded reviews and plan slices against two skill suites (design) | canon | [D012: Paired replay of Canon workflows](D012-workflow-replay.md) |
 | Project setup: canon installed in each project with the canon version the project records, `docs/`, the `AGENTS.md` block, migration of existing docs and upgrades (`canon-init`) | canon | [D004: Project setup](D004-project-setup.md) |
 | Docs kept in step with the code: the docs step, repair after a merge or rebase, and the doc health audit (`canon-sync`, and the known issues, idle docs and due reviews `canon.py audit` reports) | canon | none |
 | Code review of a finished change (`canon-code-review`) | canon | none |
@@ -67,7 +68,7 @@ The module, `canon`, and the repository tooling, `scripts/validate.py`, share th
 
 | Module | Path | Purpose | Entry points | Design |
 |---|---|---|---|---|
-| canon | skills/, scripts/, tests/ | The skills: `skills/governance/` builds and maintains the documentation system, `skills/execution/` does development work through it, `scripts/` holds repository tooling, and `tests/` covers the skills, report and validator | `skills/governance/canon/SKILL.md`, `skills/governance/canon/scripts/canon.py`, each skill's `SKILL.md`, `scripts/trace_report.py` | [D001: Skill telemetry with canon trace](D001-skill-telemetry.md), [D002: Project overview and as-built designs](D002-overview-and-as-built.md), [D003: Subagents](D003-subagents.md), [D004: Project setup](D004-project-setup.md), [D005: Docs index](D005-docs-index.md), [D006: Doc model and writing rules](D006-doc-model.md), [D007: Change tiers and the review gate](D007-change-tiers.md), [D008: Prototypes and research](D008-experiments.md), [D009: Settling decisions](D009-settling-decisions.md), [D010: Doc queries and renames](D010-doc-queries-and-renames.md), [D011: Source code embedded in docs](D011-embedded-source.md) |
+| canon | skills/, scripts/, tests/ | The skills: `skills/governance/` builds and maintains the documentation system, `skills/execution/` does development work through it, `scripts/` holds repository tooling, and `tests/` covers the skills, report and validator | `skills/governance/canon/SKILL.md`, `skills/governance/canon/scripts/canon.py`, each skill's `SKILL.md`, `scripts/trace_report.py` | [D001: Skill telemetry with canon trace](D001-skill-telemetry.md), [D002: Project overview and as-built designs](D002-overview-and-as-built.md), [D003: Subagents](D003-subagents.md), [D004: Project setup](D004-project-setup.md), [D005: Docs index](D005-docs-index.md), [D006: Doc model and writing rules](D006-doc-model.md), [D007: Change tiers and the review gate](D007-change-tiers.md), [D008: Prototypes and research](D008-experiments.md), [D009: Settling decisions](D009-settling-decisions.md), [D010: Doc queries and renames](D010-doc-queries-and-renames.md), [D011: Source code embedded in docs](D011-embedded-source.md), [D012: Paired replay of Canon workflows](D012-workflow-replay.md) |
 
 ### Dependencies
 
