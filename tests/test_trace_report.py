@@ -36,7 +36,7 @@ def contents(root):
             for p in root.rglob("*")}
 
 
-class TraceReport(unittest.TestCase):
+class ReportFixture(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -56,6 +56,8 @@ class TraceReport(unittest.TestCase):
         self.assertEqual(before, contents(self.root))
         return proc.stdout if text else json.loads(proc.stdout)
 
+
+class TraceReport(ReportFixture):
     def test_population_keeps_projects_stores_lines_and_inclusive_date(self):
         write_lines(self.log, [
             start(PRIOR, at="2025-12-31T23:50:00Z"), start(), "PRIVATE damaged event",
@@ -259,6 +261,39 @@ class TraceReport(unittest.TestCase):
         self.assertIn("Wall time, subagents and tokens", human)
         self.assertIn("few units", human)
         self.assertIn(str(child) + "#L6", human)
+
+    def test_reviewer_session_cost_joins_agent_paths_and_command_run_ids_once(self):
+        command_id = "00000000-0000-4000-8000-000000000003"
+        people = [{"role": "cross-family", "model": "model-a", "id": "/root/reviewer"},
+                  {"role": "cross-family", "key": "cross-family-2", "model": "model-a", "id": SECOND},
+                  {"role": "same-model", "model": "model-b", "id": command_id},
+                  {"role": "same-model", "key": "same-model-2", "model": "model-b", "id": None}]
+        archive = self.log.parent / UNIT
+        archive.mkdir(parents=True)
+        for r in people:
+            stem = r.get("key", r["role"])
+            (archive / (stem + ".md")).write_text("No findings.")
+            (archive / (stem + "-id.txt")).write_text(r["id"] or "")
+        write_lines(self.log, [start(kind="gate", host="codex", conversation=CONV),
+                               end(kind="gate", archive="ok", dispositions=dict(reviewers=people, findings=[], new_blockers=0))])
+        self.rollout(CONV, [*self.boundary(4, "start gate", "trace " + UNIT),
+                            *self.dispatch(10, "spawn_agent", "reviewer", "one", json.dumps({"agent_id": SECOND})),
+                            *self.boundary(64, "end " + UNIT + " delivered", "trace " + UNIT + " ended", "end")])
+        child = self.rollout(SECOND, self.worker_turn(11, 20, 2, 6), parent=CONV, key="reviewer")
+        command = self.rollout(command_id, self.worker_turn(30, 45, 1, 5))
+        output = self.cli()
+        costs = output["cases"][0]["review"]["session_costs"]
+        self.assertEqual(len(costs), 3)
+        repeated = next(r for r in costs if r["session"] == SECOND)
+        self.assertEqual(repeated["keys"], ["cross-family", "cross-family-2"])
+        self.assertEqual(repeated["tokens"]["total_tokens"], 20)
+        self.assertIn(str(child), str(repeated["locations"]))
+        external = next(r for r in costs if r["session"] == command_id)
+        self.assertEqual(external["tokens"]["total_tokens"], 20)
+        self.assertIn(str(command), str(external["locations"]))
+        group, = output["questions"]["1"]["groups"]
+        self.assertEqual(group["reviewer_cost"]["tokens"]["total_tokens"]["total"], 40)
+        self.assertEqual(group["reviewer_cost"]["wall_seconds"]["unknown"], 1)
 
     def git(self, *args, at=None):
         env = dict(os.environ, GIT_AUTHOR_NAME="Fixture", GIT_AUTHOR_EMAIL="fixture@example.invalid",

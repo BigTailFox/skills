@@ -119,6 +119,7 @@ class Case:
         self.history = canon.HistoryUnit(start, store, None)
         self.id = f"{store}::{start['id']}"
         self.data = {}
+        self.ambiguous = False
         self.host_session = None
         self.host_span = (None, None)
 
@@ -179,6 +180,8 @@ def read_store(project, store, population):
         elif action == "end" and case and case.history.kind == event["kind"] and not case.end:
             case.history.end = event
         else:
+            if case and action in ("start", "end"):
+                case.ambiguous = True
             population["orphans"].append(dict(unit=uid, type=action, location=event["_location"]))
     for e in checks:
         case = cases.get(e["id"])

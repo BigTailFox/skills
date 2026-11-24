@@ -10,11 +10,13 @@ sys.dont_write_bytecode = True
 from trace_records import collect, select
 from trace_hosts import attach_hosts
 from trace_workers import codex_workers, cursor_workers
-from trace_questions import costs, slice_outcomes
+from trace_questions import apply_tiers, costs, slice_outcomes, tier_changes
+from trace_reviews import review_questions
 
 
 def build(args):
     population, cases = collect(args.project or [Path.cwd()])
+    apply_tiers(cases)
     catalog = attach_hosts(cases, args)
     codex_workers(cases, catalog)
     cursor_workers(cases)
@@ -29,7 +31,8 @@ def build(args):
             "numerator": len(members), "denominator": len(selected), "cases": members,
             "sample": "few units" if len(selected) < 20 else "20 or more units"}
     return dict(population=population, cases=[c.data for c in selected],
-                questions={"4": slice_outcomes(selected), "6": costs(selected)})
+                questions={**review_questions(selected, cases, args, catalog), "4": slice_outcomes(selected), "5": tier_changes(selected),
+                           "6": costs(selected)})
 
 
 def text_value(label, value, depth=0):

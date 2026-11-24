@@ -17,14 +17,67 @@ def comparison(case):
     return (d["kind"], d["effective_tier"], d["host"], d["model"], skill_digest)
 
 
-def by_comparison(cases):
+def by_comparison(cases, starting_tier=False):
     groups = defaultdict(list)
     for case in cases:
         fields = comparison(case)
+        if starting_tier:
+            fields = (fields[0], case.data["tier"], *fields[2:])
         # Unknown model or version cannot establish comparability with a second case.
         groups[(fields, case.id if UNKNOWN in fields else None)].append(case)
     for (fields, _), members in groups.items():
         yield dict(zip(("kind", "tier", "host", "model", "skill_digest"), fields)), members
+
+
+def ratio(numerator, denominator, cases, units):
+    return dict(numerator=numerator, denominator=denominator, cases=cases,
+                sample="few units" if units < 20 else "20 or more units")
+
+
+def case_ref(case, *locations):
+    return dict(case=case.id, locations=list(dict.fromkeys((case.start["_location"], *locations))))
+
+
+def apply_tiers(cases):
+    parents = {(c.store, c.history.unit): c for c in cases}
+    gates = defaultdict(list)
+    for gate in cases:
+        if gate.history.kind not in {"gate", "follow-up"}:
+            continue
+        node = gate
+        seen = {node.id}
+        while (node := parents.get((node.store, node.start.get("parent")))) and node.id not in seen:
+            seen.add(node.id)
+            gates[node.id].append(gate)
+    for c in cases:
+        if c.history.kind not in {"implement", "design"}:
+            continue
+        tiers = defaultdict(list)
+        for gate in gates[c.id]:
+            tiers[gate.data["tier"]].append(gate.start["_location"])
+        starting = c.data["tier"]
+        reached = set(tiers) | {starting}
+        c.data["effective_tier"] = "L2" if "L2" in reached else (UNKNOWN if UNKNOWN in reached else max(reached))
+        changes = {tier: locations for tier, locations in tiers.items()
+                   if tier != UNKNOWN and starting != UNKNOWN and tier > starting}
+        if c.history.kind == "implement" and c.data["outcome"] == "escalated":
+            target = c.end.get("to")
+            changes.setdefault(target if target in ("L1", "L2", "plan") else UNKNOWN, []).append(c.end["_location"])
+        c.data["tier_targets"] = changes
+
+
+def tier_changes(cases):
+    eligible = [c for c in cases if c.history.kind == "implement" or
+                (c.history.kind == "design" and c.data["tier"] == "L1")]
+    groups = []
+    for key, members in by_comparison(eligible, starting_tier=True):
+        key["starting_tier"] = key.pop("tier")
+        targets = {}
+        for target in (("L2",) if key["kind"] == "design" else ("L1", "L2", "plan")):
+            hits = [case_ref(c, *c.data["tier_targets"][target]) for c in members if target in c.data["tier_targets"]]
+            targets[target] = ratio(len(hits), len(members), hits, len(members))
+        groups.append(dict(**key, cases=[case_ref(c) for c in members], targets=targets))
+    return dict(title="Tier changes and requests for a plan", groups=groups)
 
 
 def measurement(rows):
