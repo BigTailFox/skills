@@ -23,6 +23,16 @@ def opaque(journal, *identity):
     return hmac.new(key, json_bytes(identity), hashlib.sha256).hexdigest()[:32]
 
 
+def fence_delimiter(line, opened):
+    match = canon.FENCE_RE.match(line)
+    if not match:
+        return None
+    marker, tail = match["fence"], line[match.end():].strip()
+    if opened:
+        return marker if not tail and not match["list"] and marker.startswith(opened) else None
+    return marker if marker[0] == "~" or "`" not in tail else None
+
+
 class Packet:
     def __init__(self, private, receipt, journal, *, case_path=None):
         self.private = private
@@ -99,9 +109,11 @@ class Packet:
         public = []
         fence = None
         fence_depth = 0
+        quote_fence = None
+        quote_depth = 0
         transcript = None
         for line in lines:
-            quotation = re.match(r"^[ \t]*(?:>[ \t]*)+", line)
+            quotation = re.match(r"^[ \t]*>[ \t]?(?:[ \t]*>[ \t]?)*", line)
             depth = quotation[0].count(">") if quotation else 0
             body = (line[quotation.end():] if quotation else line).expandtabs(4)
             if fence and depth < fence_depth:
@@ -109,28 +121,38 @@ class Packet:
                 if transcript:
                     transcript = "quoted"
             if transcript and fence is None and depth:
-                # Fences and field names inside a quoted host message belong to
-                # that message. A public field can resume outside the quotation.
-                transcript = "quoted"
+                # Only a paragraph can continue lazily outside its explicit quote.
+                # Track the quoted fence separately so literal fields inside it stay private.
+                if depth < quote_depth:
+                    quote_fence = None
+                marker = fence_delimiter(body, quote_fence) if not quote_fence or depth == quote_depth else None
+                if marker:
+                    quote_fence = None if quote_fence else marker
+                    quote_depth = depth
+                transcript = "quote-break" if marker or quote_fence or not body.strip() else "quoted"
                 continue
-            if transcript == "quoted":
-                if not FINDING_FIELD.match(line):
+            quote_fence = None
+            if transcript in ("quoted", "quote-break"):
+                if not body.strip():
+                    transcript = "quote-break"
+                    continue
+                if transcript == "quoted" or not FINDING_FIELD.match(line):
+                    transcript = "quoted"
                     continue
                 transcript = None
-            marker = canon.FENCE_RE.match(body) if fence is None or depth == fence_depth else None
+            marker = fence_delimiter(body, fence) if fence is None or depth == fence_depth else None
             if marker:
-                if fence and not marker["list"] and marker["fence"].startswith(fence) and not body[marker.end():].strip():
+                if fence:
                     fence = None
                     transcript = None
                     public.append(line)
-                    continue
-                if fence is None and (marker["fence"][0] == "~" or "`" not in body[marker.end():]):
-                    fence = marker["fence"]
+                else:
+                    fence = marker
                     fence_depth = depth
                     public.append(fence + "\n" if transcript else line)
                     if transcript:
                         transcript = "block"
-                    continue
+                continue
             if transcript == "inline" and body.strip():
                 # After an explicit omission, an unquoted finding field resumes the
                 # report. Quoted fields can themselves be part of a host message.

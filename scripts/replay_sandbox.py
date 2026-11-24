@@ -30,6 +30,49 @@ NORMALIZER = re.compile(r"""'[^']*'|"(?:\\.|[^"\\])*"|\\.|(?<!\S)\#[^\n]*|
                         (?P<op>\|\|\s*)(?P<exit>(?:exit|return)[ \t]+[0-9]{1,3})(?=[ \t]*(?:$|[\n;&)]))""", re.X | re.S)
 
 
+def shell_hint_words(text):
+    """Keep command-ending newlines while shlex decodes the words on each logical line."""
+    lines, line = [], []
+    quote, word_start = None, True
+    i = 0
+    while i < len(text):
+        char = text[i]
+        i += 1
+        if char == "\\" and quote != "'":
+            escaped = text[i:i + 1]
+            i += len(escaped)
+            if escaped != "\n":
+                line.append(char + escaped)
+                word_start = False
+        elif char == "#" and not quote and word_start:
+            i = text.find("\n", i)
+            if i == -1:
+                break
+        elif char == "\n" and not quote:
+            lines.append("".join(line))
+            line.clear()
+            word_start = True
+        else:
+            line.append(char)
+            if quote == char:
+                quote = None
+            elif not quote and char in ("'", '"'):
+                quote = char
+            word_start = not quote and char in " \t\r;&|()<>"
+    lines.append("".join(line))
+    tokens = []
+    for logical in lines:
+        lexer = shlex.shlex(logical, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        words = list(lexer)
+        if words:
+            if tokens and tokens[-1] not in ("&&", "||", "|", ";", "&", "("):
+                tokens.append(";")
+            tokens.extend(words)
+    return tokens
+
+
 def elf_interpreter(data):
     """Read PT_INTERP without executing project code or running host ldd on it."""
     if not data.startswith(b"\x7fELF"):
@@ -308,6 +351,17 @@ class CriterionSandbox:
         def resolve(word, bindings):
             return variable.sub(lambda m: bindings.get(m[1] or m[2], m[0]), word)
 
+        def command_operand(tokens, index):
+            # command -p executes its operand. A lookup (-v/-V) or invalid option executes none.
+            while index < len(tokens) and tokens[index].startswith("-"):
+                option = tokens[index]
+                index += 1
+                if option == "--":
+                    break
+                if not re.fullmatch(r"-p+", option):
+                    return None
+            return index
+
         for arg in argv[:128]:
             entry = self.contents.get(os.path.normpath(os.path.join(WORK, arg)))
             if entry and entry[0] != "120000" and len(entry[1]) <= 65536 and b"\0" not in entry[1]:
@@ -318,30 +372,37 @@ class CriterionSandbox:
                 break
             text = script[:remaining]
             remaining -= len(text)
-            words = shlex.shlex(text, posix=True, punctuation_chars=True)
-            words.whitespace_split = True
             try:
-                tokens = list(words)
+                tokens = shell_hint_words(text)
             except ValueError:
                 continue
-            bindings, segment = {}, set()
+            bindings, segment, lookup = {}, set(), False
             for i, word in enumerate(tokens):
                 after = tokens[i + 1] if i + 1 < len(tokens) else None
                 if word in ("&&", "||", ";", "(", ")", "|", "&"):
                     # Only an unresolved downstream command can leave a tool's role uncertain.
                     # Variables used later as assertion operands say nothing about this guard.
-                    dependent = after if word == "&&" else None
-                    if after == "then" and i + 2 < len(tokens):
-                        dependent = tokens[i + 2]
-                    if segment and dependent:
-                        dependent = resolve(dependent, bindings)
+                    index = len(tokens)
+                    if after == "then":
+                        index = i + 2
+                        if tokens[index:index + 1] == [";"]:
+                            index += 1
+                    elif word == "&&":
+                        index = i + 1
+                    while index is not None and index < len(tokens) and tokens[index] == "command":
+                        index = command_operand(tokens, index + 1)
+                    if segment and index is not None and index < len(tokens):
+                        dependent = resolve(tokens[index], bindings)
                         if expansion.search(dependent):
                             unresolved.update(segment)
                         elif "/" in dependent and (not dependent.startswith("/") or dependent.startswith(WORK + "/")):
                             guarded.setdefault(dependent, set()).update(segment)
                     segment.clear()
+                    lookup = False
                     continue
-                if word in by_name and (not i or tokens[i - 1] not in ("-v", "-V")):
+                if word == "command" and command_operand(tokens, i + 1) is None:
+                    lookup = True
+                if not lookup and word in by_name and (not i or tokens[i - 1] not in ("-v", "-V")):
                     segment.add(by_name[word])
                 word = resolve(word, bindings)
                 assignment = re.fullmatch(r"([A-Za-z_]\w*)=(.*)", word, re.S)

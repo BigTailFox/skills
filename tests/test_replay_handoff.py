@@ -68,9 +68,12 @@ class ReviewHandoff(RunnerFixture):
                "Raw host transcript: omitted\n\nEvidence: refund() returns 0 for negative amounts.\n"
                "Suggestion: preserve the sign.\nRaw host transcript: private reviewer reply follows\n"
                "> Evidence: PRIVATE original host message\n> ```text\n> PRIVATE QUOTED LOG\n> ```\n"
-               "> Suggestion: PRIVATE original host suggestion\n\nPRIVATE unlabelled continuation\n"
+               "> Suggestion: PRIVATE original host suggestion\nEvidence: PRIVATE lazy continuation\n"
+               "\nPRIVATE unlabelled continuation\nEvidence: PRIVATE continuation detail\n"
                "\nEvidence: refund() returns 0.\n"
-               "Suggestion: check the signed result.\nVerdict: revise\n")
+               "Suggestion: check the signed result.\nRaw host transcript: reviewer reply follows\n"
+               "> ```text\n> PRIVATE fenced host message\n> ```\n"
+               "Evidence: rounding loses the sign.\nSuggestion: fix the sign.\nVerdict: revise\n")
         self.config["settings"]["actions"] = [dict(reports={"spec": log})]
         self.write_config()
         self.replay()
@@ -84,6 +87,8 @@ class ReviewHandoff(RunnerFixture):
         self.assertIn(b"preserve the sign.", all_bytes)
         self.assertIn(b"Evidence: refund() returns 0.\n", all_bytes)
         self.assertIn(b"check the signed result.", all_bytes)
+        self.assertIn(b"Evidence: rounding loses the sign.", all_bytes)
+        self.assertIn(b"Suggestion: fix the sign.", all_bytes)
 
     def test_gate_handoff_binds_separate_as_built_code_to_the_design_scope(self):
         self.repo(self.project)

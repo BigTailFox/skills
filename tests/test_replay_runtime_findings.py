@@ -80,6 +80,66 @@ class RuntimeFindings(SliceFixture):
             self.assertEqual(rows["boolean"]["reason"], "granted child executable unavailable: /usr/bin/" + tool)
             self.assertEqual(rows["assertion"]["outcome"], "fail")
 
+    def test_shell_line_boundaries_end_a_lookup_before_a_missing_compiler(self):
+        shell, fixtures = self.dynamic_shell()
+        opened = self.worker_slice()
+        tool = "missing-canon-replay-compiler"
+        formatter = "missing-canon-replay-formatter"
+        self.config["test_tools"].extend("/usr/bin/" + name for name in (tool, formatter))
+        self.write_config()
+        setup = 'name=$(printf "%s_%s" compiled program); '
+        lookup = "command -v " + formatter
+        build = f'if {tool} 2>&- && "./$name" 2>&-; then :; else false; fi'
+        builds = {"semicolon": lookup + "; " + build,
+                  "newline": lookup + "\n" + build,
+                  "comment": lookup + " # comment with an unmatched quote '\n" + build,
+                  "quoted-lookup": 'command -v "first\n#literal"\n' + build,
+                  "continued-name": lookup + "\n" + build.replace("-compiler", "-com\\\npiler"),
+                  "continued-guard": lookup + "\n" + build.replace("&& ", "&& # next line\n"),
+                  "multiline-then": f'{lookup}\nif {tool} 2>&-\nthen\n"./$name" 2>&-\nelse false; fi'}
+        checks = [(name, [shell, "-c", setup + body]) for name, body in builds.items()]
+        for name, argument in (("quoted", "'first\nsecond'"), ("continued-query", "first \\\n")):
+            body = f'if command -v {argument} {tool} && "./$name" 2>&-; then :; fi; {tool} 2>&-; test a = b'
+            checks.append((name, [shell, "-c", setup + body]))
+        self.prepare("--fixtures", fixtures, "--criteria", self.mapping(opened, checks))
+        self.replay()
+        for attempt in self.journal()["attempts"]:
+            for row in attempt["tests"]:
+                with self.subTest(criterion=row["id"]):
+                    if row["id"] in builds:
+                        self.assertEqual(row["outcome"], "unavailable")
+                        self.assertIn(tool, row["reason"])
+                    else:
+                        self.assertEqual(row["outcome"], "fail")
+
+    def test_shell_command_invocations_and_lookups_distinguish_an_opaque_build_from_an_assertion(self):
+        shell, fixtures = self.dynamic_shell()
+        opened = self.worker_slice({"tests/keep": "existing directory"})
+        tool = "missing-canon-replay-compiler"
+        self.config["test_tools"].append("/usr/bin/" + tool)
+        self.write_config()
+        setup = 'name=$(printf "%s_%s" compiled program); cd tests; '
+        checks = []
+        for name, invocation in (("direct", ""), ("command", "command"), ("path", "command -p"),
+                                 ("options-end", "command --"), ("path-options-end", "command -p --")):
+            body = f'if {tool} 2>&- && {invocation} "./$name" 2>&-; then :; else false; fi'
+            checks.append((name, [shell, "-c", setup + body]))
+        for name, lookup in (("lookup", "command -v"), ("verbose-lookup", "command -V"),
+                             ("lookup-with-options", "command -pv --")):
+            body = f'if {tool} 2>&- && {lookup} "./$name"; then :; fi; test actual = expected'
+            checks.append((name, [shell, "-c", setup + body]))
+        checked = f'if command -p -V -- {tool}; then "./$name" 2>&-; fi; {tool} 2>&-; test actual = expected'
+        checks.append(("lookup-of-tool", [shell, "-c", setup + checked]))
+        self.prepare("--fixtures", fixtures, "--criteria", self.mapping(opened, checks))
+        self.replay()
+        for attempt in self.journal()["attempts"]:
+            for row in attempt["tests"]:
+                if "lookup" in row["id"]:
+                    self.assertEqual(row["outcome"], "fail", row["id"])
+                else:
+                    self.assertEqual(row["outcome"], "unavailable", row["id"])
+                    self.assertIn(tool, row["reason"])
+
     def test_a_normalized_build_failure_depends_on_the_compiler_reaching_its_generated_program(self):
         shell, fixtures = self.dynamic_shell()
         opened = self.worker_slice()
