@@ -52,34 +52,49 @@ class RunnerFixture(ReplayFixture):
     def gate(self, entries=None, **kwargs):
         self.review("gate", {DESIGN: "---\nrevision: 3\n---\n", **(entries or {})}, docs=["D001@r3"], **kwargs)
 
-    def code_review(self):
+    def code_review(self, deliveries=None):
         base = self.pin(self.store, self.tree(self.store, {"abi.h": "old"}))
         entries = {"abi.h": "new"}
         target = self.pin(self.store, self.tree(self.store, entries), base)
         people = [reviewer(r, r) for r in ("spec", "standards")]
-        line = f"Target: `git diff {base} {target} -- abi.h`\nRequested delivery: Preserve the ABI."
-        self.review("code-review", entries, baseline=base, people=people, prompts={p["role"]: line for p in people})
+        line = f"Target: `git diff {base} {target} -- abi.h`"
+        deliveries = dict.fromkeys(("spec", "standards"), "Preserve the ABI.") if deliveries is None else deliveries
+        prompts = {p["role"]: line + ("\nRequested delivery: " + deliveries[p["role"]] if p["role"] in deliveries else "")
+                   for p in people}
+        self.review("code-review", entries, baseline=base, people=people, prompts=prompts)
 
-    def prepare_known_review(self):
-        self.code_review()
+    def prepare_known_review(self, *, declined=False, deliveries=None):
+        self.code_review(deliveries)
         body = b"### F1 [major] ABI result in model-a\nProblem: Missing value.\n"
-        findings = []
-        for role in ("spec", "standards"):
-            (self.store / UNIT / (role + ".md")).write_bytes(body)
-            findings.append(dict(by=[role + ":F1"], axis=role, severity="major", disposition="accepted"))
+        reports = dict.fromkeys(("spec", "standards"), body)
+        findings = [dict(by=[role + ":F1"], axis=role, severity="major", disposition="accepted") for role in reports]
+        if declined:
+            reports["spec"] += b"### F2 [minor] Nonexistent ABI flag\nProblem: Withdrawn claim.\n"
+            findings.append(dict(by=["spec:F2"], axis="spec", severity="minor", disposition="declined"))
+        for role, data in reports.items():
+            (self.store / UNIT / (role + ".md")).write_bytes(data)
         event = self.events[-1]
         event["dispositions"]["findings"] = findings
         write_lines(self.log, self.events)
         evidence = self.root / "review-evidence.tsv"
         rows, catalog = [], []
-        for i, role in enumerate(("spec", "standards")):
+        for role, data in reports.items():
             prompt = (self.store / UNIT / (role + "-prompt.md")).read_bytes()
             common = dict(project=str(self.project), unit=UNIT, report_stem=role, reviewer_key=role, phase="first",
-                          report_sha256=digest(body), prompt_sha256=digest(prompt), scope_lines="1-1")
-            rows.append(dict(common, raw_row=str(i+1), finding_id="F1", defect_group="private-defect",
-                             disposition="accepted", raw_disposition="accepted",
-                             end_sha256=digest(json.dumps(event).encode()), source_locator=f"{role}.md:L1"))
-            catalog.append(dict(common, role=role, reviewer_id=role, model="model-a", groups="F1=private-defect",
+                          report_sha256=digest(data), prompt_sha256=digest(prompt), scope_lines="1-1")
+            groups = []
+            for i, finding in enumerate(findings, 1):
+                if finding["axis"] != role:
+                    continue
+                fid = finding["by"][0].split(":")[1]
+                group = "private-defect" if fid == "F1" else "private-declined"
+                line = 1 if fid == "F1" else 3
+                disposition = finding["disposition"]
+                rows.append(dict(common, raw_row=str(i), finding_id=fid, defect_group=group,
+                                 disposition=disposition, raw_disposition=disposition,
+                                 end_sha256=digest(json.dumps(event).encode()), source_locator=f"{role}.md:L{line}"))
+                groups.append(fid + "=" + group)
+            catalog.append(dict(common, role=role, reviewer_id=role, model="model-a", groups=" ".join(groups),
                                 decisions="", decision_locator="", decision_sha256=""))
         table(evidence, rows)
         table(self.root / "review-adjudications.tsv", catalog)

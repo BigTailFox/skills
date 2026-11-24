@@ -158,4 +158,7 @@ def run(args):
         identity = dict(runner=str(runner), runner_sha256=sha256(runner.read_bytes()), config_sha256=sha256(data),
                         receipt_sha256=sha256((private / "receipt.json").read_bytes()))
         journal = paired_run(private, receipt, decode(data, "runner configuration"), config_path, identity, args.repetitions)
-        print(Packet(private, receipt, journal).write())
+        packet = Packet(private, receipt, journal).write()
+        journal["packet_sha256"] = sha256(packet.read_bytes())
+        save_journal(private, journal)
+        print(packet)

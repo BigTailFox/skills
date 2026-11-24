@@ -18,7 +18,7 @@ Implements [D012: Paired replay of Canon workflows](../designs/D012-workflow-rep
 
 ## Current state
 
-Next: S4.
+Next: S5.
 
 ## Slices
 
@@ -66,7 +66,7 @@ Check the bundle object format, tree paths and modes before checkout. Exclude fi
 
 ### S4: Score one blinded case reproducibly
 
-Status: todo
+Status: done
 
 Risk: A missed historical defect, duplicate novel claim or unresolved match can change a denominator without changing the apparent rate.
 
@@ -101,3 +101,4 @@ Check each cohort dimension (project, kind, tier, host, role settings, runner co
 - 2026-11-25: S1 completed. The 14 public prepare tests and 58 existing trace tests pass. Preparing the real D003@r9 gate reproduced the independently obtained patch SHA-256 be8e17dd129bd885fe35ebb4aad9d13338300ee059b310a4b9640b10291c4b3a. Both installations matched their expected, distinct canonical trees. Three historical sources remain provisional.
 - 2026-11-25: S2 completed. Thirteen public run tests and 72 preparation and trace regressions pass. The real D003@r9 case completed all three alternating pairs via a local protocol peer. Each assigned installation was observed three times. Resuming dispatched no extra attempts and reproduced the blind packet. The private supervisor uses POSIX advisory locks and measures only the runner subprocess.
 - 2026-11-25: S3 completed. Fourteen public slice tests passed without skips on a Linux host with Bubblewrap, alongside 85 preparation, review-run and trace regressions. Verified clean test copies, SHA-1 and SHA-256 artifacts, a genuine exit 127 versus missing runtime, independent worker statuses and brief privacy. An unavailable isolation boundary leaves the criterion undecided.
+- 2026-11-25: S4 completed. Fifteen public scoring tests and the 99 preparation, execution and trace regressions passed. With one common criterion, both arms can score 1/2 overall while the paired difference is +1. Repeated scoring of the real gate produced byte-identical result.json, preserved three complete pairs, withheld recall on the provisional inventory, and kept unmeasured role token counts unknown.

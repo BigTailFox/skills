@@ -16,7 +16,7 @@ def opaque(journal, *identity):
 
 
 class Packet:
-    def __init__(self, private, receipt, journal):
+    def __init__(self, private, receipt, journal, *, case_path=None):
         self.private = private
         self.receipt = receipt
         self.journal = journal
@@ -40,8 +40,9 @@ class Packet:
         labels = models | versions | {"candidate", "recorded", "old suite", "new suite"}
         self.labels = re.compile(r"(?<![a-z0-9])(?:" + "|".join(map(re.escape, sorted(labels, key=len, reverse=True)))
                                  + r")(?![a-z0-9])", re.I)
-        self.workspace_prefix = re.compile(re.escape(str(private.parent / "work")) + r"/[0-9a-f]{32}/workspace/")
-        private_roots = [str(private.parent), receipt["project"], receipt["store"], journal["runner"],
+        case_path = case_path or private.parent
+        self.workspace_prefix = re.compile(re.escape(str(case_path / "work")) + r"/[0-9a-f]{32}/workspace/")
+        private_roots = [str(case_path), receipt["project"], receipt["store"], journal["runner"],
                          "/home", "/Users", "/tmp", "/var/tmp", "/private/var/folders"]
         self.private_paths = re.compile("(?:" + "|".join(map(re.escape, sorted(private_roots, key=len, reverse=True)))
                                         + r")(?:/[^\s`'<>\")|]*)?")
@@ -140,10 +141,13 @@ class Packet:
         return dict(id=row["id"], outcome=row["outcome"], claims=sorted(claims, key=lambda c: c["id"]),
                     artifact=self.artifact(row), tests=self.tests(row))
 
-    def write(self):
+    def document(self):
         rows = sorted(self.journal["attempts"], key=lambda a: a["id"])
-        packet = dict(schema=1, case=self.journal["case"], kind=self.receipt["kind"], task=self.receipt["task"],
-                      history=self.history(), attempts=[self.attempt(row) for row in rows])
+        return dict(schema=1, case=self.journal["case"], kind=self.receipt["kind"], task=self.receipt["task"],
+                    history=self.history(), attempts=[self.attempt(row) for row in rows])
+
+    def write(self):
+        packet = self.document()
         data = json_bytes(packet)
         judgments = dict(schema=1, packet_sha256=sha256(data), attempts=[])
         for row in packet["attempts"]:

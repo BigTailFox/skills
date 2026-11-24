@@ -10,6 +10,7 @@ sys.dont_write_bytecode = True
 import trace_report
 from replay_case import load_case
 from replay_run import run
+from replay_score import score
 from replay_git import ReplayError, import_input, json_bytes, oid, save_fixtures, save_suite, sha256
 from replay_task import criteria_for, plan_sections, review_delivery
 from replay_roles import role_evidence
@@ -130,6 +131,10 @@ def main():
     r.add_argument("--runner-config", type=Path, required=True)
     r.add_argument("--repetitions", type=int, default=3)
     r.set_defaults(operation=run)
+    s = commands.add_parser("score", help="score one sealed case with its blinded judgments")
+    s.add_argument("directory", type=Path)
+    s.add_argument("--judgments", type=Path)
+    s.set_defaults(operation=score)
     args = parser.parse_args()
     try:
         args.operation(args)
