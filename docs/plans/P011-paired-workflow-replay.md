@@ -18,7 +18,7 @@ Implements [D012: Paired replay of Canon workflows](../designs/D012-workflow-rep
 
 ## Current state
 
-Next: S5.
+All five slices are done. Next: complete code review and docs closeout.
 
 ## Slices
 
@@ -78,7 +78,7 @@ Test the valid zero-claim report at 0/1 and the truncated report at unknown reca
 
 ### S5: Summarize independent cases and verify the complete operator workflow
 
-Status: todo
+Status: done
 
 Risk: Duplicate case directories and unequal numbers of completed repetitions can implicitly weight one historical case several times.
 
@@ -102,3 +102,4 @@ Check each cohort dimension (project, kind, tier, host, role settings, runner co
 - 2026-11-25: S2 completed. Thirteen public run tests and 72 preparation and trace regressions pass. The real D003@r9 case completed all three alternating pairs via a local protocol peer. Each assigned installation was observed three times. Resuming dispatched no extra attempts and reproduced the blind packet. The private supervisor uses POSIX advisory locks and measures only the runner subprocess.
 - 2026-11-25: S3 completed. Fourteen public slice tests passed without skips on a Linux host with Bubblewrap, alongside 85 preparation, review-run and trace regressions. Verified clean test copies, SHA-1 and SHA-256 artifacts, a genuine exit 127 versus missing runtime, independent worker statuses and brief privacy. An unavailable isolation boundary leaves the criterion undecided.
 - 2026-11-25: S4 completed. Fifteen public scoring tests and the 99 preparation, execution and trace regressions passed. With one common criterion, both arms can score 1/2 overall while the paired difference is +1. Repeated scoring of the real gate produced byte-identical result.json, preserved three complete pairs, withheld recall on the provisional inventory, and kept unmeasured role token counts unknown.
+- 2026-11-25: S5 completed. Seven public CLI tests passed. Equal case weighting produced a 10-token difference where pooling pairs would give 5. All 624 repository tests passed across complementary runs, D001 text budgets were measured and discovery found 19 skills. Offline acceptance of the real D003@r9 gate 20261113T130221Z-45876c with candidate 8478e130d51b58bf4549f406e35ec5629118134b produced three comparable pairs from six verified dispatches. A second copy counted once. Historical recall and role token measurements were unavailable.

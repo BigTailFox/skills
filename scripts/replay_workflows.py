@@ -11,6 +11,7 @@ import trace_report
 from replay_case import load_case
 from replay_run import run
 from replay_score import score
+from replay_summary import summarize
 from replay_git import ReplayError, import_input, json_bytes, oid, save_fixtures, save_suite, sha256
 from replay_task import criteria_for, plan_sections, review_delivery
 from replay_roles import role_evidence
@@ -135,6 +136,9 @@ def main():
     s.add_argument("directory", type=Path)
     s.add_argument("--judgments", type=Path)
     s.set_defaults(operation=score)
+    report = commands.add_parser("summarize", help="summarize paired differences across scored cases")
+    report.add_argument("directories", type=Path, nargs="+", metavar="DIR")
+    report.set_defaults(operation=summarize)
     args = parser.parse_args()
     try:
         args.operation(args)

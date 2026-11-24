@@ -98,6 +98,34 @@ python3 scripts/trace_report.py --project /path/to/project-a --since 2026-01-01 
 
 The report reads local trace stores, Git history and Cursor or Codex session files. Its figures identify the contributing cases and the records behind them. Use `--cursor-state-db FILE` to verify starts missing from a Cursor export. Supply `--review-evidence TSV` with the optional companion tables to reconcile first-round findings against their sources. The report marks missing measurements and uncertain reviewer credit as `unknown`. [Pilot evidence](docs/experiments/E005/review-reconciliation.md) · [Report questions and options](docs/designs/D001-skill-telemetry.md#analysis)
 
+### Paired workflow replay
+
+Choose an eligible unit from question 9 of the offline report. From this skills checkout, set `PROJECT` to the traced project, `UNIT` to its unit ID and `CANDIDATE` to a local Git revision of the skills. The following example prepares a case in a fresh directory, pins both installations and prints the path to the private receipt. Use `--store PATH` if the unit appears in several trace stores.
+
+```sh
+replay() { python3 scripts/replay_workflows.py "$@"; }
+mkdir -p .canon/replay
+case_dir=$(mktemp -d .canon/replay/case.XXXXXX)
+replay prepare --project "$PROJECT" --unit "$UNIT" --candidate "$CANDIDATE" --out "$case_dir"
+```
+
+Inspect the receipt for the role models, host and required files. Set `RUNNER` to your trusted local executable and `PROFILE` to its nonsecret v1 JSON config. The config specifies the host, each role's model and effort, a default effort, provider IDs in `destinations`, workspace-relative grants in `read_paths`, allowed `test_tools` and runner-specific `settings`. Grant the scoped documents or code, applicable project instructions, installed skills, prescribed tools and selected fixtures. The executable reads one v1 request from stdin, enforces those grants and the requested stopping boundary, and writes one JSON result to stdout with observed roles, token measurements and digests of its output files. Reviews stop after first-round reports, slices at the terminal worker report. [Runner configuration](docs/designs/D012-workflow-replay.md#executing-paired-runs) · [Wire protocol](docs/designs/D012-workflow-replay.md#runner-protocol)
+
+For a slice, pass `--criteria FILE` and `--fixtures DIR` to `prepare` to pin test commands and their ignored inputs. For a dynamically linked test tool, also put its loader and libraries in the fixtures. Map each file to its required absolute path with `settings.test_runtime_files`, for example `[{"fixture":"runtime/loader","target":"/lib64/ld-linux-x86-64.so.2"}]`. The controller runs each command in a clean copy of the artifact. A missing dependency or unavailable sandbox leaves that criterion undecided. [Preparing a slice](docs/designs/D012-workflow-replay.md#reconstructing-a-case)
+
+```sh
+replay run "$case_dir" --runner "$RUNNER" --runner-config "$PROFILE"
+```
+
+The default run alternates the first arm across three pairs. Give the adjudicator the contents of `$case_dir/blind/`. They inspect the packet and its referenced evidence, group duplicate claims, and complete a copy of `judgments-template.json`. Save the returned copy as `$case_dir/judgments.json`. A slice with no attributable later-review groups can be scored without `--judgments`. [Judgment format](docs/designs/D012-workflow-replay.md#blinded-scoring)
+
+```sh
+replay score "$case_dir" --judgments "$case_dir/judgments.json"
+replay summarize "$case_dir" > "$case_dir/summary.json"
+```
+
+Pass additional scored directories to `summarize` to compare cases. Each completed pair contributes a candidate-minus-recorded difference when both arms have a comparable measurement. Each independent case contributes one mean per metric. Project rows precede compatible cross-project rows. Observed arm totals include partial attempts, and `paired_observed` gives the rate counts used in the paired comparisons. The JSON names unavailable pairs, excluded cases and conflicting copies. To exercise all four commands locally with generated trace data, identical and different suites, and an offline executable, run `python3 -m unittest discover -s tests -p test_replay_summary.py -k control_candidate`.
+
 ## Skills
 
 Auto skills load when the context calls for them. Manual skills run only as commands: `/canon-init` in Cursor and Claude Code, `$canon-init` in Codex.
@@ -147,10 +175,12 @@ Auto skills load when the context calls for them. Manual skills run only as comm
 │           └── LICENSE, NOTICE     # ported skills: upstream license and provenance
 ├── scripts/
 │   ├── trace_report.py     # offline text and JSON reports for traced projects
+│   ├── replay_workflows.py # prepare, run, score and summarize paired historical workflows
 │   └── validate.py         # checks skills, stray SKILL.md files, links, the Skills tables, CANON_VERSION and D001's text budgets, then runs tests/
 └── tests/
     ├── test_canon.py       # regression tests for canon.py
     ├── test_trace_*.py     # offline report regressions
+    ├── test_replay_*.py    # public replay commands with a local runner
     └── test_validate.py    # regression tests for validate.py
 ```
 

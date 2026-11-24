@@ -26,6 +26,35 @@ def evidence_in(refs, allowed):
     return isinstance(refs, list) and all(reference_key(ref) in allowed for ref in refs)
 
 
+def private_evidence(attempts):
+    for attempt in attempts:
+        for role in attempt["roles"].values():
+            yield role.get("report")
+            yield role.get("brief")
+        for key in ("artifact", "artifact_view", "partial_artifact"):
+            yield attempt.get(key)
+        for test in attempt.get("tests", []):
+            yield test["evidence"]
+        if attempt["boundary_violation"]:
+            yield attempt["boundary_violation"]["evidence"]
+
+
+def blind_evidence(packet):
+    for group in packet["history"]["groups"]:
+        yield from group["evidence"]
+    for row in packet["attempts"]:
+        yield row["artifact"]
+        for entry in row["claims"] + row["tests"]:
+            yield entry["evidence"]
+
+
+def evidence_inventory(root, references):
+    declared = {reference_key(ref) for ref in references if ref is not None}
+    require(None not in declared, "invalid sealed evidence reference")
+    valid = {(path, digest) for path, digest in declared if verified(root, dict(path=path, sha256=digest))}
+    return valid, sorted(declared - valid)
+
+
 def legacy_packet_matches(private, receipt, journal, digest):
     # Earlier v1 runs only bound the packet through its reproducible private evidence.
     # After a move the original workspace prefix is still needed to reproduce its redactions.
@@ -83,11 +112,16 @@ class ScoreInputs:
                 slot = a["pair"], a["arm"]
                 require(slot not in completed and a["boundary_violation"] is None, "ambiguous or incompatible completed slot")
                 completed.add(slot)
+        self.private_files, missing_private = evidence_inventory(private, private_evidence(attempts))
+        blind_files, missing_blind = evidence_inventory(blind, blind_evidence(self.packet))
+        # Only the digest leaves the case. An unjudged artifact can change without altering a single metric.
+        self.unavailable_evidence = (sha256(json_bytes([missing_private, missing_blind]))
+                                     if missing_private or missing_blind else None)
         self.history_refs = set()
         self.history = dict(self.packet["history"], groups=[], unknown=list(self.packet["history"]["unknown"]))
         for group in self.packet["history"]["groups"]:
             refs = group["evidence"]
-            if refs and all(verified(blind, ref) for ref in refs):
+            if refs and evidence_in(refs, blind_files):
                 self.history["groups"].append(group)
                 self.history_refs.update(reference_key(ref) for ref in refs)
             else:
@@ -96,15 +130,15 @@ class ScoreInputs:
         self.verified_reports = {}
         for attempt in attempts:
             row = self.rows[attempt["id"]]
-            reports = {k for k, r in attempt["roles"].items() if r.get("report") and r.get("report_valid")
-                       and verified(private, r["report"])}
+            reports = {k for k, r in attempt["roles"].items() if r.get("report_valid")
+                       and reference_key(r.get("report")) in self.private_files}
             self.verified_reports[row["id"]] = reports
             unreadable = {opaque(self.journal, "claim", row["id"], k, c["finding"])
                           for k, r in attempt["roles"].items() if k not in reports for c in r.get("claims", [])}
             refs = [c["evidence"] for c in row["claims"] if c["id"] not in unreadable]
             sealed_tests = {t["id"]: t for t in attempt.get("tests", [])}
             refs.extend(t["evidence"] for t in row["tests"] if t["id"] in sealed_tests and
-                        verified(private, sealed_tests[t["id"]]["evidence"]))
-            if row["artifact"] and verified(private, attempt.get("artifact")) and verified(private, attempt.get("artifact_view")):
+                        reference_key(sealed_tests[t["id"]]["evidence"]) in self.private_files)
+            if row["artifact"] and all(reference_key(attempt.get(k)) in self.private_files for k in ("artifact", "artifact_view")):
                 refs.append(row["artifact"])
-            self.verified_refs[row["id"]] = {reference_key(ref) for ref in refs if verified(blind, ref)}
+            self.verified_refs[row["id"]] = {reference_key(ref) for ref in refs} & blind_files

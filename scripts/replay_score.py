@@ -5,7 +5,7 @@ from replay_git import ReplayError, sha256
 from replay_judgments import blinded_judgments, decided_counts, index_rows, later_decisions, review_metrics
 from replay_protocol import COMPONENTS, require
 from replay_run import fcntl
-from replay_scoring_inputs import ScoreInputs, reference_key, verified
+from replay_scoring_inputs import ScoreInputs, reference_key
 from replay_storage import decode, publish, publish_json
 from trace_review_evidence import VALID
 
@@ -48,14 +48,14 @@ def costs(attempt, roles):
     return metrics
 
 
-def boundary_cost(private, violation):
+def boundary_cost(inputs, violation):
     if violation is None:
         return None
     ref = violation["evidence"]
     return dict(wall_seconds=seconds(violation["wall_seconds"]),
                 tokens={k: token_components(v) for k, v in violation["tokens"].items()},
                 reason_sha256=sha256(violation["reason"].encode()),
-                evidence_sha256=ref["sha256"] if ref and verified(private, ref) else None)
+                evidence_sha256=ref["sha256"] if reference_key(ref) in inputs.private_files else None)
 
 
 def compare(observed, candidate, complete=True):
@@ -135,7 +135,7 @@ def score_slice(inputs, attempt, packet_row, judgment):
     comparison = dict(status=brief.get("status", "unavailable"), dispatched_sha256=brief.get("dispatched_sha256"),
                       historical_sha256=inputs.receipt["historical_brief"]["sha256"])
     dispatched = attempt["roles"].get("worker", {}).get("brief")
-    if not dispatched or not verified(inputs.private, dispatched):
+    if reference_key(dispatched) not in inputs.private_files:
         comparison.update(status="unavailable", dispatched_sha256=None)
     return dict(metrics=metrics, unknowns=issues, unknown_metrics=[], worker_status=status, criteria=criteria,
                 later=later, brief_comparison=comparison)
@@ -164,7 +164,7 @@ def case_result(inputs, judgment_bytes):
         scored = evaluate(inputs, attempt, inputs.rows[ident], judgment)
         scored["metrics"].update(costs(attempt, journal["roles"]))
         attempts.append(dict(id=ident, arm=attempt["arm"], pair=attempt["pair"], outcome=attempt["outcome"], **scored,
-                             boundary_violation=boundary_cost(inputs.private, attempt["boundary_violation"])))
+                             boundary_violation=boundary_cost(inputs, attempt["boundary_violation"])))
     pairs = paired(attempts, journal["repetitions"])
     completed = {p["pair"] for p in pairs}
     identity = {k: receipt[k] for k in ("project", "store", "unit")}
@@ -174,7 +174,8 @@ def case_result(inputs, judgment_bytes):
                   runner_sha256=journal["runner_sha256"])
     history = dict(inputs.history, review=receipt["history"]["review"], raw_count=receipt["history"]["raw_count"])
     incomplete = sorted(set(range(1, journal["repetitions"] + 1)) - completed)
-    return dict(schema=1, case=journal["case"], identity=identity, cohort=cohort, trace=receipt["trace"],
+    evidence = {"unavailable_evidence_sha256": inputs.unavailable_evidence} if inputs.unavailable_evidence else {}
+    return dict(schema=1, case=journal["case"], identity=identity, cohort=cohort, trace=receipt["trace"], **evidence,
                 steered=receipt["steered"], receipt_sha256=inputs.receipt_sha256, run_sha256=inputs.run_sha256,
                 packet_sha256=inputs.packet_sha256, judgments_sha256=sha256(judgment_bytes) if judgment_bytes else None,
                 judgments=blinded_judgments(inputs, judgments), history=history,
