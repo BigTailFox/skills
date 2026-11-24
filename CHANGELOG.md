@@ -2,6 +2,13 @@
 
 Notable changes in each release. Versions follow [Semantic Versioning](https://semver.org); while the major version is 0, a minor release may change how skills behave.
 
+## 0.9.3 - 2026-11-24
+
+- Start a source-research document with `canon.py new E <slug> --research`. Its Setup opens with `Sources`, ready for links to primary sources. The `canon-research` skill uses this form. For a run, use `canon.py new E <slug>` as before.
+- When research leads to a measurement, keep the sources and append `Commit`, `Environment` and `Command` for the run. Once the experiment is answered, `canon.py check` validates each declared source list and each run separately. In documents with several runs, errors identify the run by number. Field names inside fenced examples are ignored.
+
+When upgrading from 0.9.2, install the updated skills and run `/canon-init` to record canon version 81. If `check` flags an older experiment, remove unused run fields from source-only research or fill in the missing evidence for a run you performed.
+
 ## 0.9.2 - 2026-11-24
 
 - Traced blind reviews and code reviews now retain the baseline and target the reviewers actually saw in the first round. `canon.py trace history UNIT` identifies the saved input. You can reproduce the review diff from a mirror clone of the trace store, even after the original worktree is gone.
