@@ -2,14 +2,14 @@
 status: active
 created: 2026-11-10
 updated: 2026-11-24
-revision: 9
+revision: 10
 modules: [canon]
 summary: Change tiers and their flows, design problems, and the review gate of a change: steps, prompt, merge rules, confirmation and follow-up rounds, status.
-refs: [D001, D002, D003, D006, R003, D004, R004]
+refs: [D001, D002, D003, D006, R003, D004, R004, R006]
 owns: [change-tiers, review-gate, design-problems]
 paths: [skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/governance/canon/scripts/canon.py, tests/test_canon.py]
-reviewed: 9
-reviewers: [gpt-6.2-astra, gemini-4-neon-xhigh]
+reviewed: 10
+reviewers: [gpt-6.2-astra]
 approved: 9
 implemented: 9
 ---
@@ -24,7 +24,7 @@ implemented: 9
 
 ## Spec
 
-These are the rules an agent following the `canon` skill obeys in the Workflow, Rules and Reading docs sections of its `SKILL.md` and in the Flows, Design problems and Review gate sections of its `workflow.md`. Code review, the docs step, plans and implementation, which `workflow.md` also states, are outside this design.
+These are the rules an agent following the `canon` skill obeys in the Workflow, Rules and Reading docs sections of its `SKILL.md` and in the Flows, Design problems and Review gate sections of its `workflow.md`. The change tier defines the delivery under review. Design gates and code reviews share the scope decision under [Merging findings](#merging-findings). The code review procedure, docs step, plans and implementation are described in the skills that run them.
 
 ### Change tiers
 
@@ -33,6 +33,8 @@ Every change has a tier, except one to docs alone (below):
 - **L0**: changes no spec in any design: bug fixes that restore specified behavior, refactors, dependency bumps, test and tooling changes. The agent implements it, keeps docs factually true and commits.
 - **L1**: changes or extends specs inside the owned topics of one existing design, within one module; or multi-step work under an existing design that needs a plan. The agent revises the design in place, bumping `revision` once, in the current session or in a `/canon-design` session the user starts, which the agent offers when the revision needs an interview of the user; it passes the review gate, a step that work changing no spec skips, then implements.
 - **L2**: a new topic with no owning design, a new module, a change to a cross-module interface or the architecture (adding, removing or merging a module, or changing which modules depend on which), a revision that rewrites an existing design's goals or core approach, or the user asks for it. The design and the plan each pass the review gate and each needs the user's approval ([Gate status](#gate-status)).
+
+For an L0 scaffold or tooling change without a plan, the Spec reviewer checks the requested deliverables and the contracts the patch touches, including module boundaries, interfaces, wire formats and ABI. Future runtime behavior in an accepted design with no implemented revision becomes a deliverable when the task calls for it.
 
 A change that touches only docs, changes no file a design's `paths` names and bumps no design's or plan's `revision` takes no tier: an edit to concepts, reviews, experiments or investigations, a wording edit, a known issue, D000's rows or a finding's disposition. It needs no gate or code review; the skill that writes the doc says what it needs.
 
@@ -91,7 +93,7 @@ The steps, which `as-built.md`, `doc-types.md` and [D001§call-sites: call sites
 
 1. When the user shaped the revision, as in a `canon-design` interview, show them what it changes and ask whether their content feedback is finished. Run `canon.py check` and fix its errors, so reviewers spend no effort on formatting. For a revision of an accepted or active design, or of an accepted or in-progress plan, it warns that the revision is not reviewed until step 5.
 2. Start the gate's trace unit, then launch the first-round reviewers in parallel, with the `canon-blind-review` skill. Each is a blind reviewer, launched as [D003§launch: launch](D003-subagents.md#launch) states and given only the [reviewer prompt](#reviewer-prompt). While they read, the session leaves the work tree as that section states. A cross-family reviewer that cannot run falls back to the user as [D003§reviewers: reviewers](D003-subagents.md#reviewers) states.
-3. Merge the findings as [Merging findings](#merging-findings) states. Until step 7, the session edits the targets only to fix findings, adding a follow-on target when a fix requires it under [Target coverage](#target-coverage). Other changes wait for a [follow-up round](#follow-up-round).
+3. Merge the findings as [Merging findings](#merging-findings) states. Until step 7, the session edits the targets only to fix findings, obtaining [target coverage](#target-coverage) for a follow-on target within the authorized scope. Other changes wait for a [follow-up round](#follow-up-round).
 4. Run the [confirmation round](#confirmation-round) when it is due.
 5. Set each target's `reviewed: <revision>` and `reviewers: [<model ids>]` from the reports that cover that exact revision, using `manual:<model>` for a review the user ran, and delete an as-built revision's `as_built` line ([D002§as-built-revisions: as-built revisions](D002-overview-and-as-built.md#as-built-revisions)). In L2, report the accepted, declined and escalated findings and the reviewer models, including any fallback, and get the user's answer on each escalated finding. If the user requests a targeted recheck while deciding an outstanding finding, obtain its result first and keep the first confirmation in the end record. Once the outstanding decisions permit closure, end the unit with its actual outcome and append the saved recheck as [D001§call-sites: call sites](D001-skill-telemetry.md#call-sites) specifies. For a unit already closed, append the recheck as soon as its result arrives.
 6. Set the status as [Gate status](#gate-status) states.
@@ -156,8 +158,8 @@ End with one line: Verdict: approve | revise
 ### Merging findings
 
 - Each finding is accepted and fixed, declined with a one-line reason for the user, or escalated to the user. A finding the user then leaves for later becomes a known issue of a target design, or a line in a target plan's Notes.
-- A finding about a design other than the gate's targets, such as a plan finding about its design, follows [Design problems](#design-problems).
-- A finding raised by both reviewers is accepted unless it is clearly wrong.
+- Before acting on a finding, compare it with the requested deliverable and evidence in the reviewed change. A finding raised by two reviewers carries the usual presumption of acceptance only within that scope. Ask the user before expanding the task, including adding a target outside it.
+- Decline a request for future code or an unwritten document outside the task with a short reason. Decline the proposed expansion for an unrelated existing defect and record the defect itself under [D006§known-issues-findings-and-slices: deferred findings](D006-doc-model.md#known-issues-findings-and-slices). Use a deferred review disposition when the user chooses to defer the finding. When a defect in another design blocks the requested change, follow [Design problems](#design-problems).
 - Declined findings stay out of the doc. A Decision records one, in the design that owns the topic, only when its rationale has lasting value.
 
 ### Confirmation round
@@ -169,7 +171,7 @@ End with one line: Verdict: approve | revise
 ### Follow-up round
 
 - Once a gate has committed its targets, the session that ran it passes a follow-up round instead of a new gate for each later revision it makes of a target: the user's feedback on the gate's report, an afterthought, the fix of a design problem the work found. A design first revised to match such a revision joins the round as a follow-on target. A revision made in another session, an as-built revision and the revision after an as-built revision's gate, whose prompts differ from the gate's ([D002§as-built-revisions: as-built revisions](D002-overview-and-as-built.md#as-built-revisions)), and one that would raise the gate's tier, such as a rewrite of a goal or the core approach of an L1 revision, pass a new gate.
-- When an earlier L2 cross-family pass was waived, select a fresh independent reviewer for the new revisions. Give it the full criteria and current targets together with the follow-up changes. If no independent route succeeds, these revisions await their own report or scoped exception. For an added target after a manual first pass, obtain a full independent review or a waiver for that target under [Target coverage](#target-coverage). Returning reviewers review the new revisions at the gate's tier, as [D003§resuming-and-replacing: resuming and replacing](D003-subagents.md#resuming-and-replacing) states, each reading only what changed since the last review snapshot of the gate or its previous round. Their findings are merged as [Merging findings](#merging-findings) states, the fixes of accepted blocker and major findings pass one [confirmation round](#confirmation-round), and steps 5 to 7 then run for the new revisions, with coverage established separately for each target; an L2 revision needs the user's approval again.
+- When an earlier L2 cross-family pass was waived, select a fresh independent reviewer for the new revisions. Give it the full criteria and current targets together with the follow-up changes. If no independent route succeeds, these revisions await their own report or scoped exception. For an added target after a manual first pass, obtain a full independent review or a waiver for that target under [Target coverage](#target-coverage). Returning reviewers review the new revisions at the gate's tier, as [D003§resuming-and-replacing: resuming and replacing](D003-subagents.md#resuming-and-replacing) states, each reading the changes to each covered target since the last snapshot that reviewer assessed for it. Use a later confirmation snapshot for a path only when that reviewer assessed all intervening changes to that path. Otherwise use the last fully covered input for the path, identifying any fixes already confirmed. Give newly added targets to missing roles under [Target coverage](#target-coverage). Their findings are merged as [Merging findings](#merging-findings) states, the fixes of accepted blocker and major findings pass one [confirmation round](#confirmation-round), and steps 5 to 7 then run for the new revisions, with coverage established separately for each target; an L2 revision needs the user's approval again.
 - An edit that changes no meaning bumps no `revision` and needs no round.
 
 ### Gate status
@@ -193,6 +195,8 @@ Each L2 gate keeps its own worktree-local record, including when tracing is off.
 - Use the scoped query for the approval question and recheck it against the revisions the user saw before acting on a bare yes. A changed pending set needs a new question before approving it. An explicit partial approval covers the named revisions. Starting the next phase follows [D006§frontmatter: approval fields](D006-doc-model.md#frontmatter): a new plan approves the revisions in its `based_on`, and starting implementation approves the invoked plan. Other targets of the gate stay pending. After committing the applicable approval fields and status changes, `canon.py approvals GATE --update` removes approved entries and prints what is left. An empty record still identifies the gate for a later follow-up.
 
 ## Decisions
+
+- Silk's scaffold review treated five accepted designs as one delivery, and a mixed follow-up repeated about 250 lines of earlier review. Keeping the task boundary when disposing findings and selecting the baseline by reviewer and target address both failures. [R006: Silk review scope and commit checks](../reviews/R006-silk-review-scope-and-commit-checks.md)
 
 - The user can grant a scoped exception after the independent route is exhausted. A Silk gate retained seven confirmed fixes after two HTTP 429 responses, and a later target in another gate was credited to reviewers who had not read it. [R004: Silk feedback](../archived/reviews/R004-silk-canon-field-feedback.md)
 
