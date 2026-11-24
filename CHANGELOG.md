@@ -2,6 +2,15 @@
 
 Notable changes in each release. Versions follow [Semantic Versioning](https://semver.org); while the major version is 0, a minor release may change how skills behave.
 
+## 0.9.1 - 2026-11-24
+
+- Find the live documents that embed a file with `canon.py embed --source FILE --list`. Use `--check` in place of `--list` to check every block in those documents, or omit both flags to refresh them.
+- Work-tree, staged and commit checks now agree on source filenames containing carriage returns.
+- Experiment conclusions, public overviews and reports carry the conditions that limit a measured result. Label broader inferences wherever you use the result.
+- Before running `check --fix`, inspect pending edits to the target documents, even for a single ID or path. When two changes share a document, stage your own hunks and their metadata and verify them with `check --staged`.
+
+When upgrading from 0.9.0, you can retire local rules that duplicate the experimental evidence and concurrent editing guidance above. Keep your project's choice of public overview, its update rule and its publishing conventions. Install the release and run `/canon-init` to record canon version 79.
+
 ## 0.9.0 - 2026-11-24
 
 Canon can keep source examples in sync with their files and carry a blind review across sessions with its evidence intact.
