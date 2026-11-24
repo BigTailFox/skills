@@ -1,7 +1,7 @@
 ---
-status: draft
+status: accepted
 created: 2026-11-24
-updated: 2026-11-24
+updated: 2026-11-25
 revision: 1
 modules: [canon]
 summary: Restore one verified unit, compare two skill suites on paired headless runs, and blind the scoring of review findings, slice outcomes and costs.
@@ -10,6 +10,7 @@ owns: [workflow-replay]
 paths: [scripts/replay_workflows.py]
 reviewed: 1
 reviewers: [gpt-6.2-astra, gemini-4-neon-xhigh]
+approved: 1
 ---
 
 # D012: Paired replay of Canon workflows
