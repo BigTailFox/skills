@@ -1,12 +1,13 @@
 """Bind scoring to the sealed receipts, packet and confined evidence of one case."""
-from pathlib import Path
-
 from replay_attempts import verify_attempts
 from replay_case import load_case
-from replay_git import ReplayError, json_bytes, safe_relative, sha256
-from replay_packet import Packet, opaque
+from replay_claims import report_claims
+from replay_git import ReplayError, json_bytes, sha256
+from replay_legacy_packet import legacy_packet_matches
+from replay_packet import opaque
 from replay_protocol import evidence_bytes, require
 from replay_storage import case_layout, decode, job_layout
+from trace_codex import worker_status
 
 
 def verified(root, ref):
@@ -57,23 +58,28 @@ def evidence_inventory(root, references):
     return valid, sorted(declared - valid)
 
 
-def legacy_packet_matches(private, receipt, journal, digest):
-    # Earlier v1 runs only bound the packet through its reproducible private evidence.
-    # After a move the original workspace prefix is still needed to reproduce its redactions.
-    roots = [private.parent]
-    for a in journal["attempts"]:
-        name = safe_relative(a["id"])
-        require(len(name.parts) == 1, "invalid sealed attempt ID")
-        request = private / "jobs" / name / "request.json"
-        if request.is_file():
-            workspace = Path(decode(request.read_bytes(), "sealed request")["workspace"])
-            if workspace.parts[-3:] == ("work", a["id"], "workspace") and workspace.parents[2] not in roots:
-                roots.append(workspace.parents[2])
-    for root in roots:
-        document = Packet(private, receipt, journal, case_path=root).document()
-        if sha256(json_bytes(document)) == digest:
-            return True
-    return False
+def scoring_reports(private, attempt, files, legacy):
+    reports = set()
+    for key, role in attempt["roles"].items():
+        ref = role.get("report")
+        if reference_key(ref) not in files:
+            continue
+        valid = role.get("report_valid")
+        if legacy:
+            data = evidence_bytes(private, ref)
+            if key == "worker":
+                try:
+                    status = worker_status(data.decode().lower())
+                except UnicodeError:
+                    continue
+                valid = status in ("done", "stuck", "blocked") and status == attempt["worker_status"]
+            else:
+                valid, claims = report_claims(data, key)
+                # Existing judgments address exactly the original findings and line intervals.
+                valid = valid and claims == role.get("claims")
+        if valid:
+            reports.add(key)
+    return reports
 
 
 class ScoreInputs:
@@ -117,7 +123,7 @@ class ScoreInputs:
                 slot = a["pair"], a["arm"]
                 require(slot not in completed and a["boundary_violation"] is None, "ambiguous or incompatible completed slot")
                 completed.add(slot)
-        verify_attempts(private, self.receipt, self.journal)
+        legacy = verify_attempts(private, self.receipt, self.journal)
         self.private_files, missing_private = evidence_inventory(private, private_evidence(attempts))
         blind_files, missing_blind = evidence_inventory(blind, blind_evidence(self.packet))
         self.review_input = reference_key(self.packet.get("review_input"))
@@ -143,11 +149,17 @@ class ScoreInputs:
                 self.history["unknown"].append(dict(sources=group["sources"], reason="historical evidence unavailable"))
         self.verified_refs = {}
         self.verified_reports = {}
+        self.attempts = []
         for attempt in attempts:
             row = self.rows[attempt["id"]]
-            reports = {k for k, r in attempt["roles"].items() if r.get("report_valid")
-                       and reference_key(r.get("report")) in self.private_files}
+            reports = scoring_reports(private, attempt, self.private_files, row["id"] in legacy)
             self.verified_reports[row["id"]] = reports
+            # Score a verified view. The original packet, journal, measurements and evidence stay bound to their bytes.
+            if (row["id"] in legacy and self.receipt["kind"] == "slice" and
+                    attempt["outcome"] == "completed" and "worker" not in reports):
+                attempt = dict(attempt, outcome="failed", worker_status=None,
+                               status_issue="legacy worker status unconfirmed by the sealed terminal report")
+            self.attempts.append(attempt)
             unreadable = {opaque(self.journal, "claim", row["id"], k, c["finding"])
                           for k, r in attempt["roles"].items() if k not in reports for c in r.get("claims", [])}
             refs = [c["evidence"] for c in row["claims"] if c["id"] not in unreadable]

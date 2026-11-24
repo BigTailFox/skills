@@ -8,11 +8,19 @@ from trace_records import canon
 from trace_review_inputs import revision_documents
 
 
-def frozen_documents(repo, task):
-    """Resolve each declared revision at the replay target, including unchanged governing docs."""
+def frozen_documents(repo, receipt):
+    """Resolve named inputs against the tracked target and its separately retained untracked files."""
+    task = receipt["task"]
     target = task["input"]["target"]
-    paths = listed(repo, "ls-tree", "-rz", "--name-only", target)
-    docs = revision_documents(task["docs"], paths, lambda p: git(repo, "show", target + ":" + p))
+    untracked = receipt["source"]["untracked"]
+    paths = listed(repo, "ls-tree", "-rz", "--name-only", target) | untracked.keys()
+
+    def read(path):
+        if path in untracked:
+            return git(repo, "cat-file", "blob", untracked[path]["blob"])
+        return git(repo, "show", target + ":" + path)
+
+    docs = revision_documents(task["docs"], paths, read, slice_inputs=receipt["kind"] == "slice")
     if docs is None:
         raise ReplayError("named document unavailable at frozen revision: " + ", ".join(task["docs"]))
     return docs
@@ -21,10 +29,10 @@ def frozen_documents(repo, task):
 def review_input(repo, receipt, grants, neutral_files, neutral_patch):
     task = receipt["task"]
     spec = task["input"]
-    docs = frozen_documents(repo, task)
+    docs = frozen_documents(repo, receipt)
     selected = scoped_paths(repo, task) | docs.keys()
     def view(tree, names):
-        return neutral_files(file_view(read_files(repo, tree, set(), selected=names)))
+        return neutral_files(file_view(read_files(repo, tree, set(), selected=names, gitlinks=True)))
 
     result = dict(target=view(spec["target"], selected))
     if spec["baseline"]:

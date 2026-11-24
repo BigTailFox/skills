@@ -65,7 +65,7 @@ class ReplayFixture(ReportFixture):
         self.git(root, "read-tree", "--empty")
         for name, value in entries.items():
             mode, data = value if isinstance(value, tuple) else ("100644", value)
-            blob = self.git(root, "hash-object", "-w", "--stdin", data=data)
+            blob = data if mode == "160000" else self.git(root, "hash-object", "-w", "--stdin", data=data)
             self.git(root, "update-index", "--add", "--cacheinfo", mode + "," + blob + "," + name)
         return self.git(root, "write-tree")
 

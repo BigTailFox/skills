@@ -65,7 +65,7 @@ def evaluate_slice(job, spec, result):
                 code, stdout, stderr, reason = sandbox.run(argv)
             except (OSError, ReplayError) as exc:
                 reason = str(exc)
-        outcome = "unavailable" if code is None else "pass" if code == 0 else "fail"
+        outcome = "unavailable" if code is None or reason else "pass" if code == 0 else "fail"
         observation = dict(id=criterion["id"], argv=argv, outcome=outcome, reason=reason, exit_code=code,
                            stdout_base64=base64.b64encode(stdout).decode(), stderr_base64=base64.b64encode(stderr).decode())
         ref = save_evidence(job, json_bytes(observation))

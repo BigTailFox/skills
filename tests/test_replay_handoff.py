@@ -45,6 +45,46 @@ class ReviewHandoff(RunnerFixture):
         _, view = self.handoff()
         self.assertEqual(view["target"]["files"], [dict(path=DESIGN, mode="100644", encoding="utf-8", content=body)])
 
+    def test_review_handoff_preserves_gitlinks_without_opening_a_submodule(self):
+        old, new = "1" * 40, "2" * 40
+        base = self.pin(self.store, self.tree(self.store, {"library": ("160000", old)}))
+        entries = {"library": ("160000", new)}
+        target = self.pin(self.store, self.tree(self.store, entries), base)
+        self.review("code-review", entries, baseline=base, prompts={"spec": f"Target: `git diff {base} {target} -- library`"})
+        self.prepare()
+        self.replay()
+        _, view = self.handoff()
+        for side, oid in (("baseline", old), ("target", new)):
+            self.assertEqual(view[side]["files"], [dict(path="library", mode="160000", encoding="gitlink", content=oid)])
+
+    def test_a_fenced_host_log_is_redacted_and_evidence_code_remains_readable(self):
+        self.code_review()
+        self.prepare()
+        log = ("### F1 [major] Wrong model selection\nEvidence:\n```text\nraw host transcript: PRIVATE MESSAGE\n"
+               "wall_seconds: 19\n/home/operator/.codex/session\n```\n```python\nmodel = make_decision()\n"
+               "```\nRaw host transcript:\n```text\noperator: PRIVATE DISCUSSION\n```\n"
+               "````text\nraw host transcript: example\nPRIVATE PREAMBLE\n```python\nprint('PRIVATE REPLY')\n"
+               "```\nPRIVATE TAIL\n````\n```python\nmodel = after_log()\n```\n"
+               "Raw host transcript: omitted\n\nEvidence: refund() returns 0 for negative amounts.\n"
+               "Suggestion: preserve the sign.\nRaw host transcript: private reviewer reply follows\n"
+               "> Evidence: PRIVATE original host message\n> ```text\n> PRIVATE QUOTED LOG\n> ```\n"
+               "> Suggestion: PRIVATE original host suggestion\n\nPRIVATE unlabelled continuation\n"
+               "\nEvidence: refund() returns 0.\n"
+               "Suggestion: check the signed result.\nVerdict: revise\n")
+        self.config["settings"]["actions"] = [dict(reports={"spec": log})]
+        self.write_config()
+        self.replay()
+        blind = self.out / "blind"
+        all_bytes = b"".join(p.read_bytes() for p in blind.rglob("*") if p.is_file())
+        for private in (b"PRIVATE", b"wall_seconds:", b"/home/operator"):
+            self.assertNotIn(private, all_bytes)
+        self.assertIn(b"model = make_decision()", all_bytes)
+        self.assertIn(b"model = after_log()", all_bytes)
+        self.assertIn(b"refund() returns 0 for negative amounts.", all_bytes)
+        self.assertIn(b"preserve the sign.", all_bytes)
+        self.assertIn(b"Evidence: refund() returns 0.\n", all_bytes)
+        self.assertIn(b"check the signed result.", all_bytes)
+
     def test_gate_handoff_binds_separate_as_built_code_to_the_design_scope(self):
         self.repo(self.project)
         tree = self.tree(self.store, {"rule": "approved\n", "irrelevant": "unrelated"})

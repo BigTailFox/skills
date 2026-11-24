@@ -130,6 +130,8 @@ def score_slice(inputs, attempt, packet_row, judgment):
     if reference_key(packet_row["artifact"]) in refs:
         attempt_evidence.add(reference_key(packet_row["artifact"]))
     later, issues = later_decisions(inputs, judgment, attempt_evidence)
+    if attempt.get("status_issue"):
+        issues.append(attempt["status_issue"])
     metrics.update(decided_counts(later, "slice.later", "present", "absent"))
     metrics["slice.later.unknown"] = sum(v == "unknown" for v in later.values())
     brief = attempt.get("brief_comparison", {})
@@ -162,7 +164,7 @@ def case_result(inputs, judgment_bytes):
     judgments, rows, judgment_issues = judgment_rows(inputs, judgment_bytes)
     attempts = []
     evaluate = score_slice if receipt["kind"] == "slice" else score_review
-    for attempt in journal["attempts"]:
+    for attempt in inputs.attempts:
         ident = attempt["id"]
         matches = rows.get(ident, [])
         judgment = matches[0] if len(matches) == 1 else None

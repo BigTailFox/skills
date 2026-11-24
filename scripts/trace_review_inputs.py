@@ -208,23 +208,26 @@ def code_scope(case, trees, scope, target, base, pins):
                 paths=paths, options=flags, untracked_files=untracked, patch_sha256=hashlib.sha256(patch).hexdigest())
 
 
-def revision_documents(revisions, files, read):
-    """Resolve named revisions uniquely in one tree and read their frozen frontmatter."""
+def revision_documents(revisions, files, read, *, slice_inputs=False):
+    """Resolve review revisions or slice document references uniquely in the frozen input."""
+    pattern = (r"([CDPREI]\d{3,}[A-Z]?)(?:@r(\d+))?" if slice_inputs else
+               r"([DP]\d{3,}[A-Z]?)@r([1-9]\d*)")
     docs = {}
     for name in revisions:
-        ref = re.fullmatch(r"([DP]\d{3,}[A-Z]?)@r([1-9]\d*)", name)
+        ref = re.fullmatch(pattern, name)
         if not ref:
             return None
         doc, revision = ref.groups()
+        directory = canon.TYPES[doc[0]]["dir"] if slice_inputs else "(?:designs|plans)"
         paths = [p for p in files if Path(p).name.startswith(doc + "-") and canon.FILE_RE.fullmatch(Path(p).name)
-                 and re.search(r"(?:^|/)docs/(?:archived/)?(?:designs|plans)/[^/]+$", p)]
+                 and re.search(rf"(?:^|/)docs/(?:archived/)?{directory}/[^/]+$", p)]
         if len(paths) != 1:
             return None
         data = read(paths[0])
         if data is None:
             return None
         fields = canon.parse_frontmatter(data.decode(errors="replace").splitlines())[0] or {}
-        if str(fields.get("revision")) != revision:
+        if revision is not None and str(fields.get("revision")) != revision:
             return None
         docs[paths[0]] = fields
     return docs

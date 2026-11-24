@@ -14,6 +14,10 @@ from trace_records import canon
 from trace_review_evidence import VALID
 
 
+TRANSCRIPT_LABEL = re.compile(r"(?i)^\s*(?:[-*]\s+)?(?:\*\*)?raw host(?: transcript)?(?:\*\*)?\s*[:=]\s*(.*)")
+FINDING_FIELD = re.compile(r"(?i)^\s*(?:[-*]\s+)?(?:\*\*)?(?:location|problem|evidence|suggestion|fix|recommendation)(?:\*\*)?\s*:")
+
+
 def opaque(journal, *identity):
     key = bytes.fromhex(journal["blind_key"])
     return hmac.new(key, json_bytes(identity), hashlib.sha256).hexdigest()[:32]
@@ -70,9 +74,12 @@ class Packet:
                       r"(?:[AB]|candidate|recorded))\b", "[suite]", text, flags=re.I)
 
     def neutral(self, text):
-        text = self.source(text)
-        text = re.sub(r"(?:/home|/Users|/private/var/folders|/var/tmp|/tmp)/[^\s`'<>\")|]+", "[private path]", text)
+        text = self.private_locations(self.source(text))
         return re.sub(r"(?<![\w./-])(?:candidate|recorded)(?![\w./-])", "[suite]", text, flags=re.I)
+
+    @staticmethod
+    def private_locations(text):
+        return re.sub(r"(?:/home|/Users|/private/var/folders|/var/tmp|/tmp)/[^\s`'<>\")|]+", "[private path]", text)
 
     def name(self, path):
         clean = self.source(path)
@@ -88,15 +95,60 @@ class Packet:
         return "/".join(components)
 
     def excerpt(self, text):
-        lines = self.source(text).splitlines(keepends=True)
-        for i, _ in canon.code_mask(lines):
-            line = lines[i]
-            if re.match(r"(?i)^\s*(?:session(?: id)?|model|raw host(?: transcript)?|tokens?|config_digest|"
-                        r"wall_seconds|cached_input|reasoning_output|authorization)\s*:", line):
-                lines[i] = ""
-            else:
-                lines[i] = self.neutral(re.sub(r"(?i)^(?:#{1,4}\s+|\*\*)F\d+\b", "Finding", line))
-        return "".join(lines)
+        lines = self.private_locations(self.source(text)).splitlines(keepends=True)
+        public = []
+        fence = None
+        fence_depth = 0
+        transcript = None
+        for line in lines:
+            quotation = re.match(r"^[ \t]*(?:>[ \t]*)+", line)
+            depth = quotation[0].count(">") if quotation else 0
+            body = (line[quotation.end():] if quotation else line).expandtabs(4)
+            if fence and depth < fence_depth:
+                fence = None
+                if transcript:
+                    transcript = "quoted"
+            if transcript and fence is None and depth:
+                # Fences and field names inside a quoted host message belong to
+                # that message. A public field can resume outside the quotation.
+                transcript = "quoted"
+                continue
+            if transcript == "quoted":
+                if not FINDING_FIELD.match(line):
+                    continue
+                transcript = None
+            marker = canon.FENCE_RE.match(body) if fence is None or depth == fence_depth else None
+            if marker:
+                if fence and not marker["list"] and marker["fence"].startswith(fence) and not body[marker.end():].strip():
+                    fence = None
+                    transcript = None
+                    public.append(line)
+                    continue
+                if fence is None and (marker["fence"][0] == "~" or "`" not in body[marker.end():]):
+                    fence = marker["fence"]
+                    fence_depth = depth
+                    public.append(fence + "\n" if transcript else line)
+                    if transcript:
+                        transcript = "block"
+                    continue
+            if transcript == "inline" and body.strip():
+                # After an explicit omission, an unquoted finding field resumes the
+                # report. Quoted fields can themselves be part of a host message.
+                transcript = None if FINDING_FIELD.match(line) else "block"
+            label = TRANSCRIPT_LABEL.match(body)
+            if label:
+                omitted = label[1].strip(" \t\n*_`[].()").casefold() in {"omitted", "redacted", "withheld", "none"}
+                if depth and fence is None:
+                    transcript = "quoted"
+                else:
+                    transcript = "inline" if omitted and fence is None and not transcript else "block"
+            if transcript or re.match(r"(?i)^\s*(?:(?:session(?: id)?|tokens?|config_digest|wall_seconds|"
+                                      r"cached_input|reasoning_output|authorization)\s*[:=]|model\s*:)", body):
+                continue
+            if fence is None:
+                line = self.neutral(re.sub(r"(?i)^(?:#{1,4}\s+|\*\*)F\d+\b", "Finding", line))
+            public.append(line)
+        return "".join(public)
 
     def export(self, identity, text):
         data = self.excerpt(text).encode()
@@ -123,7 +175,7 @@ class Packet:
                         item["content"] = self.source(item["content"])
                 else:
                     item["content"] = self.source(item["content"])
-            else:
+            elif item["encoding"] == "base64":
                 data = base64.b64decode(item["content"])
                 decoded = data.decode(errors="surrogateescape")
                 if self.source(decoded) != decoded or item["mode"] == "120000" and data.startswith(b"/"):

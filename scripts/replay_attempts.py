@@ -2,6 +2,7 @@
 from pathlib import Path
 
 from replay_git import ReplayError, json_bytes, sha1_object, sha256
+from replay_protocol import token_counts
 from replay_storage import decode, job_layout, publish_json
 
 
@@ -58,6 +59,23 @@ def terminal_observation(job):
     return observed
 
 
+def verify_legacy_completion(job, req, observed):
+    # Before per-job seals, the retained stdout independently corroborates the parsed observations.
+    result = decode((job / "stdout").read_bytes(), "legacy runner result")
+    check(result.get("outcome") == "completed" and result.get("worker_status") == observed["worker_status"]
+          and all(result.get(k) == req[k] for k in ("attempt", "host", "config_digest"))
+          and result["roles"].keys() == observed["roles"].keys() == req["roles"].keys(), "legacy result differs")
+    for key, role in observed["roles"].items():
+        raw = result["roles"][key]
+        check(all(raw[k] == role[k] for k in ("model", "effort", "loaded")) and
+              token_counts(raw["tokens"]) == role["tokens"], "legacy role measurement differs")
+        for name in ("report", "brief"):
+            ref = raw.get(name)
+            check((ref is None and role[name] is None) or
+                  (isinstance(ref, dict) and role[name] and ref.get("sha256") == role[name]["sha256"]),
+                  "legacy report or brief differs from runner result")
+
+
 def verify_legacy(private, receipt, journal, records):
     """The original controller dispatched the first pass serially in alternating order.
 
@@ -89,8 +107,11 @@ def verify_legacy(private, receipt, journal, records):
         check(req.get("attempt") == row["id"] and req.get("roles") == journal["roles"] and
               req.get("task") == receipt["task"] and req.get("host") == receipt["host"] and
               req.get("kind") == receipt["kind"] and req.get("config_digest") == journal["config_sha256"] and
-              spec.get("runner") == journal["runner"] and spec.get("runner_sha256") == journal["runner_sha256"],
+              spec.get("runner") == journal["runner"] and spec.get("runner_sha256") == journal["runner_sha256"] and
+              ("receipt_sha256" not in spec or spec["receipt_sha256"] == journal["receipt_sha256"]),
               "legacy dispatch identity differs")
+        if observed["outcome"] == "completed":
+            verify_legacy_completion(job, req, observed)
         loads = spec.get("loads", {})
         expected = suites[row["arm"]]
         check(all(loads.get(k) == v for k, v in expected.items()), "legacy installation differs")
@@ -137,3 +158,4 @@ def verify_attempts(private, receipt, journal, *, resuming=False):
         check(json_bytes(row) == json_bytes(initial), "observations differ from terminal evidence")
     if legacy:
         verify_legacy(private, receipt, journal, legacy)
+    return {row["id"] for row, _, _ in legacy}

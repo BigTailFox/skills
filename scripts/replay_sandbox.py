@@ -3,12 +3,14 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import shlex
 import shutil
 import struct
 import subprocess
 import sys
 import tempfile
+import time
 
 from replay_git import ReplayError, paths_overlap, safe_relative, sha256, write_blob
 from replay_protocol import evidence_bytes
@@ -17,6 +19,15 @@ from replay_storage import publish
 
 WORK = "/work"
 PROBE = "/.replay-probe"
+WITNESS_LOG = "/.replay-prerequisite-use"
+CONTROL_SECONDS = 15
+MAX_DIAGNOSTIC_PATHS = 16
+MAX_CONTROL_RUNS = 40
+SHELLS = {"sh", "bash", "dash", "ksh"}
+# Leave ordinary quoted strings, escaped characters and comments intact. A matched
+# exit contributes evidence only if the unmodified-grants control actually takes it.
+NORMALIZER = re.compile(r"""'[^']*'|"(?:\\.|[^"\\])*"|\\.|(?<!\S)\#[^\n]*|
+                        (?P<op>\|\|\s*)(?P<exit>(?:exit|return)[ \t]+[0-9]{1,3})(?=[ \t]*(?:$|[\n;&)]))""", re.X | re.S)
 
 
 def elf_interpreter(data):
@@ -47,7 +58,7 @@ def elf_interpreter(data):
 
 def sandbox_grants(config, private, receipt):
     tools, runtime = {}, {}
-    reserved = {WORK, PROBE, "/proc", "/dev", "/sys", str(private.parent)}
+    reserved = {WORK, PROBE, WITNESS_LOG, "/proc", "/dev", "/sys", str(private.parent)}
 
     def reserve(target):
         if (not isinstance(target, str) or not target.startswith("/") or "\0" in target or
@@ -127,17 +138,26 @@ class CriterionSandbox:
         self.bwrap = str(Path(executable).resolve())
         self.path = ":".join(dict.fromkeys(str(Path(t).parent) for t in self.tools))
 
-    def invoke(self, root, argv, *, writable):
+    def invoke(self, root, argv, *, writable, witnesses=(), witness_log=None, deadline=None):
         command = [self.bwrap, "--unshare-all", "--unshare-user", "--unshare-pid", "--unshare-net",
                    "--disable-userns", "--die-with-parent", "--new-session", "--cap-drop", "ALL",
                    "--clearenv", "--setenv", "PATH", self.path, "--setenv", "LC_ALL", "C",
                    "--bind" if writable else "--ro-bind", str(root), WORK]
         for target, source in self.mounts.items():
             command.extend(["--ro-bind", str(source), target])
+        for target, witness in witnesses:
+            command.extend(["--ro-bind", str(witness), target])
+        if witness_log is not None:
+            src, target = witness_log
+            command.extend(["--bind", str(src), target])
         with tempfile.TemporaryFile(dir=self.job) as status:
             command.extend(["--remount-ro", "/", "--chdir", WORK, "--json-status-fd", str(status.fileno()), "--", *argv])
-            run = subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, pass_fds=(status.fileno(),),
-                                 env={"PATH": os.defpath, "LC_ALL": "C"})
+            timeout = max(0, deadline - time.monotonic()) if deadline is not None else None
+            try:
+                run = subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, pass_fds=(status.fileno(),),
+                                     env={"PATH": os.defpath, "LC_ALL": "C"}, timeout=timeout)
+            except subprocess.TimeoutExpired as exc:
+                raise ReplayError("missing-grant diagnostic exceeded its time limit") from exc
             status.seek(0)
             try:
                 events = [json.loads(line) for line in status if line.strip()]
@@ -196,7 +216,7 @@ class CriterionSandbox:
             raise ReplayError(f"test runtime executable missing: {path}")
         return resolved, data
 
-    def check_runtime(self, root, path, chain=()):
+    def check_runtime(self, root, path, chain=(), *, deadline=None):
         path, data = self.executable(path)
         if path in chain or len(chain) >= 40:
             raise ReplayError("test runtime has a cyclic or excessive interpreter chain")
@@ -205,7 +225,7 @@ class CriterionSandbox:
             if not words:
                 raise ReplayError("test runtime script interpreter missing")
             interpreter = os.fsdecode(words[0])
-            self.check_runtime(root, interpreter, (*chain, path))
+            self.check_runtime(root, interpreter, (*chain, path), deadline=deadline)
             if interpreter in ("/usr/bin/env", "/bin/env") and len(words) == 2:
                 argument = os.fsdecode(words[1]).strip()
                 try:
@@ -214,51 +234,336 @@ class CriterionSandbox:
                     raise ReplayError("test runtime env interpreter cannot be determined") from exc
                 if not names or names[0].startswith("-") or "=" in names[0]:
                     raise ReplayError("test runtime env interpreter cannot be determined")
-                self.check_runtime(root, self.entry(names[0]), (*chain, path))
+                self.check_runtime(root, self.entry(names[0]), (*chain, path), deadline=deadline)
             return
         loader = elf_interpreter(data)
         if loader:
             self.executable(loader)
-            result, events = self.invoke(root, [loader, "--list", path], writable=False)
+            result, events = self.invoke(root, [loader, "--list", path], writable=False, deadline=deadline)
             missing = re.search(rb"^\s*\S+\s+=>\s+not found\s*$", result.stdout, re.M)
             if missing or result.returncode or [e["exit-code"] for e in events if "exit-code" in e] != [0]:
                 detail = (missing.group() if missing else result.stderr).decode(errors="replace").strip()
                 raise ReplayError("test runtime dependencies unavailable" + (": " + detail if detail else ""))
 
-    def missing_child(self, root, stderr):
-        # A nonzero test exit alone says nothing about its prerequisites. Corroborate
-        # the child-launch diagnostic from the C locale with the pinned filesystem.
-        diagnostic = stderr.decode(errors="replace")
-        for path, digest in self.tools.items():
-            names = (path, Path(path).name)
-            command = "(?:" + "|".join(map(re.escape, names)) + ")"
-            if not re.search(r"(?:^|:\s+)[\x27\x22]?" + command + r"[\x27\x22]?:\s+"
-                             r"(?:command not found|not found|No such file or directory)\s*$|"
-                             r"No such file or directory:\s+[\x27\x22]" + command + r"[\x27\x22]\s*$", diagnostic, re.M):
+    def materialize(self, root, edits=None):
+        for source in (self.files, self.fixtures):
+            for name, (mode, data) in source.items():
+                write_blob(root, name, mode, edits.get(name, data) if edits else data)
+
+    def normalization_probe(self, argv, destination, prefix):
+        """Keep the wrapper's literal exit and observe its incoming shell status in a diagnostic copy."""
+        sites = 0
+
+        def instrument(text):
+            def insert(match):
+                nonlocal sites
+                if not match["op"] or sites == MAX_DIAGNOSTIC_PATHS:
+                    return match[0]
+                sites += 1
+                record = f"""printf '{prefix}-{sites} %s\\n' "$?" >> {destination}"""
+                return f"{match['op']}{{ {record}; {match['exit']}; }}"
+            return NORMALIZER.sub(insert, text)
+
+        command, edits = list(argv), {}
+        remaining = 65536
+        if Path(self.entry(argv[0])).name in SHELLS:
+            for i, arg in enumerate(argv[1:-1], 1):
+                if not arg.startswith("-"):
+                    break
+                if "c" in arg[1:]:
+                    text = argv[i + 1]
+                    if len(text) <= remaining:
+                        command[i + 1] = instrument(text)
+                        remaining -= len(text)
+                    break
+        for arg in argv[:128]:
+            path = os.path.normpath(os.path.join(WORK, arg))
+            if not path.startswith(WORK + "/"):
                 continue
-            if digest is None:
-                return f"granted child executable unavailable: {path}"
+            name = path[len(WORK) + 1:]
+            entry = self.files.get(name)
+            if not entry or name in edits or entry[0] == "120000" or len(entry[1]) > remaining:
+                continue
+            data = entry[1]
+            head = data.partition(b"\n")[0]
+            if not re.match(rb"^#!\s*(?:\S*/)?(?:env\s+)?(?:sh|bash|dash|ksh)(?:\s|$)", head):
+                continue
+            remaining -= len(data)
+            updated = os.fsencode(instrument(os.fsdecode(data)))
+            if updated != data:
+                edits[name] = updated
+        return (command, edits) if sites else None
+
+    def possible_outputs(self, argv, called):
+        """Propose paths across possible working directories. Only executions confirm a hint."""
+        scripts = list(argv[:128])
+        existing = self.files.keys() | self.fixtures.keys()
+        directories = {str(parent) for name in existing for parent in Path(name).parents}
+        preferred = [WORK]
+        hints, guarded, unresolved = {}, {}, set()
+        by_name = {name: target for target in called for name in (target, Path(target).name)}
+        variable = re.compile(r"\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*))")
+        expansion = re.compile(r"[$*?`]|\[[^]]+\]")
+
+        def resolve(word, bindings):
+            return variable.sub(lambda m: bindings.get(m[1] or m[2], m[0]), word)
+
+        for arg in argv[:128]:
+            entry = self.contents.get(os.path.normpath(os.path.join(WORK, arg)))
+            if entry and entry[0] != "120000" and len(entry[1]) <= 65536 and b"\0" not in entry[1]:
+                scripts.append(os.fsdecode(entry[1]))
+        remaining = 65536
+        for script in scripts:
+            if remaining <= 0:
+                break
+            text = script[:remaining]
+            remaining -= len(text)
+            words = shlex.shlex(text, posix=True, punctuation_chars=True)
+            words.whitespace_split = True
             try:
-                self.check_runtime(root, path)
-            except ReplayError as exc:
-                return str(exc)
-        return None
+                tokens = list(words)
+            except ValueError:
+                continue
+            bindings, segment = {}, set()
+            for i, word in enumerate(tokens):
+                after = tokens[i + 1] if i + 1 < len(tokens) else None
+                if word in ("&&", "||", ";", "(", ")", "|", "&"):
+                    # Only an unresolved downstream command can leave a tool's role uncertain.
+                    # Variables used later as assertion operands say nothing about this guard.
+                    dependent = after if word == "&&" else None
+                    if after == "then" and i + 2 < len(tokens):
+                        dependent = tokens[i + 2]
+                    if segment and dependent:
+                        dependent = resolve(dependent, bindings)
+                        if expansion.search(dependent):
+                            unresolved.update(segment)
+                        elif "/" in dependent and (not dependent.startswith("/") or dependent.startswith(WORK + "/")):
+                            guarded.setdefault(dependent, set()).update(segment)
+                    segment.clear()
+                    continue
+                if word in by_name and (not i or tokens[i - 1] not in ("-v", "-V")):
+                    segment.add(by_name[word])
+                word = resolve(word, bindings)
+                assignment = re.fullmatch(r"([A-Za-z_]\w*)=(.*)", word, re.S)
+                if assignment:
+                    word = bindings[assignment[1]] = assignment[2]
+                if i and tokens[i - 1] == "cd" and word in directories:
+                    preferred.append(os.path.join(WORK, word))
+                if not expansion.search(word) and "/" in word and (not word.startswith("/") or word.startswith(WORK + "/")):
+                    hints[word] = None
+
+        bases = dict.fromkeys([*preferred, *(os.path.join(WORK, d) for d in sorted(directories))])
+        paths = set()
+        inspected = 0
+        # Try guarded executable words first. Exhausting a limit on unrelated hints
+        # cannot make a tool uncertain once all locations for its own command were checked.
+        for word in dict.fromkeys((*guarded, *hints)):
+            for base in bases:
+                inspected += 1
+                if inspected > MAX_DIAGNOSTIC_PATHS ** 2:
+                    return sorted(paths), unresolved.union(*guarded.values())
+                path = os.path.normpath(os.path.join(base, word))
+                if not path.startswith(WORK + "/") or path in paths:
+                    continue
+                name = path[len(WORK) + 1:]
+                if name in existing or name in directories:
+                    continue
+                try:
+                    local = safe_relative(name)
+                except ReplayError:
+                    unresolved.update(guarded.get(word, ()))
+                    continue
+                if (len(os.fsencode(name)) > 4095 or any(len(os.fsencode(p)) > 255 for p in local.parts)
+                        or any(str(p) in existing for p in local.parents) or any(paths_overlap(path, p) for p in paths)):
+                    unresolved.update(guarded.get(word, ()))
+                    continue
+                if len(paths) == MAX_DIAGNOSTIC_PATHS:
+                    return sorted(paths), unresolved.union(*guarded.values())
+                paths.add(path)
+            guarded.pop(word, None)
+        return sorted(paths), unresolved
+
+    def check_missing_grants(self, directory, argv, original, elapsed):
+        if not self.tools:
+            return None
+        exit_code = original.returncode
+        deadline = time.monotonic() + CONTROL_SECONDS
+        control_runs = 0
+        root = directory / "repeat"
+        root.mkdir()
+        self.materialize(root)
+        missing = {}
+        for path, digest in self.tools.items():
+            if digest is None:
+                missing[path] = f"granted child executable unavailable: {path}"
+            else:
+                try:
+                    self.check_runtime(root, path, deadline=deadline)
+                except ReplayError as exc:
+                    missing[path] = f"granted child runtime unavailable for {path}: {exc}"
+        if not missing:
+            return None
+        # Reproduce the failing command in a clean disposable copy. Only its missing
+        # grants get substitutes. They acknowledge actual launches to a dedicated
+        # scratch file, independently of the child’s stderr or exception handling.
+        # Both the recorded exit status and output come from the original run.
+        interpreter = None
+        for path in sorted(self.mounts.keys() - missing.keys()):
+            program = Path(path).name
+            if program in SHELLS:
+                interpreter = path, "shell"
+                break
+            if re.fullmatch(r"python(?:[23](?:\.\d+)?)?", program):
+                interpreter = path, "python"
+        if interpreter is None:
+            return None
+        exe, family = interpreter
+        log = directory / "uses"
+        log.touch(mode=0o600)
+        destination = WITNESS_LOG + "/" + secrets.token_hex(16)
+        tags = {}
+
+        def witnesses(targets, status):
+            pairs = []
+            for target in targets:
+                if target not in tags:
+                    tags[target] = secrets.token_hex(16)
+                tag = tags[target]
+                witness = directory / f"tool-{tag}-{status}"
+                pairs.append((target, witness))
+                if witness.exists():
+                    continue
+                if family == "shell":
+                    body = f"printf '%s\\n' {tag} >> {destination}\nexit {status}\n"
+                else:
+                    body = (f"with open('{destination}', 'a') as record:\n    record.write('{tag}\\n')\n"
+                            f"raise SystemExit({status})\n")
+                witness.write_text(f"#!{exe}\n" + body)
+                witness.chmod(0o555)
+            return pairs
+
+        def observe(work, pairs, products=(), command=argv):
+            nonlocal control_runs, deadline
+            if control_runs == MAX_CONTROL_RUNS:
+                raise ReplayError("missing-grant diagnostic exceeded its repeat limit")
+            control_runs += 1
+            # Share one setup/overhead budget, but let each repeat run the measured work.
+            deadline += 1.5 * elapsed
+            for target, witness in products:
+                write_blob(work, target[len(WORK) + 1:], "100755", witness.read_bytes())
+            log.write_bytes(b"")
+            observed, events = self.invoke(work, command, writable=True, witnesses=pairs, witness_log=(log, destination),
+                                           deadline=deadline)
+            if [e["exit-code"] for e in events if "exit-code" in e] != [observed.returncode]:
+                raise ReplayError("missing granted tools could not be checked in the isolated repeat")
+            with log.open("rb") as stream:
+                markers = set(stream.read(16384).splitlines())
+            return observed, {t for t, tag in tags.items() if tag.encode() in markers}
+
+        def control(pairs, products=(), probe=None):
+            command, edits = probe if probe else (argv, None)
+            with tempfile.TemporaryDirectory(dir=directory, prefix="control-") as scratch:
+                work = Path(scratch)
+                self.materialize(work, edits)
+                return observe(work, pairs, products, command)
+
+        failures = dict(witnesses(missing, 127))
+        self.invoke(root, [PROBE], writable=False, witnesses=witnesses([PROBE], 127), witness_log=(log, destination),
+                    deadline=deadline)
+        if log.read_bytes() != (tags[PROBE] + "\n").encode():
+            return None
+        failed, called = observe(root, failures.items())
+        if failed.returncode != exit_code or not called:
+            return None
+
+        def change_one(tools, invoked, products=(), downstream=()):
+            causes = []
+            for target in sorted(invoked.intersection(missing))[:MAX_DIAGNOSTIC_PATHS]:
+                restored = tools | {target: failures[target]}
+                observed, reached = control(restored.items(), products)
+                if observed.returncode == exit_code and target in reached and (not downstream or downstream - reached):
+                    causes.append(missing[target])
+            return ", ".join(causes) or None
+
+        # Keep optional tools equally discoverable across controls. A changed
+        # failure status exposes an unavailable prerequisite even when a success
+        # substitute cannot generate the artifact that the next command needs.
+        # A successful control also detects callers that translate every error.
+        for status in (73 if exit_code != 73 else 75, 0):
+            tools = dict(witnesses(missing, status))
+            observed, invoked = control(tools.items())
+            required = called & invoked
+            if required and (observed.returncode != exit_code if status else observed.returncode == 0):
+                if len(missing) == 1:
+                    return missing[next(iter(required))]
+                return change_one(tools, invoked) or "criterion outcome depends on a combination of unavailable grants"
+        prefix = secrets.token_hex(16)
+        probe = self.normalization_probe(argv, destination, prefix)
+        if probe:
+            def incoming(pairs):
+                run, reached = control(pairs, probe=probe)
+                if (run.returncode, run.stdout, run.stderr) != (exit_code, original.stdout, original.stderr):
+                    return [], set()
+                with log.open("rb") as stream:
+                    records = stream.read(16385)
+                if len(records) > 16384:
+                    return [], set()
+                statuses = re.findall(rb"^(" + prefix.encode() + rb"-\d+) (\d+)$", records, re.M)
+                return statuses, reached
+
+            # The actual missing-tool branch must be reached while its grant is still absent.
+            # Then vary only one tool and require its distinctive status at that same exit.
+            absent, _ = incoming(())
+            present, reached = incoming(failures.items())
+            if absent and absent == present:
+                for target in sorted(called & reached)[:MAX_DIAGNOSTIC_PATHS]:
+                    alternate = failures | dict(witnesses([target], 73))
+                    varied, invoked = incoming(alternate.items())
+                    if (target in invoked and [s for s, _ in varied] == [s for s, _ in absent] and
+                            any(before == b"127" and after == b"73"
+                                for (_, before), (_, after) in zip(absent, varied))):
+                        return missing[target]
+        # A successful substitute cannot build the program that the wrapper then attempts to run.
+        # Vary the putative output and each invoked tool independently, keeping all paths discoverable.
+        outputs, unresolved = self.possible_outputs(argv, called)
+        uncertainty = ("could not verify the downstream executable of a possibly required unavailable grant: "
+                       + ", ".join(sorted(unresolved))) if unresolved else None
+        if not outputs:
+            return uncertainty
+        successful_tools = dict(witnesses(missing, 0))
+        products = witnesses(outputs, 0)
+        observed, invoked = control(successful_tools.items(), products)
+        executed = invoked.intersection(outputs)
+        if executed and observed.returncode == exit_code:
+            return None
+        if observed.returncode != 0 or not executed:
+            return uncertainty
+        observed, rejected = control(successful_tools.items(), witnesses(outputs, 73))
+        if observed.returncode == 0 or not executed.intersection(rejected):
+            return None
+        return change_one(successful_tools, invoked, products, executed.intersection(rejected))
 
     def run(self, argv):
         entry = self.entry(argv[0])
         with tempfile.TemporaryDirectory(dir=self.job, prefix="criterion-") as directory:
-            root = Path(directory)
-            for source in (self.files, self.fixtures):
-                for name, (mode, data) in source.items():
-                    write_blob(root, name, mode, data)
+            root = Path(directory) / "work"
+            root.mkdir()
+            self.materialize(root)
             self.probe(root)
             self.check_runtime(root, entry)
+            started = time.monotonic()
             result, events = self.invoke(root, argv, writable=True)
+            elapsed = time.monotonic() - started
             exits = [e["exit-code"] for e in events if "exit-code" in e]
             if exits != [result.returncode]:
                 return None, result.stdout, result.stderr, "test sandbox or executable could not start"
             if result.returncode:
-                reason = self.missing_child(root, result.stderr)
+                try:
+                    reason = self.check_missing_grants(Path(directory), argv, result, elapsed)
+                except (OSError, ReplayError):
+                    # The primary process already produced a verified result. A failed optional
+                    # diagnostic supplies no evidence that an unavailable grant caused it.
+                    reason = None
                 if reason:
-                    return None, result.stdout, result.stderr, reason
+                    return result.returncode, result.stdout, result.stderr, reason
             return result.returncode, result.stdout, result.stderr, None

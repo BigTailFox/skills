@@ -31,8 +31,8 @@ def verify_header(bundle, object_format):
         raise ReplayError("incompatible artifact object format or capability")
 
 
-def read_files(repo, tree, injected, *, selected=None):
-    files, blobs = {}, {}
+def read_files(repo, tree, injected, *, selected=None, gitlinks=False):
+    files, blobs, pointers = {}, {}, {}
     for raw in git(repo, "ls-tree", "-rz", tree).split(b"\0"):
         if not raw:
             continue
@@ -42,6 +42,9 @@ def read_files(repo, tree, injected, *, selected=None):
         if selected is not None and name not in selected:
             continue
         path = safe_relative(name)
+        if gitlinks and (mode, kind) == ("160000", "commit"):
+            pointers[name] = mode, blob.encode("ascii")
+            continue
         if kind != "blob" or mode not in ("100644", "100755", "120000"):
             raise ReplayError(f"unsupported artifact mode for {name}")
         if name in injected or any(parent.as_posix() in injected for parent in path.parents):
@@ -59,7 +62,7 @@ def read_files(repo, tree, injected, *, selected=None):
     for name, (mode, blob) in files.items():
         if mode == "120000" and (not blobs[blob] or b"\0" in blobs[blob]):
             raise ReplayError(f"invalid artifact symlink: {name}")
-    return {name: (mode, blobs[blob]) for name, (mode, blob) in files.items()}
+    return {name: (mode, blobs[blob]) for name, (mode, blob) in files.items()} | pointers
 
 
 def check_new_paths(repo, tracked, files):
@@ -109,6 +112,9 @@ def import_artifact(job, ref, object_format, injected):
 def file_view(files):
     rows = []
     for path, (mode, data) in files.items():
+        if mode == "160000":
+            rows.append(dict(path=path, mode=mode, encoding="gitlink", content=data.decode("ascii")))
+            continue
         try:
             content = data.decode()
         except UnicodeDecodeError:

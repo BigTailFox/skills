@@ -66,7 +66,9 @@ def selected_sections(sections, phrase):
         if not last and re.match(r"\s*(?:through\b|to\s*[.,;]?$|[-–—]|\.\.)", phrase[match.end():], re.I):
             return []
         selected.update(order[order.index(first):order.index(last or first) + 1])
-    if not selected and re.search(r"\b(?:(?:whole|entire|full)[- ]plan|(?:all(?: the)? slices|every slice))\b", phrase, re.I):
+    if re.search(r"\b(?:(?:whole|entire|full)[- ]plan|(?:all(?: the)? slices|every slice))\b", phrase, re.I):
+        if selected and re.search(r"\b(?:only|limited to|solely)\b", phrase, re.I):
+            return []
         return list(sections.values())
     return [section for sid, section in sections.items() if sid in selected]
 

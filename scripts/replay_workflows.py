@@ -77,7 +77,7 @@ def prepare(args):
             criteria = criteria_for(section, args.criteria)
         elif args.criteria:
             raise ReplayError("criteria can only be supplied for a slice")
-        delivery = review_delivery(case, private / "input", task_input["target"])
+        delivery = review_delivery(case, private / "input", source["original"]["target_tree"])
         roles, brief, conflicts = role_evidence(case, catalog)
         task = dict(docs=docs, slice=sid, tier=case.start.get("tier"), input=task_input,
                     delivery=delivery["text"] if delivery else None,

@@ -175,6 +175,7 @@ class ReviewFindings(ScoreFixture):
         scope = f"Target: `git diff {base} {target} -- rule`\n"
         self.review("code-review", entries, baseline=base, docs=["P001A@r2"], prompts={"spec": scope})
         cases = [("implement P001A@r2, S1 through S3, for D002@r1", ["S1", "S2", "S3"]),
+                 ("Implement the whole plan, including S2.", ["S1", "S2", "S3"]),
                  ("P001A@r2 S1–S3", ["S1", "S2", "S3"]), ("S2-S3", ["S2", "S3"]),
                  ("S3 to S1", None), ("S1 through S8", None), ("P001A@r2, a few slices", None),
                  ("S1 through S3 except S2", None), ("P001A@r1, S1", None), ("P002@r2, S2", None),

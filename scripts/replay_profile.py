@@ -59,7 +59,7 @@ def profile(config, private, receipt):
     root = private / "input"
     task = receipt["task"]
     required_paths = set(receipt["fixtures"]) | scoped_paths(root, task)
-    required_paths.update(frozen_documents(root, task))
+    required_paths.update(frozen_documents(root, receipt))
     required_paths.update(p.relative_to(root).as_posix() for p in project_instructions(root, task))
     required_paths.update(str(Path(p)) for p in tool_paths(root, task))
     prefix = skills_path(receipt["host"])
