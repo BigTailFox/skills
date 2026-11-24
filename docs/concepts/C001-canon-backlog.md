@@ -18,6 +18,8 @@ Findings that are not defects of code a design governs, and work that needs a ne
 
 The Ideas **One place for closing a workflow**, **Check references between skill texts** and **Code embedded in docs** were delivered together in [P008: Embedded source and external reviewer integration](../archived/plans/P008-embedded-source-and-reviewer-integration.md).
 
+The template and Setup checks from **Research and runs in `E` docs** are implemented. [D006§templates-and-new: research template](../designs/D006-doc-model.md#templates-and-new) and [D006§statuses-and-archiving: completed evidence](../designs/D006-doc-model.md#statuses-and-archiving) cover research, runs and combined records. The directory naming question remains open.
+
 ## Ideas
 
 - **Skills outside canon projects** ([R001: Codebase review of the canon module](../archived/reviews/R001-canon-module.md), F13). A user install of canon writes no docs, since `canon.py` runs only from an install inside the project ([D004§install: install](../designs/D004-project-setup.md#install)), but its auto skills still trigger on generic requests in any repository, and once one runs `canon.py` the agent offers to install canon in a project that never chose it. Where canon is installed but `AGENTS.md` has no canon block, as before `/canon-init`, `new` and `adopt` still create docs and regenerate the index. Scope each auto trigger to projects whose `AGENTS.md` has the canon block with a fallback to the skill's plain discipline, and make `new` and `adopt` refuse without the block. A new topic: `/canon-design`.

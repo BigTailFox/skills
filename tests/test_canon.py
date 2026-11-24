@@ -3247,6 +3247,91 @@ class DocRulesTest(CanonTest):
         self.assertTrue(path.read_text().endswith(
             "## Conclusion\n\n<!-- canon: The answer the Results give to the Question. -->\n"))
 
+    def test_new_experiment_selects_run_or_research_setup(self):
+        for kind, flags, expected in (("E", [], ["- Commit:", "- Environment:", "- Command:"]),
+                                      ("e", ["--research"], ["- Sources:"]),
+                                      ("experiment", ["--research"], ["- Sources:"]),
+                                      ("experiments", ["--research"], ["- Sources:"])):
+            with self.subTest(kind=kind):
+                path = self.root / self.ok("new", kind, "evidence", *flags).strip()
+                setup = path.read_text().split("## Setup\n", 1)[1].split("## Results\n", 1)[0]
+                self.assertEqual([line for line in setup.splitlines() if line.startswith("- ")], expected)
+        self.refuses_keeping_index("--research only applies to experiments", "new", "C", "idea", "--research")
+
+    def test_new_keeps_the_short_root_option_for_module_documents(self):
+        self.init_module("module")
+        for kind, slug, flags in (("C", "idea", []), ("E", "evidence", ["--research"])):
+            path = self.root / self.ok("new", kind, slug, "--r", "module", *flags).strip()
+            self.assertEqual(path.parents[2], self.root / "module")
+            self.assertTrue(path.is_file())
+
+    def test_check_validates_research_run_and_mixed_setup_in_the_selected_tree(self):
+        def setup_errors(*tree):
+            return [line for line in self.problems(self.fails("check", *tree)) if ": Setup:" in line]
+
+        sources = "- **Sources:**\n  - [Spec](https://example.com/spec)"
+        partial_run = "- Commit: 3f9a1c2\n- Environment: x"
+        forms = (
+            ("research", sources, "- Sources:", ["Setup: `Sources` is empty"]),
+            ("run", RUN, partial_run, ["Setup: `Command` is empty (research lists `- Sources:` instead)"]),
+            ("mixed", sources + "\n" + RUN, sources + "\n" + partial_run, ["Setup: `Command` is empty"]),
+        )
+        documents = []
+        errors = []
+        for slug, valid, partial, messages in forms:
+            doc = self.doc("E", slug, body=EXPERIMENT.format(valid, "Evidence recorded."), status="answered")
+            documents.append((doc, valid, partial))
+            errors.extend("ERROR {}: {}".format(doc.relative_to(self.root), m) for m in messages)
+        self.commit()
+        for doc, valid, partial in documents:
+            doc.write_text(doc.read_text().replace(valid, partial))
+        self.assertCountEqual(setup_errors(), errors)
+        self.git("add", "docs/experiments")
+        for doc, valid, partial in documents:
+            doc.write_text(doc.read_text().replace(partial, valid))
+        self.ok("check")
+        self.assertCountEqual(setup_errors("--staged"), errors)
+        self.git("commit", "-qm", "incomplete evidence")
+        self.assertCountEqual(setup_errors("--rev", "HEAD"), errors)
+
+    def test_appended_runs_and_source_lists_each_supply_their_own_evidence(self):
+        sources = "- Sources: upstream specification"
+        doc = self.doc("E", "bench", status="running", body=EXPERIMENT.format(
+            RUN + "\n" + sources + "\n- Command: retry", "Evidence recorded."))
+        prefix = "ERROR docs/experiments/E001-bench.md: Setup: "
+        self.assertCountEqual(self.fails("status", "E001", "answered").splitlines(), [
+            prefix + "`Commit` is empty (run 2)", prefix + "`Environment` is empty (run 2)"])
+        text = doc.read_text().replace("- Command: retry", "- Command: retry\n- Commit: abc\n- Environment: linux")
+        doc.write_text(text.replace("- Command: y", "- Command:").replace(sources, "- Sources:\n" + sources))
+        self.assertCountEqual(self.fails("status", "E001", "answered").splitlines(), [
+            prefix + "`Command` is empty (run 1)", prefix + "`Sources` is empty"])
+        doc.write_text(text)
+        self.ok("status", "E001", "answered")
+
+    def test_quoted_setup_fields_do_not_declare_a_run_but_an_indented_command_counts(self):
+        sources = "- Sources:\n  - [Reference](https://example.com/spec)"
+        example = "\n\n~~~yaml\nCommand: build\n~~~"
+        doc = self.doc("E", "bench", status="answered", body=EXPERIMENT.format(sources + example, "Evidence recorded."))
+        self.ok("check", "E001")
+        command = "\n- Commit: abc\n- Environment: linux\n- Command:\n  ```sh\n  make check\n  ```"
+        doc.write_text(doc.read_text().replace(sources + example, sources + example + command))
+        self.ok("check", "E001")
+
+    def test_fenced_list_examples_do_not_supply_setup_fields_or_hide_the_next_section(self):
+        sources = "- Sources: fixture specification"
+        doc = self.doc("E", "bench", status="answered", body=EXPERIMENT.format(sources, "Evidence recorded."))
+        original = doc.read_text()
+        for marker in ("- ", "1. ", "+ ", "* ", "2) "):
+            indent = " " * len(marker)
+            for closer in (indent + "```\n", ""):
+                with self.subTest(marker=marker, closed=bool(closer)):
+                    example = marker + "```yaml\n" + indent + "Command: build\n" + closer
+                    doc.write_text(original.replace(sources, sources + "\n" + example))
+                    self.ok("check", "E001")
+                    doc.write_text(original.replace(sources, example + "- Commit: abc"))
+                    out = self.fails("check", "E001")
+                    self.assertIn("Setup: `Command` is empty", out)
+
     def test_new_rejects_from_on_another_type_and_root_with_parent(self):
         self.design()
         self.assertIn("canon: --from only applies to plans", self.fails("new", "D", "other", "--from", "D001"))
@@ -3476,7 +3561,7 @@ class StatusTest(CanonTest):
             "- Command:\n", "- Command:\n- Sources:\n  - [Spec](https://example.com/spec)\n"))
         self.commit(check=False)
         out = self.fails("status", "E001", "answered")
-        self.assertNotIn("Setup:", out)
+        self.assertIn(error + "Setup: `Command` is empty", out)
         self.assertIn(error + "Conclusion is empty", out)
 
     def linked_experiment(self, slug, status):

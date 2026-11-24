@@ -13,7 +13,7 @@ Write the question, the answer that would settle it, and the doc that will absor
 
 ## 2. Reserve the doc
 
-In the main session, look for experiments on the same question with `canon.py find --archived`. Extend one that is `planned` or `running`, or `answered` and cited by no live doc (the `canon` skill's doc types), setting a `planned` or `answered` one `running` with `canon.py status`. Otherwise run `canon.py new E <slug>`, fill Question, link each earlier experiment you found on the question, and set it `running` with `canon.py status`. One already `running` from another session is still handled as [Recover](#4-recover) says. Reserving the id before the subagent starts keeps ids unique while both sessions write docs.
+In the main session, look for experiments on the same question with `canon.py find --archived`. Extend one that is `planned` or `running`, or `answered` and cited by no live doc (the `canon` skill's doc types), setting a `planned` or `answered` one `running` with `canon.py status`. Otherwise run `canon.py new E <slug> --research`, fill Question, link each earlier experiment you found on the question, and set it `running` with `canon.py status`. One already `running` from another session is still handled as [Recover](#4-recover) says. Reserving the id before the subagent starts keeps ids unique while both sessions write docs.
 
 ## 3. Launch
 
@@ -28,7 +28,7 @@ Settles it: {what answer would settle it}
 Rules:
 - Use primary sources only: official documentation, specifications, source code, first-party APIs. Trace every claim back to the source that owns it; a secondary write-up is a lead, never evidence. Your own memory is never evidence.
 - Note the version or date each source describes.
-- Setup: replace empty Commit, Environment and Command lines with `- Sources:` followed by one indented line per source, as a markdown link. Keep filled ones, from an earlier run of the same question, and put `- Sources:` after them.
+- In Setup, add each primary source as an indented Markdown link under `- Sources:`. Preserve earlier sources and runs. Remove unused run labels when reusing an old blank template for research.
 - Write each finding into the doc as soon as you have its source, so a run that stops loses nothing. Keep the findings the doc already holds and research only what they leave open.
 - Results: one finding per bullet, each linked to its source. Mark inferences as inferences. Report conflicts between sources.
 - Conclusion: the answer, your confidence, and what remains open.

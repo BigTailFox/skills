@@ -100,7 +100,7 @@ Sections: Question, Setup, Results, Conclusion.
 
 An experiment answers one question with evidence, either by running something (benchmark, prototype, measurement) or by researching primary sources (official docs, specs, source code). A later run that answers the same question, such as a measurement after research, extends the experiment's Setup and Results while it is `planned` or `running`, or `answered` and cited by no live doc (**Concluded** below), which moves back to `running` for the run; otherwise the run gets a new experiment that links it. A new question is a new experiment.
 
-- **Setup** for a run lists `- Commit:`, `- Environment:` and `- Command:` so it can be rerun. Research lists `- Sources:` instead, one primary source per indented line.
+- **Setup** for a run lists `- Commit:`, `- Environment:` and `- Command:` so it can be rerun. For research list one primary source per indented line as a Markdown link under `- Sources:`. When a measurement follows research, keep the sources and append all three run fields. Append a fresh set for each later run.
 - **Results** link every measurement to its raw data and every finding to its source.
 - Prototype code, raw data and source excerpts go in `experiments/E00X/`, each relative or `/`-rooted link and image target of an excerpt resolved against its source's URL. A prototype wired into the product code stays on a `prototype/E00X-<slug>` branch that `Commit:` points to.
 - **Status**: `running` while a run or research is under way, and `answered` once its Conclusion is written, until a design or plan absorbs it.

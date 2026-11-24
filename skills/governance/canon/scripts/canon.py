@@ -31,7 +31,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "80"
+CANON_VERSION = "81"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -91,7 +91,7 @@ SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 LINK_RE = re.compile(r"(!?)\[([^\]]*)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
-FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
+FENCE_RE = re.compile(r"^\s*(?P<list>(?:(?:[-+*]|[0-9]{1,9}[.)]) {1,4})+)?(?P<fence>`{3,}|~{3,})")
 INLINE_CODE_RE = re.compile(r"(?<!`)(`+)(?!`)(.*?)(?<!`)\1(?!`)")
 LINK_UNSAFE_RE = re.compile(r"[\s%#?()]")
 STATUS_LINE_RE = re.compile(r"^\s*(?:-\s+)?Status:\s*(.*?)\s*$")
@@ -152,6 +152,23 @@ DOC_NAMES = ("README", "AGENTS", "CLAUDE", "CHANGELOG", "CONTRIBUTING", "LICENSE
              "CODE_OF_CONDUCT", "COPYING")
 DOC_SUFFIXES = (".md", ".markdown", ".rst", ".txt", ".adoc", ".org")
 
+EXPERIMENT_TEMPLATE = """
+## Question
+
+<!-- canon: The question or hypothesis, and what result would answer it. -->
+
+## Setup
+
+{setup}
+
+## Results
+
+<!-- canon: Measurements or findings, each linked to its raw data or cited source. -->
+
+## Conclusion
+
+<!-- canon: The answer the Results give to the Question. -->
+"""
 TEMPLATES = {
     "C": """
 ## Motivation
@@ -212,27 +229,14 @@ TEMPLATES = {
 
 <!-- canon: One row per finding with IDs {id}-F1, {id}-F2, ... Severity: blocker, major, minor. Disposition: open, fixed <commit> (fixed <doc ID>@r<revision> for a fix made in a doc), moved <doc ID>, declined <reason>. -->
 """,
-    "E": """
-## Question
-
-<!-- canon: The question or hypothesis, and what result would answer it. -->
-
-## Setup
-
-- Commit:
+    "E": EXPERIMENT_TEMPLATE.format(setup="""- Commit:
 - Environment:
 - Command:
 
-<!-- canon: Fill Commit, Environment and Command for a run. For research, replace them with `- Sources:` and the primary sources consulted, one per indented line. -->
+<!-- canon: Fill Commit, Environment and Command for a run. For research, replace them with `- Sources:` and the primary sources consulted, one per indented line. -->"""),
+    "E-research": EXPERIMENT_TEMPLATE.format(setup="""- Sources:
 
-## Results
-
-<!-- canon: Measurements or findings, each linked to its raw data or cited source. -->
-
-## Conclusion
-
-<!-- canon: The answer the Results give to the Question. -->
-""",
+<!-- canon: List one primary source per indented line as a Markdown link. -->"""),
     "I": """
 ## Symptom
 
@@ -414,14 +418,19 @@ def gh_slug(text):
 def code_mask(lines, start=0):
     """Yield (index, line) outside fenced code blocks."""
     fence = None
+    list_indent = 0
     for i in range(start, len(lines)):
-        match = FENCE_RE.match(lines[i])
+        line = lines[i].expandtabs(4)
+        if fence and list_indent and line.strip() and len(line) - len(line.lstrip()) < list_indent:
+            fence = None  # Leaving the list item also closes its fence.
+        match = FENCE_RE.match(line)
         if fence:
-            if match and match[1].startswith(fence) and not lines[i][match.end():].strip():
+            if match and not match["list"] and match["fence"].startswith(fence) and not line[match.end():].strip():
                 fence = None
             continue
-        if match and (match[1][0] == "~" or "`" not in lines[i][match.end():]):
-            fence = match[1]
+        if match and (match["fence"][0] == "~" or "`" not in line[match.end():]):
+            fence = match["fence"]
+            list_indent = match.start("fence") if match["list"] else 0
             continue
         yield i, lines[i]
 
@@ -871,20 +880,26 @@ class Doc:
         rel = rel[len(prefix):]
         return rel in listed if exact else bool(matcher and matcher.match(rel))
 
-    def labels(self, section_name):
-        """Map `- Label: value` lines to their values; indented lines below a label extend its value."""
-        out, last = {}, None
-        for line in self.section(section_name) or []:
+    def label_items(self, section_name, *, ignore_fenced_labels=False):
+        """Read label/value pairs in order, keeping repeated fields and their indented continuations."""
+        fields = []
+        current = None
+        lines = self.section(section_name) or []
+        label_lines = {i for i, _ in code_mask(lines)} if ignore_fenced_labels else range(len(lines))
+        for i, line in enumerate(lines):
             indented = line[:1].isspace()
-            match = LABEL_RE.match(line.replace("*", ""))
-            if match and not (indented and last):
-                last = match.group(1).strip()
-                out[last] = match.group(2)
-            elif last and indented and line.strip():
-                out[last] = (out[last] + " " + line.strip()).strip()
+            match = LABEL_RE.match(line.replace("*", "")) if i in label_lines else None
+            if match and not (indented and current):
+                current = [match.group(1).strip(), match.group(2)]
+                fields.append(current)
+            elif current and indented and line.strip():
+                current[1] = (current[1] + " " + line.strip()).strip()
             elif line.strip():
-                last = None
-        return out
+                current = None
+        return fields
+
+    def labels(self, section_name):
+        return dict(self.label_items(section_name))
 
     def sort_key(self):
         return (TYPE_ORDER.index(self.type), self.number, self.suffix)
@@ -1730,6 +1745,28 @@ def plan_slices(doc):
     return slices
 
 
+def experiment_setup_problems(doc):
+    sources = []
+    runs = []
+    for label, value in doc.label_items("Setup", ignore_fenced_labels=True):
+        if label == SOURCES_LABEL:
+            sources.append(value)
+        elif label in SETUP_LABELS:
+            if not runs or label in runs[-1]:
+                runs.append({})
+            runs[-1][label] = value
+    problems = ["Setup: `Sources` is empty" for source in sources if not source]
+    if not runs and not sources:
+        runs.append({})
+    for number, run in enumerate(runs, 1):
+        hint = "" if sources else " (research lists `- Sources:` instead)"
+        if len(runs) > 1:
+            hint = " (run {})".format(number)
+        problems.extend("Setup: `{}` is empty{}".format(label, hint)
+                        for label in SETUP_LABELS if not run.get(label))
+    return problems
+
+
 def terminal_problems(doc, status=None):
     """Conditions a doc must meet before it may take a terminal status."""
     out = []
@@ -1747,10 +1784,7 @@ def terminal_problems(doc, status=None):
         out += ["known issue {} is still listed; move it to the design that takes over, or remove it".format(row[0])
                 for row in known_issues(doc)[0]]
     if doc.type == "E" and (status or doc.status) != "dropped":
-        labels = doc.labels("Setup")
-        if not labels.get(SOURCES_LABEL):
-            out += ["Setup: `{}` is empty (research lists `- {}:` instead)".format(k, SOURCES_LABEL)
-                    for k in SETUP_LABELS if not labels.get(k)]
+        out += experiment_setup_problems(doc)
     if doc.type == "I":
         labels = doc.labels("Reproduction")
         out += ["Reproduction: `{}` is empty".format(k) for k in SETUP_LABELS if not labels.get(k)]
@@ -2636,6 +2670,8 @@ def cmd_new(repo, args):
 def new_doc(repo, args):
     letter = parse_type(args.type)
     require_slug(args.slug)
+    if args.research and letter != "E":
+        sys.exit("canon: --research only applies to experiments")
     if args.design and letter != "P":
         sys.exit("canon: --from only applies to plans")
     if letter == "P" and not args.design:
@@ -2667,7 +2703,8 @@ def new_doc(repo, args):
                       based_on=["{}@r{}".format(design.id, design.revision)])
         plan_dir = root.docs / TYPES["P"]["dir"]
         implements = "\nImplements [{}: {}]({}).\n".format(design.id, design.title, posix_rel(design.path, plan_dir))
-    path = write_doc(root, letter, doc_id, args.slug, title, fields, implements)
+    template = TEMPLATES["E-research"] if args.research else None
+    path = write_doc(root, letter, doc_id, args.slug, title, fields, implements, template=template)
     write_indexes(Repo())
     print(posix_rel(path, repo.root))
     return 0
@@ -5764,9 +5801,10 @@ def main(argv=None):
     p.add_argument("type", help="C D P R E I (or concept, design, plan, ...)")
     p.add_argument("slug", help="kebab-case file slug")
     p.add_argument("--title", help="title (default: the slug with spaces, capitalized)")
-    p.add_argument("--root", help="project directory (with AGENTS.md); default: nearest to cwd")
+    p.add_argument("--root", "--r", help="project directory (with AGENTS.md); default: nearest to cwd")
     p.add_argument("--parent", help="top-level design to split, creates D00XA, D00XB, ...")
     p.add_argument("--from", dest="design", help="design a plan implements, required for plans; fills based_on")
+    p.add_argument("--research", action="store_true", help="start an experiment with a Sources field for primary-source research")
     p.set_defaults(func=cmd_new)
 
     p = command(sub, "archive", help="set a terminal status, move to archived/, rewrite links")
