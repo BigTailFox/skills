@@ -5,7 +5,7 @@
 ### Designs
 
 - [D000: Project overview](designs/D000-project-overview.md) · active · Agent skills built around canon, a documentation system kept in the repository; one module, its capabilities and the designs that own them. · owns: architecture
-- [D001: Skill telemetry with canon trace](designs/D001-skill-telemetry.md) · active · Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions. · owns: skill-telemetry · modules: canon
+- [D001: Skill telemetry with canon trace](designs/D001-skill-telemetry.md) · active · 4 known issues · Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions. · owns: skill-telemetry · modules: canon
 - [D002: Project overview and as-built designs](designs/D002-overview-and-as-built.md) · active · D000 overview, as-built designs of existing code, backfill before changing unspecified behavior, and audit's unchecked commits and design coverage. · owns: project-overview, as-built-design, design-coverage, unchecked-commits · modules: canon
 - [D003: Subagents](designs/D003-subagents.md) · active · How canon runs every subagent as a new one, never a fork, reviewers and workers on the session's model, resumed by id, review snapshots, the reviewer file. · owns: subagents · modules: canon
 - [D004: Project setup](designs/D004-project-setup.md) · active · canon installed in each project and its recorded version, setup and upgrades with canon.py init, migration of docs with adopt, and the canon-init flows. · owns: project-setup · modules: canon
@@ -21,6 +21,7 @@
 
 - [E001: Precedence of project and user skills across hosts](experiments/E001-skill-scope-precedence.md) · concluded · Same-name user and project skills load both in Cursor and Codex, told apart by path; Claude Code runs the user's. npx skills project installs reach all three. · modules: canon
 - [E002: Ideas from popular agent skill libraries](experiments/E002-skill-library-survey.md) · answered · Ideas from popular skill libraries (mattpocock, superpowers, ECC, anthropics): skill evals against a baseline, trigger tests and review guards lead. · modules: canon
+- [E003: D001 trace pilot on Canon and Silk](experiments/E003-d001-trace-pilot.md) · concluded · A 20-case Canon and Silk pilot found gaps in replay inputs, finding attribution, Cursor transcripts and worker boundaries before trace analysis. · modules: canon
 
 ### Concepts
 
