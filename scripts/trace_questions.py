@@ -6,12 +6,13 @@ import os
 import re
 
 from trace_records import UNKNOWN, canon, git_bytes
+from trace_versions import valid_manifest
 
 
 def comparison(case):
     d = case.data
     skill = (case.start.get("skill") or "").rstrip("/").rsplit("/", 1)[-1]
-    manifest = case.manifests.get(case.start.get("manifest"), {})
+    manifest = valid_manifest(case, case.start.get("manifest")) or {}
     skill_digest = manifest.get("skills", {}).get(skill) or UNKNOWN
     d["skill_digest"] = skill_digest
     return (d["kind"], d["effective_tier"], d["host"], d["model"], skill_digest)
@@ -21,12 +22,14 @@ def by_comparison(cases, starting_tier=False):
     groups = defaultdict(list)
     for case in cases:
         fields = comparison(case)
-        if starting_tier:
-            fields = (fields[0], case.data["tier"], *fields[2:])
         # Unknown model or version cannot establish comparability with a second case.
-        groups[(fields, case.id if UNKNOWN in fields else None)].append(case)
-    for (fields, _), members in groups.items():
-        yield dict(zip(("kind", "tier", "host", "model", "skill_digest"), fields)), members
+        unmatched = UNKNOWN in fields or case.data["version"]["status"] != "single"
+        groups[(fields, case.data["tier"] if starting_tier else None, case.id if unmatched else None)].append(case)
+    for (fields, starting, _), members in groups.items():
+        key = dict(zip(("kind", "tier", "host", "model", "skill_digest"), fields))
+        if starting_tier:
+            key["starting_tier"] = starting
+        yield key, members
 
 
 def ratio(numerator, denominator, cases, units):
@@ -71,7 +74,6 @@ def tier_changes(cases):
                 (c.history.kind == "design" and c.data["tier"] == "L1")]
     groups = []
     for key, members in by_comparison(eligible, starting_tier=True):
-        key["starting_tier"] = key.pop("tier")
         targets = {}
         for target in (("L2",) if key["kind"] == "design" else ("L1", "L2", "plan")):
             hits = [case_ref(c, *c.data["tier_targets"][target]) for c in members if target in c.data["tier_targets"]]

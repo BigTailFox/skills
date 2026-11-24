@@ -12,6 +12,9 @@ from trace_hosts import attach_hosts
 from trace_workers import codex_workers, cursor_workers
 from trace_questions import apply_tiers, costs, slice_outcomes, tier_changes
 from trace_reviews import review_questions
+from trace_retro import end_checks, read_notes, retro_fixes
+from trace_replay import replay_units
+from trace_versions import version_inventory
 
 
 def build(args):
@@ -30,9 +33,12 @@ def build(args):
         population["host_starts"][source] = {
             "numerator": len(members), "denominator": len(selected), "cases": members,
             "sample": "few units" if len(selected) < 20 else "20 or more units"}
-    return dict(population=population, cases=[c.data for c in selected],
+    notes = {Path(p): read_notes(Path(p)) for p in dict.fromkeys([*population["projects"], *(str(c.project) for c in selected)])}
+    versions = version_inventory(args.skills_repo, selected, cases)
+    return dict(population=population, cases=[c.data for c in selected], skill_versions=versions,
                 questions={**review_questions(selected, cases, args, catalog), "4": slice_outcomes(selected), "5": tier_changes(selected),
-                           "6": costs(selected)})
+                           "6": costs(selected), "7": retro_fixes(selected, notes), "8": end_checks(selected, notes),
+                           "9": replay_units(selected)})
 
 
 def text_value(label, value, depth=0):
@@ -58,6 +64,7 @@ def text_value(label, value, depth=0):
 
 def text_report(report):
     text_value("Source population", report["population"])
+    text_value("Skill versions", report["skill_versions"])
     for number, question in report["questions"].items():
         print()
         text_value("Q" + str(number) + "  " + question["title"],

@@ -17,7 +17,7 @@ Implements [D001: Skill telemetry with canon trace](../designs/D001-skill-teleme
 
 ## Current state
 
-Next is S3, the retro, version and replay questions.
+All three slices are done. The full change is ready for code review.
 
 ## Slices
 
@@ -47,7 +47,7 @@ Test through the CLI with different roles, repeated sessions, handoff with and w
 
 ### S3: Report retro causes and cost, version mapping and replay eligibility
 
-Status: todo
+Status: done
 
 Risk: Project history, stored snapshots and reviewer input can diverge even when the document revision stays the same.
 
@@ -67,3 +67,4 @@ Implement [D001§analysis: offline report](../designs/D001-skill-telemetry.md#an
 - Started at 3a8ed089480a7cb5e049e15b3daf5ac7dcdabdb5.
 - S1 delivered the CLI and questions 4 and 6. Its 11 CLI tests passed. On Canon and Silk it located 46/48 frozen starts from exports and both remaining starts with the supplied Cursor database. It reproduced 9/11 contained workers in the historical sample and 2/2 in the separately preselected sample. Both late workers retain their observed endpoints and have unknown full-worker costs. Host-internal service sessions are excluded from worker launches. The worker's final report and native completion arrived before commit.
 - S2 delivered questions 1, 2, 3 and 5. All 29 CLI tests passed. The command reproduced all 20 frozen reviews, 39 first-round reports and 193 first-round findings. The 19 delivered reviews contained 113 accepted or deferred defect groups. Of these, 23 had multiple sources, 64 had verified exclusive credit and 26 had one source of unknown exclusivity. All four L0 cases matched E005. The four-source gate retained its original reviewers and recovered the other two by their model dispatches. Without the optional database it withheld those claims. The source receipts for both projects, trace stores and the Cursor database matched before and after the read. The worker's final report and native completion arrived before commit.
+- S3 delivered questions 7–9 and skill-version matching. All 42 CLI tests passed, including a partial clone, retained inputs after loss of the original pins, and a later confirmation at a separate snapshot. Both real projects reproduced the frozen findings and worker intervals in the final report. Before this change's own review, 42 of 99 candidates across the full two-project population had verifiable replay inputs, and 3 end checks raised an item across 79 ended roots. The text and JSON reports exposed all nine questions. Source receipts matched across a complete run. The worker's final report and native completion arrived before commit.

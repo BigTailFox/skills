@@ -1,6 +1,7 @@
 """Identify unit boundaries in host-native records without emitting private record content."""
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import timedelta
 import json
 from pathlib import Path
 import re
@@ -159,7 +160,10 @@ class CursorSession:
         self.shells = []
         self.dispatches = []
         self.users = []
+        self.holes = []
         for line, record in records(path):
+            if not record:
+                self.holes.append(line)
             if record.get("role") == "user":
                 self.users.append(line)
             if record.get("role") != "assistant":
@@ -323,3 +327,28 @@ def attach_hosts(cases, args):
 
     from trace_codex import codex_boundaries
     return codex_boundaries([c for c in cases if c.start.get("host") == "codex"], args.codex_home)
+
+
+def observed_lines(case, lines):
+    """Return positive observations and whether the export covers the whole interval."""
+    first, last = case.host_span
+    session = case.host_session
+    if not session:
+        return [], False
+    if first and last and first < last:
+        return ([n for n in lines if first < n < last],
+                not any(first <= n <= last for n in session.holes))
+    # A slice commit can close between two Codex rollout records. The Git
+    # timestamp has one-second precision, so same-second observations are ambiguous.
+    if not (first and case.data["commit"] and hasattr(session, "times")):
+        return [], False
+    cutoff = stamp(case.closing.get("at"))
+    if not cutoff:
+        return [], False
+    times = {p.line: p.at for p in session.times if p.line > first}
+    after = [line for line, at in times.items() if at >= cutoff + timedelta(seconds=1)]
+    limit = min(after, default=float("inf"))
+    observed = [n for n in lines if first < n < limit and n in times and times[n] < cutoff]
+    complete = (bool(after) and not any(first < n < limit for n in session.holes) and
+                all(n in times and times[n] < cutoff for n in lines if first < n < limit))
+    return observed, complete

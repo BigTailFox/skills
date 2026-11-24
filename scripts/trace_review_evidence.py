@@ -40,6 +40,24 @@ class Archive:
             if not prior or prior.history.kind != case.history.kind or prior.data["outcome"] != "handoff":
                 break
             case = prior
+        self.later_confirmations = {name[:-10] for name in self.files if name.endswith("-prompt.md")
+                                    and self.later_verdict(name[:-10])}
+
+    def later_verdict(self, stem):
+        """Some follow-on confirmations have an arbitrary stem. Require both sides of the same named check."""
+        prompt = (self.read(stem + "-prompt.md") or b"").lstrip()
+        instruction = re.match(rb"The author revised [^\n.]{0,250} after your (?:confirmation|recheck)\.\s+"
+                               rb"Confirm (?:the new blocker )?([NF][1-9]\d*)\b", prompt, re.I)
+        if not instruction:
+            return False
+        pin = self.read(stem + "-snapshot.txt") or b""
+        report = (self.read(stem + ".md") or b"").decode(errors="replace")
+        if not re.fullmatch(rb"[0-9a-fA-F]{40}(?:[0-9a-fA-F]{24})?", pin.strip()):
+            return False
+        headings = [s.strip("*# -\t") for s in report.splitlines()
+                    if re.match(r"^\s*[*# -]*[NF][1-9]\d*\b", s, re.I)]
+        verdict = re.compile(instruction[1].decode() + r"\s*[:—–-]?\s*(?:not[- ]resolved|resolved)\b", re.I)
+        return bool(headings) and all(verdict.match(s) for s in headings)
 
     def read(self, name):
         path = self.files.get(name)
@@ -54,11 +72,11 @@ class Archive:
         return {Path(name).stem for name in self.files if name.endswith(".md") and
                 (ROLE_PREFIX.match(Path(name).stem) or name[:-3] + "-prompt.md" in self.files)
                 and not re.search(r"-(?:confirm|recheck\d*)(?:[-.]|$)|-(?:prompt|pending)\.md$", name)
-                and Path(name).stem not in self.rechecks}
+                and Path(name).stem not in self.rechecks | self.later_confirmations}
 
     def prompt_stems(self):
         return {name[:-10] for name in self.files if name.endswith("-prompt.md")
-                and not re.search(r"-(?:confirm|recheck\d*)(?:[-.]|$)", name)} - self.rechecks
+                and not re.search(r"-(?:confirm|recheck\d*)(?:[-.]|$)", name)} - self.rechecks - self.later_confirmations
 
 
 def headings(blob, phase="first", pinned=False):

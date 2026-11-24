@@ -172,6 +172,7 @@ def review_questions(cases, all_cases, args, catalog):
         review.update(attribution="recorded", reports=recorded_reports(c, archive))
         review["confirmation_reports"] = [str(p) for name, p in archive.files.items()
                                           if re.fullmatch(r"[A-Za-z0-9_-]+-confirm(?:-(?:spec|standards)(?:-[0-9]+)?)?\.md", name)]
+        review["later_confirmation_reports"] = [str(archive.files[stem + ".md"]) for stem in sorted(archive.later_confirmations)]
         evidence.apply(c, archive, review)
         review["session_costs"] = costs.sessions(review["reports"], archive.cases)
     delivered = [c for c in reviews if c.data["outcome"] == "delivered"]

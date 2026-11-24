@@ -1,11 +1,14 @@
 """Read-only project evidence for the offline report. Locations are one-based."""
 from collections import Counter
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import re
+import tempfile
 
 # The report ships with the source tree. Borrow the same store discovery, validation,
 # history object and offline Git transition lookup as the capture tool.
@@ -27,13 +30,34 @@ def loc(path, number):
     return f"{path}#L{number}"
 
 
-def git_bytes(root, *args):
-    if not (root / ".git").exists():
+def git_bytes(root, *args, data=None, environment=None):
+    if not (root / ".git").exists() and not ((root / "HEAD").is_file() and (root / "objects").is_dir()):
         return None
     try:
-        return canon.trace_git(root, canon.trace_env(GIT_NO_LAZY_FETCH="1", GIT_ALLOW_PROTOCOL=""), *args)
+        env = canon.trace_env(GIT_NO_LAZY_FETCH="1", GIT_ALLOW_PROTOCOL="", GIT_NO_REPLACE_OBJECTS="1")
+        env.update(environment or {})
+        return canon.trace_git(root, env, "-c", "core.fsmonitor=false", *args, data=data)
     except canon.SnapshotSkip:
         return None
+
+
+@contextmanager
+def snapshot_index(root, tree):
+    """A private work tree, index and writable object store; borrow only the input blobs."""
+    objects = git_bytes(root, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+    if not objects:
+        yield None
+        return
+    with tempfile.TemporaryDirectory() as directory:
+        private = Path(directory)
+        (private / "objects").mkdir()
+        alternate = os.fsdecode(objects.rstrip(b"\n"))
+        env = dict(GIT_INDEX_FILE=str(private / "index"), GIT_WORK_TREE=directory,
+                   GIT_OBJECT_DIRECTORY=str(private / "objects"),
+                   GIT_ALTERNATE_OBJECT_DIRECTORIES=os.fsdecode(canon.quoted(alternate)))
+        ready = git_bytes(root, "-c", "core.splitIndex=false", "-c", "core.sparseCheckout=false",
+                          "read-tree", tree, environment=env)
+        yield env if ready is not None else None
 
 
 def load_events(store, population):
