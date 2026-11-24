@@ -17,7 +17,7 @@ Implements [D001: Skill telemetry with canon trace](../designs/D001-skill-teleme
 
 ## Current state
 
-Next: S2.
+Both slices are done. Verify the prospective pair at its two Git boundaries, then review the full batch.
 
 ## Slices
 
@@ -33,7 +33,7 @@ Tests at the evidence table and checker: each original row and delivered source 
 
 ### S2: Locate missing Cursor boundaries and verify the worker sequence
 
-Status: todo
+Status: done
 
 Risk: An ambiguous local match could attach another unit's start or reveal private conversation content.
 
@@ -52,3 +52,4 @@ The experiment checkers validate the specific pilot evidence. They run outside t
 - Planned against D001@r18.
 - Started at d1454e9b0dea2ee6139034f766e219ddd46ce7c8. The [E005: pilot evidence reconciliation](../experiments/E005-d001-pilot-evidence-reconciliation.md) records the frozen and prospective outcomes.
 - S1 done. The 20 review ends contain 157 raw rows. The checker verified 39 first-round reports, including the two omitted reports, and separated three confirmation-only claims. The 19 delivered reviews support 113 valid groups. The two fully shared commit-title defects give neither axis exclusive credit. The evidence retains disputed groups and compound dispositions. Eighteen checker tests passed. The parent received the worker's final report and verified its terminal event before this commit.
+- S2 done. Local inputs located 46 exported starts and two unique Cursor database executions. The eleven original worker intervals include nine contained and two outside. All 35 tests passed, including 17 start-evidence tests. The parent received the second worker's final report and verified its terminal event before this commit.

@@ -24,6 +24,8 @@ Can independently corroborated evidence resolve attribution and host lookup on t
 
 All 20 archived ends were reconciled. Their 157 raw rows expand to 176 references. Two additional reports supply 20 omitted findings. Of these 196 references, 193 originated in the first round and three during confirmation. The 19 delivered reviews support 113 accepted or deferred defect groups. The 36 source findings whose grouping is disputed remain outside those totals. Two compound findings have evidenced mixed decisions and no single overall disposition. [Per-review evidence and reproduction](E005/review-reconciliation.md)
 
+The original exports locate 46/48 starts. Two uniquely matched terminal results in the named Cursor database bring the located total to 48/48. Nine of eleven frozen worker runs fit within their slices. Canon P007 S2 and S3 each returned after its closing commit. Their incomplete spans are excluded from full-worker duration, cost and contribution measures that require containment. [Host records, worker intervals and reproduction](E005/boundary-reconciliation.md)
+
 ## Conclusion
 
 The readiness decision follows the seven exit checks after both observed slice commits.
