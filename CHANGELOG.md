@@ -14,6 +14,16 @@ Canon can keep source examples in sync with their files and carry a blind review
 - Reviewers check experimental claims against the conditions tested. Confirmation prompts specify the accepted findings. Worktree handoffs report whether the target branch contains the delivery commit, and `renumber` reports leftover literal attachment paths in experiment instructions.
 - `canon.py` is now canon version 78. Install this release in each project and run `/canon-init` to update its recorded version.
 
+### Upgrading from 0.8.2
+
+| Local patch | What to do on 0.9.0 |
+|---|---|
+| Source embed generator and its instructions | Run `canon.py embed --check` against the existing blocks. Once they pass, retire the compatible generator and switch its callers to `canon.py embed`. Keep the CI job that runs `canon.py check` or `check --base REF` to catch drift. |
+| Worktree and L2 approval handoffs | Retire duplicate rules for reporting the branch, tip, target and outstanding commits, and for naming exact pending revisions, recording approvals and giving the next phase's command. |
+| Limits on experimental claims | 0.9.0 checks the tested conditions in design and plan reviews. Keep any writing rule that also covers experiment conclusions, public overviews and reports. |
+| Checking for concurrent edits | 0.9.0 calls for checking work before a repository-wide fix, staging or committing. Keep the local ownership check before a document-scoped `check --fix`. |
+| Project conventions | Keep the identity of the public overview (such as `C001`) and its same-change update rule, the project language, commit hooks and CI, and report layout and publishing configuration. |
+
 ## 0.8.2 - 2026-11-13
 
 Every subagent a canon skill launches starts as a new one, never a fork of your session.
