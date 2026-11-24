@@ -2,14 +2,14 @@
 status: active
 created: 2026-10-15
 updated: 2026-11-24
-revision: 15
+revision: 16
 modules: [canon]
 summary: Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions.
 refs: [D002, D003, D000, D007, R002, R003, D004, D006, R004, E003]
 owns: [skill-telemetry]
 paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py, skills/governance/canon/trace.md, skills/governance/canon/review-evidence.md, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/execution/canon-blind-review/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-handoff/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-investigate/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-retro/SKILL.md, skills/execution/canon-review/SKILL.md]
-reviewed: 15
-reviewers: [gpt-6.2-astra, gemini-4-neon-xhigh]
+reviewed: 16
+reviewers: [gpt-6.2-astra]
 approved: 15
 implemented: 15
 ---
@@ -99,9 +99,9 @@ $XDG_CONFIG_HOME/canon/trace      machine switch, present = on (default ~/.confi
 .canon/canon/trace/off            this checkout opts out
 .canon/canon/trace/events.jsonl   event lines, appended
 .canon/canon/trace/events.lock    held by start, end and recheck from their final checks to their append
-.canon/canon/trace/snapshot.lock  held by each start's snapshot and skill storage, and by prune
+.canon/canon/trace/snapshot.lock  held during opening snapshots, skill storage, review-input publication and prune
 .canon/canon/trace/<id>/          archived review files of unit <id>, and its snapshot-error.txt
-.canon/canon/trace/.git           snapshot repository: refs/trace/<id> per unit, refs/skills/<manifest> per skill version
+.canon/canon/trace/.git           snapshot repository: refs/trace/<id>, refs/review-input/<id> for retained rounds, refs/skills/<manifest>
 ```
 
 - Tracing is on in a checkout when the machine switch exists and its trace directory has no `off` file. Installing skills, `canon-init` and `canon.py init` never turn it on.
@@ -154,7 +154,7 @@ Each line of `events.jsonl` is one compact UTF-8 JSON object of at most 16 KiB, 
 - A reason, in `skipped` or `archive`, is `changes-over-10MiB`, `no-git` or `over-2MiB`, or names the step that failed and how: `<step>: exit <n>` for a Git command, `<step>: <errno name>` for a file operation, `<step>: timeout` for a lock. `<step>` is the Git command (`git add`), `index copy`, `snapshot lock` or `copy`. A reason never holds a path or a message; Git's message, when there is one, goes to `.canon/canon/trace/<id>/snapshot-error.txt`, never to the line or the agent.
 - `tier` defaults to the parent's, and a slice takes its parent's `skill` and `model` and records its `S<n>` as `slice`. `skill` is the absolute path of `--skill`, null without it. A start’s `model` is stored in lowercase. `host` comes from the environment: `cursor` when `CURSOR_AGENT=1`, `codex` when `CODEX_THREAD_ID` is set, `claude-code` when `CLAUDECODE=1`, else `other`. `conversation` is `CURSOR_CONVERSATION_ID` or `CODEX_THREAD_ID`, else null.
 - `manifest` is written on every start and on the end of a top-level unit, null when `skill` is. A `manifest` line precedes the first use of each digest in the file.
-- An end line carries `outcome`, `to` for `escalated`, `head`, `manifest` for a top-level unit, `dispositions` for a gate or code review, null without `--input`, and `archive`: `ok`, `none` or the reason nothing was copied, null without `--dir`.
+- An end line carries `outcome`, `to` for `escalated`, `head`, `manifest` for a top-level unit, `dispositions` for a gate or code review, null without `--input`, and `archive`: `ok`, `none` or the reason nothing was copied, null without `--dir`. A review end may carry `review_input` ([First-round review input](#first-round-review-input)).
 - A unit other than a slice is open from its start until its end; the analysis treats one with no end after 24 hours as incomplete.
 - A `recheck` line uses the keys shown above. `id` and `kind` identify the closed review. Store `finding` as the first source in the merged finding’s `by` list, whichever alias the caller supplied. Store `order` as a positive integer or JSON null for `unknown`. Preserve the exact case of `model` from the reviewer or `--model`. The event extends the original end with new evidence.
 - Readers skip and count lines that do not parse or carry an unknown `v`.
@@ -166,13 +166,23 @@ Every start records a snapshot of the work tree in the snapshot repository, a no
 1. List the untracked files and the files with unstaged changes with `git status --porcelain -z --untracked-files=all`; when they total more than 10 MiB, record no snapshot and set `"skipped": "changes-over-10MiB"`.
 2. Copy the checkout's index (`git rev-parse --git-path index`) to `index-<id>` in the snapshot repository's Git directory, keeping its modification time, which Git compares entries against to find racily clean ones; when there is no index, start without one.
 3. With `GIT_INDEX_FILE` set to that copy, `GIT_OBJECT_DIRECTORY` to the snapshot repository's objects and `GIT_ALTERNATE_OBJECT_DIRECTORIES` to the project's, run `git add -A` and `git write-tree`.
-4. With the same variables, `git commit-tree` the tree of the resolved base, or of HEAD without `--base`, as a parentless commit, then the snapshot tree as a commit whose parent is that one; on an unborn branch without `--base`, the snapshot commit has no parent, not even the as-built one below. `git diff <snapshot>^ <snapshot>` then shows the change under review. For an as-built gate, the tree of its `as_built` commit becomes a second parentless commit and the snapshot's second parent, so `git show <snapshot>^2:<path>` gives the code the revision records.
+4. With the same variables, `git commit-tree` the tree of the resolved base, or of HEAD without `--base`, as a parentless commit, then the snapshot tree as a commit whose parent is that one; on an unborn branch without `--base`, the snapshot commit has no parent, not even the as-built one below. `git diff <snapshot>^ <snapshot>` then shows the opening work-tree change. For an as-built gate, the tree of its `as_built` commit becomes a second parentless commit and the snapshot's second parent, so `git show <snapshot>^2:<path>` gives the code the revision records.
 5. List the objects the snapshot reaches with `git rev-list --objects <commit>`, keep those that `git cat-file --batch-check`, run in the snapshot repository without the variables, reports missing, pack them with `git pack-objects --stdout` into a temporary file in the snapshot repository's Git directory, and feed that to `git index-pack --stdin` there.
 6. Run `git update-ref refs/trace/<id> <commit>` in the snapshot repository, which records the snapshot. Then, best-effort and never setting `skipped`, delete the index copy and run `git -c gc.autoDetach=false gc --auto --quiet` there, which repacks once 50 packs or 6,700 loose objects accumulate.
 
 New objects land only in the snapshot repository, and step 5 copies in each object the snapshot borrows from the project, once: the snapshot repository depends on nothing outside it, so rebasing, deleting branches or `git gc --prune=now` in the project cannot break a snapshot, and switching branches back and forth copies each file version once. The whole tree is copied again only into an empty snapshot repository. The project's work tree, index, HEAD and refs do not change, nor do the names and contents of the files in its object store; Git refreshes the modification time of an existing object that a snapshot step writes again, as it does on any such write. Starting from `git read-tree HEAD` instead of a copied index rehashes every file, 10 times slower in a 20,000-file checkout.
 
 No push, clone or bundle of the project reaches the snapshot repository, `git push --mirror` and `git bundle create --all` included: its refs are not the project's, and no commit of the project holds its files ([Switch and storage](#switch-and-storage)). In a 20,000-file checkout with 45 MiB of packed objects, the first snapshot copied the whole tree, 45 MiB in 1.3 s; later ones took about 100 ms and added 15 to 100 KiB, about 10 KiB once repacked. Moving to a branch that changes 2,000 files copied their 2,006 objects, 4.6 MiB, once; switching back and forth afterwards copied nothing.
+
+### First-round review input
+
+A review's start snapshot captures the opening work tree. A gate, follow-up or code review can send a different tree or diff to its first-round reviewers. Before dispatch, the session saves the actual target snapshot commit in `snapshot.txt` and the resolved baseline commit from the prompt in `baseline.txt`, alongside it in the round directory. The baseline can be a project commit or a separately prepared review snapshot. Write `none` for a full-document review with no diff. A code review requires a baseline. Resolve a moving ref when preparing the prompt and use that same commit in the prompt. For a prepared snapshot pair, the host can supply the scoped patch and paths as review input. Recording its pins grants no new reviewer access to the snapshot store. Keep these first-round files through confirmation.
+
+When `trace end --dir` successfully archives these two regular files for this review, retain their trees from the closing checkout's review snapshot store, including project objects it borrows. Each pin holds one full 40- or 64-hex commit ID, apart from the explicit `none`. Preserve just the reachable contents of the pinned trees in the unit's independent trace repository. Publish a synthetic commit at `refs/review-input/<unit>` with the target tree and, for a diff, one parentless commit holding the baseline tree as its only parent. The end event's `review_input` is the synthetic commit ID. A mirror clone can read its target with `git ls-tree -r <review_input>` and its exact diff with `git diff <review_input>^ <review_input>`, using any path scope from the prompt. For a live code review, compare the tracked patch on its tracked paths and verify the separately listed untracked files' blobs and modes. For a prepared patch, compare the same diff options and path scope.
+
+Missing, malformed, unarchived or unavailable pins, a non-commit object, or failed retention leave the review end and its evidence usable with unknown input. An old end without the field also has unknown retained input. Keep opening snapshots and historical event lines intact. Serialize publication with trace snapshot pruning and the accepted end. A rejected competing end cannot replace the accepted pair. Prune the review-input ref at the unit's age cutoff along with its start ref. Scoped history reports the retained ID or unknown. An ID records what was retained at close, including after pruning.
+
+This pair identifies the round's initial input. A continuation, follow-up, handoff or a review with mixed or unverified source inputs remains subject to the replay exclusions. A later confirmation or supplemental snapshot never replaces this pair.
 
 ### Review dispositions
 
@@ -250,9 +260,9 @@ Rules:
 
 ### Replay
 
-Question 9 compares skill versions on recorded units. A replay clones a unit's snapshot from the snapshot repository into a scratch directory, installs a skill version, the one under test or the recorded one from `refs/skills/<manifest>`, runs the unit headless with its recorded `docs`, `slice` and `tier`, the same models and, where the host records them, the same efforts, the snapshot's first parent standing in for `base` and, for an as-built gate, its second parent for the commit the target's `as_built` names, and scores the result:
+Question 9 compares skill versions on recorded units. A replay clones a unit's snapshot from the snapshot repository into a scratch directory, installs a skill version, the one under test or the recorded one from `refs/skills/<manifest>`, runs the unit headless with its recorded `docs`, `slice` and `tier`, the same models and, where the host records them, the same efforts, the retained first-round input and its baseline for a review, the opening snapshot for a slice, and the opening snapshot's second parent for as-built code only after verifying its tree against the commit the reviewed target and prompt name, and scores the result:
 
-- Only score a gate or code review whose original findings all refer to the input the replay will restore. Exclude every continuation from single-snapshot scoring. Also exclude reviews whose late or supplemental reports used different input trees or whose common input cannot be established. Compare retained input trees and the review base and targets when separate snapshots exist. List the reason, preserve all historical findings and keep these reviews outside the replayable-unit count. Score eligible reviews against their original dispositions. Valid findings should be found again and declined ones count as false positives. Later rechecks record subsequent evidence separately.
+- Only score a gate or code review whose original findings all refer to the input the replay will restore. Exclude every continuation from single-snapshot scoring. Also exclude reviews whose late or supplemental reports used different input trees or whose common input cannot be established. Compare retained input trees and the review base and targets when separate snapshots exist. Exclude as-built gates when the reviewed code tree differs from the opening second parent or their equivalence is unknown. List the reason, preserve all historical findings and keep these reviews outside the replayable-unit count. Score eligible reviews against their original dispositions. Valid findings should be found again and declined ones count as false positives. Later rechecks record subsequent evidence separately.
 - A slice by its test criteria, whether a worker reported `blocked` or `stuck`, and the code-review findings that followed; a run the host stopped does not count against it.
 
 No recorded prompt is needed: reviewers and workers start fresh from prompts the skill builds out of the docs, code and parameters, so each version builds its own, and the reviewer prompts and outputs archived with the unit tell what the original findings were. What the orchestrating session took from the conversation is not replayed. The analysis marks a unit steered when a user message falls inside its span, and the original worker brief stays in the host record, for the harness to compare with the brief a replay builds.
@@ -288,7 +298,7 @@ Scenarios for step 1, tested through the commands:
 - A clean checkout's snapshot has HEAD's tree.
 - A dirty checkout's snapshot holds unstaged, staged and untracked changes and no ignored file, and leaves the project's work tree, index, HEAD, refs and the names and contents of its object files unchanged, the index byte for byte even after a tracked file's timestamp changed without its content.
 - An unborn branch without an index gets a snapshot without a parent. Untracked and unstaged files over 10 MiB in total, a checkout outside Git and a failing Git command skip the snapshot, and the start line records the reason; a failing Git command's message lands in `snapshot-error.txt`, and `start` prints only its id.
-- A code review whose fixed point moved on after the branch forked gets the merge base as `base`, and `git diff <snapshot>^ <snapshot>` equals the review's diff.
+- A code review whose fixed point moved on after the branch forked gets the merge base as its opening `base`. A separately prepared baseline and target in a linked checkout survive removal of the checkout and its review store. After an independent mirror clone of the trace store, compare the prepared patch byte for byte, including a binary addition. For a live review, compare its tracked patch and separately listed untracked files. An as-built commit changed between opening and dispatch remains distinguishable in the two retained documents and disqualifies replay if its code tree differs.
 - A gate on a doc whose `as_built` names a commit that HEAD has moved past, or that a rebase left out of HEAD's history, gets that commit's tree as the snapshot's second parent: `git show <snapshot>^2:<path>` gives each file as it was at that commit, and `git diff <snapshot>^ <snapshot>` still shows the change since `--base`.
 - A snapshot copies only the objects the snapshot repository lacks; switching to another branch and back copies each file version once. `git push --mirror`, `git clone --mirror` and `git bundle create --all` of the project carry no snapshot. After a reset, `git reflog expire --expire=now --all` and `git gc --prune=now` in the project, `git fsck --strict` passes in the snapshot repository and every snapshot can be read. With `.canon/` missing from the project's `.gitignore` and `.canon/canon/.gitignore` deleted, `git add -A` stages no file inside the trace directory and `git clean -fdx` leaves it.
 - A child records its `--parent`; a parent that is not open, a slice or end check as parent, and a slice whose parent is not an `implement` unit are rejected and write nothing; a gate or end check without `--parent` is top-level.
@@ -302,7 +312,7 @@ Pilot exit:
 - At least 18 of 20 top-level units have a start and an end, or a genuine interruption.
 - Every review's dispositions match its conversation.
 - Every unit's parent, tier and outcome match its conversation, tier changes included.
-- Every snapshot, cloned from the snapshot repository, reproduces its unit's input: the doc revision, the diff from `base`, the code an as-built gate records, the plan at the slice.
+- From an independent trace clone, verify opening documents and slice plans at the start ref, and reviewed documents and patches at the retained first-round ref, with the prompt's scope and verified as-built code where applicable. For older records count an opening snapshot as equivalent only with independent evidence for the actual input. To test a capture repair, submit the independently recovered historical inputs to fresh units, verify their clones and report them separately from the original capture results.
 - Every Cursor and Codex unit is found in its host record.
 - Every worker run, resumed and replacement runs included, falls within one unit of its slice, and no slice's unit is ended by another `start` of the same slice.
 - No host in use has a snapshot skipped because its sandbox could not write the trace directory.
