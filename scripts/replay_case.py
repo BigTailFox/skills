@@ -19,7 +19,7 @@ def fixture_identity(directory):
     return files
 
 
-def verify_input(root, receipt):
+def verify_input(root, receipt, injected=()):
     spec, source = receipt["task"]["input"], receipt["source"]
     original = source["original"]
     if root.is_symlink() or (root / ".git/objects/info/alternates").exists() or (
@@ -43,7 +43,7 @@ def verify_input(root, receipt):
             git(root, "diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD", "--")):
         raise ReplayError("prepared input tree differs")
     names = {os.fsdecode(p) for p in git(root, "ls-files", "--others", "-z").split(b"\0") if p}
-    if names != set(source["untracked"]):
+    if names != set(source["untracked"]).union(injected):
         raise ReplayError("prepared input untracked paths differ")
     for name, expected_file in source["untracked"].items():
         path = root / safe_relative(name)

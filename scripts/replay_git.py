@@ -52,9 +52,9 @@ def init_repo(root, object_format):
     git(root, "init", "--quiet", "--template=", "--object-format=" + object_format)
 
 
-def transfer_trees(source, destination, trees):
-    """Packing tree roots imports their contents without any source commit or alternates."""
-    roots = "".join(tree + "\n" for tree in sorted(set(trees))).encode("ascii")
+def transfer_objects(source, destination, objects):
+    """Import only the closure of explicit tree or synthetic commit IDs, without alternates."""
+    roots = "".join(oid + "\n" for oid in sorted(set(objects))).encode("ascii")
     env = git_environment()
     with tempfile.TemporaryFile(dir=destination) as errors, subprocess.Popen(
             git_command(source, "pack-objects", "--stdout", "--revs"), stdin=subprocess.PIPE,
@@ -188,7 +188,7 @@ def import_input(root, case, row, scope):
     as_built = scope.get("as_built_tree")
     object_format = oid(case.store, "rev-parse", "--show-object-format")
     init_repo(root, object_format)
-    transfer_trees(case.store, root, [t for t in (target, base, as_built) if t])
+    transfer_objects(case.store, root, [t for t in (target, base, as_built) if t])
     baseline = synthetic_commit(root, base, "Replay baseline") if base else None
     code = synthetic_commit(root, as_built, "Replay as-built code") if as_built else None
     if code:

@@ -18,7 +18,7 @@ Implements [D012: Paired replay of Canon workflows](../designs/D012-workflow-rep
 
 ## Current state
 
-Next: S2.
+Next: S3.
 
 ## Slices
 
@@ -38,7 +38,7 @@ For a code review, pin the plan's named slice requirements and tests, or all its
 
 ### S2: Run a paired review with the operator's versioned runner
 
-Status: todo
+Status: done
 
 Risk: A controller restart or concurrent invocation can dispatch the same paid slot twice or credit the wrong suite, role or input.
 
@@ -99,3 +99,4 @@ Check each cohort dimension (project, kind, tier, host, role settings, runner co
 - 2026-11-25: Drafted against D012@r1.
 - 2026-11-25: Started at 77f4720f1ca3d11107526210cbf9b08e9a84f1bb.
 - 2026-11-25: S1 completed. The 14 public prepare tests and 58 existing trace tests pass. Preparing the real D003@r9 gate reproduced the independently obtained patch SHA-256 be8e17dd129bd885fe35ebb4aad9d13338300ee059b310a4b9640b10291c4b3a. Both installations matched their expected, distinct canonical trees. Three historical sources remain provisional.
+- 2026-11-25: S2 completed. Thirteen public run tests and 72 preparation and trace regressions pass. The real D003@r9 case completed all three alternating pairs via a local protocol peer. Each assigned installation was observed three times. Resuming dispatched no extra attempts and reproduced the blind packet. The private supervisor uses POSIX advisory locks and measures only the runner subprocess.
