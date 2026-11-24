@@ -5,7 +5,7 @@ updated: 2026-11-24
 revision: 1
 modules: [canon]
 summary: Silk reported repeated review work, scope expansion in design and scaffold reviews, and a CI gap for required commit trailers.
-refs: [D002, D007, R005]
+refs: [D002, D007, R005, E006]
 ---
 
 # R006: Silk feedback on review scope and commit checks
@@ -18,10 +18,10 @@ This review covers the usability of Canon's review instructions and the CI behav
 
 | ID | Severity | Finding | Disposition |
 |----|----------|---------|-------------|
-| R006-F1 | major | A follow-up that combines previously reviewed and newly added targets can send reviewers the original cumulative diff. | open |
-| R006-F2 | major | The Spec reviewer can treat future requirements in an accepted design as missing deliverables of an L0 scaffold. | open |
+| R006-F1 | major | A follow-up that combines previously reviewed and newly added targets can send reviewers the original cumulative diff. | fixed 41c3029 |
+| R006-F2 | major | The Spec reviewer can treat future requirements in an accepted design as missing deliverables of an L0 scaffold. | fixed 41c3029 |
 | R006-F3 | minor | A commit can change code governed by a design, omit the required `Refs:` trailer and still pass the CI check. | open |
-| R006-F4 | major | When merging findings, the author can expand the task without asking the maintainer, especially when reviewers agree. | open |
+| R006-F4 | major | When merging findings, the author can expand the task without asking the maintainer, especially when reviewers agree. | fixed 41c3029 |
 
 ### R006-F1 Follow-up diff for each target
 
@@ -40,3 +40,7 @@ Silk's `1a5d3e7` changed `src/` and `bindings/python/` without naming their gove
 Silk's `D000` gate expanded to `D003`, `D004`, `D005` and their attachments during fixes (`c61e986`). The scaffold review led to about 1,051 lines of speculative implementation and two cleanup passes, according to Silk's retro. The second pass (`892377f`) removed 15 domain files.
 
 Silk added a temporary `AGENTS.md` rule in `04f24c1` and asks Canon to apply it when merging design and code review findings. Expanding the task requires the maintainer's approval even when two reviewers agree. A request for future code or documentation outside the task is declined with a reason. An unrelated defect in existing work goes in the governing design's Known issues. [D007§merging-findings: merging findings](../designs/D007-change-tiers.md#merging-findings)
+
+## Verification
+
+The [two acceptance cases](R006/scope-acceptance.md) exercise F1, F2 and F4 against the shipped skill text. The [E006: commit trailer trial](../experiments/E006-refs-trailer-trial.md) supplies evidence for F3, which remains open pending a CI policy decision.

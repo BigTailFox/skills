@@ -28,6 +28,7 @@
 - [E003: D001 trace pilot on Canon and Silk](experiments/E003-d001-trace-pilot.md) · concluded · A 20-case Canon and Silk pilot found gaps in replay inputs, finding attribution, Cursor transcripts and worker boundaries before trace analysis. · modules: canon
 - [E004: D001 review input revalidation](experiments/E004-d001-review-input-revalidation.md) · concluded · All three recovered review inputs survived an independent trace clone. Three other pilot criteria still fail on the frozen Canon and Silk cohort. · modules: canon
 - [E005: D001 pilot evidence reconciliation](experiments/E005-d001-pilot-evidence-reconciliation.md) · concluded · Reconcile review attribution, Cursor anchors and worker chronology for the frozen Canon and Silk pilot and two preselected Codex slices. · modules: canon
+- [E006: Design references in recent Canon and Silk commits](experiments/E006-refs-trailer-trial.md) · answered · Of 60 sampled commits, six touched governed paths. One omitted Refs entirely and two cited some of the designs governing shared files. · modules: canon
 
 ### Concepts
 
