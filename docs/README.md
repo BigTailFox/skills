@@ -22,6 +22,7 @@
 - [E001: Precedence of project and user skills across hosts](experiments/E001-skill-scope-precedence.md) · concluded · Same-name user and project skills load both in Cursor and Codex, told apart by path; Claude Code runs the user's. npx skills project installs reach all three. · modules: canon
 - [E002: Ideas from popular agent skill libraries](experiments/E002-skill-library-survey.md) · answered · Ideas from popular skill libraries (mattpocock, superpowers, ECC, anthropics): skill evals against a baseline, trigger tests and review guards lead. · modules: canon
 - [E003: D001 trace pilot on Canon and Silk](experiments/E003-d001-trace-pilot.md) · concluded · A 20-case Canon and Silk pilot found gaps in replay inputs, finding attribution, Cursor transcripts and worker boundaries before trace analysis. · modules: canon
+- [E004: D001 review input revalidation](experiments/E004-d001-review-input-revalidation.md) · concluded · All three recovered review inputs survived an independent trace clone. Three other pilot criteria still fail on the frozen Canon and Silk cohort. · modules: canon
 
 ### Concepts
 

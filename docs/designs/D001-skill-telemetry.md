@@ -5,7 +5,7 @@ updated: 2026-11-24
 revision: 16
 modules: [canon]
 summary: Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions.
-refs: [D002, D003, D000, D007, R002, R003, D004, D006, R004, E003]
+refs: [D002, D003, D000, D007, R002, R003, D004, D006, R004, E003, E004]
 owns: [skill-telemetry]
 paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py, skills/governance/canon/trace.md, skills/governance/canon/review-evidence.md, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/execution/canon-blind-review/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-handoff/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-investigate/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-retro/SKILL.md, skills/execution/canon-review/SKILL.md]
 reviewed: 16
@@ -317,7 +317,7 @@ Pilot exit:
 - Every worker run, resumed and replacement runs included, falls within one unit of its slice, and no slice's unit is ended by another `start` of the same slice.
 - No host in use has a snapshot skipped because its sandbox could not write the trace directory.
 
-If capture falls short, it is fixed before the report is built. [E003: Canon and Silk pilot](../experiments/E003-d001-trace-pilot.md) records the frozen cohort and its original results.
+If capture falls short, it is fixed before the report is built. [E003: Canon and Silk pilot](../experiments/E003-d001-trace-pilot.md) records the frozen cohort and its original results. [E004: review input revalidation](../experiments/E004-d001-review-input-revalidation.md) verifies the three recovered inputs through independent clones and records the remaining exit failures.
 
 ## Budgets
 
