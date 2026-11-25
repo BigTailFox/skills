@@ -4,8 +4,8 @@ created: 2026-11-25
 updated: 2026-11-25
 revision: 1
 modules: [canon]
-summary: Maintainer review of workflow growth, agent discretion, concise skills, CLI enforcement and packaging, and the role of canon-sync.
-refs: [D000, D001, D002, D004, D007]
+summary: Maintainer feedback on core skill scope, trace activation, review evidence, workflow and writing guidance, CLI packaging and canon-sync.
+refs: [D000, D001, D002, D003, D004, D006, D007]
 ---
 
 # R008: Maintainer feedback on Canon governance and blind review
@@ -32,6 +32,10 @@ The maintainer wants to understand how much rereading it takes to regain a clear
 | R008-F5 | major | Split `canon.py` into modules, publish the CLI as a Python package and let it declare third-party runtime dependencies. | open |
 | R008-F6 | minor | Keep Reading docs short. Point the agent from each reading question to the document, section or query that answers it. | open |
 | R008-F7 | minor | Does document maintenance need a separate manual `canon-sync` skill? The maintainer does not recall invoking it. | open |
+| R008-F8 | major | The maintainer proposes an optional `canon-trace` skill and mechanical activation so ordinary sessions can skip trace-specific checks and instructions. | open |
+| R008-F9 | minor | Move review evidence and the reviewer configuration example to the skills that use them. | open |
+| R008-F10 | major | The workflow reference has grown into another long entry point. Keep the next decision visible and put detailed procedures at the phase that needs them. | open |
+| R008-F11 | minor | Keep the writing guide useful as it grows. Its flat list mixes general editorial judgment with instructions for particular kinds of content. | open |
 
 ### R008-F3 Core skill structure
 
@@ -83,3 +87,21 @@ The maintainer proposes having the agent install the separately released package
 At `0fefb31`, `canon.py audit` flagged six commits to check against D005 and three against D009. An agent still needs to compare those commits with the designs. Three commits in the same history carry a `Reconciled:` trailer. The core maintenance workflow also writes that trailer, and Canon trace has no `canon-sync` unit, so the frequency of manual invocation is unknown. [D002§unchecked-commits-in-audit: reconciliation](../designs/D002-overview-and-as-built.md#unchecked-commits-in-audit) · [D001§units: traced units](../designs/D001-skill-telemetry.md#units)
 
 The review recommendation is to retire the standalone skill. Keep the on-demand docs step and its suggested commit message, leave collision handling in the merge instructions, and have the read-only audit point to the maintenance procedure when a finding needs judgment. Release discovery belongs with the upgrade flow in `canon-init`. [Maintenance](../../skills/governance/canon/workflow.md#maintenance) · [Upgrade](../../skills/governance/canon-init/SKILL.md#upgrade)
+
+### Core skill reference files
+
+At `0fefb31`, `canon/SKILL.md` has seven companion Markdown files. The maintainer values `doc-types.md`, `as-built.md`, writing guidance and tracing. The proposed homes below follow the action that needs each reference.
+
+- `doc-types.md` belongs in `canon`. Link to the section for the type being chosen or written. Let `new` supply the template and `check` validate its structure.
+- `as-built.md` belongs in `canon`. Read it when adopting existing designs, documenting existing behavior on request, or preparing to change behavior that has no spec.
+- `workflow.md` can be a short guide to tiers, required decisions and the next phase. At the measured commit, Review gate and Subagents account for 3,464 of its 5,205 words. Put reviewer dispatch and confirmation with blind review, worker instructions with implementation, and link to reconciliation when a change closes.
+- `writing.md` can keep shared judgments such as where a fact belongs and what evidence supports a claim. Link situational advice where it applies, such as when adding a diagram. Give mechanically checkable headings and labels to templates and the CLI. [D006§writing-rules: writing rules](../designs/D006-doc-model.md#writing-rules)
+- `review-evidence.md` serves two readers. Put round inputs, report coverage, confirmations and handoffs with `canon-blind-review`. Keep the shared record format and its validation in the CLI. Optional tracing can reuse the verified record and explain its own archive and replay. Coverage checks and review snapshots still serve the review when tracing is off. [D007§checking-required-review-coverage: review coverage](../designs/D007-change-tiers.md#checking-required-review-coverage) · [D003§review-snapshots: snapshots](../designs/D003-subagents.md#review-snapshots)
+- `reviewer-example.md` can live with `canon-blind-review`, which consumes the machine-local configuration. Point to that skill from `canon-init` when configuring a reviewer. A review reads the filled configuration.
+- `trace.md` can move to an optional `canon-trace` skill for interpreting records, recovery and history. The CLI can read the effective switch and collect events.
+
+### R008-F8 Trace activation
+
+The first `trace start` in a traced workflow checks the machine switch and checkout opt-out. A returned unit ID leads the agent to `trace.md`. The core skill still carries first-call instructions and each instrumented skill issues its first call even when tracing is off. [D001§call-sites: callers](../designs/D001-skill-telemetry.md#call-sites) · [D001§budgets: off-path cost](../designs/D001-skill-telemetry.md#budgets)
+
+Let the CLI check the switch as part of an operation the workflow already performs, such as `review start`. With tracing off, the agent needs no trace-only command or reference. With it on, record the event and point to `canon-trace` when interpretation or recovery needs the agent. Design, plan, handoff and worker-slice boundaries need an observable CLI or host event before their explicit calls can be retired. An explicit history query should still work after recording is turned off. [D001§switch-and-storage: effective switch](../designs/D001-skill-telemetry.md#switch-and-storage)
