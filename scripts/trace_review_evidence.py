@@ -10,7 +10,7 @@ from trace_review_receipts import EvidenceError, assignments, decision_record, d
 VALID = {"accepted", "deferred"}
 HEADING = re.compile(r"^(?:#{1,4}\s+|\*\*)(F[1-9]\d*)\b", re.I)
 FLATTENED_HEADING = re.compile(r"(?<!#)#{2,4}\s+(F[1-9]\d*)\b")
-NEW_BLOCKER = re.compile(r"^\s*(?:- )?\*\*(?:New blocker — )?(F[1-9]\d*)\.", re.I)
+NEW_BLOCKER = re.compile(r"^\s*(?:- )?\*\*(?:New blocker — )?([FBN][1-9][0-9]*)\.", re.I)
 ROLE_PREFIX = re.compile(r"^(?:same-model|spec|standards|cross-family)(?:-|$)")
 STEM = re.compile(r"[A-Za-z0-9_-]{1,100}")
 GROUP = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,99}")
@@ -114,7 +114,7 @@ class Archive:
         """Some follow-on confirmations have an arbitrary stem. Require both sides of the same named check."""
         prompt = (self.read(stem + "-prompt.md") or b"").lstrip()
         instruction = re.match(rb"The author revised [^\n.]{0,250} after your (?:confirmation|recheck)\.\s+"
-                               rb"Confirm (?:the new blocker )?([NF][1-9]\d*)\b", prompt, re.I)
+                               rb"Confirm (?:the new blocker )?([FBN][1-9][0-9]*)\b", prompt, re.I)
         if not instruction:
             return False
         pin = self.read(stem + "-snapshot.txt") or b""
@@ -122,7 +122,7 @@ class Archive:
         if not re.fullmatch(rb"[0-9a-fA-F]{40}(?:[0-9a-fA-F]{24})?", pin.strip()):
             return False
         headings = [s.strip("*# -\t") for s in report.splitlines()
-                    if re.match(r"^\s*[*# -]*[NF][1-9]\d*\b", s, re.I)]
+                    if re.match(r"^\s*[*# -]*[FBN][1-9][0-9]*\b", s, re.I)]
         verdict = re.compile(instruction[1].decode() + r"\s*[:—–-]?\s*(?:not[- ]resolved|resolved)\b", re.I)
         return bool(headings) and all(verdict.match(s) for s in headings)
 
@@ -389,7 +389,8 @@ def adjudicate(case, archive, rows, catalog, receipts, has_catalog, database):
             continue
         path = archive.files[stem + ".md"]
         found = headings(archive.read(path.name), phase, pinned=True)
-        groups, decisions = assignments(src["groups"]), assignments(src.get("decisions", ""))
+        labels = canon.BLOCKER_LABEL_RE if phase == "confirmation" else canon.FINDING_ID_RE
+        groups, decisions = assignments(src["groups"], labels), assignments(src.get("decisions", ""), labels)
         decision_location = decision_record(archive, src, parent_decisions) if has_catalog else None
         require(found.keys() == groups.keys() and decisions.keys() <= groups.keys(), "incomplete source coverage")
         if phase == "first":
@@ -402,12 +403,19 @@ def adjudicate(case, archive, rows, catalog, receipts, has_catalog, database):
             require(row and row["end_sha256"] == case.end["_sha256"] and row["report_sha256"] == src["report_sha256"],
                     "missing evidence or stale digest")
             ref = key + ":" + fid
-            number, original = raw.get(ref, (None, {}))
+            raw_ref = ref
+            introduced = canon.blocker_id(stem, fid)
+            if phase == "confirmation" and introduced in case.history.blockers:
+                require(key == case.history.blockers[introduced]["reviewer"], "confirmation author differs from registration")
+                ref = introduced
+                # Some legacy ends included a confirmation-only finding among the original rows.
+                raw_ref = raw_ref if row["raw_row"] else None
+            number, original = raw.get(raw_ref, (None, {}))
             raw_disposition = original.get("disposition", "")
-            require((not number or ref not in covered) and row["raw_row"] == (str(number) if number else "") and
+            require((not number or raw_ref not in covered) and row["raw_row"] == (str(number) if number else "") and
                     row.get("raw_disposition", raw_disposition) == raw_disposition, "raw disposition reference mismatch")
             if number:
-                covered.add(ref)
+                covered.add(raw_ref)
             require(row["source_locator"] == f"{stem}.md:L{line}" and row.get("reviewer_key", key) == key and
                     row.get("phase", phase) == phase, "claim locator or identity mismatch")
             require(all(k not in row or row[k] == src.get(k, "") for k in ("prompt_sha256", "scope_lines")),

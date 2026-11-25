@@ -8,4 +8,4 @@ End each unit except a slice. Use delivered for completed output, blocked on wha
 
 A gate, follow-up or code review ends with its `--dir` and JSON dispositions on stdin through `--input -`. Record each report's key, exact gate or follow-up targets, merged findings and first confirmations, including reused evidence. At handoff mark undecided findings `escalated`. Use the [review evidence fields and example](review-evidence.md).
 
-For a separately requested recheck, use the saved review unit ID. If it is still open, keep the recheck evidence and append it immediately after the end. For a closed review, append it on receipt. Each call observes the current trace switch.
+Use the saved review unit ID for introduced blockers and separately requested rechecks. Obtain any requested result before closure. After the end, register each blocker before appending its recheck as [review evidence](review-evidence.md#introduced-blockers-and-later-rechecks) directs.

@@ -87,7 +87,7 @@ def load_events(store, population):
                 e = json.loads(raw)
                 if not isinstance(e, dict) or type(e.get("v")) is not int:
                     raise ValueError()
-                if e["v"] != 1 or e.get("type") not in {"start", "end", "manifest", "recheck"}:
+                if e["v"] != 1 or e.get("type") not in {"start", "end", "manifest", "recheck", "blocker"}:
                     skip("unsupported")
                     continue
                 if e["type"] in {"start", "end"}:
@@ -138,9 +138,9 @@ def load_events(store, population):
                                 r"ok|none|over-2MiB|copy: E[A-Z0-9_]+", archive)):
                             e["archive"] = None
                             skip("malformed archive")
-                    if e["type"] == "recheck":
-                        canon.check_recheck(e)
-                        if not identifier(e["model"]):
+                    if e["type"] in canon.REVIEW_EVIDENCE:
+                        canon.REVIEW_EVIDENCE[e["type"]](e)
+                        if e["type"] == "recheck" and not identifier(e["model"]):
                             raise ValueError()
                     if e["type"] == "end" and e.get("dispositions") is not None:
                         try:
@@ -209,7 +209,7 @@ class Case:
 
 def read_store(project, store, population):
     cases, manifests, slices = {}, {}, {}
-    checks = []
+    evidence = []
     for event in load_events(store, population):
         action = event["type"]
         if action == "manifest":
@@ -217,8 +217,8 @@ def read_store(project, store, population):
             continue
         uid = event["id"]
         case = cases.get(uid)
-        if action == "recheck":
-            checks.append(event)
+        if action in canon.REVIEW_EVIDENCE:
+            evidence.append(event)
             continue
         if action == "start" or event["kind"] == "implement":
             sibling = slices.pop(event.get("parent") if action == "start" else uid, None)
@@ -234,15 +234,14 @@ def read_store(project, store, population):
             if case and action in ("start", "end"):
                 case.ambiguous = True
             population["orphans"].append(dict(unit=uid, type=action, location=event["_location"]))
-    for e in checks:
+    for e in evidence:
         case = cases.get(e["id"])
         try:
             if not case or e["kind"] != case.history.kind or not (case.end or {}).get("dispositions"):
                 raise ValueError()
-            source = canon.finding_source(case.end["dispositions"], e["finding"])
-            case.history.rechecks[source].append(e)
+            case.history.add_evidence(e)
         except (ValueError, canon.TraceError):
-            population["orphans"].append(dict(unit=e["id"], type="recheck", location=e["_location"]))
+            population["orphans"].append(dict(unit=e["id"], type=e["type"], location=e["_location"]))
     for case in cases.values():
         h = case.history
         if h.kind == "slice" and (project / ".git").exists():
@@ -262,11 +261,14 @@ def read_store(project, store, population):
             predecessor.history.continuation = h.unit
         issues = Counter()
         submitted = {source: list(events) for source, events in h.rechecks.items()}
-        h.verify_rechecks(issues)
+        orphans = h.verify_evidence(issues)
+        population["orphans"].extend(dict(unit=e["id"], type=e["type"], location=e["_location"]) for e in orphans)
+        unmatched = {e["_location"] for e in orphans}
         for source, events in submitted.items():
             retained = {(e["report"], canon.recheck_claim(e)) for e in [*h.rechecks[source], *h.conflicts[source]]}
             population["skipped"].extend(dict(reason="recheck identity mismatch", location=e["_location"])
-                                         for e in events if (e["report"], canon.recheck_claim(e)) not in retained)
+                                         for e in events if e["_location"] not in unmatched and
+                                         (e["report"], canon.recheck_claim(e)) not in retained)
         for conflicts in h.conflicts.values():
             population["skipped"].extend(dict(reason="conflicting recheck", location=e["_location"]) for e in conflicts)
     for case in cases.values():

@@ -339,7 +339,9 @@ def first_round_score(case, archive, review):
         identified = {r["key"] for r in review["reports"] if r["identity"] in {"recorded", "verified"}}
         for claim in review["source_findings"]:
             store = sources if claim["phase"] == "first" else later
-            store[claim["source"]] = claim
+            blocker = case.history.blockers.get(claim["source"])
+            ref = claim["key"] + ":" + blocker["label"] if blocker else claim["source"]
+            store[ref] = claim
             if claim["phase"] == "first" and (claim["key"] not in identified or claim["disposition"] == UNKNOWN):
                 unknown.append(dict(source=claim["source"], locations=claim["locations"]))
     else:
@@ -357,20 +359,28 @@ def first_round_score(case, archive, review):
                     return
                 for fid, (line, severity) in found.items():
                     ref = r["key"] + ":" + fid
-                    target[ref] = dict(source=ref, severity=severity, locations=[loc(archive.files[name], line)])
+                    blocker = canon.blocker_id(name[:-3], fid)
+                    source = blocker if phase != "first" and blocker in case.history.blockers else ref
+                    target[ref] = dict(source=source, severity=severity, locations=[loc(archive.files[name], line)])
             collect(blob, "first", sources, name)
             name = r["stem"] + "-confirm.md"
             confirmed = archive.read(name)
             if confirmed is not None:
                 collect(confirmed, "confirmation", later, name)
     scored, seen, confirmation = [], set(), []
+    registered = {source: dict(raw_row=None, source=source, locations=[e["_location"]])
+                  for source, e in case.history.blockers.items()}
     for raw in review["raw_findings"]:
         by_decision = {}
         for ref in raw["by"]:
             if ref in later and ref not in sources:
-                confirmation.append(dict(raw_row=raw["raw_row"], source=ref, locations=later[ref]["locations"]))
+                claim = later[ref]
+                if claim["source"] in registered:
+                    registered[claim["source"]].update(raw_row=raw["raw_row"], locations=claim["locations"])
+                else:
+                    confirmation.append(dict(raw_row=raw["raw_row"], source=ref, locations=claim["locations"]))
                 continue
-            if ref in seen or ref not in sources or ref in later:
+            if ref in seen or ref not in sources or (ref in later and later[ref]["source"] not in registered):
                 unknown.append(dict(source=ref, locations=[raw["location"]]))
                 continue
             seen.add(ref)
@@ -398,7 +408,7 @@ def first_round_score(case, archive, review):
                                source_locations=claim["locations"]))
         else:
             unknown.append(dict(source=ref, locations=claim["locations"]))
-    return dict(dispositions=scored, confirmation_only=confirmation, unverified_sources=unknown)
+    return dict(dispositions=scored, confirmation_only=confirmation + list(registered.values()), unverified_sources=unknown)
 
 
 def review_input(case, trees, opening, row):

@@ -1,0 +1,222 @@
+{
+  "review": "R007",
+  "captured": "2026-11-25",
+  "scope": "Silk feedback added after the original R007 intake. Skill entries and retro sections retain the wording of their sources.",
+  "repositories": {
+    "Canon": {
+      "head": "0311d341d87a66acb4c4884f8043ecdc71fb9c72",
+      "canon_version": 86
+    },
+    "Silk": {
+      "head": "2bc5aef46110d5c122a0a735368c3d36b14e99af",
+      "canon_version": 82
+    }
+  },
+  "silk_skill_feedback": {
+    "path": ".canon/canon-retro/skills.jsonl",
+    "previous_lines": 35,
+    "previous_sha256": "09d97a1147847faf819a18284bc2f25c8b8be6892d66d51298c3a5aae523188f",
+    "sha256": "bb9d688b6d8f7eeb847c4c9c5aa9b66fb12e05fcec5f135fcc5821ed7e23d2aa",
+    "entries": [
+      {
+        "line": 36,
+        "record": {
+          "date": "2026-11-25",
+          "session": "67c067a4-b655-4a9e-b4cb-54b716d401f9",
+          "host": "cursor",
+          "model": "gemini-4-neon-xhigh",
+          "skill": "canon-blind-review",
+          "skill_hash": "9f250d5f65513b9e09d26cdc110d26ee50ecc20342b8bf31ca4463f45aad6e1e",
+          "canon": "canon 82",
+          "step": "Merge: mixed replies and custom Other answers on escalated findings",
+          "event": "When escalating D005@r4 Round 1 findings via AskQuestion (transcript L107), the user supplied custom Other text containing follow-up questions and counterproposals; unlike canon-grill Record (line 53), canon-blind-review Merge has no mixed-reply rule, so the agent silently assumed answers, edited docs (L108–L136), and launched confirmation (L138) until the user interrupted (L139).",
+          "suggestion": "Cross-link canon-grill's mixed-reply rule from Merge: when a user's reply to escalated findings—including custom Other text in a structured question tool—asks a question or proposes an alternative, answer in chat and wait for confirmation on unsettled items before editing or launching confirmation."
+        }
+      },
+      {
+        "line": 37,
+        "record": {
+          "date": "2026-11-25",
+          "session": "67c067a4-b655-4a9e-b4cb-54b716d401f9",
+          "host": "cursor",
+          "model": "gemini-4-neon-xhigh",
+          "skill": "canon-blind-review",
+          "skill_hash": "9f250d5f65513b9e09d26cdc110d26ee50ecc20342b8bf31ca4463f45aad6e1e",
+          "canon": "canon 82",
+          "step": "Targeted recheck: no escalation stop-rule for lingering or new blockers",
+          "event": "Confirmation (line 125) says 'Blockers still open after this round go to the user', but Targeted recheck (line 129) states no escalation trigger when a recheck still leaves blockers open or introduces new blockers; after D005@r4 cross-family-recheck.md kept F2/F5 open (transcript L177, L195), the agent self-looped into speculative private-API edits and recheck2 (L197) before escalating at L200, discarding those edits and spending two more rounds (recheck3 and recheck4).",
+          "suggestion": "State explicitly in Targeted recheck that any blocker still open or newly introduced after a targeted recheck escalates back to the user before further edits or another recheck."
+        }
+      },
+      {
+        "line": 38,
+        "record": {
+          "date": "2026-11-25",
+          "session": "67c067a4-b655-4a9e-b4cb-54b716d401f9",
+          "host": "cursor",
+          "model": "gemini-4-neon-xhigh",
+          "skill": "canon",
+          "skill_hash": "c3f793aa06ffbe35aaaa8b0aa6f40e10583fe5dc167e4aafd17d4c51c1d74344",
+          "canon": "canon 82",
+          "step": "workflow.md: Review gate step 4 (guarantee sweep across concepts and diagrams)",
+          "event": "workflow.md line 54 asks to search 'the affected designs and their sketches for the old claim, equivalent wording and its exceptions', omitting project-overview concepts (such as Silk's C001) and line-wrapped diagram labels (Mermaid <br/> breaks like 'per<br/>visible non-P2P GPU island'); D005@r4 cross-family:F8 survived three consecutive confirmation/recheck passes through missed C001 lines (294, 259) and Mermaid labels (C001:99, D005:39, D005:52).",
+          "suggestion": "Expand workflow.md step 4 to mention affected project-overview concepts and diagram/table labels (including line-wrapped Mermaid <br/> text) alongside designs and sketches."
+        }
+      }
+    ]
+  },
+  "silk_retro_notes": {
+    "path": ".canon/canon-retro/notes.md",
+    "previous_lines": 167,
+    "previous_sha256": "61d98f5f76f3a94eff6b10be8246101c976b1cac818f64bebeca8c102af9da01",
+    "sha256": "935b3d927af2958d65d5c307265e782f4970696dc02c05110f1e7a3c5e5fdf02",
+    "sections": [
+      {
+        "heading": "askquestion-custom-reply-unanswered: applied 49551fb",
+        "line": 169,
+        "text": "## askquestion-custom-reply-unanswered: applied 49551fb\n- 2026-11-25 67c067a4-b655-4a9e-b4cb-54b716d401f9: after D005@r4 Round 1 blind review (transcript L107), the user answered the 3-item AskQuestion form with custom Other text raising follow-up opinions and questions on items 2 and 3; the agent silently folded assumptions into doc edits (L108–L136) and launched confirmation reviewers (L138) without replying in chat first, forcing the user to interrupt the live run (\"你还没回答我问题直接开始修复了。\", L139), answer in two turns (L146–L151), redo the GPU indirect-indexing rule (L154), and restart confirmation (L158). Proposed L0 change in AGENTS.md (outside canon:agents): require answering any question, explanation request, or counterproposal in a user reply—including custom Other text in AskQuestion—in chat and waiting for confirmation on unsettled points before editing files or launching reviewers.\n- 2026-11-25 67c067a4-b655-4a9e-b4cb-54b716d401f9: set raised\n- 2026-11-25 67c067a4-b655-4a9e-b4cb-54b716d401f9: set applied 49551fb"
+      },
+      {
+        "heading": "review-recheck-self-loop: applied 390c2e7",
+        "line": 174,
+        "text": "## review-recheck-self-loop: applied 390c2e7\n- 2026-11-25 67c067a4-b655-4a9e-b4cb-54b716d401f9: after D005@r4 targeted recheck 1 left cross-family F2/F5 open on PyTorch Library(\"aten\", \"IMPL\") overrides (.canon/canon-blind-review/D005-r4/cross-family-recheck.md, transcript L177), the agent self-looped instead of escalating (debating canon-blind-review/SKILL.md:125 at L195), invented a private-API runtime dispatcher introspection spec (torch._C._dispatch_dump / torch.library._impls) across D001/D002/D003 (L178–L193), and ran recheck2 (L197), which introduced 2 new blockers (.canon/canon-blind-review/D005-r4/cross-family-recheck2.md); escalating afterward (L200, AskQuestion f2_f5_boundary: option_a_recheck) discarded all those edits (L201) and cost two extra rounds (recheck3 and recheck4, L205, L213). Proposed L0 change in AGENTS.md (outside canon:agents): in a blind-review gate, whenever confirmation or any targeted recheck still leaves a blocker open or introduces a new blocker—especially one involving a design tradeoff or trust boundary—stop and present options to the user before editing or launching another recheck.\n- 2026-11-25 67c067a4-b655-4a9e-b4cb-54b716d401f9: set raised\n- 2026-11-25 67c067a4-b655-4a9e-b4cb-54b716d401f9: set applied 390c2e7"
+      },
+      {
+        "heading": "review-live-erases-failure-state: applied local (~/.config/canon/review-live.py, test-review-live.py and reviewer.md)",
+        "line": 179,
+        "text": "## review-live-erases-failure-state: applied local (~/.config/canon/review-live.py, test-review-live.py and reviewer.md)\n- 2026-11-25 67c067a4-b655-4a9e-b4cb-54b716d401f9: during D005@r4 Round 1 (transcript L86), Codex aborted at 14:59:52 with a false-positive safety error while the parallel foreground Task kept running; ~/.config/canon/review-live.py:474 ran cleanup(work) on nonzero exit, deleting .canon-review-<hash>/state.json and closing the Unix socket. When the user asked \"跨家族在跑吗？\" (L87), review-live.py status failed and diagnosing the failure took 7 shell/read steps (L88–L94), including reading review-live.py twice and parsing ~/.codex/sessions/2026/11/25/rollout-2026-11-25T14-55-57-01a2117d-5449-7760-a67b-a2b96e557d17.jsonl. Proposed L0 local change in ~/.config/canon/review-live.py (with offline test in ~/.config/canon/test-review-live.py): on nonzero exit, keep state.json (phase=\"failed\", exit_code, last_error, session_id) in .canon-review-<hash>/ instead of deleting work, and have review-live.py status <out> report the recorded terminal failure when the socket is gone (the next launch already cleans up stale work at lines 455–457).\n- 2026-11-25 67c067a4-b655-4a9e-b4cb-54b716d401f9: set raised\n- 2026-11-25 67c067a4-b655-4a9e-b4cb-54b716d401f9: set applied local (~/.config/canon/review-live.py SHA-256 1277199b952d1f0260c6eb43bea924c13b0be3164d68020238d963d6fe27cce5, ~/.config/canon/test-review-live.py SHA-256 a9305440d4f0cc254700a339f92f763020665fde2e227bd3ec336775a8a144fb, ~/.config/canon/reviewer.md SHA-256 18cba23e8f77f9c06a1c14004cfd0109539c876b44c0fb863d99c8ddefad6cc7; 50 offline cases passed from /tmp)"
+      },
+      {
+        "heading": "guarantee-sweep-misses-diagrams-and-sketches: applied 78ed009",
+        "line": 184,
+        "text": "## guarantee-sweep-misses-diagrams-and-sketches: applied 78ed009\n- 2026-11-25 67c067a4-b655-4a9e-b4cb-54b716d401f9: revising the non-P2P GPU Mirror guarantee (cross-family:F8) took four passes because each grep missed sibling locations: C001:294 (.canon/canon-blind-review/D005-r4/cross-family-confirm.md F8), C001:259 and D005:574 (cross-family-recheck.md F8), and 3 Mermaid <br/>-wrapped diagram labels at C001:99, D005:39, D005:52 (cross-family-recheck2.md F8); F4 and F5 similarly missed docs/designs/D001/silk-python-api-sketch.py lines 378 and 423 (cross-family-recheck.md F4, cross-family-recheck3.md F5). Proposed L0 pointer edit to the existing C001 maintenance sentence in AGENTS.md: remind sessions revising a design guarantee or exception to sweep C001 prose, Mermaid diagram labels (watching for <br/> line breaks), and design attachment sketches before taking a confirmation snapshot.\n- 2026-11-25 67c067a4-b655-4a9e-b4cb-54b716d401f9: set raised\n- 2026-11-25 67c067a4-b655-4a9e-b4cb-54b716d401f9: set applied 78ed009"
+      },
+      {
+        "heading": "cached-torch-venv-undocumented: applied 2bc5aef",
+        "line": 189,
+        "text": "## cached-torch-venv-undocumented: applied 2bc5aef\n- 2026-11-25 67c067a4-b655-4a9e-b4cb-54b716d401f9: twice during D005@r4 (transcript L108–L109 for device=\"meta\" timing; L178–L181 for PyTorch dispatcher introspection), probing .venv/bin/python, python3, and /home/lihaol/IsaacLab/.venv/bin/python3 failed with ModuleNotFoundError: No module named 'torch', forcing 8 WebSearch/WebFetch/Read calls (L182–L190) even though .cache/python-compat/optional-py3.12/bin/python (cached by scripts/test-python-compat.py) already held working torch 2.15.0+cu132. Proposed L0 pointer edit inside AGENTS.md's existing Testing boundary line: note that scripts/test-python-compat.py caches a real PyTorch environment under .cache/python-compat/optional-py3.12/bin/python for quick local probes.\n- 2026-11-25 67c067a4-b655-4a9e-b4cb-54b716d401f9: set raised\n- 2026-11-25 67c067a4-b655-4a9e-b4cb-54b716d401f9: set applied 2bc5aef"
+      }
+    ]
+  },
+  "silk_commits": [
+    {
+      "commit": "49551fb790315f2a6eb51bbb72f5c14f345647e8",
+      "subject": "docs: require answering user questions before edits or reviews"
+    },
+    {
+      "commit": "390c2e7e38f3da5a840066a991a0efb7347ecdd9",
+      "subject": "docs: require escalating unresolved or new recheck blockers"
+    },
+    {
+      "commit": "78ed009676cf9ef014f2dae6eea89cb381978dbd",
+      "subject": "docs: sweep C001, Mermaid labels and sketches on guarantee changes"
+    },
+    {
+      "commit": "2bc5aef46110d5c122a0a735368c3d36b14e99af",
+      "subject": "docs: document cached PyTorch venv path in AGENTS.md"
+    }
+  ],
+  "silk_gate": {
+    "unit": "20261125T065524Z-2a7ee8",
+    "trace_command": "python3 .agents/skills/canon/scripts/canon.py trace history 20261125T065524Z-2a7ee8",
+    "trace_stdout_sha256": "43b94e7ca22b32d3752e229472e79bf0cdb75a720da593af23d2d01e1ff5af53",
+    "trace_selected_lines": [
+      {
+        "line": 1,
+        "text": "20261125T065524Z-2a7ee8 gate parent=20261125T063034Z-c34970 docs=D005@r4 D001@r28 D000@r23 D002@r10 D003@r33 D004@r5 started=2026-11-25T14:55:24+08:00 ended=2026-11-25T17:07:15+08:00 outcome=delivered wall=7911s archive=ok (files present)"
+      },
+      {
+        "line": 12,
+        "text": "  finding same-model:F3, cross-family:F2 severity=blocker disposition=accepted"
+      },
+      {
+        "line": 16,
+        "text": "      recheck order=1 result=not-resolved reviewer=cross-family snapshot=02ab1f9ffd3531eb0bdef20fa789cbb5bf1554f3 model=gpt-6.2-astra report=cross-family-recheck archive=present"
+      },
+      {
+        "line": 17,
+        "text": "      recheck order=2 result=not-resolved reviewer=cross-family snapshot=c95a8de4e485df1ad345ddcea35c153cf05074f3 model=gpt-6.2-astra report=cross-family-recheck2 archive=present"
+      },
+      {
+        "line": 18,
+        "text": "      recheck order=3 result=resolved reviewer=cross-family snapshot=9defa3f743fc808a007237a21c99780890d04bc7 model=gpt-6.2-astra report=cross-family-recheck3 archive=present"
+      },
+      {
+        "line": 33,
+        "text": "  finding cross-family:F5 severity=major disposition=accepted"
+      },
+      {
+        "line": 36,
+        "text": "      recheck order=1 result=not-resolved reviewer=cross-family snapshot=02ab1f9ffd3531eb0bdef20fa789cbb5bf1554f3 model=gpt-6.2-astra report=cross-family-recheck archive=present"
+      },
+      {
+        "line": 37,
+        "text": "      recheck order=2 result=not-resolved reviewer=cross-family snapshot=c95a8de4e485df1ad345ddcea35c153cf05074f3 model=gpt-6.2-astra report=cross-family-recheck2 archive=present"
+      },
+      {
+        "line": 38,
+        "text": "      recheck order=3 result=not-resolved reviewer=cross-family snapshot=9defa3f743fc808a007237a21c99780890d04bc7 model=gpt-6.2-astra report=cross-family-recheck3 archive=present"
+      },
+      {
+        "line": 39,
+        "text": "      recheck order=4 result=resolved reviewer=cross-family snapshot=2963c93f54775bc5c46392ac8381e7fc3d845279 model=gpt-6.2-astra report=cross-family-recheck4 archive=present"
+      },
+      {
+        "line": 56,
+        "text": "  finding cross-family:F8 severity=major disposition=accepted"
+      },
+      {
+        "line": 59,
+        "text": "      recheck order=1 result=not-resolved reviewer=cross-family snapshot=02ab1f9ffd3531eb0bdef20fa789cbb5bf1554f3 model=gpt-6.2-astra report=cross-family-recheck archive=present"
+      },
+      {
+        "line": 60,
+        "text": "      recheck order=2 result=not-resolved reviewer=cross-family snapshot=c95a8de4e485df1ad345ddcea35c153cf05074f3 model=gpt-6.2-astra report=cross-family-recheck2 archive=present"
+      },
+      {
+        "line": 61,
+        "text": "      recheck order=3 result=resolved reviewer=cross-family snapshot=9defa3f743fc808a007237a21c99780890d04bc7 model=gpt-6.2-astra report=cross-family-recheck3 archive=present"
+      }
+    ],
+    "reports": [
+      {
+        "path": ".canon/canon-blind-review/D005-r4/cross-family.md",
+        "sha256": "0b42ebec87284e54291b79a94e84e29f5dfc27832e90d6ac4a0859654602ed20",
+        "verdict": "revise"
+      },
+      {
+        "path": ".canon/canon-blind-review/D005-r4/cross-family-confirm.md",
+        "sha256": "66470818cbf497ffc11d79864f22098c5ab1baac9530505f9d74567ee63bf7eb",
+        "verdict": "revise"
+      },
+      {
+        "path": ".canon/canon-blind-review/D005-r4/cross-family-recheck.md",
+        "sha256": "e5da2b518f6edc4a4ca8be85b891936845031bc04a0ad1acd5e59b6c7ab667c7",
+        "verdict": "revise"
+      },
+      {
+        "path": ".canon/canon-blind-review/D005-r4/cross-family-recheck2.md",
+        "sha256": "d71b7b490144003abe42faace525510976b75ee1327fefef3afecd74fa7b49cd",
+        "verdict": "revise"
+      },
+      {
+        "path": ".canon/canon-blind-review/D005-r4/cross-family-recheck3.md",
+        "sha256": "bb15cdde06f53e7c6972be6b2b9031908142b22efabf3d9f96fba11d460c27ff",
+        "verdict": "revise"
+      },
+      {
+        "path": ".canon/canon-blind-review/D005-r4/cross-family-recheck4.md",
+        "sha256": "3c2666e9951b3f6f32092c0d8c09f154dd4f986db3838030ff16a1560e1ff1a3",
+        "verdict": "approve"
+      }
+    ]
+  },
+  "machine_local_files": {
+    "location": "~/.config/canon/",
+    "sha256_at_capture": {
+      "review-live.py": "1277199b952d1f0260c6eb43bea924c13b0be3164d68020238d963d6fe27cce5",
+      "test-review-live.py": "a9305440d4f0cc254700a339f92f763020665fde2e227bd3ec336775a8a144fb",
+      "reviewer.md": "18cba23e8f77f9c06a1c14004cfd0109539c876b44c0fb863d99c8ddefad6cc7"
+    }
+  }
+}

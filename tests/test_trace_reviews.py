@@ -345,6 +345,7 @@ class ReviewReport(ReportFixture):
                          disposition="accepted", phase="confirmation", source_locator="spec-confirm.md:L1", report_sha256=sha(text),
                          scope_lines="", prompt_sha256=""))
         event["dispositions"]["findings"].append(dict(axis="spec", by=["spec:F3"], disposition="accepted", severity="blocker"))
+        event["dispositions"]["findings"][0]["confirmed"] = "resolved"
         event["dispositions"]["new_blockers"] = 1
         write_lines(self.log, [start(kind="code-review"), event])
         for r in rows:
@@ -366,6 +367,15 @@ class ReviewReport(ReportFixture):
         self.assertEqual(len(score["confirmation_only"]), 1)
         confirmation = score["confirmation_only"][0]["source"]
         self.assertNotIn(confirmation, [key for row in score["dispositions"] for key in row["by"]])
+        write_lines(self.log, [start(kind="code-review"), event, dict(v=1, type="blocker", id=UNIT, kind="code-review",
+                                                                     reviewer="spec", report="spec-confirm",
+                                                                     label="F3", snapshot=None)])
+        for registered in (result(), self.cli()):
+            registered_score = registered["questions"]["9"]["units"][0]["score"]
+            later, = registered_score["confirmation_only"]
+            self.assertEqual((later["source"], later["raw_row"]), ("blocker:spec-confirm:F3", 5))
+            self.assertNotIn("spec:F3", str(registered_score["unverified_sources"]))
+        self.assertEqual(result()["questions"]["9"]["units"][0]["score"]["dispositions"], score["dispositions"])
         (archive / "merge-notes.md").write_text("PRIVATE different decision")
         self.assertEqual(result()["cases"][0]["review"]["valid_first_groups"], "unknown")
 
@@ -580,6 +590,82 @@ class ReviewReport(ReportFixture):
         self.assertEqual(len(updated["unordered"]), 1)
         self.assertEqual({r["report"] for r in updated["conflicting"]}, {"other", "cross-family-recheck1"})
         self.assertEqual(updated["highest_verified"]["order"], 2)
+
+    def test_registered_blockers_keep_their_origins_and_rechecks_out_of_first_round_scores(self):
+        source = "cross-family:F12"
+        introduced = "blocker:cross-family-confirm:F12"
+        first = dict(by=[source], severity="major", disposition="accepted", confirmed="resolved",
+                     confirmations=[dict(reviewer="cross-family", result="resolved", snapshot=None)])
+        self.archive_report(UNIT, "cross-family", "### F12 [major] PRIVATE original claim\n", "reader")
+        history = [start(kind="gate"), review_end(UNIT, "gate", [reviewer("cross-family", "reader")], [first], blockers=2)]
+        write_lines(self.log, history)
+        baseline = self.cli()
+        judgment, = baseline["questions"]["9"]["units"][0]["score"]["dispositions"]
+        counts = baseline["questions"]["1"]["groups"][0]["recorded"]
+        self.archive_report(UNIT, "cross-family-confirm", "- **F12.** PRIVATE new blocker.\n")
+        self.archive_report(UNIT, "targeted", "### F12 [blocker] PRIVATE later claim\n")
+        registration = dict(v=1, type="blocker", id=UNIT, kind="gate", reviewer="cross-family",
+                            report="cross-family-confirm", label="F12", snapshot=None)
+        check = dict(v=1, type="recheck", id=UNIT, kind="gate", reviewer="cross-family", model="model-a",
+                     snapshot="a" * 40, result="resolved", order=1)
+        write_lines(self.log, [*history, registration, dict(check, finding=source, report="original-again", result="not-resolved"),
+                               dict(check, finding=introduced, report="targeted"), dict(registration, report="targeted",
+                                    label="N1", snapshot="a" * 40, **{"from": introduced}),
+                               dict(check, finding=introduced, report="undated", order=None)])
+        output = self.cli()
+        self.assertEqual(output["population"]["orphans"], [])
+        self.assertEqual(output["population"]["skipped"], [])
+        review = output["cases"][0]["review"]
+        self.assertEqual(review["unidentified_blockers"], 1)
+        self.assertEqual([r["stem"] for r in review["reports"]], ["cross-family"])
+        original, = review["confirmations"]
+        self.assertEqual((original["initial"], original["latest"]), ("resolved", "not-resolved"))
+        one, two = review["introduced_blockers"]
+        self.assertEqual((one["finding"], one["origin"], one["archive"], one["snapshot"], one["latest"]),
+                         (introduced, "confirmation", "present", None, "unknown"))
+        self.assertEqual([e["report"] for e in one["ordered"]], ["targeted"])
+        self.assertEqual([e["report"] for e in one["unordered"]], ["undated"])
+        self.assertEqual((two["finding"], two["origin"], two["archive"]), ("blocker:targeted:N1", introduced, "present"))
+        score = output["questions"]["9"]["units"][0]["score"]
+        self.assertEqual(score["dispositions"], [judgment])
+        self.assertEqual(score["unverified_sources"], [])
+        self.assertEqual({e["source"] for e in score["confirmation_only"]}, {introduced, "blocker:targeted:N1"})
+        self.assertEqual(output["questions"]["1"]["groups"][0]["recorded"], counts)
+
+    def test_adjudicated_confirmation_label_cannot_claim_the_first_round_evidence_row(self):
+        rows, catalog, event = self.paired_review()
+        event["dispositions"]["findings"][0].update(confirmed="resolved", confirmations=[
+            dict(reviewer="spec", snapshot=None, result="resolved")])
+        event["dispositions"]["new_blockers"] = 2
+        confirmation = "- **New blocker — F1.** PRIVATE confirmation issue.\n- **B2.** PRIVATE second issue."
+        (self.log.parent / UNIT / "spec-confirm.md").write_text(confirmation)
+        catalog.append(dict(catalog[0], report_stem="spec-confirm", phase="confirmation", scope_lines="",
+                            prompt_sha256="", report_sha256=sha(confirmation), decisions="", groups="F1=new-issue B2=other-issue"))
+        rows.append(dict(rows[0], raw_row="", raw_disposition="", report_stem="spec-confirm", phase="confirmation",
+                         scope_lines="", prompt_sha256="", report_sha256=sha(confirmation), disposition="unknown",
+                         defect_group="new-issue", source_locator="spec-confirm.md:L1"))
+        rows.append(dict(rows[-1], finding_id="B2", defect_group="other-issue", source_locator="spec-confirm.md:L2"))
+        for row in rows:
+            row["end_sha256"] = sha(json.dumps(event))
+        table(self.evidence, rows)
+        table(self.catalog, catalog)
+        registration = dict(v=1, type="blocker", id=UNIT, kind="code-review", reviewer="spec", report="spec-confirm", snapshot=None)
+        write_lines(self.log, [start(kind="code-review"), event, dict(registration, label="F1"), dict(registration, label="B2")])
+        for mode in ("catalog", "standalone"):
+            with self.subTest(mode=mode):
+                if mode == "standalone":
+                    self.catalog.rename(self.catalog.with_suffix(".unused"))
+                output = self.cli("--review-evidence", self.evidence)
+                review = output["cases"][0]["review"]
+                self.assertIsNone(review.get("evidence_issue"))
+                original, = [c for c in review["source_findings"] if c["source"] == "spec:F1"]
+                later = [c for c in review["source_findings"] if c["phase"] == "confirmation"]
+                self.assertEqual((original["phase"], original["raw_row"], original["disposition"]), ("first", 1, "accepted"))
+                self.assertEqual([(c["source"], c["raw_row"]) for c in later],
+                                 [("blocker:spec-confirm:F1", None), ("blocker:spec-confirm:B2", None)])
+                score = output["questions"]["9"]["units"][0]["score"]
+                self.assertIn("spec:F1", [ref for row in score["dispositions"] for ref in row["by"]])
+                self.assertNotIn("spec:F1", [c["source"] for c in score["confirmation_only"]])
 
     def test_nested_gates_and_direct_escalations_keep_each_target_once(self):
         nested = "20260101T000026Z-aaaaaa"

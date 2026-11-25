@@ -8,9 +8,8 @@ from trace_review_evidence import Archive, ReviewEvidence, VALID, recorded_repor
 from trace_reviewer_cost import group_costs
 
 
-def confirmation(case, number, finding):
+def recheck_evidence(case, source, first):
     history = case.history
-    source = finding["by"][0]
 
     def recheck(event):
         fields = {k: event[k] for k in ("reviewer", "model", "snapshot", "result", "report", "order")}
@@ -20,12 +19,10 @@ def confirmation(case, number, finding):
     conflicts = [recheck(e) for e in history.conflicts[source]]
     ordered = sorted((r for r in checks if r["order"] is not None), key=lambda r: r["order"])
     unordered = [r for r in checks if r["order"] is None]
-    first = finding.get("confirmed", UNKNOWN)
     latest = ordered[-1]["result"] if ordered else first
     if unordered or any(not ordered or r["order"] is None or r["order"] >= ordered[-1]["order"] for r in conflicts):
         latest = UNKNOWN
-    return dict(raw_row=number, by=finding["by"], initial=first, individual=finding.get("confirmations", UNKNOWN),
-                location=case.end["_location"], ordered=ordered, unordered=unordered, conflicting=conflicts,
+    return dict(ordered=ordered, unordered=unordered, conflicting=conflicts,
                 highest_verified=ordered[-1] if ordered else None, latest=latest)
 
 
@@ -35,15 +32,22 @@ def describe_review(case):
     coverage = case.data["outcome"]
     review = dict(coverage=coverage if coverage == "delivered" else "partial-" + coverage, groups=[],
                   raw_rows=UNKNOWN, raw_findings=[], raw_dispositions=UNKNOWN, confirmations=[], new_blockers=UNKNOWN,
-                  valid_first_groups=UNKNOWN)
+                  valid_first_groups=UNKNOWN, introduced_blockers=[], unidentified_blockers=UNKNOWN)
     if dispositions is not None:
         rows = [dict(raw_row=i, location=end["_location"], **f) for i, f in enumerate(dispositions["findings"], 1)]
         review.update(raw_rows=len(rows), raw_findings=rows, new_blockers=dispositions["new_blockers"],
-                      raw_dispositions=dict(Counter(r["disposition"] for r in rows)))
+                      raw_dispositions=dict(Counter(r["disposition"] for r in rows)),
+                      unidentified_blockers=case.history.unidentified_blockers())
         for i, f in enumerate(rows, 1):
             source = f["by"][0]
             if "confirmed" in f or case.history.rechecks[source] or case.history.conflicts[source]:
-                review["confirmations"].append(confirmation(case, i, f))
+                first = f.get("confirmed", UNKNOWN)
+                review["confirmations"].append(dict(raw_row=i, by=f["by"], initial=first,
+                    individual=f.get("confirmations", UNKNOWN), location=end["_location"], **recheck_evidence(case, source, first)))
+        for source, e in case.history.blockers.items():
+            review["introduced_blockers"].append(dict(finding=source, origin=e.get("from", "confirmation"),
+                reviewer=e["reviewer"], snapshot=e["snapshot"], report=e["report"], archive=case.history.report_status(e["report"]),
+                location=e["_location"], **recheck_evidence(case, source, "not-resolved")))
     return review
 
 

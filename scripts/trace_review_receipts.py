@@ -22,10 +22,10 @@ def digest(blob):
     return hashlib.sha256(blob).hexdigest()
 
 
-def assignments(cell):
+def assignments(cell, labels=canon.FINDING_ID_RE):
     entries = [pair.split("=") for pair in cell.split()]
     result = dict(entries)
-    require(len(result) == len(entries) and all(canon.FINDING_ID_RE.fullmatch(k) for k in result),
+    require(len(result) == len(entries) and all(labels.fullmatch(k) for k in result),
             "ambiguous adjudicated finding")
     return result
 

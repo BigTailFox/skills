@@ -11,7 +11,7 @@ paths: [skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, s
 reviewed: 12
 reviewers: [gpt-6.2-astra]
 approved: 9
-implemented: 11
+implemented: 12
 ---
 
 # D007: Change tiers and the review gate
@@ -115,6 +115,8 @@ A report covers the target revisions named in its prompt and assessed under the 
 For a supplemental pass, use the first-round prompt and full criteria for the missing targets. Give a fresh blind reviewer in the required role its own source key and files, including when the same model performs both passes. Take a snapshot before launch, save its ID in `<key>-snapshot.txt`, and give the usual `Changes since` commit for a revised target. Merge its findings and confirm its accepted blockers and majors from its own input snapshot to the fixed one. Use a per-source `<key>-snapshot-confirm.txt` for a distinct confirmation snapshot. Credit only the models that actually read each revision. [D001§review-dispositions: review dispositions](D001-skill-telemetry.md#review-dispositions) records the coverage when tracing is on.
 
 ### Checking required review coverage
+
+When resuming a legacy round without `round.json`, recover the pass served by each completed report from its saved dispositions and assignments. A numbered supplemental report retains that pass and its assessed revisions. Carry forward the reviewer keys in `pending.md` that still lack reports.
 
 Run `canon.py review start TOPIC --kind gate|follow-up|code-review --tier TIER` with each initial design or plan revision as `--target ID@rN`, and any additionally requested independent reviewer as `--require KEY`. A code review covers the change as a whole. Use the returned round directory for every dispatch and report. [D003§review-snapshots: round inputs](D003-subagents.md#review-snapshots) defines how a round pins its input. Starting a replacement at a different tier creates a fresh round.
 

@@ -444,16 +444,18 @@ class OfflineAnalysis(ReportFixture):
         people = [reviewer("cross-family", "one")]
         self.archived_review(UNIT, opened, "none", people, {"cross-family": opened}, {"cross-family": "Target: " + path})
         directory = store / UNIT
-        (directory / "another-pass.md").write_text("**N1 — resolved.** PRIVATE explanation.\n\nVerdict: sound\n")
-        (directory / "another-pass-prompt.md").write_text("The author revised the target after your recheck. Confirm N1: PRIVATE\n")
         (directory / "another-pass-snapshot.txt").write_text("c" * 40 + "\n")
         write_lines(self.log, [start(kind="gate", snapshot=opened, docs=["D001@r1"]),
                                review_end(UNIT, "gate", people, [], review_input=opened)])
-        report = self.cli()
-        review = report["cases"][0]["review"]
-        self.assertEqual([r["key"] for r in review["reports"]], ["cross-family"])
-        self.assertIn(str(directory / "another-pass.md"), review["later_confirmation_reports"])
-        self.assertTrue(report["questions"]["9"]["units"][0]["eligible"])
+        for label in ("N1", "B1"):
+            with self.subTest(label=label):
+                (directory / "another-pass.md").write_text(f"**{label} — resolved.** PRIVATE explanation.\n\nVerdict: sound\n")
+                (directory / "another-pass-prompt.md").write_text(f"The author revised the target after your recheck. Confirm {label}: PRIVATE\n")
+                report = self.cli()
+                review = report["cases"][0]["review"]
+                self.assertEqual([r["key"] for r in review["reports"]], ["cross-family"])
+                self.assertIn(str(directory / "another-pass.md"), review["later_confirmation_reports"])
+                self.assertTrue(report["questions"]["9"]["units"][0]["eligible"])
         (directory / "another-pass.md").write_text("### F1 [major] PRIVATE new first-round report.\n")
         self.assertFalse(self.cli()["questions"]["9"]["units"][0]["eligible"])
 
