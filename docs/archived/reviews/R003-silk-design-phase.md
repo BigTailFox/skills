@@ -1,7 +1,7 @@
 ---
 status: closed
 created: 2026-11-10
-updated: 2026-11-13
+updated: 2026-11-25
 revision: 1
 modules: [canon]
 summary: Canon friction in a docs-only bilingual project: review gates per doc, parallel sessions, archived experiments, translations, check gaps, tool drift.
@@ -84,19 +84,19 @@ refs: [C001, D000, D001, D003, D005, R001, R002, D002, D006]
 
 ### R003-F3: Cross-family reviewer without a reviewer file
 
-- Location: `canon-blind-review/SKILL.md`, Reviewers and Manual fallback; [D003§launch: launch](../../designs/D003-subagents.md#launch) ("in the foreground"); [D003§reviewers: reviewers](../../designs/D003-subagents.md#reviewers).
+- Location: `canon-blind-review/SKILL.md`, Reviewers and Manual fallback; [D003§launch: launch](../designs/D003-subagents.md#launch) ("in the foreground"); [D003§reviewers: reviewers](../designs/D003-subagents.md#reviewers).
 - Problem: Silk had no reviewer file until 2026-11-10. Before that, each L2 gate searched old transcripts for how Gemini had been run and asked the user again (01d9545f L4 to L17, 4714e84a L6); earlier still, the user ran Gemini in another tool and pasted its report (8ee6aa2c L0, 66923f0f L35). A Gemini host subagent that hit "region not available" never returned, and the session recovered its report from the subagent transcript only after the user typed "continue" (01d9545f L260 to L264).
 - Suggestion: when the file is missing, write it from the user's first answer, as Silk did by hand. Run every reviewer in the background; [C001: Canon backlog](../../concepts/C001-canon-backlog.md)'s "Waiting on a background reviewer" weighs the other way. Let the file list fallback reviewers, tried in order when one stops twice. L1 revision of D003, with D003-K6 and D003-K7.
 
 ### R003-F4: Where reviewer reports live and their language
 
-- Location: [D003§input-and-reports: input and reports](../../designs/D003-subagents.md#input-and-reports); `canon-blind-review/SKILL.md`, Reviewers: the session writes `<role>.md`.
+- Location: [D003§input-and-reports: input and reports](../designs/D003-subagents.md#input-and-reports); `canon-blind-review/SKILL.md`, Reviewers: the session writes `<role>.md`.
 - Problem: a host subagent's report reaches the session only as the tool result. Sessions sometimes saved a translation or a summary, and after context compaction the original could be recovered only from the subagent transcript. The user's rule to reply in Simplified Chinese reached the reviewers, so some review files are in Chinese (01d9545f L29, L275; fce15e7b L132).
 - Suggestion: have the prompt ask for the report in the project's documentation language and let the reviewer write its own `<role>.md`, the one file it may write. L1 revision of D003.
 
 ### R003-F5: Reviewers read the live work tree
 
-- Location: `canon/workflow.md`, Reviewer prompt ("Judge it only from the repository"); [D003§review-snapshots: review snapshots](../../designs/D003-subagents.md#review-snapshots), which serve only the confirmation diff.
+- Location: `canon/workflow.md`, Reviewer prompt ("Judge it only from the repository"); [D003§review-snapshots: review snapshots](../designs/D003-subagents.md#review-snapshots), which serve only the confirmation diff.
 - Problem: authors held off editing while reviewers read (fce15e7b L82, 01d9545f L267). One author edited while Gemini was still reading, then counted its approve as covering those edits (e56224b2 L385). Other sessions' uncommitted edits entered gates: `D003` r1's snapshot held them, and `D002`'s reviewers read a `D001` that another session was changing (01d9545f L35).
 - Suggestion: check out the first snapshot into a worktree under `.canon/` and point the prompt at it. L1 revision of D003.
 
@@ -120,7 +120,7 @@ refs: [C001, D000, D001, D003, D005, R001, R002, D002, D006]
 
 ### R003-F9: Snapshot commit and HEAD
 
-- Location: [D003§review-snapshots: review snapshots](../../designs/D003-subagents.md#review-snapshots): `refs/snapshots/<id>` per snapshot.
+- Location: [D003§review-snapshots: review snapshots](../designs/D003-subagents.md#review-snapshots): `refs/snapshots/<id>` per snapshot.
 - Problem: the commit `snapshot` prints is not the HEAD of `.canon/canon/snapshots`, and sessions took the difference for a failed snapshot.
 - Suggestion: say in `canon-blind-review` that each snapshot is a ref, checked with `git -C .canon/canon/snapshots cat-file -e <commit>`. L0.
 

@@ -7,7 +7,7 @@ modules: [canon]
 summary: Doc queries and renames with canon.py show, find, which and affected, and rename and renumber, with the references and id collisions renumber settles.
 refs: [D002, D004, D005, D006, R001, D011]
 owns: [doc-queries, doc-renames, doc-renumbering]
-paths: [skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, tests/test_canon.py]
+paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py]
 reviewed: 9
 reviewers: [gpt-6.2-astra]
 approved: 8

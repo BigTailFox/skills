@@ -25,7 +25,7 @@ This review covers the usability of Canon's review instructions and the CI behav
 
 ### R006-F1 Follow-up diff for each target
 
-In Silk's gate `20261124T071149Z-f048db`, both prompts in `.canon/canon-blind-review/D000-r20/followup-1/` used the original base `1ad3fb5`. Silk estimates that reviewers reread about 250 lines of `D003` and `D005` and records two maintainer interruptions. Silk asks the prompt to apply Canon's two existing rules together. Returning reviewers get the diff since their last review snapshot for targets they covered. For an added target, each role that has yet to review it gets a full pass. [D007§follow-up-round: follow-up round](../../designs/D007-change-tiers.md#follow-up-round) · [D007§target-coverage: target coverage](../../designs/D007-change-tiers.md#target-coverage)
+In Silk's gate `20261124T071149Z-f048db`, both prompts in `.canon/canon-blind-review/D000-r20/followup-1/` used the original base `1ad3fb5`. Silk estimates that reviewers reread about 250 lines of `D003` and `D005` and records two maintainer interruptions. Silk asks the prompt to apply Canon's two existing rules together. Returning reviewers get the diff since their last review snapshot for targets they covered. For an added target, each role that has yet to review it gets a full pass. [D007§follow-up-round: follow-up round](../designs/D007-change-tiers.md#follow-up-round) · [D007§target-coverage: target coverage](../designs/D007-change-tiers.md#target-coverage)
 
 ### R006-F2 Spec review of an L0 scaffold
 
@@ -39,7 +39,7 @@ Silk's `1a5d3e7` changed `src/` and `bindings/python/` without naming their gove
 
 Silk's `D000` gate expanded to `D003`, `D004`, `D005` and their attachments during fixes (`c61e986`). The scaffold review led to about 1,051 lines of speculative implementation and two cleanup passes, according to Silk's retro. The second pass (`892377f`) removed 15 domain files.
 
-Silk added a temporary `AGENTS.md` rule in `04f24c1` and asks Canon to apply it when merging design and code review findings. Expanding the task requires the maintainer's approval even when two reviewers agree. A request for future code or documentation outside the task is declined with a reason. An unrelated defect in existing work goes in the governing design's Known issues. [D007§merging-findings: merging findings](../../designs/D007-change-tiers.md#merging-findings)
+Silk added a temporary `AGENTS.md` rule in `04f24c1` and asks Canon to apply it when merging design and code review findings. Expanding the task requires the maintainer's approval even when two reviewers agree. A request for future code or documentation outside the task is declined with a reason. An unrelated defect in existing work goes in the governing design's Known issues. [D007§merging-findings: merging findings](../designs/D007-change-tiers.md#merging-findings)
 
 ## Verification
 

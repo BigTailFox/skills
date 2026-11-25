@@ -28,8 +28,9 @@ The maintainer wants to finish the simplification before Canon 1.0. They want to
 | ID | Severity | Finding | Disposition |
 |----|----------|---------|-------------|
 | R008-F16 | major | The maintainer wants to finish the simplification before 1.0 and is weighing a fresh repository against refactoring this one. [Repository choice](#r008-f16-repository-choice) | open |
-| R008-F2 | major | The maintainer wants to spot shifts in who decides as fixes accumulate. The review recommends tracing a routine fix and an L2 design on one page, including agent decisions, CLI checks, reviewers and user approval, to choose which rules and regression cases to keep. [D007§change-tiers: change tiers](../designs/D007-change-tiers.md#change-tiers) | open |
+| R008-F2 | major | The maintainer wants to spot shifts in who decides as fixes accumulate. The review recommends tracing a routine fix and an L2 design on one page, including agent decisions, CLI checks, reviewers and user approval, to choose which rules and regression cases to keep. [D007§change-tiers: change tiers](../archived/designs/D007-change-tiers.md#change-tiers) | open |
 | R008-F1 | major | Assess whether accumulated workflow rules get in the way of an agent exercising judgment on routine tasks, and which rules are worth simplifying. | open |
+| R008-F20 | major | Do not duplicate prose or write designs for an equivalent natural-language specification (skills, prompts, playbooks, policy Markdown). Emphasize this rule in Canon 1.0's core skill, `writing.md`, `as-built.md` and `canon-design` so designs cover only code/system contracts, cross-cutting architecture and `Decisions`. | open |
 
 #### R008-F16 Repository choice
 

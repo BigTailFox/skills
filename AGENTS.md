@@ -44,9 +44,16 @@ Do not commit or leave untracked any `SKILL.md` other than a skill's own `skills
 - In this repository, agents and reviewers run the working tree's `canon.py` as `python3 skills/governance/canon/scripts/canon.py` from the repo root, instead of the path the Tool line of the canon block below names.
 - This checkout loads its own skills from the working tree, so agents follow the texts being developed: `.agents/skills/<name>` links to `../../skills/<category>/<name>`, and `.claude/skills/<name>` to `../../.agents/skills/<name>`. Create the links once at the root of each checkout, each linked worktree in `.worktrees/` included, and again after adding or removing a skill, with this zsh command, which also drops the links of removed skills: `mkdir -p .agents/skills .claude/skills && rm -f .agents/skills/*(N-@) .claude/skills/*(N-@) && for d in skills/*/*(/); do ln -sfn ../../$d .agents/skills/$d:t && ln -sfn ../../.agents/skills/$d:t .claude/skills/$d:t; done`. It sets up development and installs nothing for users, so it is no install script; `.gitignore` excludes both directories.
 - When changing `canon.py`, add regression tests to `tests/test_canon.py` and bump `CANON_VERSION` in the same commit: projects record in their canon block the version they need, and `validate.py` rejects a `canon.py` whose content changed while its version did not. That commit also reruns `init` here, so the canon block records the new version.
+- Do not write a design for an equivalent natural-language specification: pure skill Markdown under `skills/` is its own single source of truth and needs no restatement design or as-built backfill. `docs/designs/` specifies only code subsystems (`canon.py`, telemetry and replay tooling, and tests) plus cross-cutting architecture, invariants and `Decisions` that do not belong in runtime skill text.
 - Commit messages follow Conventional Commits, with the skill name as the scope, e.g. `feat(canon-code-review): add security checklist`; repository-wide changes use no scope or `repo`.
 - Releases follow Semantic Versioning and are tagged `vX.Y.Z`. Write the version's entry in `CHANGELOG.md` from the commits since the last tag, in terms of what changes for users. When a release absorbs a downstream patch, name its replacement and the project rules users still need. Commit the entry as `chore(repo): release X.Y.Z` and tag that commit. `CANON_VERSION` is separate and changes only with `canon.py`.
 - Write everything in English: skills, `README.md` and `AGENTS.md`.
+
+<!-- v1-refactor:start -->
+## v1 refactor branch workflow (temporary)
+
+On branch `v1`, the Canon 1.0 refactor uses a streamlined workflow: keep one consolidated architecture contract, run focused cross-family blind reviews at major milestones (architecture, CLI split/additions, rewritten core skills), run `uv run --no-project --with tiktoken python3 scripts/validate.py` and `D012` paired replay on changes, and align the final code designs once the 1.0 implementation stabilizes instead of bumping old designs on every intermediate commit. Remove this section before merging `v1` into `main`.
+<!-- v1-refactor:end -->
 
 <!-- canon:agents:start -->
 ## Docs

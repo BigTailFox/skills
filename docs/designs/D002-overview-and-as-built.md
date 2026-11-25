@@ -4,17 +4,17 @@ created: 2026-10-22
 updated: 2026-11-25
 revision: 12
 modules: [canon]
-summary: D000, as-built design backfill, design coverage and unchecked commits in audit, staged commit templates and per-commit design reference checks.
-refs: [D001, D006, D007, D009, R003, D010, D004, E006]
+summary: D000 checks, as_built validation, doc/skill classification, audit coverage and unchecked commits, staged commit templates and per-commit Refs checks.
+refs: [D001, D004, D006, D010, E006, R003]
 owns: [project-overview, as-built-design, design-coverage, unchecked-commits]
-paths: [skills/governance/canon/as-built.md, skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/governance/canon/doc-types.md, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-review/architecture.md, tests/test_canon.py]
+paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py]
 reviewed: 12
 reviewers: [gpt-6.2-astra]
 approved: 10
 implemented: 12
 ---
 
-# D002: Project overview and as-built designs
+# D002: Project overview, as-built checks and audit
 
 ## Goals
 
@@ -59,7 +59,6 @@ Every repository that follows canon has `designs/D000-project-overview.md` in th
 - The tables map the project, its planned modules included, each linking the designs that specify it; a module that a revision of a design with `implemented` specifies gets its row once its directory exists, in the docs step, as files join that design's `paths`. The change that adds or removes a module, capability or standard, or creates, moves or archives a top-level design, updates their rows in the same commit: the docs step checks this for code changes, `canon-design` for the designs it creates, and `canon-sync` points rows at the designs `audit` reports as unreached. Rows change no meaning: no revision bump and no gate. Goals, Dependencies and Glossary are spec. Adding a module, changing the dependency directions or changing a cross-module interface is L2, as the `canon` skill's tiers state.
 - `owns` includes `architecture`. `paths` lists only files that embody the architecture, such as dependency-boundary configuration and module wiring, and is usually empty.
 - Only the repo root has a D000, and only `init` at the repo root creates one. In a monorepo, D000's Modules rows link each module's designs.
-- In a project with code, D000 is written as an [as-built](#as-built-revisions) design. In a project without code, it is the project's first L2 design, written with the `canon-design` skill; it needs no plan, as [D007§gate-status: gate status](D007-change-tiers.md#gate-status) states for a revision that needs no code change.
 - The `AGENTS.md` block that `init` writes names D000 as the place to start and `docs/README.md` as the index.
 
 `canon.py`:
@@ -80,68 +79,23 @@ Every repository that follows canon has `designs/D000-project-overview.md` in th
 
 ### As-built revisions
 
-An as-built revision records behavior the code already has, at one commit, and specifies no change to it. It is the first revision of a new design, or a revision that adds existing behavior to the design that owns its topic.
+While an as-built revision awaits its gate, its frontmatter holds `as_built: <commit>` (the commit whose existing behavior it records, also read by `trace start` for replay in [D001§replay: replay](D001-skill-telemetry.md#replay)), or `as_built: worktree` outside Git or before the first commit. The gate removes the field when it sets `reviewed`.
 
-While it awaits its gate, its frontmatter holds `as_built: <commit>`, the commit it records. The gate builds its reviewer prompt from it, and a session that resumes the work or replays the gate ([D001§replay: replay](D001-skill-telemetry.md#replay)) finds the base there. Outside Git, and before the first commit, it reads `as_built: worktree`: the revision records the files as they are and passes its gate before any of them change. The gate removes the field when it sets `reviewed`; nothing marks the revision after that. `check` errors when `as_built` names no commit, unless it reads `worktree` outside Git or before the first commit, and when it remains on a doc whose `reviewed` equals its `revision`; `check --fix` removes it then. A value names a commit when it is the object name of exactly one commit, 7 to 64 lowercase hex digits so that a SHA-256 name fits; a ref, even a branch named like a hash, names none. A change to the `as_built` line alone, like one to `implemented`, needs no `updated` bump, and on a reviewed revision only the fixable error is reported, whatever the value.
+`canon.py check` enforces:
 
-It is written:
+- `as_built` must be 7 to 64 lowercase hex digits naming exactly one commit (never a ref), or `worktree` outside Git / before the first commit.
+- `as_built` remaining on a doc whose `reviewed` equals its `revision` is an error, removed by `check --fix`.
+- A change to `as_built` alone, like `implemented`, needs no `updated` bump; on a reviewed revision only the fixable removal error is reported.
 
-- by `canon-init`, for D000 and for adopted designs that describe existing code;
-- before a change alters behavior no design states ([Backfill](#backfill));
-- when the user asks for a design of existing code.
-
-`skills/governance/canon/as-built.md` states for agents how to write one:
-
-1. **Base**: the commit the change starts from: the commit the session started at, a plan's `Started at`, or for a code review the merge base it diffs against; HEAD when no change follows. Once the work tree or HEAD has moved past the base, read files as `git show <base>:<path>`; never record code the change already altered.
-2. **Scope**: the topic the change touches, as one whole interface or capability, neither the whole module nor only the lines to change. It goes into the design whose `owns` holds the topic, else into a new design. A new design's `owns` and `paths` cover exactly what it records, `paths` listing the files that implement it and their tests; a revision adds what it records to them.
-3. **Level**: what callers rely on, meaning what another module, a user or an external system can observe through an interface: results, errors, side effects, config keys and data formats, given as code. Private structure stays out.
-4. **Intent**: evidence, strongest first, is tests, user-facing docs, commit messages, pull requests and issues, then the code. Intent chooses what to write and at which level; what the revision states still holds for the code at the base.
-5. **Doubtful behavior**, behavior that looks unintended, is the user's to judge however plain it seems: it goes to the user with the `canon-grill` skill ([D009: Settling decisions](D009-settling-decisions.md)), which looks every fact up itself. Intended behavior goes into the Spec. A defect puts the correct behavior in the Spec and adds a known issue with next `fix` stating what the code does instead; like a defect that code review defers, the issue does not lower `implemented`, and its fix is L0, since it restores specified behavior. Behavior the user cannot judge stays in the Spec as it is, with a known issue with next `decide`. Both issues have the source `as-built <base>`. What the change depends on is settled before the change's own revision.
-6. **Decisions**: a choice that is hard to reverse and surprising without context gets a line with its source, or with `reason unknown, kept as found`.
-7. **No improvements**: an idea found while reading becomes a known issue with next `fix`, `L1` or `L2`, or an Idea in the module's backlog concept.
-
-Gate and status:
-
-- The gate runs at L1, also before an L2 change: a same-model reviewer, a cross-family one optional.
-- The reviewer prompt in the `canon` workflow's review gate gains a header line, filled from `as_built` for as-built revisions only, the first choice for a new design and for a commit:
-
-  ```text
-  As-built: {the target | what this revision adds} records {the code at {commit}, read with `git show {commit}:<path>` since the work tree may hold a later change | the files as they are} and specifies no change to it.
-  ```
-
-  For as-built revisions its Correctness item reads `against the code it records` in place of `against the current code`, its Completeness item reads `a fresh agent could change the code it governs` in place of `could implement it`, and its Assess list gains:
-
-  ```text
-  - As-built revisions only: what the revision adds holds for the code it records, apart from behavior that a known issue with source `as-built` and next `fix` names as a defect; it omits no behavior callers rely on within the topic it records; it fixes no private structure; each Decision gives a source or says its reason is unknown.
-  ```
-
-- After the gate, a new design is `active` with `implemented` equal to its revision, in place of the `accepted` that the gate's status step gives an L1 draft. A revised design keeps its status, and its `implemented` rises to the new revision only when it equaled the previous one.
-- An as-built revision needs no plan. It is committed on its own, as a `docs` commit with a `Refs:` trailer, before the change's own revision, which gives that commit as `Changes since`. Outside Git, the change's own revision starts once the gate has passed.
+Agent authoring steps and gate prompts for as-built revisions live in the `canon` skill (`as-built.md` and `workflow.md`).
 
 ### Backfill
 
-The tiers in the `canon` skill gain these rules:
-
-- Behavior is unspecified when no design states it. `which` for its files, `find` for its topic and D000's rows are where to look; a file `which` maps to no design, or a row reading `none`, does not settle it alone.
-- Before a change alters or extends existing behavior no design states, an as-built revision records that behavior; it is L1, also when it creates a design. From then on the change alters stated behavior and is tiered and handled like any such change ([D007: Change tiers and the review gate](D007-change-tiers.md)). When the session knows, as it takes the work, that the change alters such behavior, the change's revision is the session's next one, at the change's tier. When it finds out later, while drafting a plan, implementing or reviewing, as with an L0 change or a plan slice that turns out to alter the behavior, the change is a design problem ([D007§design-problems: design problems](D007-change-tiers.md#design-problems)), since the work was tiered or planned without it.
-- Where no design states the behavior, an L0 change alters nothing callers rely on: a refactor, a dependency bump, test or tooling work, or a fix for a defect no caller could rely on, such as a crash.
-- New behavior with nothing existing to record is tiered by the other rules: a new topic is L2.
-
-The skills apply them:
-
-- `canon-design`, in Frame, once step 4 has started the design unit: when the change alters unspecified behavior, the session writes the as-built revision, passes its L1 gate and commits it, then makes the change's revision and passes the gate at the change's tier, in one run. Started on existing code with no change in view, it ends after the as-built revision.
-- `canon-plan`: a slice that would alter behavior no design states gets an as-built revision from HEAD, which passes its L1 gate and is committed; the slices it touches then wait as for a design problem.
-- `canon-implement`, given an L1 change without a plan or revision that alters or extends unspecified behavior: after Start step 5, the session writes the as-built revision from HEAD, passes its L1 gate and commits it, then makes the change's revision as it makes a missing L1 revision. An L2 change stops at Start step 2 for `/canon-design`, whose Frame records the behavior.
-- `canon-implement`: an L0 change or a slice that turns out to alter unspecified behavior gets an as-built revision from the commit it started at, or the plan's `Started at`, which passes its L1 gate and is committed. The work then alters a spec: an L0 change continues as the L0 rule for such a change states, and a slice pauses as for a design problem.
-- `canon-code-review`: the Spec axis reports behavior callers rely on that the diff alters and no design states, whether or not a design governs the change. Its fix is an as-built revision from the review's merge base, after which the change needs a revision of that design: a design problem, as above.
-- The docs step: a changed file no design covers, in a change that altered nothing callers rely on, is named in the report with its directory; it needs no new design.
+Backfill tiering and agent workflow steps live directly in the `canon` skill and its execution skills; this design specifies only the CLI rules above.
 
 ### Setup
 
-- Setup ends once D000 and the adopted designs that describe existing code have passed their gates. `canon-init` writes no other as-built design; the first change that alters unspecified behavior records what it needs.
-- A doc that describes the whole project, such as an architecture overview, is folded into D000 and removed, as an ADR is folded into its design. A [doc by its name](#project-docs) outside every docs root, such as the README, is neither folded nor adopted, and neither is a docs root's own `README.md`, which becomes its index. Setup surveys every other file under a docs root, whatever its name, and migrates it like any existing doc.
-- `canon-init` fills D000 from the code: Goals, every capability and module with its Path and designs or `none`, the standards designs own across modules, the dependency directions and the glossary. D000 passes the L1 gate as an as-built design, like the adopted designs that describe existing code, and is shown to the user.
-- Upgrade: after `init` has moved the architecture design to D000, the agent bumps D000's revision and, as an as-built revision, rewrites Goals as D000's, folds the old sections into the four subsections, in their order, fills what is still missing and narrows `paths` to files, then passes the L1 gate. Code the old `paths` covered shows in coverage until designs cover it. When `init` created a fresh D000 instead, the agent fills it as in setup.
+Agent setup and upgrade steps for D000 live directly in the `canon-init` skill; `canon.py init` behavior for D000 is specified under [Project overview (D000)](#project-overview-d000).
 
 ### Project docs
 
@@ -174,7 +128,7 @@ Designs with code commits since the design last changed or was reconciled that n
 - A design's baselines are its last change and each reconciliation that `git log <last change>..HEAD` lists.
   - Its last change is the newest commit that `git log -- <the design's file>` lists and that changed the design, against its first parent, beyond its Known issues. The Known issues section starts at the `## Known issues` heading outside code fences and runs to the next heading of level 1 or 2. A commit whose change outside that section lies only in blank lines and in lines starting with `updated:` or `refs:`, and which changed that section, is no such change. Any other change is, one to `updated` or `refs` alone included, and so is the commit that added the file at its current path. A design whose file has no such commit is not listed.
   - A reconciliation of the design is a commit whose message has a line starting with `Reconciled:`, in any case, that names the design's id as a `Refs:` line does, below. The canon workflow's Maintenance and `canon-sync` write it once they have compared the design with the commits `audit` lists for it and updated what those commits changed, in an empty commit (`git commit --allow-empty`) when the design needed no change. No other step writes it.
-- Its unchecked commits are the commits `git log HEAD --not <each baseline>` lists that touch a file the design governs by its `paths` ([D006§frontmatter: frontmatter](D006-doc-model.md#frontmatter)), a doc or an [installed skill file](#installed-skills) only through an entry equal to its path, and whose message has no line starting with `Refs:`, in any case, that names the design's id, as a word of `C`, `D`, `P`, `R`, `E` or `I`, three or more digits and an optional capital letter. Which files a commit or merge touches: [Project docs](#project-docs); which commits carry the trailer: [D007§choosing-a-tier: choosing a tier](D007-change-tiers.md#choosing-a-tier).
+- Its unchecked commits are the commits `git log HEAD --not <each baseline>` lists that touch a file the design governs by its `paths` ([D006§frontmatter: frontmatter](D006-doc-model.md#frontmatter)), a doc or an [installed skill file](#installed-skills) only through an entry equal to its path, and whose message has no line starting with `Refs:`, in any case, that names the design's id, as a word of `C`, `D`, `P`, `R`, `E` or `I`, three or more digits and an optional capital letter. Which files a commit or merge touches: [Project docs](#project-docs).
 - A design with unchecked commits gets the line `  <n> commits since <the first 12 hex digits of the first reconciliation that git log lists, else of the last change>  <doc line>`, the design's doc line as [D010§doc-lines: doc lines](D010-doc-queries-and-renames.md#doc-lines) defines it. The lines run most commits first, and the section is left out when no design has one.
 
 ### Design references in commits
@@ -204,29 +158,6 @@ Source areas no design covers (commits in the last 90 days, most first):
 - An area whose counted files of its module are all uncovered, its subdirectories' included, shows `<n> files`, counting them all. Any other area shows `<uncovered> of <counted> files`, counting its module's files directly in it.
 - Areas rank by the commits of the last 90 days that touch their uncovered files, then by uncovered files, then by path; a merge touches none, since `git log` without `-m` lists no files for it. The first 10 are listed and the rest counted. The repo root's area reads `./`, the commit counts are right-aligned, and the lines keep the plural forms above, as `1 commits`. The list follows `audit`'s other sections.
 - Coverage never makes `check` or `audit` fail.
-- `canon-sync` reports the listed areas, and `canon-review` takes its design-coverage scope from them, the architecture angle's hard check included.
-
-### Delivery
-
-1. `canon.py`, with tests in `tests/test_canon.py` and a `CANON_VERSION` bump in every commit that changes it: D000's template and checks, the refusal to archive it, ids that history keeps taken, `init`'s D000 and its upgrade move, the deleted-doc exception, `as_built` and its checks, the `AGENTS.md` block, `which` for docs, and `audit`'s coverage and reach.
-2. The `canon` skill: `as-built.md`; the backfill rules in the tiers; `as_built` among the frontmatter fields; D000 in Layout, in Reading docs and in `doc-types.md`, in place of the architecture design, and the project's `README.md` in Layout; the `audit` row of the Tool table; in `workflow.md`, the reviewer prompt's as-built lines, the as-built status in the gate's status step and the docs step's rules for uncovered files, D000's rows and what docs state; the `as-built <commit>` source among the known issues' sources.
-3. `canon-init`, `canon-design`, `canon-plan`, `canon-implement`, `canon-code-review`, `canon-sync` and `canon-review` as this design states, `canon-review`'s `architecture.md` included. `canon-init`'s architecture step becomes D000's and drops its rule that `paths` cover the main source directories. Every mention of the architecture design in the skills names D000.
-4. `README.md`: the roadmap entry on as-built designs becomes part of How canon works, and the Skills table summaries of `canon-init` and `canon-design` follow their changes.
-5. This repository's own D000, no later than the commit that adds `check`'s D000 rule (done; `init` has since dropped `--script`): `init --script skills/governance/canon/scripts/canon.py` run here adds the canon block to `AGENTS.md` and the `.gitattributes` rules and creates D000, which is filled as in setup. D001's `paths` are extended to the files it specifies, docs excepted.
-6. Reconciliations and planned code: in `canon.py`, the reconciliation baselines, the header that names them, the commits counted for `paths` entries with `[` or with `**` inside a path segment as D006's matching gives them, and no warning for a planned module's Path or, as [D006§frontmatter: frontmatter](D006-doc-model.md#frontmatter) states, for the `paths` of a design with no `implemented`; in the `canon` skill, the `audit` row of the Tool table, the Maintenance rule in `workflow.md`, planned modules in `doc-types.md`, and D006's rule on when files join `paths` among the frontmatter fields and in `canon-design`; `canon-sync`'s reconciliation step.
-7. Installed skills: in `canon.py`, `which` printing `skill`, installed skill files kept out of docs by their name, of project roots, of glob and directory matches in `which`, `affected` and the unchecked commits `audit` counts, and of coverage; the `which` row of the `canon` skill's Tool table.
-
-Scenarios, tested through the commands:
-
-- `init` in a repository without docs creates D000 with the four subsections, and `check` reports only the warnings of an unfinished design; `init --root <module>` creates none.
-- `init` in a project whose D003 owns `architecture`, lists D003-K1 and is in plan P002's `based_on` moves it to D000 with D000-K1 and `based_on: [D000@r<n>]`, rewrites the links to it and appends the missing subsections at the end of `## Spec`. After D000 is filled out to over twice the old doc's size, neither `check` nor `check --base` reports a deleted doc. A later `new D` does not get D003, even when D003 was the highest D number, and `new D --parent` does not reuse the letter of a sub-design that `renumber` gave another letter.
-- After D003 was committed and deleted, `new D x` with Git missing from PATH, or with a Git that refuses the checkout, ends with `canon: cannot read the history of HEAD in <repo>: <reason>` and creates no doc, also when run from a module directory below the repo root that holds its own `AGENTS.md`.
-- `check` errors without D000, with a D000 under a module's docs root, with a subsection missing, with `src/**`, `src/` or an existing directory in D000's `paths`, with an `as_built` that names no commit, or reads `worktree` once HEAD has a commit, and with an `as_built` left on a reviewed revision, which `check --fix` removes. It only warns for a Modules Path that is not a directory, and not at all while the row links only designs with no `implemented`; a row reading `none` warns. It gives no `matches no file` warning for the `paths` of an accepted design with no `implemented`, and gives it once the design has `implemented`.
-- `archive D000` is refused.
-- With canon installed in `.agents/skills/` and linked from `.claude/skills/canon`, committed or not, `which` prints `.agents/skills/canon/SKILL.md: skill` for that file and for `.claude/skills/canon/SKILL.md`, which it resolves to it, `skill` for `skills-lock.json` and `.agents/skills/canon-tdd/LICENSE`, and `no design` for the same `SKILL.md` copied to `.cursor/skills/canon/SKILL.md`. In a project whose module Path is `./`, `audit` lists no area under `.agents/` or `.claude/` and not `skills-lock.json`, `affected` with a design whose `paths` hold `.claude/**` lists no file of the install, a commit that changes only `.agents/skills/canon/scripts/canon.py` is no unchecked commit of a design whose `paths` hold `**/*.py`, and an `AGENTS.md` under `.agents/skills/` adds no docs root.
-- `which` prints `doc` for `README.md`, `src/a/readme.rst`, `AGENTS.md`, `CLAUDE.md`, `LICENSE` and a file under a docs root, and for `src/auth/README.md` while a design's `paths` hold `src/auth/**`; it prints the design for a README whose exact path a design's `paths` list, and for `src/agents.py` and `src/license.py` while a design's `paths` hold `src/**`. A commit that changes only `src/auth/README.md` is no unchecked commit of that design.
-- `audit` counts for D001 the commits after its last change whose trailer omits D001, as `2 commits since <commit>  D001 `. A commit that changes D001, or bumps only its `updated`, moves the baseline; one that changes only its Known issues, with the `refs` entry `check --fix` adds for a design an issue links, or removes the section, keeps it. A later commit with `Reconciled: D001`, an empty one included, restarts the count after it, while a commit of docs with only `Refs: D001` does not; a reconciliation on a branch merged later leaves the commits it does not descend from counted. A design whose `paths` all lie outside the repository counts none, and an entry with `[` or with `**` inside a path segment counts the commits D006's matching gives it.
-- `audit` counts only files under D000's module Paths, and no doc among them. It lists a fully uncovered `src/a/` with its subdirectories folded in but never above its module's Path, `src/b/` as `2 of 5 files`, and the files of a module whose Path is `./` as one area `./  <n> files` while a design covers the files of a module whose Path is `src/`; it ranks areas by commits of the last 90 days, lists 10 and counts the rest. It lists a design D000 does not reach, and not one reached through another design's `refs`.
 
 ## Decisions
 

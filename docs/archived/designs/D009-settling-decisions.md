@@ -1,7 +1,7 @@
 ---
-status: active
+status: retired
 created: 2026-11-11
-updated: 2026-11-13
+updated: 2026-11-25
 revision: 2
 modules: [canon]
 summary: Settling open decisions with the user (canon-grill): triage before asking, open decisions kept in the doc, and small batches of related questions.
@@ -29,7 +29,7 @@ Out of scope: the prototypes and research that triage routes questions to ([D008
 
 ### Triggers
 
-`canon-grill` is an auto skill ([D000§glossary: Glossary](D000-project-overview.md#glossary)). Its description starts "Settles open decisions with the user. Use when only the user can settle a blocking decision, when walking a design or plan's decision tree, or to grill or stress-test a plan, design or idea." `canon-design`, `canon-plan`, `canon-implement`, `canon-tdd`, `canon-review` and the as-built steps send decisions here, naming the skill without restating how it asks, and a caller's own rule comes before this design's: the as-built steps put doubtful behavior to the user however plain it seems and give what the user leaves open their own known issue ([D002§as-built-revisions: As-built revisions](D002-overview-and-as-built.md#as-built-revisions)), and a `canon-implement` worker, which cannot reach the user, runs the triage itself and reports a question only the user can answer as blocked to its session.
+`canon-grill` is an auto skill ([D000§glossary: Glossary](../../designs/D000-project-overview.md#glossary)). Its description starts "Settles open decisions with the user. Use when only the user can settle a blocking decision, when walking a design or plan's decision tree, or to grill or stress-test a plan, design or idea." `canon-design`, `canon-plan`, `canon-implement`, `canon-tdd`, `canon-review` and the as-built steps send decisions here, naming the skill without restating how it asks, and a caller's own rule comes before this design's: the as-built steps put doubtful behavior to the user however plain it seems and give what the user leaves open their own known issue ([D002§as-built-revisions: As-built revisions](../../designs/D002-overview-and-as-built.md#as-built-revisions)), and a `canon-implement` worker, which cannot reach the user, runs the triage itself and reports a question only the user can answer as blocked to its session.
 
 ### Triage
 

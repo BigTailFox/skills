@@ -1,7 +1,7 @@
 ---
 status: done
 created: 2026-11-11
-updated: 2026-11-11
+updated: 2026-11-25
 revision: 1
 modules: [canon]
 summary: canon.py status, approved and follow-up trace units; blind-review rules in one skill; joint gates, follow-up rounds and approval in the skill texts.
@@ -14,7 +14,7 @@ approved: 1
 
 # P003: Review gate redesign
 
-Implements [D007: Change tiers and the review gate](../../designs/D007-change-tiers.md) r5 and the revisions its r4 gate made with it: [D001: Skill telemetry with canon trace](../../designs/D001-skill-telemetry.md) r12, [D003: Subagents](../../designs/D003-subagents.md) r7, [D005: Docs index](../../designs/D005-docs-index.md) r2 and [D006: Doc model and writing rules](../../designs/D006-doc-model.md) r5. Each design's `implemented` equals its revision at 7801614, so the work is each design's Spec diff from 7801614 to 1d127eb.
+Implements [D007: Change tiers and the review gate](../designs/D007-change-tiers.md) r5 and the revisions its r4 gate made with it: [D001: Skill telemetry with canon trace](../../designs/D001-skill-telemetry.md) r12, [D003: Subagents](../designs/D003-subagents.md) r7, [D005: Docs index](../../designs/D005-docs-index.md) r2 and [D006: Doc model and writing rules](../../designs/D006-doc-model.md) r5. Each design's `implemented` equals its revision at 7801614, so the work is each design's Spec diff from 7801614 to 1d127eb.
 
 ## Current state
 

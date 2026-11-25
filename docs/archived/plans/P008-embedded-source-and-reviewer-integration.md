@@ -1,7 +1,7 @@
 ---
 status: done
 created: 2026-11-23
-updated: 2026-11-24
+updated: 2026-11-25
 revision: 1
 reviewed: 1
 approved: 1
@@ -14,7 +14,7 @@ based_on: [D011@r1, D003@r12, D006@r21, D010@r8]
 
 # P008: Embedded source and external reviewer integration
 
-Implements [D011: Source code embedded in docs](../../designs/D011-embedded-source.md), [D003: Subagents](../../designs/D003-subagents.md), [D006: Doc model](../../designs/D006-doc-model.md) and [D010: Doc queries and renames](../../designs/D010-doc-queries-and-renames.md). The skill-text changes address the closing and reference-checking entries in [C001: Canon backlog](../../concepts/C001-canon-backlog.md).
+Implements [D011: Source code embedded in docs](../../designs/D011-embedded-source.md), [D003: Subagents](../designs/D003-subagents.md), [D006: Doc model](../../designs/D006-doc-model.md) and [D010: Doc queries and renames](../../designs/D010-doc-queries-and-renames.md). The skill-text changes address the closing and reference-checking entries in [C001: Canon backlog](../../concepts/C001-canon-backlog.md).
 
 ## Current state
 
@@ -28,7 +28,7 @@ Status: done
 
 Risk: A checkout-supplied or overbroad grant can expose material. A buffered command can cause duplicate launches or lose the provider ID during a quiet wait.
 
-Ship the fillable `reviewer-example.md` in the core skill, directly reachable from its `SKILL.md` and workflow. Update `canon-init`, the workflow and `canon-blind-review` to use [D003§authorization-for-command-reviewers: the actual grant](../../designs/D003-subagents.md#authorization-for-command-reviewers) and [D003§external-review-progress: the native command surface](../../designs/D003-subagents.md#external-review-progress). Show the two-section priorities/definitions layout, reference a shared launcher once, and label approval examples unfilled. Keep user decisions, model preferences, credentials and actual provider commands machine-local. Document setup trials and fallback, including importing old routes and discarding their claimed grants.
+Ship the fillable `reviewer-example.md` in the core skill, directly reachable from its `SKILL.md` and workflow. Update `canon-init`, the workflow and `canon-blind-review` to use [D003§authorization-for-command-reviewers: the actual grant](../designs/D003-subagents.md#authorization-for-command-reviewers) and [D003§external-review-progress: the native command surface](../designs/D003-subagents.md#external-review-progress). Show the two-section priorities/definitions layout, reference a shared launcher once, and label approval examples unfilled. Keep user decisions, model preferences, credentials and actual provider commands machine-local. Document setup trials and fallback, including importing old routes and discarding their claimed grants.
 
 - Walk the actual installed skill instructions with synthetic configuration and inputs. For each case, record the route, the next action, what inputs may leave and the justification the instructions would supply. Cover an affirmative batch grant for the first pass and confirmation, a standing grant on linked worktrees, other clones and batches, changed destination or inputs, expiry, revocation and a copied grant. Hold those inputs and destination fixed while varying the model, allowed tools or phase. A setup trial or recovery under a first-pass-only grant must direct zero provider calls until a matching grant or authorized replacement is selected. Include a docs-only grant with a confined view and a route unable to honor that limit. Transmission consent never settles a design approval.
 - Walk the published review instructions through an attached command, a buffered job, an explicit status request and an interrupted caller. For each, record prescribed launches, provider calls, local status reads, early ID binding and terminal report. The ordinary attached path launches once, waits on its handle, puts routine output in the command view and issues zero status queries or chat heartbeats. The interrupted path checks the retained job and the matching read-only recovery. Verify the example’s direct links and unfilled grant fields with the repository checks in Notes. Record these walkthroughs in slice scratch evidence.
@@ -59,7 +59,7 @@ Use the move mapping and heading-settlement logic in `canon.py` for [D011§moves
 
 Status: done
 
-Implement the closing and reference-checking entries in [C001§ideas: backlog](../../concepts/C001-canon-backlog.md#ideas) within [D001§budgets: skill budgets](../../designs/D001-skill-telemetry.md#budgets). In the core skill add “Closing a workflow” to `workflow.md` and “Deferred findings” beside the known-issue format in `doc-types.md`, following [D006§known-issues-findings-and-slices: issue records](../../designs/D006-doc-model.md#known-issues-findings-and-slices) and [D007§merging-findings: destinations](../../designs/D007-change-tiers.md#merging-findings).
+Implement the closing and reference-checking entries in [C001§ideas: backlog](../../concepts/C001-canon-backlog.md#ideas) within [D001§budgets: skill budgets](../../designs/D001-skill-telemetry.md#budgets). In the core skill add “Closing a workflow” to `workflow.md` and “Deferred findings” beside the known-issue format in `doc-types.md`, following [D006§known-issues-findings-and-slices: issue records](../../designs/D006-doc-model.md#known-issues-findings-and-slices) and [D007§merging-findings: destinations](../designs/D007-change-tiers.md#merging-findings).
 
 Use the shared closing condition in `canon-code-review`, `canon-design`, `canon-plan`, `canon-implement`, `canon-review`, `canon-handoff` and `canon-investigate`. Keep their trace timing and exceptions, including nested code review, L1 carry-on, handoff and investigation. Route findings from core `workflow.md`, `as-built.md`, `canon-code-review`, `canon-review` and `canon-retro` as each caller requires. A target-plan finding goes to its Notes, an as-built issue keeps its base and next action, the review keeps its moved disposition and retro Later always goes to the backlog. Keep cross-skill pointers by installed name.
 

@@ -1,13 +1,13 @@
 ---
 status: active
 created: 2026-11-23
-updated: 2026-11-24
+updated: 2026-11-25
 revision: 2
 modules: [canon]
 summary: Embed a repository source file or a named region in Markdown, regenerate its fenced code block and check it against the same Git tree as the document.
 refs: [C001, D006, D010, D005]
 owns: [source-embeds]
-paths: [skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, tests/test_canon.py]
+paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py]
 reviewed: 2
 reviewers: [gpt-6.2-astra]
 approved: 1

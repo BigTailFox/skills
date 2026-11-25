@@ -5,7 +5,7 @@ updated: 2026-11-25
 revision: 4
 modules: []
 summary: Agent skills built around canon, a documentation system kept in the repository; one module, its capabilities and the designs that own them.
-refs: [D001, D002, D003, D004, D005, D006, D007, D008, D009, D010, D011, D012]
+refs: [D001, D002, D004, D005, D006, D010, D011, D012, D013]
 owns: [architecture]
 paths: []
 reviewed: 4
@@ -38,38 +38,23 @@ The module, `canon`, and the repository tooling, `scripts/validate.py`, share th
 
 | Capability | Modules | Design |
 |---|---|---|
-| Docs that live in the repository: numbered docs with frontmatter, references, a lifecycle and archiving, created, checked (the work tree, what a commit records, or a commit) and archived with `canon.py`, sessions that work in one repository at the same time, each in a worktree, and the rules for writing them | canon | [D006: Doc model and writing rules](D006-doc-model.md) |
+| Docs that live in the repository: numbered docs with frontmatter, references, a lifecycle and archiving, created, checked (work tree, staged index, or commit) and archived with `canon.py` | canon | [D006: Doc model](D006-doc-model.md) |
 | Queries of the docs and the code they govern (`canon.py show`, `find`, `which`, `affected`), and renaming and renumbering docs (`rename`, `renumber`) | canon | [D010: Doc queries and renames](D010-doc-queries-and-renames.md) |
 | Source files and named regions embedded in documentation, refreshed with `canon.py embed` and verified in the selected tree | canon | [D011: Source code embedded in docs](D011-embedded-source.md) |
 | The generated index of each docs root's docs in `docs/README.md` and `docs/archived/README.md` (`canon.py index`) | canon | [D005: Docs index](D005-docs-index.md) |
-| Change tiers, review rounds and checks of required coverage (`canon.py review`), pending L2 approvals (`canon.py approvals`), and design problems | canon | [D007: Change tiers and the review gate](D007-change-tiers.md) |
-| Writing designs and plans, and implementing plans slice by slice (`canon-design`, `canon-plan`, `canon-implement`) | canon | none |
-| The project overview, D000, with the designs `audit` finds D000 does not reach, the source areas it finds no design covers and the designs whose code changed in commits that do not name them | canon | [D002: Project overview and as-built designs](D002-overview-and-as-built.md) |
-| Commit messages generated from staged paths and design references checked on each new non-merge commit | canon | [D002§design-references-in-commits: Design references in commits](D002-overview-and-as-built.md#design-references-in-commits) |
-| As-built designs, and the backfill before a change to behavior no design states | canon | [D002: Project overview and as-built designs](D002-overview-and-as-built.md) |
-| Blind reviews by fresh subagents, a cross-family reviewer included, for the review gate, code review or any request (`canon-blind-review`), and a fresh worker for each plan slice | canon | [D003: Subagents](D003-subagents.md), [D007: Change tiers and the review gate](D007-change-tiers.md) |
+| Review CLI: isolated review rounds and snapshots (`canon.py review start`, `snapshot`), required coverage checks (`review check`), and worktree-local pending L2 approvals (`approvals`) | canon | [D013: Review CLI](D013-review-cli.md) |
+| Project overview D000, `as_built` frontmatter checks, doc/skill path classification, `audit` coverage and unchecked commits, staged commit templates and per-commit `Refs:` validation | canon | [D002: Project overview, as-built checks and audit](D002-overview-and-as-built.md) |
 | Opt-in workflow capture and history (`canon.py trace`), with an offline report on reviewer contributions, outcomes, measured costs and replay eligibility (`scripts/trace_report.py`) | canon | [D001: Skill telemetry with canon trace](D001-skill-telemetry.md) |
 | Prepare, run, score and summarize paired replays of recorded reviews and plan slices (`scripts/replay_workflows.py`) | canon | [D012: Paired replay of Canon workflows](D012-workflow-replay.md) |
-| Project setup: canon installed in each project with the canon version the project records, `docs/`, the `AGENTS.md` block, migration of existing docs and upgrades (`canon-init`) | canon | [D004: Project setup](D004-project-setup.md) |
-| Docs kept in step with the code: the docs step, repair after a merge or rebase, and the doc health audit (`canon-sync`, and the known issues, idle docs and due reviews `canon.py audit` reports) | canon | none |
-| Code review of a finished change (`canon-code-review`) | canon | none |
-| Codebase review from chosen angles (`canon-review`) | canon | none |
-| Test-driven development at a slice's seams (`canon-tdd`) | canon | none |
-| Settling open decisions (`canon-grill`) | canon | [D009: Settling decisions](D009-settling-decisions.md) |
-| Throwaway prototypes (`canon-prototype`) and research from primary sources (`canon-research`), recorded as E docs | canon | [D008: Prototypes and research](D008-experiments.md) |
-| Diagnosis of hard bugs and performance regressions, recorded as I docs (`canon-investigate`) | canon | none |
-| Deep-module vocabulary and designing an interface twice (`canon-codebase-design`) | canon | none |
-| Handoff to a fresh agent (`canon-handoff`) | canon | none |
-| Retro on friction in the tooling and the agent workflow (`canon-retro`) | canon | none |
-| Teaching a topic in one answer or a course (`canon-teach`) | canon | none |
-| Reference for writing docs that agents read (`canon-agent-writing`) | canon | none |
+| Project setup CLI: project-local install location check, `CANON_VERSION` check, `canon.py init` and `canon.py adopt` | canon | [D004: Project setup](D004-project-setup.md) |
+| Agent skill prose (`canon` workflow, tiers, review gate, concurrent work, writing rules, `canon-init`, `canon-sync`, `canon-blind-review`, `canon-design`, `canon-plan`, `canon-implement`, `canon-code-review`, `canon-review`, `canon-tdd`, `canon-grill`, `canon-prototype`, `canon-research`, `canon-investigate`, `canon-codebase-design`, `canon-handoff`, `canon-retro`, `canon-teach`, `canon-agent-writing`) | canon | none (skill text is authoritative) |
 | A layout the `skills` CLI installs from: each skill at `skills/<category>/<name>/SKILL.md`, and no `SKILL.md` elsewhere | canon | none |
 
 ### Modules
 
 | Module | Path | Purpose | Entry points | Design |
 |---|---|---|---|---|
-| canon | skills/, scripts/, tests/ | The skills: `skills/governance/` builds and maintains the documentation system, `skills/execution/` does development work through it, `scripts/` holds repository tooling, and `tests/` covers the skills, report and validator | `skills/governance/canon/SKILL.md`, `skills/governance/canon/scripts/canon.py`, each skill's `SKILL.md`, `scripts/trace_report.py`, `scripts/replay_workflows.py` | [D001: Skill telemetry with canon trace](D001-skill-telemetry.md), [D002: Project overview and as-built designs](D002-overview-and-as-built.md), [D003: Subagents](D003-subagents.md), [D004: Project setup](D004-project-setup.md), [D005: Docs index](D005-docs-index.md), [D006: Doc model and writing rules](D006-doc-model.md), [D007: Change tiers and the review gate](D007-change-tiers.md), [D008: Prototypes and research](D008-experiments.md), [D009: Settling decisions](D009-settling-decisions.md), [D010: Doc queries and renames](D010-doc-queries-and-renames.md), [D011: Source code embedded in docs](D011-embedded-source.md), [D012: Paired replay of Canon workflows](D012-workflow-replay.md) |
+| canon | skills/governance/canon/scripts/, scripts/, tests/ | Code subsystems: the `canon.py` CLI (`skills/governance/canon/scripts/`), repository validation, trace reporting and paired replay tooling (`scripts/`), and their test suites (`tests/`). Pure-Markdown skill directories under `skills/` are self-authoritative and excluded from design coverage | `skills/governance/canon/scripts/canon.py`, `scripts/validate.py`, `scripts/trace_report.py`, `scripts/replay_workflows.py` | [D001: Skill telemetry with canon trace](D001-skill-telemetry.md), [D002: Project overview, as-built checks and audit](D002-overview-and-as-built.md), [D004: Project setup](D004-project-setup.md), [D005: Docs index](D005-docs-index.md), [D006: Doc model](D006-doc-model.md), [D010: Doc queries and renames](D010-doc-queries-and-renames.md), [D011: Source code embedded in docs](D011-embedded-source.md), [D012: Paired replay of Canon workflows](D012-workflow-replay.md), [D013: Review CLI](D013-review-cli.md) |
 
 ### Dependencies
 
@@ -88,3 +73,4 @@ There is one module, so no direction between modules applies. These hold inside 
 - `CANON_VERSION` is separate from the release version: it changes only with `canon.py`, and a project's recorded version is compared by it alone ([D004§project-version: project version](D004-project-setup.md#project-version)).
 - `canon.py` is one file on the standard library, which agents and CI run from the `canon` skill installed in each project; projects keep no copy of it ([D004: Project setup](D004-project-setup.md) gives the reasons).
 - The tooling's tests share `tests/` with `canon.py`'s, which `validate.py` already runs, and only `skills/`, the part that is installed, must not depend on the tooling (the user's decision; R001-F31). Until a design lists `tests/test_validate.py`, coverage reports it as uncovered; like the tooling it tests, it needs no backfill.
+- Pure skill Markdown (`skills/**/*.md`) is its own single source of truth: do not write designs that restate an equivalent natural-language specification or backfill prose skills as-built. `docs/designs/` specifies only code subsystems (`canon.py`, telemetry/replay tooling, tests) and cross-cutting architecture, invariants and `Decisions` that do not belong in runtime skill text (the user's decision, 2026-11-25; supersedes D003/D007 prose and retires D008/D009).

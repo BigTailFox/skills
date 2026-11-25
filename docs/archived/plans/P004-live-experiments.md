@@ -1,7 +1,7 @@
 ---
 status: done
 created: 2026-11-12
-updated: 2026-11-12
+updated: 2026-11-25
 revision: 1
 modules: [canon]
 summary: Experiment statuses answered, live concluded, superseded, overturned and dropped in canon.py, its tests and the skill texts that set and archive them.
@@ -14,7 +14,7 @@ approved: 1
 
 # P004: Live concluded experiments
 
-Implements [D006: Doc model and writing rules](../../designs/D006-doc-model.md) r9 and [D008: Prototypes and research](../../designs/D008-experiments.md) r5, which passed one gate together. Each design's `implemented` equals its revision at 13203bc, D006 7 and D008 3, so the work is each design's Spec diff from 13203bc to 832e6c7.
+Implements [D006: Doc model and writing rules](../../designs/D006-doc-model.md) r9 and [D008: Prototypes and research](../designs/D008-experiments.md) r5, which passed one gate together. Each design's `implemented` equals its revision at 13203bc, D006 7 and D008 3, so the work is each design's Spec diff from 13203bc to 832e6c7.
 
 ## Current state
 

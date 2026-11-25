@@ -1,7 +1,7 @@
 ---
 status: answered
 created: 2026-11-13
-updated: 2026-11-13
+updated: 2026-11-25
 revision: 1
 modules: [canon]
 summary: Ideas from popular skill libraries (mattpocock, superpowers, ECC, anthropics): skill evals against a baseline, trigger tests and review guards lead.
@@ -160,14 +160,14 @@ What canon could take from them is mostly ways to **measure** skills, which cano
 4. **Check each review finding before acting on it.**
    - Sources: [receiving-code-review/SKILL.md L17-L96](https://github.com/obra/superpowers/blob/v7.0.2/skills/receiving-code-review/SKILL.md?plain=1#L17-L96) (`v7.0.2`); [plugins/code-review/commands/code-review.md L15-L87](https://github.com/anthropics/claude-plugins-official/blob/f75f5b25ae94f4332be4ff5f18435741d2589bdb/plugins/code-review/commands/code-review.md?plain=1#L15-L87) (`f75f5b2`); [code-review-and-quality/SKILL.md L179-L195](https://github.com/addyosmani/agent-skills/blob/301b02b12bff98e4688e6984af6556802322bbde/skills/code-review-and-quality/SKILL.md?plain=1#L179-L195); [cavecrew/SKILL.md L70](https://github.com/JuliusBrussee/caveman/blob/ad473752bdc86ca96d7289443228d4c53ec119a8/skills/cavecrew/SKILL.md?plain=1#L70).
    - What it does: the merge checks each finding against the code it names (its callers, guards and tests) before accepting or declining it. A defect the change did not introduce becomes a known issue instead of growing the change. The reviewer prompt labels defects already in the base apart from regressions and says a report with no findings is valid. Optionally, as in Anthropic's `code-review`, a validation subagent checks each blocker.
-   - Canon's nearest: [canon-blind-review§merge](../../skills/execution/canon-blind-review/SKILL.md#merge) and [D007§merging-findings: merging findings](../designs/D007-change-tiers.md#merging-findings), which accept, decline or escalate without such a check.
+   - Canon's nearest: [canon-blind-review§merge](../../skills/execution/canon-blind-review/SKILL.md#merge) and [D007§merging-findings: merging findings](../archived/designs/D007-change-tiers.md#merging-findings), which accept, decline or escalate without such a check.
    - Serves D000: fewer wrong fixes and fewer findings escalated to the user, and defects already in the base carried across sessions as known issues, canon's record for them.
    - Cost: a few lines. Subagents only where validation is chosen. Fewer interruptions.
-   - Taken up by: [D003: Subagents](../designs/D003-subagents.md), whose Input and reports state the blind-review rules, and D007's Merging findings.
+   - Taken up by: [D003: Subagents](../archived/designs/D003-subagents.md), whose Input and reports state the blind-review rules, and D007's Merging findings.
 5. **Worker reports in a file, with a short return.**
    - Sources: [subagent-driven-development/SKILL.md L183-L230](https://github.com/obra/superpowers/blob/v7.0.2/skills/subagent-driven-development/SKILL.md?plain=1#L183-L230) (`v7.0.2`); [cavecrew/SKILL.md L9-L53](https://github.com/JuliusBrussee/caveman/blob/ad473752bdc86ca96d7289443228d4c53ec119a8/skills/cavecrew/SKILL.md?plain=1#L9-L53) (`ad47375`).
    - What it does: the worker writes its full report to a file beside its id file in `.canon/canon-implement/<P id>/` and returns only its status, the files changed, a one-line test result and open questions. The orchestrator reads the file when it acts on the report.
-   - Canon's nearest: the worker prompt of `canon-implement` and [D003§input-and-reports: input and reports](../designs/D003-subagents.md#input-and-reports), where the whole report is the worker's final message.
+   - Canon's nearest: the worker prompt of `canon-implement` and [D003§input-and-reports: input and reports](../archived/designs/D003-subagents.md#input-and-reports), where the whole report is the worker's final message.
    - Serves D000: one session orchestrates a whole plan, and every report stays in its context for all later slices. Long plans therefore compact sooner, which superpowers names as the cause of its costliest observed failure. The file also outlives the session for a handoff.
    - Cost: saves orchestrator context. No subagents or interruptions.
    - Taken up by: D003, as an L1 revision of Input and reports.
@@ -185,7 +185,7 @@ What canon could take from them is mostly ways to **measure** skills, which cano
 7. **A decision map for work bigger than one session.**
    - Source: [wayfinder/SKILL.md L1-L126](https://github.com/mattpocock/skills/blob/5863806dd4e15c63174bee4e7515a4256792ecfa/skills/engineering/wayfinder/SKILL.md?plain=1#L1-L126) (`5863806`).
    - What it does: a concept that maps such an effort gets a Destination, a section for questions not yet sharp enough to ask, and an Out of scope section. Its open questions get dependency edges, so the frontier can be computed, and a claim marker, so parallel sessions in worktrees take different questions. Each session settles one question.
-   - Canon's nearest: concept docs walked by `canon-grill`'s design tree and frontier ([D009: Settling decisions](../designs/D009-settling-decisions.md)).
+   - Canon's nearest: concept docs walked by `canon-grill`'s design tree and frontier ([D009: Settling decisions](../archived/designs/D009-settling-decisions.md)).
    - Serves D000: long efforts carried across many sessions, and parallel sessions on one effort.
    - Cost: doc structure only. It saves the reading each session does to reorient.
    - Taken up by: D009's Record, and [D006: Doc model and writing rules](../designs/D006-doc-model.md) for the concept sections.
@@ -231,7 +231,7 @@ What canon could take from them is mostly ways to **measure** skills, which cano
 
 Left out because canon already has the idea:
 
-- Subagents started fresh rather than forked: a Decision of [D003: Subagents](../designs/D003-subagents.md), citing mattpocock/skills `7739eae`.
+- Subagents started fresh rather than forked: a Decision of [D003: Subagents](../archived/designs/D003-subagents.md), citing mattpocock/skills `7739eae`.
 - A progress record that survives compaction: canon's plan, whose Current state and Log are committed after each slice. Superpowers keeps the same record in a git-ignored ledger.
 - Reader testing by a fresh agent (`doc-coauthoring`), and two independent reviewers or an adversarial fresh reviewer (`santa-method`, `doubt-driven-development`): the review gate's blind reviewers, whose Completeness criterion asks whether a fresh agent could act on the doc alone, and the confirmation round.
 - Evidence before completion claims for delegated work (`verification-before-completion`, `verification-loop`): `canon-implement` re-runs a done slice's tests and checks its diff, and `canon-tdd` defines done. The requirements part is [C002: Acceptance check](../concepts/C002-acceptance-check.md).

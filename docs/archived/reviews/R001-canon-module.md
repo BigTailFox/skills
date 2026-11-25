@@ -1,7 +1,7 @@
 ---
 status: closed
 created: 2026-11-03
-updated: 2026-11-05
+updated: 2026-11-25
 revision: 1
 modules: []
 summary: First codebase review of the canon module at release 0.3.1, from the architecture, usability and functional angles.
@@ -17,7 +17,7 @@ refs: [D000, D001, D002, D003, D004, D005]
 - Angles: architecture, usability, functional.
 - Hot spots, by commits in the last 90 days: `skills/governance/canon/scripts/canon.py` (25, 3383 lines), `tests/test_canon.py` (22), `skills/governance/canon/workflow.md` (21), `skills/governance/canon/SKILL.md` (19), `canon-implement` (18), `canon-blind-review` (14), `canon-init` and `canon-code-review` (13 each), `canon-review` (10).
 - Design coverage: 14 of D000's 21 capabilities name no design. `audit` lists, among others, `canon-teach`, `canon-codebase-design`, `canon-prototype`, `canon-tdd`, `canon-grill`, `canon-research` and `canon-agent-writing` as wholly uncovered; no design is over 500 lines. [D001: Skill telemetry with canon trace](../../designs/D001-skill-telemetry.md) is at revision 7 with `implemented: 5`, and no plan is open.
-- Governing designs: [D000: Project overview](../../designs/D000-project-overview.md), [D001: Skill telemetry](../../designs/D001-skill-telemetry.md), [D002: Project overview and as-built designs](../../designs/D002-overview-and-as-built.md), [D003: Subagents](../../designs/D003-subagents.md), [D004: Project setup](../../designs/D004-project-setup.md), [D005: Docs index](../../designs/D005-docs-index.md).
+- Governing designs: [D000: Project overview](../../designs/D000-project-overview.md), [D001: Skill telemetry](../../designs/D001-skill-telemetry.md), [D002: Project overview and as-built designs](../../designs/D002-overview-and-as-built.md), [D003: Subagents](../designs/D003-subagents.md), [D004: Project setup](../../designs/D004-project-setup.md), [D005: Docs index](../../designs/D005-docs-index.md).
 
 ## Findings
 

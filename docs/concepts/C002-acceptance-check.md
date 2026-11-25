@@ -1,7 +1,7 @@
 ---
 status: draft
 created: 2026-11-13
-updated: 2026-11-13
+updated: 2026-11-25
 revision: 2
 modules: [canon]
 summary: Acceptance check of a finished change, a canon-acceptance skill whose fresh subagent runs the real artifact against the design's Goals before code review.
@@ -14,7 +14,7 @@ refs: [C001, D001, D003, E002]
 
 No step of canon's flow runs a finished change the way a user would. `canon-tdd` calls a slice or change done when its test criteria pass at the seams the plan names and nothing green turned red, `canon-code-review` reads the diff, and `canon-implement` then runs the docs step. Every slice can pass at its own seams while the whole change fails where slices meet or at edges no seam covers: an entry point never wired up, a missing config key or migration, a UI control that calls nothing. This repository meets the gap itself: the README's [Host verification](../../README.md#host-verification) checks are an acceptance list run by hand, because no test covers them.
 
-Canon serves long-running work that sessions often finish unattended, so the user comes back to a claim that a change is done. Evidence that it works, the commands run and what they printed, serves that user better than a report of green tests. Code review keeps the session that wrote the code from reviewing it ([D003§reviewers: reviewers](../designs/D003-subagents.md#reviewers)), and the same reason applies to judging that the code works.
+Canon serves long-running work that sessions often finish unattended, so the user comes back to a claim that a change is done. Evidence that it works, the commands run and what they printed, serves that user better than a report of green tests. Code review keeps the session that wrote the code from reviewing it ([D003§reviewers: reviewers](../archived/designs/D003-subagents.md#reviewers)), and the same reason applies to judging that the code works.
 
 ## Ideas
 

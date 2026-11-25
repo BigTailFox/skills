@@ -1,7 +1,7 @@
 ---
-status: active
+status: retired
 created: 2026-11-10
-updated: 2026-11-24
+updated: 2026-11-25
 revision: 7
 modules: [canon]
 summary: Prototypes and research (canon-prototype, canon-research): quick answers, the research brief, logic, UI and spike prototypes, verdicts in E docs.
@@ -23,7 +23,7 @@ implemented: 7
 3. Recorded research runs beside the main work, every finding traces to a primary source, and a researcher that stops loses no finding it has made.
 4. Prototype code wired into the product stays off the main branch, which keeps the decision, the experiment and its self-contained files.
 
-Out of scope: the E doc type, its sections, statuses and archiving ([D006: Doc model](D006-doc-model.md)); the subagents of the canon workflow and the rule that every subagent is new, never a fork of the session ([D003: Subagents](D003-subagents.md)); grill triage, which routes questions to these skills ([D009§triage: Triage](D009-settling-decisions.md#triage)).
+Out of scope: the E doc type, its sections, statuses and archiving ([D006: Doc model](../../designs/D006-doc-model.md)); the subagents of the canon workflow and the rule that every subagent is new, never a fork of the session ([D003: Subagents](D003-subagents.md)); grill triage, which routes questions to these skills ([D009§triage: Triage](D009-settling-decisions.md#triage)).
 
 ## Spec
 
@@ -31,7 +31,7 @@ Out of scope: the E doc type, its sections, statuses and archiving ([D006: Doc m
 
 ### Triggers
 
-Both are auto skills ([D000§glossary: Glossary](D000-project-overview.md#glossary)): besides running as a command, each loads when the context matches its description, whose triggers are:
+Both are auto skills ([D000§glossary: Glossary](../../designs/D000-project-overview.md#glossary)): besides running as a command, each loads when the context matches its description, whose triggers are:
 
 - `canon-research`: a design or decision depends on facts about an external library, service, protocol or standard; the user wants a topic researched or API facts gathered; grill triage routes a question here.
 - `canon-prototype`: a design decision or non-obvious logic question needs evidence that reading and reasoning cannot give; the user wants to sanity-check a state model or explore what a UI should look like; grill triage routes a decision here.
@@ -45,25 +45,25 @@ A fact one or two primary sources settle, such as a signature, a default, a limi
 ### Recorded research
 
 1. **Frame**: the session writes the question, the answer that would settle it, and the doc that will absorb the answer, usually the design being written or revised.
-2. **Reserve**: in the main session, before any subagent starts, it looks for experiments on the same question with `canon.py find --archived`. It extends one it finds that is `planned` or `running`, or `answered` and cited by no live doc, as [D006§doc-types: doc types](D006-doc-model.md#doc-types) states, setting a `planned` or `answered` one `running` with `canon.py status`; otherwise it runs `canon.py new E <slug> --research`, fills Question, links each earlier experiment it found on the question, and sets it `running` with `canon.py status`.
+2. **Reserve**: in the main session, before any subagent starts, it looks for experiments on the same question with `canon.py find --archived`. It extends one it finds that is `planned` or `running`, or `answered` and cited by no live doc, as [D006§doc-types: doc types](../../designs/D006-doc-model.md#doc-types) states, setting a `planned` or `answered` one `running` with `canon.py status`; otherwise it runs `canon.py new E <slug> --research`, fills Question, links each earlier experiment it found on the question, and sets it `running` with `canon.py status`.
 3. **Launch**: it starts a background subagent, new as [D003§launch: launch](D003-subagents.md#launch) states, with the [research brief](#research-brief) where the host supports one, and otherwise does the research inline under the brief's rules. For a subagent it keeps the filled brief and the subagent's id in `.canon/canon-research/<E00X>/` as `brief.md` and `id.txt`; inline research keeps neither. It keeps working on what does not depend on the answer. The skill names no model.
 4. **Recover**, when the host reports that the researcher stopped before finishing: the launching session resumes it once by its id where the host allows, and otherwise reruns `brief.md` once in a new subagent; a second stop goes to the user. Another session finding an experiment still `running` reruns `brief.md` only once the user confirms that no other session is running it.
 5. **Absorb**, when the subagent finishes: the session opens the sources behind the findings its decision depends on and confirms they say what the experiment claims, sets the experiment `answered` with `canon.py status`, then absorbs the conclusion as [Absorbing a conclusion](#absorbing-a-conclusion) states.
 
 ### Research brief
 
-The brief gives the subagent the experiment's path, the question, what answer would settle it, the attachment directory, the documentation language and the experiment's id, and has it research the question and record its findings in the experiment under the rules below; step 3 of [canon-research's SKILL.md](../../skills/execution/canon-research/SKILL.md) holds its wording.
+The brief gives the subagent the experiment's path, the question, what answer would settle it, the attachment directory, the documentation language and the experiment's id, and has it research the question and record its findings in the experiment under the rules below; step 3 of [canon-research's SKILL.md](../../../skills/execution/canon-research/SKILL.md) holds its wording.
 
 - Evidence comes from primary sources only: official documentation, specifications, source code and first-party APIs. Every claim traces to the source that owns it; a secondary write-up is a lead, never evidence, and the subagent's memory is never evidence.
 - The version or date each source describes is noted.
-- Record the sources in Setup using the [D006§doc-types: experiment fields](D006-doc-model.md#doc-types). When reusing an older blank run template for research, remove the unused run labels. Preserve earlier sources and run evidence when extending an experiment.
+- Record the sources in Setup using the [D006§doc-types: experiment fields](../../designs/D006-doc-model.md#doc-types). When reusing an older blank run template for research, remove the unused run labels. Preserve earlier sources and run evidence when extending an experiment.
 - Results: one finding per bullet, each linked to its source; inferences are marked as inferences, and conflicts between sources are reported.
 - Conclusion: the answer, the subagent's confidence and what remains open.
 - `summary`: one line that leads with the question's subject and states the answer.
 - The subagent writes each finding into the experiment as soon as it has its source, so a run that stops loses nothing; a rerun keeps the findings the doc already holds and researches only what they leave open.
-- Long excerpts worth keeping go in the attachment directory, linked from the doc. Each link and image target in an excerpt that is relative or starts with `/` is resolved against the source's URL into an absolute URL, so the excerpt's text stays verbatim while its links pass `check` ([D006§links-and-references: links and references](D006-doc-model.md#links-and-references)).
+- Long excerpts worth keeping go in the attachment directory, linked from the doc. Each link and image target in an excerpt that is relative or starts with `/` is resolved against the source's URL into an absolute URL, so the excerpt's text stays verbatim while its links pass `check` ([D006§links-and-references: links and references](../../designs/D006-doc-model.md#links-and-references)).
 - Every `<!-- canon: ... -->` comment is replaced, and the doc is written in the documentation language.
-- Before finishing, the subagent runs `canon.py check <E00X> --fix` and fixes the errors it reports, checking only its own doc ([D006§concurrent-work: concurrent work](D006-doc-model.md#concurrent-work)).
+- Before finishing, the subagent runs `canon.py check <E00X> --fix` and fixes the errors it reports, checking only its own doc ([D006§concurrent-work: concurrent work](../../designs/D006-doc-model.md#concurrent-work)).
 - The subagent modifies nothing but the experiment and its attachment directory, and keeps scratch files in `.canon/canon-research/<E00X>/scratch/`, never in the OS temp directory, reading paths there directly, since search tools that honor `.gitignore` skip `.canon/`.
 
 ### Prototype framing
@@ -94,7 +94,7 @@ Every kind of prototype:
 
 ### Logic prototype
 
-For business logic, state transitions or data shape. The process and anti-patterns are in [LOGIC.md](../../skills/execution/canon-prototype/LOGIC.md).
+For business logic, state transitions or data shape. The process and anti-patterns are in [LOGIC.md](../../../skills/execution/canon-prototype/LOGIC.md).
 
 - One self-contained HTML file in plain HTML, CSS and JavaScript, everything inline, with no framework, bundler or server, so it opens by double-click and can be handed to a non-developer.
 - A visible intro at the top states, in one paragraph, the state model and the question.
@@ -107,7 +107,7 @@ For business logic, state transitions or data shape. The process and anti-patter
 
 ### UI prototype
 
-For what a page, or a part of one, should look like. The process, an example switcher and anti-patterns are in [UI.md](../../skills/execution/canon-prototype/UI.md).
+For what a page, or a part of one, should look like. The process, an example switcher and anti-patterns are in [UI.md](../../../skills/execution/canon-prototype/UI.md).
 
 - Several variants, 3 by default and at most 5, that differ in layout, information hierarchy and primary affordance, not only in colour or copy. Each is a component with a clear exported name, `VariantA`, `VariantB`, ..., held to the page's purpose and data and built with the project's component library or styling system. Variants may share a small component such as a header but no layout, and a variant that must mutate calls a stub.
 - **On an existing page**, the default, also for something that would live inside an existing page: the variants render on its route, chosen by the `?variant=` URL search parameter. The route's data fetching, parameters and auth stay; only the rendered subtree changes.
@@ -140,14 +140,14 @@ Once a prototype has answered its question, the session:
 - Research: the conclusion goes into the doc named when framing, with a link to the experiment: a design as a Spec constraint, a Budget or a Decision, a plan in its Notes.
 - Prototype: while a design is being written, the session writes the decision straight into it, with a link to the experiment; a detail a plan settles within its design goes into the plan's Notes with the link ([D007§design-problems: design problems](D007-change-tiers.md#design-problems)).
 - An accepted or active design changes only through the change tiers ([D007§change-tiers: change tiers](D007-change-tiers.md#change-tiers)); a prototype's session takes the verdict to the user.
-- Once a design or plan links the experiment for its conclusion, the session that wrote the link sets the experiment `concluded` with `canon.py status`. Which other steps set it, what the step that does so archives of earlier experiments on the question, and when and as what an experiment is archived, is [D006§doc-types: doc types](D006-doc-model.md#doc-types)'s.
+- Once a design or plan links the experiment for its conclusion, the session that wrote the link sets the experiment `concluded` with `canon.py status`. Which other steps set it, what the step that does so archives of earlier experiments on the question, and when and as what an experiment is archived, is [D006§doc-types: doc types](../../designs/D006-doc-model.md#doc-types)'s.
 
 ## Decisions
 
 - Recorded research runs in a background subagent so the main work continues while it reads (a06989b, the skill's first description).
 - The main session reserves the experiment's id before the subagent starts, which keeps ids unique while both sessions write docs (`canon-research`, step 2).
 - The researcher writes each finding as soon as it has its source, and the launching session keeps the brief and the subagent's id, so a stopped run loses nothing and can be resumed or rerun: a researcher that wrote only at the end lost its work when it stopped, and a resume from another session failed (R003-F15; the user's decision, 2026-11-11).
-- The research brief keeps the subagent's scratch files in `.canon/canon-research/<E00X>/` and says that search tools honoring `.gitignore` skip `.canon/`: subagents wrote scratch files to `/tmp`, and Cursor's Grep and Glob skipped the ignored `.canon/` ([R003: Silk design phase](../archived/reviews/R003-silk-design-phase.md), F41; 80b9688).
+- The research brief keeps the subagent's scratch files in `.canon/canon-research/<E00X>/` and says that search tools honoring `.gitignore` skip `.canon/`: subagents wrote scratch files to `/tmp`, and Cursor's Grep and Glob skipped the ignored `.canon/` ([R003: Silk design phase](../reviews/R003-silk-design-phase.md), F41; 80b9688).
 - A logic prototype is one self-contained file so a non-developer can open it with nothing to install, and its logic is a pure module so it lifts into the real codebase once validated (LOGIC.md).
 - A UI prototype goes on an existing page whenever one could host it: on an empty route every variant looks fine, hiding problems a populated page exposes. More than 5 variants stop being radically different (UI.md).
 - Code wired into the product stays on the prototype branch, since variant components and a switcher left on the main branch rot and confuse the next reader (UI.md, step 6).

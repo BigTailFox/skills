@@ -1,7 +1,7 @@
 ---
 status: done
 created: 2026-11-13
-updated: 2026-11-13
+updated: 2026-11-25
 revision: 1
 modules: [canon]
 summary: check --rev and --staged, index --staged and stale index levels, check of named docs, init's hook and .worktrees/, worktree trace data, concurrent-work texts.
@@ -14,7 +14,7 @@ approved: 1
 
 # P006: Concurrent work and staged checks
 
-Implements [D006: Doc model and writing rules](../../designs/D006-doc-model.md) r19 and its follow-ons [D005: Docs index](../../designs/D005-docs-index.md) r3, [D004: Project setup](../../designs/D004-project-setup.md) r7, [D003: Subagents](../../designs/D003-subagents.md) r8 and [D001: Skill telemetry with canon trace](../../designs/D001-skill-telemetry.md) r13, which passed one gate together, D006 r19 through its follow-up round. Each design's `implemented` equals its revision at f9479a6, D006 16, D005 2, D004 6, D003 7 and D001 12, so the work is each design's Spec diff from f9479a6 to f37509b.
+Implements [D006: Doc model and writing rules](../../designs/D006-doc-model.md) r19 and its follow-ons [D005: Docs index](../../designs/D005-docs-index.md) r3, [D004: Project setup](../../designs/D004-project-setup.md) r7, [D003: Subagents](../designs/D003-subagents.md) r8 and [D001: Skill telemetry with canon trace](../../designs/D001-skill-telemetry.md) r13, which passed one gate together, D006 r19 through its follow-up round. Each design's `implemented` equals its revision at f9479a6, D006 16, D005 2, D004 6, D003 7 and D001 12, so the work is each design's Spec diff from f9479a6 to f37509b.
 
 ## Current state
 

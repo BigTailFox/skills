@@ -1,6 +1,6 @@
 # Decisions and procedures in the Canon workflow
 
-The proposed short guide follows a change from tier selection to delivery and shows where a decision returns to the maintainer. [D007§change-tiers: change tiers](../../designs/D007-change-tiers.md#change-tiers)
+The proposed short guide follows a change from tier selection to delivery and shows where a decision returns to the maintainer. [D007§change-tiers: change tiers](../../archived/designs/D007-change-tiers.md#change-tiers)
 
 ## Detail in concepts, designs and plans
 
@@ -12,9 +12,9 @@ Implementation choices left open by both documents belong to the implementer. Wh
 
 ## Blind review effort for a change
 
-Splitting a design into sub-designs with its meaning intact requires an L1 gate. A difficult race fix that restores specified behavior in one module can qualify as L0. A full L2 change with implementation waits for design, plan and code reviews in sequence. First-round reviewers within each stage already run in parallel. [D007§choosing-a-tier: choosing a tier](../../designs/D007-change-tiers.md#choosing-a-tier) · [Change flows](../../../skills/governance/canon/workflow.md#flows) · [Code review](../../../skills/governance/canon/workflow.md#code-review)
+Splitting a design into sub-designs with its meaning intact requires an L1 gate. A difficult race fix that restores specified behavior in one module can qualify as L0. A full L2 change with implementation waits for design, plan and code reviews in sequence. First-round reviewers within each stage already run in parallel. [D007§choosing-a-tier: choosing a tier](../../archived/designs/D007-change-tiers.md#choosing-a-tier) · [Change flows](../../../skills/governance/canon/workflow.md#flows) · [Code review](../../../skills/governance/canon/workflow.md#code-review)
 
-For 1.0, the review recommends retaining an independent review of a formal plan before implementation. The design and plan gates both ask whether a fresh agent could implement the change from the document and its links. Give each document its own completeness question. Can a reader tell whether an implementation satisfies the design? Can another session carry out the plan and verify the result? The reviewer assesses the plan against the design revision it names and can flag a gap that makes it impossible to deliver. Both questions can be assessed in one round. [Joint design and plan review](#joint-design-and-plan-review) · [D007§reviewer-prompt: review criteria](../../designs/D007-change-tiers.md#reviewer-prompt)
+For 1.0, the review recommends retaining an independent review of a formal plan before implementation. The design and plan gates both ask whether a fresh agent could implement the change from the document and its links. Give each document its own completeness question. Can a reader tell whether an implementation satisfies the design? Can another session carry out the plan and verify the result? The reviewer assesses the plan against the design revision it names and can flag a gap that makes it impossible to deliver. Both questions can be assessed in one round. [Joint design and plan review](#joint-design-and-plan-review) · [D007§reviewer-prompt: review criteria](../../archived/designs/D007-change-tiers.md#reviewer-prompt)
 
 Tiers can continue to determine which documents change and where approval belongs. In L2 the user receives the independent findings before approving the plan. The user or agent can request a focused blind review at any tier.
 
@@ -24,7 +24,7 @@ When writing P prompts a revision to an existing D for the same change, the main
 
 Review D first when the user explicitly reserves the decision to start planning. A separate design round also makes sense when choosing a design would replace most of the plan. For example, distributing the CLI with the skills and publishing it independently call for different release and installation steps. Sketching those options can help the user decide how to proceed. Once the distribution route is settled, a compatibility promise that emerges while planning the upgrade can be reviewed alongside the steps that deliver it.
 
-Canon requires a plan to pass its own gate after the designs it uses. The CLI creates a formal plan from an accepted or active design, and each L2 plan approval record covers its plan alone. The proposal would let one round supply evidence for both documents' separate records. Creating a first formal P alongside a brand-new draft D would also require changing the plan creation rule. [D007§review-gate: gate order](../../designs/D007-change-tiers.md#review-gate) · [D007§pending-l2-approvals: approval records](../../designs/D007-change-tiers.md#pending-l2-approvals) · [D006§doc-types: plan creation](../../designs/D006-doc-model.md#doc-types)
+Canon requires a plan to pass its own gate after the designs it uses. The CLI creates a formal plan from an accepted or active design, and each L2 plan approval record covers its plan alone. The proposal would let one round supply evidence for both documents' separate records. Creating a first formal P alongside a brand-new draft D would also require changing the plan creation rule. [D007§review-gate: gate order](../../archived/designs/D007-change-tiers.md#review-gate) · [D007§pending-l2-approvals: approval records](../../archived/designs/D007-change-tiers.md#pending-l2-approvals) · [D006§doc-types: plan creation](../../designs/D006-doc-model.md#doc-types)
 
 ## Workflow section assessment
 
