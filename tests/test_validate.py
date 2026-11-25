@@ -62,9 +62,14 @@ class ScratchRepoTest(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
 
-    def validate(self, tiktoken=None):
+    def validate(self, tiktoken=None, extra_env=None):
         """Run validate.py, with `tiktoken` as the source of the tiktoken module it imports when given."""
         env = dict(os.environ)
+        for key, value in (extra_env or {}).items():
+            if value is None:
+                env.pop(key, None)
+            else:
+                env[key] = value
         if tiktoken is not None:
             module = Path(tempfile.mkdtemp(dir=self.root))
             (module / "tiktoken.py").write_text(tiktoken)
@@ -283,6 +288,138 @@ class Runtime(unittest.TestCase):
         self.write("tests/test_exit.py", "import os, unittest\n\n\nclass T(unittest.TestCase):\n"
                                          "    def test_exit(self):\n        os._exit(3)\n")
         self.assertIn("FAIL tests\n  - a worker process died: ", self.validate().stdout)
+
+    def _clean_host_dir(self):
+        candidates = ["/var/tmp", os.environ.get("XDG_RUNTIME_DIR"), "/tmp", os.environ.get("XDG_CACHE_HOME"),
+                      "/dev/shm"]
+        try:
+            candidates.append(str(Path.home() / ".cache"))
+        except RuntimeError:
+            pass
+        for raw in candidates:
+            if not raw:
+                continue
+            base = Path(raw)
+            if not base.is_dir():
+                continue
+            resolved = base.resolve()
+            if any((p / ".git").exists() or (p / "AGENTS.md").exists() for p in (resolved, *resolved.parents)):
+                continue
+            try:
+                temp = tempfile.TemporaryDirectory(dir=resolved, prefix="test-validate-clean-")
+            except OSError:
+                continue
+            self.addCleanup(temp.cleanup)
+            return Path(temp.name).resolve()
+        self.skipTest("host has no writable clean directory outside checkouts")
+
+    def test_outside_checkout_skips_rerun_under_a_verified_clean_temp_root_and_preserve_unrelated_skips(self):
+        self.write("tests/test_outside.py", '''import tempfile, unittest
+from pathlib import Path
+
+
+def require_clean_tmpdir(case):
+    root = Path(tempfile.gettempdir()).resolve()
+    for parent in (root, *root.parents):
+        if (parent / ".git").exists() or (parent / "AGENTS.md").exists():
+            case.skipTest(f"TMPDIR is inside {parent}, which holds .git or AGENTS.md")
+    return root
+
+
+class Outside(unittest.TestCase):
+    def test_needs_clean_temp(self):
+        root = require_clean_tmpdir(self)
+        marker = root / "probe.txt"
+        marker.write_text("ok")
+        self.assertEqual(marker.read_text(), "ok")
+
+    def test_outside_then_capability_skip(self):
+        require_clean_tmpdir(self)
+        self.skipTest("host lacks capability")
+
+    @unittest.skip("unrelated capability")
+    def test_unrelated(self):
+        pass
+''')
+        dirty_tmp = self.root / "dirty-tmp"
+        dirty_tmp.mkdir()
+        dirty_agents = self.root / "dirty-agents"
+        dirty_agents.mkdir()
+        (dirty_agents / "AGENTS.md").write_text("# Agents\n")
+        clean_dir = self._clean_host_dir()
+        result = self.validate(
+            "raise ImportError('tiktoken')",
+            extra_env={
+                "TMPDIR": str(dirty_tmp),
+                "CANON_VALIDATE_CLEAN_TMPDIR": os.pathsep.join([str(dirty_tmp), str(dirty_agents), str(clean_dir)]),
+            },
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("ok   tests (2 skipped)\n", result.stdout)
+        self.assertIn(f"  rerun 2 outside-checkout test(s) under clean temp root {clean_dir}: 1 passed, 1 skipped\n",
+                      result.stdout)
+        self.assertIn("  skipped: host lacks capability\n    test_outside.Outside.test_outside_then_capability_skip\n",
+                      result.stdout)
+        self.assertIn("  skipped: unrelated capability\n    test_outside.Outside.test_unrelated\n", result.stdout)
+        self.assertNotIn("which holds .git or AGENTS.md", result.stdout)
+        default_run = self.validate(
+            "raise ImportError('tiktoken')",
+            extra_env={"TMPDIR": str(dirty_tmp), "CANON_VALIDATE_CLEAN_TMPDIR": None},
+        )
+        self.assertEqual(default_run.returncode, 0, default_run.stdout + default_run.stderr)
+        self.assertRegex(default_run.stdout,
+                         r"  rerun 2 outside-checkout test\(s\) under clean temp root .+: 1 passed, 1 skipped\n")
+        self.assertNotIn("which holds .git or AGENTS.md", default_run.stdout)
+
+    def test_outside_checkout_rerun_failure_fails_validation(self):
+        self.write("tests/test_outside_fail.py", '''import tempfile, unittest
+from pathlib import Path
+
+
+class OutsideFail(unittest.TestCase):
+    def test_fails_when_clean(self):
+        root = Path(tempfile.gettempdir()).resolve()
+        for parent in (root, *root.parents):
+            if (parent / ".git").exists() or (parent / "AGENTS.md").exists():
+                self.skipTest(f"TMPDIR is inside {parent}, which holds .git or AGENTS.md")
+        self.fail("real failure outside checkout")
+''')
+        dirty_tmp = self.root / "dirty-tmp"
+        dirty_tmp.mkdir()
+        clean_dir = self._clean_host_dir()
+        result = self.validate(
+            "raise ImportError('tiktoken')",
+            extra_env={"TMPDIR": str(dirty_tmp), "CANON_VALIDATE_CLEAN_TMPDIR": str(clean_dir)},
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("FAIL tests\n", result.stdout)
+        self.assertIn("real failure outside checkout", result.stdout)
+        self.assertIn(f"  rerun 1 outside-checkout test(s) under clean temp root {clean_dir}: 0 passed, 1 failed\n",
+                      result.stdout)
+
+    def test_outside_checkout_skips_report_when_no_clean_temp_root_is_available(self):
+        self.write("tests/test_outside_none.py", '''import tempfile, unittest
+from pathlib import Path
+
+
+class OutsideNone(unittest.TestCase):
+    def test_needs_clean_temp(self):
+        root = Path(tempfile.gettempdir()).resolve()
+        for parent in (root, *root.parents):
+            if (parent / ".git").exists() or (parent / "AGENTS.md").exists():
+                self.skipTest(f"TMPDIR is inside {parent}, which holds .git or AGENTS.md")
+''')
+        dirty_tmp = self.root / "dirty-tmp"
+        dirty_tmp.mkdir()
+        result = self.validate(
+            "raise ImportError('tiktoken')",
+            extra_env={"TMPDIR": str(dirty_tmp), "CANON_VALIDATE_CLEAN_TMPDIR": ""},
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("ok   tests (1 skipped)\n", result.stdout)
+        self.assertIn("  rerun 1 outside-checkout test(s) unavailable: no verified clean temporary root found\n",
+                      result.stdout)
+        self.assertIn("which holds .git or AGENTS.md", result.stdout)
 
 
 if __name__ == "__main__":

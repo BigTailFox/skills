@@ -12,9 +12,11 @@ Exits non-zero if any check or test fails.
 
 import json
 import math
+import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 from concurrent.futures import ProcessPoolExecutor
@@ -54,6 +56,8 @@ CALL_SITE_TOKENS = 40
 PLACEHOLDERS = ("skills/governance/canon/SKILL.md", "In `trace` calls", 110)
 TRACE_MD = ("skills/governance/canon/trace.md", 420)
 UV_COMMAND = "uv run --no-project --with tiktoken python3 scripts/validate.py"
+OUTSIDE_CHECKOUT_SKIP_RE = re.compile(r"^TMPDIR is inside .+, which holds \.git or AGENTS\.md$")
+CLEAN_TMPDIR_ENV = "CANON_VALIDATE_CLEAN_TMPDIR"
 
 
 def git(*args):
@@ -382,6 +386,77 @@ def discover_tests():
     return list(TESTS)
 
 
+def init_worker(temp_root=None):
+    if temp_root is not None:
+        os.environ["TMPDIR"] = temp_root
+        os.environ["TEMP"] = temp_root
+        os.environ["TMP"] = temp_root
+        tempfile.tempdir = temp_root
+    TESTS.clear()
+    discover_tests()
+
+
+def has_checkout_marker(path):
+    """True when `path` or any ancestor holds `.git` or `AGENTS.md`, or cannot be inspected."""
+    try:
+        resolved = Path(path).resolve()
+        return any((parent / ".git").exists() or (parent / "AGENTS.md").exists()
+                   for parent in (resolved, *resolved.parents))
+    except OSError:
+        return True
+
+
+def clean_temp_candidates():
+    override = os.environ.get(CLEAN_TMPDIR_ENV)
+    if override is not None:
+        return [entry for entry in override.split(os.pathsep) if entry]
+    candidates = []
+    if os.name == "posix":
+        candidates.extend([
+            "/var/tmp",
+            os.environ.get("XDG_RUNTIME_DIR"),
+            "/tmp",
+            os.environ.get("XDG_CACHE_HOME"),
+        ])
+        try:
+            candidates.append(str(Path.home() / ".cache"))
+        except RuntimeError:
+            pass
+        candidates.append("/dev/shm")
+    else:
+        candidates.extend([
+            os.environ.get("LOCALAPPDATA"),
+            os.environ.get("TEMP"),
+            os.environ.get("TMP"),
+        ])
+    return [candidate for candidate in candidates if candidate]
+
+
+def open_clean_temp_root():
+    """Create a TemporaryDirectory verified to lie outside every checkout, returning `(temp, base)` or `(None, None)`."""
+    seen = set()
+    for raw in clean_temp_candidates():
+        base = Path(raw)
+        try:
+            if not base.is_dir():
+                continue
+            resolved = base.resolve()
+        except OSError:
+            continue
+        if resolved in seen or has_checkout_marker(resolved):
+            continue
+        seen.add(resolved)
+        try:
+            temp = tempfile.TemporaryDirectory(dir=resolved, prefix="canon-validate-clean-")
+        except OSError:
+            continue
+        if has_checkout_marker(temp.name):
+            temp.cleanup()
+            continue
+        return temp, resolved
+    return None, None
+
+
 def run_test(test_id):
     """Run one test with its fixtures in a worker. Return its skips, failures and duration in seconds."""
     start = time.perf_counter()
@@ -393,6 +468,13 @@ def run_test(test_id):
     # A skipped class or module fixture stands in for the test this worker was asked to run.
     skips = [(test.id() if isinstance(test, unittest.TestCase) else test_id, reason) for test, reason in result.skipped]
     return skips, failures, time.perf_counter() - start
+
+
+def run_pool(test_ids, temp_root=None):
+    cpus = getattr(os, "process_cpu_count", os.cpu_count)() or 1
+    with ProcessPoolExecutor(max_workers=min(len(test_ids), cpus), initializer=init_worker,
+                             initargs=(temp_root,)) as pool:
+        return dict(zip(test_ids, pool.map(run_test, test_ids)))
 
 
 def run_tests():
@@ -408,10 +490,40 @@ def run_tests():
     except (OSError, ValueError, AttributeError, TypeError):
         order = ids
     try:
-        with ProcessPoolExecutor(initializer=discover_tests) as pool:
-            results = dict(zip(order, pool.map(run_test, order)))
+        results = run_pool(order)
     except BrokenProcessPool as error:
         return report("tests", [f"a worker process died: {error}"])
+    outside_ids = [test_id for test_id in ids
+                   if any(OUTSIDE_CHECKOUT_SKIP_RE.match(reason) for _name, reason in results[test_id][0])]
+    rerun_note = None
+    if outside_ids:
+        clean_temp, clean_base = open_clean_temp_root()
+        if clean_temp is None:
+            rerun_note = (f"  rerun {len(outside_ids)} outside-checkout test(s) unavailable: "
+                          "no verified clean temporary root found")
+        else:
+            with clean_temp as clean_root:
+                try:
+                    rerun_results = run_pool(outside_ids, temp_root=clean_root)
+                except BrokenProcessPool as error:
+                    return report("tests", [f"a worker process died: {error}"])
+            results.update(rerun_results)
+            rerun_passed = rerun_failed = rerun_skipped = 0
+            for test_id in outside_ids:
+                skips, errors, _ = rerun_results[test_id]
+                if errors:
+                    rerun_failed += 1
+                elif skips:
+                    rerun_skipped += 1
+                else:
+                    rerun_passed += 1
+            parts = [f"{rerun_passed} passed"]
+            if rerun_failed:
+                parts.append(f"{rerun_failed} failed")
+            if rerun_skipped:
+                parts.append(f"{rerun_skipped} skipped")
+            rerun_note = (f"  rerun {len(outside_ids)} outside-checkout test(s) under clean temp root {clean_base}: "
+                          + ", ".join(parts))
     durations, skipped, failures = {}, {}, []
     for test_id in ids:
         skips, errors, durations[test_id] = results[test_id]
@@ -422,6 +534,8 @@ def run_tests():
     DURATIONS.write_text(json.dumps(durations), encoding="utf-8")
     count = sum(len(names) for names in skipped.values())
     status = report(f"tests ({count} skipped)" if count else "tests", failures)
+    if rerun_note:
+        print(rerun_note)
     for reason, names in skipped.items():
         print(f"  skipped: {reason}")
         for name in names:
