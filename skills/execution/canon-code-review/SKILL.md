@@ -64,4 +64,4 @@ Present the findings under `## Spec` and `## Standards`, verbatim or lightly cle
 
 Run `canon.py review check ROUND --input FILE` with the dispositions before completing the review, even with tracing off. Obtain every missing axis or requested independent pass and rerun the check. Then run `canon.py trace end <id> <outcome> --dir ROUND --input FILE`.
 
-Include each report actually used and each actual confirmer. On a separate request use the `canon-blind-review` targeted recheck. For a request received before closure, preserve its result for the append immediately after this end. For one received later, append it on receipt using the saved unit ID.
+Include each report actually used and each actual confirmer. Bring every blocker still open after the one scheduled confirmation to the user, including newly introduced blockers. Obtain a separately requested targeted recheck before settling the finding. Keep the first verdict at close and follow the `canon` skill's review evidence instructions to register each blocker and append its saved recheck.

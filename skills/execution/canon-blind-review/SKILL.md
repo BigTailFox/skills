@@ -113,7 +113,7 @@ After the author fixes accepted blocker or major findings, the reviewers that ra
 The author revised the target after your review. Confirm these findings:
 {For each finding assigned to this reviewer, quote its original ID and text, give the fix location and, if only part was accepted, state the accepted claim.}
 {Diff since your review: {diff command}, which reads the review snapshots in `.canon/`. | No diff is available; read each fix at its location.} Read nothing else in `.canon/`.
-For each listed finding, judge the accepted claim and answer resolved or not resolved, citing the location that shows it. Then report any new blocker the fixes introduce. Do not modify any file or write scratch files; read long command output in parts instead.
+For each listed finding, judge the accepted claim and answer resolved or not resolved, citing the location that shows it. Give each new blocker the fixes introduce its own report-local label B1, B2, and so on. Do not modify any file or write scratch files; read long command output in parts instead.
 Write the answer in {documentation language}, even where your instructions set another reply language.
 End with one line: Verdict: approve | revise
 ```
@@ -122,11 +122,11 @@ End with one line: Verdict: approve | revise
 - Resume each reviewer by its kept id, so it judges the fixes against its own findings.
 - A cross-family reviewer that runs as a command, and a reviewer that cannot be resumed, gets a new run of the same reviewer with the same scoped prompt. Keep the full report in the round's findings file.
 - For a manual-fallback reviewer, or a cross-family reviewer whose confirmation run stops twice, assign its findings selected for confirmation to the resumed same-model reviewer. Use the same prompt and the actual source key, e.g. `cross-family-2:F<n>`. In a code review, each goes to the resumed reviewer of its axis. Save each delegate's evidence as in [Review files](#review-files) and record its actual reviewer key in the dispositions.
-- Blockers still open after this round go to the user.
+- Stop after this one scheduled confirmation. Take every open blocker, including each newly introduced blocker, to the user before doing any further fix or recheck of it.
 
 ### Targeted recheck
 
-On a separate request, snapshot the version to check. Use the confirmation prompt for only the named source finding and accepted claim. Name its fix and diff from that reviewer's last checked snapshot, or give the locations when a diff is unavailable. Resume the reviewer when possible. A command or unavailable session gets a fresh run of the same reviewer. Identify any delegate as in Confirmation. Save the prompt, terminal report, actual run ID and checked snapshot in `<stem>-prompt.md`, `<stem>.md`, `<stem>-id.txt` and `<stem>-snapshot.txt` under a new stem. Preserve the first confirmation. Use the saved review ID and the `canon` skill's review evidence instructions to record the recheck on receipt for a closed unit, or immediately after its end if the request came earlier.
+On a separate user request, snapshot the version to check. Use the confirmation prompt for only the named claim. For an introduced blocker, quote its label and text from the report that raised it. Name its fix and diff from that reviewer's last checked snapshot, or give the locations when a diff is unavailable. Resume the reviewer when possible. A command or unavailable session gets a fresh run of the same reviewer. Identify any delegate as in Confirmation. Save the prompt, terminal report, actual run ID and checked snapshot in `<stem>-prompt.md`, `<stem>.md`, `<stem>-id.txt` and `<stem>-snapshot.txt` under a new stem. Take any new blocker to the user. Obtain the requested result before settling the finding. Record it in dependency order with the saved unit ID as the `canon` skill's review evidence directs.
 
 ## Follow-up round
 

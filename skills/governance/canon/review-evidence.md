@@ -54,13 +54,18 @@ Pass one object to `trace end UNIT OUTCOME --dir DIR --input -` on stdin. A gate
 - Set `disposition` to `accepted` for a fix in this work, `declined` for a declined finding, `escalated` when awaiting the user, or `deferred` for work the user chose to track for later.
 - For a first confirmation, list each actual confirmer's reviewer key, verdict and full 40- or 64-hex snapshot ID, or null when unavailable. A delegate uses its own key. Set `confirmed` to `not-resolved` if any confirmer returned it, otherwise `resolved`. Omit both confirmation fields for findings never sent for confirmation. Set `new_blockers` to the count newly reported in confirmation, otherwise 0.
 
-## Later rechecks
+## Introduced blockers and later rechecks
 
 ```text
+canon.py trace blocker UNIT LABEL --reviewer KEY --report STEM --snapshot OID|unknown [--from FINDING]
 canon.py trace recheck UNIT FINDING --reviewer KEY --snapshot OID --result resolved|not-resolved
                        --report STEM --order N|unknown [--model MODEL]
 ```
 
-Use any unambiguous `<key>:F<n>` source of the merged finding. Use the actual rechecker's key. Supply its exact model on first use of a previously unlisted key. For an existing key, omit the model or repeat its spelling and case. Give the full 40- or 64-hex snapshot ID from the evidence, including after Git pruning.
+Register each blocker using the actual confirmation report stem, confirmer key and snapshot, or `unknown` for an unavailable confirmation snapshot. Use its report-local F, B or N label and positive number. For a historical unlabelled report, use B plus the one-based order of its new blocker only when the text identifies the claim unambiguously. Otherwise keep its identity unknown.
+
+For a recheck, use any unambiguous `<key>:F<n>` source of an original merged finding, or the registered `blocker:STEM:LABEL`, even when the reports use the same label. Use the actual rechecker's key. Supply its exact model on first use of a previously unlisted key. For an existing key, omit the model or repeat its spelling and case. Give the full 40- or 64-hex snapshot ID from the evidence, including after Git pruning.
+
+If the user requests a recheck before closure, obtain the result, retain its report, and close with the original findings, first verdicts and first-confirmation blocker count intact. Then register each introduced blocker before appending its saved recheck. If a recheck itself introduced a blocker, first append that recheck, then register the new blocker using its actual report, reviewer and snapshot and `--from` the claim rechecked. Use the same order for a closed unit. Later results belong to their own claims.
 
 Keep `<stem>.md`, `<stem>-prompt.md`, `<stem>-id.txt` and `<stem>-snapshot.txt` in the review directory. Use a distinct stem of 1–100 ASCII letters, digits, hyphens or underscores. Give the report's verified positive ordinal for this merged finding, or `unknown` when importing evidence of uncertain order. Record only an outcome the report or preserved evidence establishes. An identical retry succeeds once. History shows the first confirmation, the ordered and unordered rechecks, and whether the exact report survives in the unit's one-time archive.

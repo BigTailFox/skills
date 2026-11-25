@@ -31,7 +31,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "84"
+CANON_VERSION = "85"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -4123,6 +4123,8 @@ REVIEW_ROLES = {"gate": GATE_ROLES, "follow-up": GATE_ROLES, "code-review": ("sp
 REVIEW_DISPOSITIONS = ("accepted", "declined", "escalated", "deferred")
 CONFIRMATION_RESULTS = ("resolved", "not-resolved")
 FINDING_ID_RE = re.compile(r"F[1-9][0-9]*")
+REPORT_STEM_RE = re.compile(r"[A-Za-z0-9_-]{1,100}")
+BLOCKER_LABEL_RE = re.compile(r"[FBN][1-9][0-9]*")
 UNIT_RE = re.compile(r"^\d{8}T\d{6}Z-[0-9a-f]{6}$")
 UNIT_TIME_FORMAT = "%Y%m%dT%H%M%SZ"
 SLICE_RE = re.compile(r"^S\d+$")
@@ -5318,27 +5320,55 @@ def finding_source(dispositions, reference):
     return source
 
 
+def check_report(record):
+    roles = REVIEW_ROLES.get(record["kind"], ())
+    if not any(reviewer_key(role, record.get("reviewer")) for role in roles):
+        raise TraceError("invalid reviewer key for " + record["kind"])
+    if not isinstance(record.get("report"), str) or not REPORT_STEM_RE.fullmatch(record["report"]):
+        raise TraceError("report must be 1 to 100 ASCII letters, digits, hyphens or underscores")
+
+
+def check_finding_reference(kind, source):
+    if isinstance(source, str) and source.startswith("blocker:"):
+        fields = source.split(":")
+        if len(fields) == 3 and REPORT_STEM_RE.fullmatch(fields[1]) and BLOCKER_LABEL_RE.fullmatch(fields[2]):
+            return
+        raise TraceError("blocker finding must be blocker:STEM:LABEL")
+    source_key, _, finding_id = source.partition(":") if isinstance(source, str) else ("", "", "")
+    if not (any(reviewer_key(role, source_key) for role in REVIEW_ROLES.get(kind, ())) and FINDING_ID_RE.fullmatch(finding_id)):
+        raise TraceError("finding must be <key>:F<n>")
+
+
+def check_blocker(record):
+    check_report(record)
+    if not isinstance(record.get("label"), str) or not BLOCKER_LABEL_RE.fullmatch(record["label"]):
+        raise TraceError("blocker label must be F, B or N followed by a positive integer")
+    if "snapshot" not in record or (record["snapshot"] is not None and not full_oid(record["snapshot"])):
+        raise TraceError("snapshot must be a full 40- or 64-hex object ID or unknown")
+    if "from" in record:
+        check_finding_reference(record["kind"], record["from"])
+
+
+def blocker_id(report, label):
+    return "blocker:{}:{}".format(report, label)
+
+
 def check_recheck(record):
     """Validate a recheck's evidence before appending it or using its report stem to inspect an archive."""
-    roles = REVIEW_ROLES.get(record["kind"], ())
-    key, source = record.get("reviewer"), record.get("finding")
-    if not any(reviewer_key(role, key) for role in roles):
-        raise TraceError("invalid reviewer key for " + record["kind"])
-    source_key, _, finding_id = source.partition(":") if isinstance(source, str) else ("", "", "")
-    if not (any(reviewer_key(role, source_key) for role in roles) and FINDING_ID_RE.fullmatch(finding_id)):
-        raise TraceError("finding must be <key>:F<n>")
+    check_report(record)
+    check_finding_reference(record["kind"], record.get("finding"))
     if not short_field(record.get("model")):
         raise TraceError("a new reviewer key requires a single-line model ID of 1 to 200 characters")
     if not full_oid(record.get("snapshot")):
         raise TraceError("snapshot must be a full 40- or 64-hex object ID")
     if record.get("result") not in CONFIRMATION_RESULTS:
         raise TraceError("result must be resolved or not-resolved")
-    stem = record.get("report")
-    if not isinstance(stem, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", stem):
-        raise TraceError("report must be 1 to 100 ASCII letters, digits, hyphens or underscores")
     order = record.get("order")
     if "order" not in record or (order is not None and (type(order) is not int or order < 1)):
         raise TraceError("order must be a positive integer or unknown")
+
+
+REVIEW_EVIDENCE = {"recheck": check_recheck, "blocker": check_blocker}
 
 
 def recheck_model(key, supplied, models):
@@ -5351,29 +5381,29 @@ def recheck_claim(event):
     return (event["reviewer"], event["model"], event["snapshot"].lower(), event["result"], event["order"])
 
 
-def new_recheck(args, kind, dispositions, previous):
+def new_recheck(args, history, previous):
     """Build the canonical event, or return None for an identical retry of a recorded report."""
-    source = finding_source(dispositions, args.finding)
-    models = {r["model"] for r in dispositions["reviewers"] if r.get("key", r["role"]) == args.reviewer}
-    models.update(e["model"] for e in previous if e["reviewer"] == args.reviewer)
+    source = history.finding(args.finding)
+    models = {r["model"] for r in history.end["dispositions"]["reviewers"] if r.get("key", r["role"]) == args.reviewer}
+    models.update(e["model"] for e in previous if e["type"] == "recheck" and e["reviewer"] == args.reviewer)
     model = recheck_model(args.reviewer, args.model, models)
     if args.order != "unknown" and not re.fullmatch(r"[0-9]+", args.order):
         raise TraceError("order must be a positive integer or unknown")
-    record = {"v": 1, "type": "recheck", "id": args.unit, "kind": kind, "finding": source,
+    record = {"v": 1, "type": "recheck", "id": args.unit, "kind": history.kind, "finding": source,
               "reviewer": args.reviewer, "model": model, "snapshot": args.snapshot.lower(),
               "result": args.result, "report": args.report,
               "order": None if args.order == "unknown" else int(args.order)}
     check_recheck(record)
-    for old in previous:
-        if old["finding"] != source:
-            continue
+    for old in history.conflicts[source]:
+        if old["report"] == record["report"] or (record["order"] is not None and old["order"] == record["order"]):
+            raise TraceError("conflicting recheck for report " + old["report"])
+    for old in history.rechecks[source]:
         if old["report"] == record["report"]:
             if recheck_claim(old) == recheck_claim(record):
                 return None
             raise TraceError("conflicting recheck for report " + record["report"])
         if record["order"] is not None and old["order"] == record["order"]:
             raise TraceError("recheck order {} already belongs to {}".format(record["order"], old["report"]))
-    record["at"] = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
     return record
 
 
@@ -5381,12 +5411,14 @@ def closed_review(root, trace_dir, unit):
     start, end = unit_in_writable_store(root, trace_dir, unit)
     if (not end or start["kind"] not in REVIEW_ROLES or end.get("kind") != start["kind"]
             or not end.get("dispositions")):
-        raise TraceError("recheck requires a closed review with recorded dispositions")
+        raise TraceError("review evidence requires a closed review with recorded dispositions")
     check_dispositions(start["kind"], end["dispositions"], allow_repeated_sources=True)
-    return start["kind"], end["dispositions"]
+    history = HistoryUnit(start, trace_dir, None)
+    history.end = end
+    return history
 
 
-def trace_recheck(args):
+def trace_review_evidence(args):
     root, _is_git = trace_root()
     holder = trace_holder(root)
     if not trace_state(holder, root)[0]:
@@ -5396,15 +5428,30 @@ def trace_recheck(args):
     closed_review(root, trace_dir, args.unit)
     ignore_trace_dir(holder)
     with events_lock(trace_dir):
-        kind, dispositions = closed_review(root, trace_dir, args.unit)
+        history = closed_review(root, trace_dir, args.unit)
         previous = [e for e in read_events(trace_dir, args.unit.encode()) if e.get("id") == args.unit
-                    and e.get("kind") == kind and e.get("type") == "recheck"]
+                    and e.get("kind") == history.kind and e.get("type") in REVIEW_EVIDENCE]
         for event in previous:
-            check_recheck(event)
-        record = new_recheck(args, kind, dispositions, previous)
+            REVIEW_EVIDENCE[event["type"]](event)
+            history.add_evidence(event)
+        history.verify_evidence(collections.Counter())
+        if args.action == "recheck":
+            record = new_recheck(args, history, previous)
+            message = "rechecked"
+        else:
+            record = {"v": 1, "type": "blocker", "id": args.unit, "kind": history.kind, "label": args.label,
+                      "reviewer": args.reviewer, "report": args.report,
+                      "snapshot": None if args.snapshot == "unknown" else args.snapshot.lower()}
+            if args.origin is not None:
+                record["from"] = args.origin
+            check_blocker(record)
+            if not history.add_evidence(record):
+                record = None
+            message = "blocker " + blocker_id(args.report, args.label)
         if record:
+            record["at"] = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
             write_event_bytes(trace_dir, event_bytes(record))
-    print("trace {} rechecked".format(args.unit))
+    print("trace {} {}".format(args.unit, message))
     return 0
 
 
@@ -5489,8 +5536,88 @@ class HistoryUnit:
         self.started = event_time(start)
         self.end = self.boundary = None
         self.continuation = None
+        self.blockers = {}
         self.rechecks = collections.defaultdict(list)
         self.conflicts = collections.defaultdict(list)
+
+    def finding(self, reference):
+        if reference in self.blockers:
+            return reference
+        return finding_source(self.end["dispositions"], reference)
+
+    def check_confirmation_origin(self, event):
+        dispositions = self.end["dispositions"]
+        roles = {r.get("key", r["role"]): r["role"] for r in dispositions["reviewers"]}
+        reviewer = event["reviewer"]
+        source, marker, suffix = event["report"].partition("-confirm")
+        if (not marker or source not in roles or reviewer not in roles or suffix not in ("", "-" + reviewer)):
+            raise TraceError("unknown confirmation report or reviewer")
+        snapshots = collections.defaultdict(set)
+        legacy = False
+        for finding in dispositions["findings"]:
+            if "confirmed" not in finding or not any(r.partition(":")[0] == source for r in finding["by"]):
+                continue
+            confirmations = finding.get("confirmations", [])
+            authors = {c["reviewer"] for c in confirmations}
+            delegate_role = finding.get("axis", "same-model") if roles[source] == "cross-family" else None
+            if not authors and (reviewer == source or roles[reviewer] == delegate_role):
+                legacy = True  # Older aggregates have no individual snapshot.
+            for item in confirmations:
+                key = item["reviewer"]
+                if key == source or (source not in authors and roles[key] == delegate_role):
+                    snapshots[key].add(item["snapshot"] and item["snapshot"].lower())
+        if len(snapshots) > 1 and not suffix:
+            raise TraceError("a source with multiple confirmers requires its delegate-specific report stem")
+        known = snapshots.get(reviewer, set())
+        if not legacy and None not in known and event["snapshot"] not in known:
+            raise TraceError("reviewer, report or snapshot does not match a first confirmation")
+
+    def add_evidence(self, event):
+        if event["type"] == "recheck":
+            source = self.finding(event["finding"])
+            self.rechecks[source].append(event)
+            return True
+        key = blocker_id(event["report"], event["label"])
+        if event["snapshot"]:
+            event["snapshot"] = event["snapshot"].lower()
+        if "from" in event:
+            event["from"] = self.recheck_origin(event)
+        else:
+            self.check_confirmation_origin(event)
+        old = self.blockers.get(key)
+        if old:
+            if all(old.get(k) == event.get(k) for k in ("reviewer", "from", "snapshot")):
+                return False
+            raise TraceError("conflicting registration for " + key)
+        if "from" not in event and not self.unidentified_blockers():
+            raise TraceError("all first-confirmation blockers in the recorded count have identities")
+        self.blockers[key] = event
+        return True
+
+    def unidentified_blockers(self):
+        return self.end["dispositions"]["new_blockers"] - sum("from" not in b for b in self.blockers.values())
+
+    def recheck_origin(self, event):
+        source = self.finding(event["from"])
+        checks = [e for e in self.rechecks[source] if e["report"] == event["report"]]
+        if (not checks or any(e["reviewer"] != event["reviewer"] or e["snapshot"].lower() != event["snapshot"]
+                              for e in checks)):
+            raise TraceError("blocker origin does not match the recorded recheck of " + source)
+        return source
+
+    def verify_evidence(self, issues):
+        self.verify_rechecks(issues)
+        orphans = []
+        # A later import can contest an earlier report. Descendants depend on that report surviving verification.
+        for source, event in list(self.blockers.items()):
+            if "from" in event:
+                try:
+                    self.recheck_origin(event)
+                except TraceError:
+                    orphans.append(self.blockers.pop(source))
+                    orphans.extend(self.rechecks.pop(source, []))
+                    orphans.extend(self.conflicts.pop(source, []))
+        return orphans
 
     def verify_rechecks(self, issues):
         """Bind imported reports to their authors and exclude contested ordinals regardless of import order."""
@@ -5660,7 +5787,12 @@ class HistoryUnit:
                 authors = "reviewer=unknown snapshot=unknown"
                 print("    first confirmation={} {}".format(verdict, authors))
             self.print_rechecks(finding["by"][0], "{} {}".format(verdict, authors))
-        print("  new blockers={}".format(dispositions["new_blockers"]))
+        print("  new blockers={} unidentified={}".format(dispositions["new_blockers"], self.unidentified_blockers()))
+        for source, event in self.blockers.items():
+            author = "reviewer={} snapshot={}".format(event["reviewer"], event["snapshot"] or "unknown")
+            print("  blocker {} origin={} {} report={} archive={}".format(
+                source, event.get("from", "confirmation"), author, event["report"], self.report_status(event["report"])))
+            self.print_rechecks(source, "not-resolved " + author)
 
 
 def history_events(trace_dir, issues):
@@ -5672,7 +5804,7 @@ def history_events(trace_dir, issues):
         action = event.get("type")
         if action == "manifest":
             continue
-        if action not in ("start", "end", "recheck"):
+        if action not in ("start", "end", "recheck", "blocker"):
             issues["unsupported"] += 1
             continue
         unit = event.get("id")
@@ -5687,9 +5819,9 @@ def history_events(trace_dir, issues):
                 or not isinstance(docs, list) or not all(isinstance(doc, str) for doc in docs)):
             issues["malformed"] += 1
             continue
-        if action == "recheck":
+        if action in REVIEW_EVIDENCE:
             try:
-                check_recheck(event)
+                REVIEW_EVIDENCE[action](event)
             except TraceError:
                 issues["malformed"] += 1
                 continue
@@ -5706,12 +5838,12 @@ def history_events(trace_dir, issues):
 
 def history_units(trace_dir, store):
     units, ends, open_slices = {}, {}, {}
-    rechecks = []
+    evidence = []
     issues = collections.Counter()
     for event in history_events(trace_dir, issues):
         action, unit = event["type"], event["id"]
-        if action == "recheck":
-            rechecks.append(event)
+        if action in REVIEW_EVIDENCE:
+            evidence.append(event)
             continue
         parent = event.get("parent") if action == "start" else unit
         previous = open_slices.pop(parent, None) if action == "start" or event["kind"] == "implement" else None
@@ -5729,16 +5861,15 @@ def history_units(trace_dir, store):
         if predecessor:
             predecessor.continuation = unit.unit
     orphans = list(ends.values())
-    for event in rechecks:
+    for event in evidence:
         unit = units.get(event["id"])
         if unit and unit.kind == event["kind"] and unit.end and unit.end.get("dispositions"):
             with contextlib.suppress(TraceError):
-                source = finding_source(unit.end["dispositions"], event["finding"])
-                unit.rechecks[source].append(event)
+                unit.add_evidence(event)
                 continue
         orphans.append(event)
     for unit in units.values():
-        unit.verify_rechecks(issues)
+        orphans.extend(unit.verify_evidence(issues))
     return list(units.values()), orphans, issues
 
 
@@ -6565,7 +6696,15 @@ def main(argv=None):
     t = command(actions, "history", help="read the recorded history of all units or one unit, tracing on or off")
     t.add_argument("unit", nargs="?", metavar="UNIT")
     t.set_defaults(func=trace_history)
-    t = command(actions, "recheck", help="record a targeted recheck of a closed review finding")
+    t = command(actions, "blocker", help="register a blocker introduced by a confirmation or authorized recheck")
+    t.add_argument("unit", metavar="UNIT")
+    t.add_argument("label", metavar="LABEL")
+    t.add_argument("--reviewer", required=True, metavar="KEY")
+    t.add_argument("--report", required=True, metavar="STEM")
+    t.add_argument("--snapshot", required=True, metavar="OID|unknown")
+    t.add_argument("--from", dest="origin", metavar="FINDING", help="the rechecked claim that introduced this blocker")
+    t.set_defaults(func=trace_review_evidence)
+    t = command(actions, "recheck", help="record a targeted recheck of a closed review finding or introduced blocker")
     t.add_argument("unit", metavar="UNIT")
     t.add_argument("finding", metavar="FINDING")
     t.add_argument("--reviewer", required=True, metavar="KEY")
@@ -6574,7 +6713,7 @@ def main(argv=None):
     t.add_argument("--report", required=True, metavar="STEM")
     t.add_argument("--order", required=True, metavar="N|unknown")
     t.add_argument("--model", metavar="MODEL")
-    t.set_defaults(func=trace_recheck)
+    t.set_defaults(func=trace_review_evidence)
     t = command(actions, "on", help="turn tracing on for this machine; --here deletes this checkout's off file")
     t.add_argument("--here", action="store_true",
                    help="only delete this checkout's off file; the machine switch stays as it is")

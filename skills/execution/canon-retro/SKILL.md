@@ -33,6 +33,8 @@ Record canon's own friction in `skills.jsonl` ([Records](#records)): a skill ste
 
 Every event needs evidence you can point to: a message, a command and its output, or a doc entry. Drop an event you recall only as an impression. An end check uses only what is already in context. A requested retro on a compacted session may also read the durable records (the plan's Log, the investigation's Analysis, review outputs under `.canon/canon-blind-review/`) and, when the host names this session's transcript, search it with bounded matches (`rg -o '.{0,200}<words>.{0,200}' <transcript>`) instead of reading it whole.
 
+For a review blocker, use `trace history UNIT` to identify the report that introduced it and its own rechecks. Cite its `blocker:STEM:LABEL` when registered. A historical count alone leaves the claim and its author unknown.
+
 ## 2. Find candidates
 
 An event becomes a candidate only when its cause is still present after this session's work and a change below would make it less likely to recur or cheaper to catch. Look for the cause in how the work was done, never in the product itself.

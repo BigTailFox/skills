@@ -17,7 +17,7 @@ Implements [D007: Change tiers and the review gate](../designs/D007-change-tiers
 
 ## Current state
 
-Next: S3.
+Next: S4.
 
 ## Slices
 
@@ -43,7 +43,7 @@ Through the CLI with telemetry off, check a gate with complete reports, a missin
 
 ### S3: Link confirmation blockers to their own rechecks
 
-Status: todo
+Status: done
 
 Risk: A confirmation report may reuse a first-round finding label. Incorrect attribution changes historical reviewer metrics.
 
@@ -70,3 +70,5 @@ Started at bd5c4a937e1af59a68585f9feb53ed3e9ed7b13d.
 S1 — Canon 83 creates distinct round directories, binds prepared/live input and preserves verified short baselines for replay after the source disappears. Seven new CLI and replay cases and a real ambiguous-prefix fixture passed. Recovery keeps its original round and source identity. The coverage check in S2 can use the existing round declaration, pass list, pin and material-warning helpers, including in a checkout with tracing off. A numbered key identifies a separately requested pass when its ordinary role is already required.
 
 S2 — Canon 84 checks actual readers by target and role, separate approval groups, partial handoffs, delegation and scoped user exceptions. Fourteen public CLI regressions and an installed-CLI trial passed. In S3 the same report-local F-number may occur in both the original and confirmation reports. Exercise the offline evidence and first-round replay joins as well as live history.
+
+S3 — Canon 85 registers confirmation and later recheck blockers with their own identities. Equal F12 labels remained distinct in history and replay; independent CLI checks and legacy replay cases passed. S4 can reproduce the field investigation from .canon/canon-investigate/review-publication/f10.YIZ7/replay.py and its three observation files. The machine regressions use the installed test-review-live.py; .canon/canon/review-workflow-batch/host-fallback.json records a completed and an active host job checked without a completion notice. Keep the durable verification with R007, then update finding dispositions in the docs step.

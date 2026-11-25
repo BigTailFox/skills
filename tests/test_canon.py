@@ -7657,6 +7657,140 @@ class RecheckTest(TraceCase):
         return ["recheck", unit, finding, "--reviewer", reviewer, "--snapshot", snapshot, "--result", result,
                 "--report", report, "--order", order] + (["--model", model] if model is not None else [])
 
+    def blocker(self, unit, label="F12", reviewer="same-model", report="same-model-confirm", snapshot="unknown",
+                origin=None):
+        return ["blocker", unit, label, "--reviewer", reviewer, "--report", report, "--snapshot", snapshot] + (
+            ["--from", origin] if origin is not None else [])
+
+    def test_confirmation_and_original_f12_have_independent_rechecks_after_closure(self):
+        unit = self.start("gate")
+        source = "same-model:F12"
+        blocker = "blocker:same-model-confirm:F12"
+        evidence = {"reviewers": [{"role": "same-model", "model": "M", "id": "reader"}], "new_blockers": 1,
+                    "findings": [{"by": [source], "severity": "major", "disposition": "accepted", "confirmed": "resolved",
+                                  "confirmations": [{"reviewer": "same-model", "result": "resolved", "snapshot": None}]}]}
+        review = self.root / ".canon/review"
+        review.mkdir()
+        (review / "same-model-confirm.md").write_text("Original F12 resolved. New blocker F12: missing input.\n")
+        (review / "authorized.md").write_text("New blocker F12 resolved.\n")
+        saved = self.arguments(unit, blocker, reviewer="same-model", report="authorized", order="1")
+        self.rejects(*self.blocker(unit))
+        self.rejects(*saved)
+        self.trace("end", unit, "delivered", "--dir", str(review), "--input", "-", stdin=json.dumps(evidence))
+        self.rejects(*saved)
+        before = self.events.read_bytes()
+        self.trace(*self.blocker(unit))
+        self.trace(*saved)
+        self.trace(*self.arguments(unit, source, reviewer="same-model", report="original-again", order="1",
+                                   result="not-resolved"))
+        records = self.lines()
+        self.assertEqual([r["type"] for r in records[-3:]], ["blocker", "recheck", "recheck"])
+        self.assertEqual((records[-2]["finding"], records[-1]["finding"]), (blocker, source))
+        self.assertIsNone(records[-3]["snapshot"])
+        self.assertTrue(self.events.read_bytes().startswith(before))
+        original, introduced = self.trace("history", unit).split("  blocker " + blocker)
+        self.assertIn("first confirmation=resolved", original)
+        self.assertIn("latest=not-resolved", original)
+        self.assertIn("new blockers=1", original)
+        self.assertIn("origin=confirmation reviewer=same-model snapshot=unknown report=same-model-confirm archive=present",
+                      introduced)
+        self.assertIn("report=authorized archive=present", introduced)
+        self.assertIn("latest=resolved", introduced)
+        after = self.events.read_bytes()
+        self.trace(*self.blocker(unit))
+        self.trace(*saved)
+        self.assertEqual(self.events.read_bytes(), after)
+
+    def test_recheck_introduction_requires_its_actual_report_author_snapshot_and_origin(self):
+        unit = self.start("gate")
+        self.trace("end", unit, "delivered", "--input", "-", stdin=json.dumps(DispositionsTest.GATE))
+        registration = dict(label="N1", reviewer="cross-family-2", report="another-pass", snapshot="AB" * 32,
+                            origin="cross-family:F2")
+        self.rejects(*self.blocker(unit, **registration))
+        self.trace(*self.arguments(unit, "same-model:F1", reviewer="cross-family-2", model="Delegate",
+                                   report="another-pass", snapshot="ab" * 32, order="1"))
+        for changes in ({"origin": "cross-family:F1"}, {"origin": None}, {"snapshot": "ab" * 20},
+                        {"snapshot": "unknown"}, {"reviewer": "cross-family"}, {"report": "missing"},
+                        {"label": "F0"}, {"label": "N01"}, {"label": "B١"}):
+            with self.subTest(changes=changes):
+                self.rejects(*self.blocker(unit, **dict(registration, **changes)))
+        self.assertNotIn("error", self.trace(*self.blocker(unit, **registration)))
+        self.assertEqual(self.lines()[-1]["from"], "same-model:F1")
+        before = self.events.read_bytes()
+        self.trace(*self.blocker(unit, **dict(registration, origin="same-model:F1", snapshot="ab" * 32)))
+        self.assertEqual(self.events.read_bytes(), before)
+        source = "blocker:another-pass:N1"
+        for order, verdict in (("2", "resolved"), ("1", "not-resolved")):
+            self.trace(*self.arguments(unit, source, reviewer="cross-family-2", report="check" + order,
+                                       snapshot="cd" * 20, order=order, result=verdict))
+        second = self.blocker(unit, "B1", "cross-family-2", "check1", "cd" * 20, source)
+        self.trace(*second)
+        self.rejects(*self.blocker(unit, "B1", "cross-family-2", "check1", "cd" * 20, "same-model:F1"))
+        history = self.trace("history", unit)
+        self.assertIn("new blockers=0", history)
+        first, next_blocker = history.split("  blocker blocker:check1:B1")
+        introduced = first.split("  blocker " + source)[1]
+        self.assertIn("origin=same-model:F1 reviewer=cross-family-2", introduced)
+        self.assertIn("report=another-pass archive=missing", introduced)
+        self.assertLess(introduced.index("order=1"), introduced.index("order=2"))
+        self.assertIn("latest=resolved", introduced)
+        self.assertIn("origin=blocker:another-pass:N1", next_blocker)
+        self.trace("off")
+        before = self.events.read_bytes()
+        self.assertEqual(self.trace(*second), "trace off\n")
+        self.assertEqual(self.events.read_bytes(), before)
+
+    def test_scheduled_blockers_bind_the_delegated_confirmation_and_retain_count_only_history(self):
+        unit = self.start("code-review")
+        people = DispositionsTest.CODE_REVIEW["reviewers"]
+        findings = [dict(by=["cross-family:F1"], axis="spec", severity="major", disposition="accepted",
+                         confirmed="resolved", confirmations=[dict(reviewer="spec", snapshot="a" * 40, result="resolved")]),
+                    dict(by=["cross-family:F2"], axis="standards", severity="major", disposition="accepted",
+                         confirmed="resolved", confirmations=[dict(reviewer="standards", snapshot="b" * 40,
+                                                                   result="resolved")])]
+        evidence = dict(reviewers=people, findings=findings, new_blockers=2)
+        self.trace("end", unit, "delivered", "--input", "-", stdin=json.dumps(evidence))
+        self.assertIn("new blockers=2 unidentified=2", self.trace("history", unit))
+        registration = dict(label="B1", reviewer="spec", report="cross-family-confirm-spec", snapshot="A" * 40)
+        for changes in ({"reviewer": "standards"}, {"reviewer": "spec-2"}, {"snapshot": "b" * 40},
+                        {"snapshot": "unknown"}, {"report": "cross-family-confirm-standards"},
+                        {"report": "cross-family-confirm"},
+                        {"report": "cross-family-2-confirm-spec"}, {"report": "spec-confirm"},
+                        {"report": "spec"}, {"report": "../cross-family-confirm-spec"}):
+            with self.subTest(changes=changes):
+                self.rejects(*self.blocker(unit, **dict(registration, **changes)))
+        self.trace(*self.blocker(unit, **registration))
+        history = self.trace("history", unit)
+        self.assertIn("new blockers=2 unidentified=1", history)
+        self.assertIn("blocker:cross-family-confirm-spec:B1 origin=confirmation reviewer=spec snapshot=" + "a" * 40,
+                      history)
+        self.assertIn("report=cross-family-confirm-spec archive=missing", history)
+
+    def test_an_imported_conflicting_recheck_cannot_establish_a_blocker_origin(self):
+        unit = self.start("gate")
+        self.trace("end", unit, "delivered", "--input", "-", stdin=json.dumps(DispositionsTest.GATE))
+        self.trace(*self.arguments(unit, report="saved"))
+        check = self.lines()[-1]
+        registration = self.blocker(unit, "B1", "cross-family", "saved", check["snapshot"], "same-model:F1")
+        self.trace(*registration)
+        self.trace(*self.arguments(unit, "blocker:saved:B1", report="dependent"))
+        with self.events.open("a") as stream:
+            stream.write(json.dumps(dict(check, report="different-report-at-the-same-order")) + "\n")
+        self.rejects(*self.blocker(unit, "B2", "cross-family", "saved", check["snapshot"], "same-model:F1"))
+        self.rejects(*self.arguments(unit, "blocker:saved:B1", report="after-conflict", order="3"))
+        detail = self.trace("history", unit)
+        self.assertIn("conflicting recheck report=saved", detail)
+        self.assertNotIn("  blocker blocker:saved:B1", detail)
+        overview = self.trace("history")
+        self.assertIn("orphan blocker " + unit, overview)
+        self.assertIn("orphan recheck " + unit, overview)
+        self.rejects(*self.arguments(unit, report="saved"))
+        with self.events.open("a") as stream:
+            for number, model in enumerate(("Delegate-A", "Delegate-B"), 4):
+                stream.write(json.dumps(dict(check, reviewer="cross-family-2", model=model, order=number,
+                                             report="import" + str(number))) + "\n")
+        self.rejects(*self.arguments(unit, reviewer="cross-family-2", model="Delegate-A", report="another", order="6"))
+
     def test_unknown_unit_creates_no_trace_directory_or_lock(self):
         self.rejects(*self.arguments("20250101T000000Z-000001"))
         self.assertFalse(self.events.parent.exists())
