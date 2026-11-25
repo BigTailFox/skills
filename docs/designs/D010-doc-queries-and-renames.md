@@ -1,15 +1,15 @@
 ---
 status: active
 created: 2026-11-12
-updated: 2026-11-24
-revision: 8
+updated: 2026-11-25
+revision: 9
 modules: [canon]
 summary: Doc queries and renames with canon.py show, find, which and affected, and rename and renumber, with the references and id collisions renumber settles.
 refs: [D002, D004, D005, D006, R001, D011]
 owns: [doc-queries, doc-renames, doc-renumbering]
 paths: [skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, tests/test_canon.py]
-reviewed: 8
-reviewers: [gpt-6.2-astra, gemini-4-neon-xhigh]
+reviewed: 9
+reviewers: [gpt-6.2-astra]
 approved: 8
 implemented: 8
 ---
@@ -19,7 +19,7 @@ implemented: 8
 ## Goals
 
 1. A session finds the docs on a topic with one `find` call and reads one section of a doc with one `show` call, without opening the file.
-2. Before editing a file, one `which` call names every live design that governs it; before committing, one `affected` call names every live design the changes touch, which the commit's `Refs:` trailer lists, and the live plans based on them. Both flag a design whose spec leads its code and count its known issues.
+2. Before editing a file, one `which` call names every live design that governs it; one `affected` call names the designs whose current ownership matches the changed paths and the live plans based on them. The [D002§design-references-in-commits: commit template](D002-overview-and-as-built.md#design-references-in-commits) supplies the owners of the staged change, including historical owners of deletions. Both flag a design whose spec leads its code and count its known issues.
 3. After `rename` or `renumber` and `check --fix`, no reference that named the doc, whether a link, a `refs` or `based_on` entry, a disposition or a citation of its ids in a doc outside code, is broken or names an unknown doc. After `rename`, no attachment named after the old slug keeps that name, and with `--title` neither the H1 nor a link text reading `<id>: <old title>` keeps the old title.
 4. After a merge or rebase leaves two docs with one id, `renumber` on the doc the branch added settles the collision without guessing: whatever neither the branch merged onto nor the links attribute is kept and listed for the user, or, for a sub-design, stops `renumber` before any change.
 
@@ -89,7 +89,7 @@ canon.py affected [FILE...] [--base REF]
 ```
 
 - The files are the FILE arguments, resolved as for `which`. Without them, they are the changed files: in a Git checkout with a HEAD commit, the files `git diff --name-only HEAD` lists, staged or not, deletions included, and the untracked files Git does not ignore; with `--base REF`, also the files `git diff --name-only REF...HEAD` lists, the branch's changes since its merge base with REF. A renamed file counts under its old and its new path, whatever Git's rename detection pairs. On a branch with no commit, and outside Git, they are all the files `check` reads, and `--base` goes unread. `--base` is ignored with FILE arguments.
-- With `--base` read, it exits with the `--base` errors of [D006§check: check](D006-doc-model.md#check), and with `canon: git <subcommand> failed in <dir>: <reason>` when listing the changes or the untracked files fails.
+- With `--base` read, the base resolution, merge-base and diff errors follow [D006§check: check](D006-doc-model.md#check). A successful endpoint diff suffices for this path query. It exits with `canon: git <subcommand> failed in <dir>: <reason>` when listing the changes or the untracked files fails.
 - For each live design that governs one of the files, ordered by the first file it governs (the changed files in sorted order, FILE arguments as given), it prints the doc line, then `  <file>` for each file the design governs, in the same order. Then it prints `plan <doc line>` for each live plan whose `based_on` names one of these designs, in id order. With no such design it prints `no design governs the changed files`, also for FILE arguments. It exits 0.
 
 ### Moving docs

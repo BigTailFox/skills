@@ -1,15 +1,15 @@
 ---
 status: active
 created: 2026-10-22
-updated: 2026-11-24
-revision: 11
+updated: 2026-11-25
+revision: 12
 modules: [canon]
 summary: D000 overview, as-built designs of existing code, backfill before changing unspecified behavior, and audit's unchecked commits and design coverage.
-refs: [D001, D006, D007, D009, R003, D010, D004]
+refs: [D001, D006, D007, D009, R003, D010, D004, E006]
 owns: [project-overview, as-built-design, design-coverage, unchecked-commits]
 paths: [skills/governance/canon/as-built.md, skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/governance/canon/doc-types.md, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-review/architecture.md, tests/test_canon.py]
-reviewed: 11
-reviewers: [claude-opus-5.5]
+reviewed: 12
+reviewers: [gpt-6.2-astra]
 approved: 10
 implemented: 11
 ---
@@ -24,7 +24,7 @@ implemented: 11
 4. What an as-built revision adds holds for the code at the commit it records, apart from defects its known issues name, and it states intent only where evidence or the user gives it.
 5. `audit` ranks the parts of the project's modules no design covers by recent commits, and coverage never fails `check`.
 6. No tool or step takes a doc, such as the project's README, or a skill installed in the project for code that lacks a design, and the docs step keeps what docs state in line with the change.
-7. `audit` names each design whose code changed, since the design last changed or was reconciled with its code, in commits whose `Refs:` trailer does not name it.
+7. Authors can generate design references from the staged change. Branch validation catches each new commit that omits a governing design. `audit` also reports unchecked changes since a design last changed or was reconciled.
 
 ## Spec
 
@@ -176,6 +176,16 @@ Designs with code commits since the design last changed or was reconciled that n
   - A reconciliation of the design is a commit whose message has a line starting with `Reconciled:`, in any case, that names the design's id as a `Refs:` line does, below. The canon workflow's Maintenance and `canon-sync` write it once they have compared the design with the commits `audit` lists for it and updated what those commits changed, in an empty commit (`git commit --allow-empty`) when the design needed no change. No other step writes it.
 - Its unchecked commits are the commits `git log HEAD --not <each baseline>` lists that touch a file the design governs by its `paths` ([D006§frontmatter: frontmatter](D006-doc-model.md#frontmatter)), a doc or an [installed skill file](#installed-skills) only through an entry equal to its path, and whose message has no line starting with `Refs:`, in any case, that names the design's id, as a word of `C`, `D`, `P`, `R`, `E` or `I`, three or more digits and an optional capital letter. Which files a commit or merge touches: [Project docs](#project-docs); which commits carry the trailer: [D007§choosing-a-tier: choosing a tier](D007-change-tiers.md#choosing-a-tier).
 - A design with unchecked commits gets the line `  <n> commits since <the first 12 hex digits of the first reconciliation that git log lists, else of the last change>  <doc line>`, the design's doc line as [D010§doc-lines: doc lines](D010-doc-queries-and-renames.md#doc-lines) defines it. The lines run most commits first, and the section is left out when no design has one.
+
+### Design references in commits
+
+`canon.py check --base REF` checks each non-merge commit reachable from the selected tip but not from REF. The tip is HEAD for a work-tree or staged check, and REV for `--rev REV`. Compare each commit to its single parent, or the empty tree for a root. Commits reachable from REF, merge commits and pending changes in the work tree or index create no trailer obligation in this check. A provably empty range needs no history traversal beyond that proof. For a nonempty range, reject a shallow boundary inside it. A shallow boundary reachable from REF could also hide an ancestor reported as new. Require more history unless every such boundary is a known ancestor of every included commit. Unrelated shallow boundaries have no effect.
+
+Use the paths Git records. For each added, modified or type-changed path, read the live governing designs in the resulting tree. For a deletion use the parent tree. Treat a rename as a deletion and an addition. Classify each file as code, a project doc or an installed skill in that same tree. Match design entries against its Git path, including the name of a symlink. Apply the ownership rules in [Project docs](#project-docs). Each required design ID counts once, including every owner of a shared file. Find cited IDs with the same `Refs:` line and ID rules as [Unchecked commits in audit](#unchecked-commits-in-audit). Extra IDs are allowed. Branch validation requires no design ID from a commit with no governed paths. For each missing ID report an error with the commit ID, the missing design and one changed path it governs. A later commit cannot supply an earlier one's reference.
+
+`canon.py commit-template [--subject TEXT]` writes an editable Git message to stdout for the current index. It uses the same changed paths and owners as the proposed commit, comparing the index with HEAD or the empty tree before the first commit. Honor alternate Git indexes, exclude intent-to-add entries, and refuse an unmerged index or a directory outside Git. Write the supplied single-line subject, or leave its line empty for the editor. When there are owners, follow it with a blank line and one `Refs: D001, D002` line containing the distinct required IDs in design ID order. With no owners print just the subject line. Check the staged change against any listed design the author has yet to verify, using its historical version when it supplies ownership. Append any additional references the workflow requires, such as a plan updated by a slice or an as-built design. Generating the message leaves the work tree, index, configuration and commits untouched.
+
+Verify a staged edit in a shared file with an unstaged ownership change. Its generated message must pass the range check after the staged change commits. Missing one owner fails on that commit even if a later commit cites both. Cover both ends of a rename, parent ownership on deletion, a root, a merge and an unowned change. Delete a link into installed skills under a governed glob and verify its classification from the parent. A shallow REF-side boundary that masks a true ancestor must request more history even when a merge base exists. [E006: Commit reference trial](../experiments/E006-refs-trailer-trial.md)
 
 ### Coverage in audit
 

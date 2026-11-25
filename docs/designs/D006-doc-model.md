@@ -1,14 +1,14 @@
 ---
 status: active
 created: 2026-11-10
-updated: 2026-11-24
-revision: 24
+updated: 2026-11-25
+revision: 25
 modules: [canon]
 summary: Doc types, ids, frontmatter, statuses and archiving, new's templates, check on the work tree, staged tree or a commit, concurrent sessions and writing rules.
 refs: [D000, D001, D002, D003, D004, D005, D007, D008, R003, D010, C001, D011]
 owns: [doc-model, doc-writing, concurrent-work]
 paths: [skills/governance/canon/SKILL.md, skills/governance/canon/doc-types.md, skills/governance/canon/writing.md, skills/governance/canon/workflow.md, skills/execution/canon-design/SKILL.md, skills/governance/canon/scripts/canon.py, tests/test_canon.py, skills/execution/canon-implement/SKILL.md, skills/execution/canon-blind-review/SKILL.md, skills/execution/canon-handoff/SKILL.md, skills/execution/canon-prototype/SKILL.md, skills/execution/canon-research/SKILL.md]
-reviewed: 24
+reviewed: 25
 reviewers: [gpt-6.2-astra]
 approved: 21
 implemented: 24
@@ -294,7 +294,7 @@ canon.py check [ID|PATH ...] [--fix] [--base REF] [--staged | --rev REV]
 - `updated`: in a Git checkout, for a doc whose file in the tree checked differs from its version under the same path in the commit compared (under `--staged`, a doc `git diff --cached` lists), that version read with `git show <commit>:<path>`, whose failure skips the check, when the lines other than those starting with `implemented:` or `as_built:` differ, and `updated` equals that version's and is not the day of the check: ``content changed but `updated` was not bumped``, fixable on the work tree with today's date. The commit compared is HEAD, when there is one, for the work tree and `--staged`, and under `--rev` REV's parent when REV has exactly one; a root or merge commit gets no `updated` check. The day of the check is today, and under `--rev` either REV's author date or its committer date, each in the time zone the commit records (`git log -1 --format=%ad%n%cd --date=short REV`).
 - `--fix`, without doc arguments, first exits on an index start marker without its end marker ([D005§regeneration: regeneration](D005-docs-index.md#regeneration)). It runs the checks and applies each fix, setting the field, in place or as a new line before the closing `---`, or deleting it, and prints `fixed <path>: set <field>` or `fixed <path>: deleted <field>` for each; it regenerates the indexes as D005 states, then checks again and prints that result. The fixes are `refs`, `updated`, `implemented`, `as_built` and the indexes. With doc arguments, `--fix` applies only the fixes of the problems it reports.
 - With `--base REF`, append ` [also on base]` to each reported problem that a strict check of the commit named by REF against itself also finds. Match one occurrence at a time by severity, repository-relative path, exact line when present and underlying diagnostic text. Display the selected tree's commit identifier or repair hint after matching. For a shallow base, compare the tree's own diagnostics and omit checks that need its missing parent. Compare the selected tree after any fixes. Only its problems contribute to the diagnostic list, counts and exit status. If the base alone cannot be read for this comparison, explain the failure on standard error and report the selected tree's problems unmarked. The machine's install-version notice is outside the comparison.
-- `--base REF` makes the unfinished level and pending reviews errors and adds the deleted-doc and collision checks against the branch ([Ids and file names](#ids-and-file-names)), whose tip is HEAD, or REV under `--rev`. Before any fix, `check` ends with the first of the `--base` errors that applies, `<tip>` reading `HEAD` or REV:
+- `--base REF` makes the unfinished level and pending reviews errors, adds the deleted-doc and collision checks against the branch ([Ids and file names](#ids-and-file-names)), and checks [D002§design-references-in-commits: design references in new commits](D002-overview-and-as-built.md#design-references-in-commits). The tip is HEAD, or REV under `--rev`. Before any fix, `check` ends with the first of the `--base` errors that applies, `<tip>` reading `HEAD` or REV:
   - `canon: no merge base with <REF>` without a HEAD commit, outside Git included, unless `--rev` is given;
   - ``canon: unknown ref <REF>; fetch it first or correct the name`` when REF names no commit or starts with `-`;
   - ``canon: no merge base with <REF> in this shallow clone; fetch the full history with `git fetch --unshallow` `` when REF shares no history with the tip and the checkout is shallow (`git rev-parse --is-shallow-repository` prints `true`), as CI checkouts often are;
