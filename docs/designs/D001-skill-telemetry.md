@@ -44,7 +44,7 @@ Every recorded field serves at least one question. A finding is valid when its [
 Most answers already exist and are read offline:
 
 - Docs and Git: slice `Status:` and `Risk:` lines, Log entries and the `Started at` commit; `revision`, `reviewed`, `reviewers` and `implemented`; R-doc findings and dispositions; known issues; I-doc resolutions; commit times and `Refs:` trailers. Every done slice ends in its own commit.
-- `.canon/canon-blind-review/<topic>/`: each reviewer's prompt, output and agent id, and its confirmation verdicts, in [files named by its reviewer key](#review-files). A later review of the same topic overwrites them, so trace archives the files each review wrote when it ends.
+- `.canon/canon-blind-review/<topic>/`: each reviewer's prompt, output and agent id, and its confirmation verdicts, in [files named by its reviewer key](#review-files). Each round has its own directory under [D003§review-snapshots: review snapshots](D003-subagents.md#review-snapshots). Legacy topic directories could overwrite an earlier report. Trace archives the files belonging to the unit at close.
 - Cursor: `<cursor home>/projects/<project>/agent-transcripts/<conversation>/` holds the exported conversation and tool calls and may have a file per subagent. Some starts are absent from the export; each user message carries a `<timestamp>` to the minute. It records no tool output, tokens or per-call times. The agent's shell exposes `CURSOR_CONVERSATION_ID` and `CURSOR_AGENT=1`.
 - Codex: `$CODEX_HOME/sessions/**/rollout-*.jsonl` timestamps every line and records tool calls with their output, `turn_context` with `model` and `effort`, `token_count` events with cumulative input, cached, output and reasoning tokens, and `session_meta` with `cwd`, `parent_thread_id` and, for a subagent, `agent_path`.
 - Retro: `.canon/canon-retro/notes.md` (causes, events with `fix=present|absent|unverified`, raised and declined items) and `skills.jsonl`, both keyed by session.
@@ -368,7 +368,7 @@ Calls and latency are measured in the pilot; `canon.py` enforces the sizes, and 
 - Workers and reviewers never call `trace`: reviewers stay blind and read-only, and the orchestrating session sees every boundary.
 - A slice records only its start: its commit, or the plan's Log, already records its end and outcome.
 - Children name their parent, and `end` names its unit, by the id `start` printed: exact even when sessions share a checkout, for a few tokens per call, and `trace status` recovers an id lost to compaction.
-- Review files are archived when each review ends: `.canon/canon-blind-review/` is scratch space, and the next review of a topic overwrites it.
+- Review files are archived when each review ends: `.canon/canon-blind-review/` is scratch space, and legacy runs sharing a topic directory could overwrite its files.
 - A pending review can cross sessions. Its handoff end retains partial coverage and a continuing unit records the completed review. Earlier end lines remain immutable.
 - Version exposure comes from content digests mapped to source commits: release numbers and lock hashes do not show the content loaded, and source checkouts are often uncommitted.
 - Skill versions are stored with the snapshots: a `local` digest matches no commit, and without its files the version a change replaced could not be replayed.

@@ -18,6 +18,10 @@
 - [D011: Source code embedded in docs](designs/D011-embedded-source.md) · active · Embed a repository source file or a named region in Markdown, regenerate its fenced code block and check it against the same Git tree as the document. · owns: source-embeds · modules: canon
 - [D012: Paired replay of Canon workflows](designs/D012-workflow-replay.md) · active · Restore one verified unit, compare two skill suites on paired headless runs, and blind the scoring of review findings, slice outcomes and costs. · owns: workflow-replay · modules: canon
 
+### Plans
+
+- [P012: Reliable review rounds and evidence](plans/P012-review-workflow-reliability.md) · accepted · Eight review workflow corrections covering round ownership, evidence and waivers, confirmation findings and host recovery. · modules: canon
+
 ### Reviews
 
 - [R007: Open Canon workflow feedback from Silk and Canon](reviews/R007-canon-workflow-open-feedback.md) · open · Twelve open field findings on plan tiers, review completion, approvals, trace evidence, worktree records, CLI queries and verification coverage. · modules: canon
