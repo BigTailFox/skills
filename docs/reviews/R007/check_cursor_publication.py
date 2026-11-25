@@ -86,6 +86,7 @@ def run(launcher, work, case, *args):
 def recover(launcher, work, case, initial, output):
     assert initial.returncode == 1 and not initial.stdout, (initial.stdout, initial.stderr)
     assert output.read_bytes() == PREVIOUS
+    assert (work / "cross-family-id.txt").read_text() == "previous-session\n"
     source, destination = map(Path, json.loads((work / "denied-replace.json").read_text()))
     assert destination == output and source.read_bytes() == REPORT
     assert f"[Errno 13] Permission denied: '{source}' -> '{output}'" in initial.stderr, initial.stderr
@@ -109,6 +110,8 @@ def exercise(launcher, base, case, helper=None):
     (work / "expected").write_bytes(REPORT)
     output = work / "cross-family.md"
     output.write_bytes(PREVIOUS)
+    id_file = work / "cross-family-id.txt"
+    id_file.write_text("previous-session\n")
     pipe = None
     try:
         if helper:
@@ -134,13 +137,16 @@ def exercise(launcher, base, case, helper=None):
             assert warnings == 0, initial.stderr
             final = recover(launcher, work, case, initial, output)
         assert final.returncode == 0, final.stderr
+        # The caller records the ID only after the launcher publishes the complete report.
         assert final.stdout.splitlines() == ["session id: " + SESSION], final.stdout
+        id_file.write_text(final.stdout.strip().split(": ", 1)[1] + "\n")
+        assert id_file.read_text() == SESSION + "\n"
         published = output.read_bytes()
         assert published == REPORT
         calls = (work / "provider-calls").read_text().splitlines()
         assert calls == ["called"], calls
         receipt = dict(case=case, initial_exit=initial.returncode, cleanup_warnings=warnings,
-                       session_id=final.stdout.strip().split(": ", 1)[1], provider_calls=len(calls),
+                       session_id=id_file.read_text().strip(), provider_calls=len(calls),
                        report_bytes=len(published), sha256=hashlib.sha256(published).hexdigest())
         if case == "replace":
             receipt["resume_exit"] = final.returncode

@@ -6541,6 +6541,34 @@ class ReviewRoundTest(TraceCase):
                            "--target", "D000@r1", *args)
         return self.root / result.stdout.strip(), result.stderr
 
+    def test_ambiguous_branch_and_tag_are_not_pinned_as_a_review_baseline(self):
+        self.commit()
+        parent = self.git("rev-parse", "HEAD")
+        (self.root / "changed").write_text("next revision")
+        self.commit()
+        self.git("update-ref", "refs/heads/shared-name", parent)
+        self.git("update-ref", "refs/tags/shared-name", "HEAD")
+        self.git("config", "core.warnAmbiguousRefs", "false")
+        directory, diagnostics = self.round("--base", "shared-name")
+        self.assertIn("ambiguous", diagnostics)
+        self.assertIsNone(json.loads((directory / "round.json").read_text())["baseline"])
+        explicit, _ = self.round("--base", "refs/heads/shared-name")
+        self.assertEqual((explicit / "baseline.txt").read_text().strip(), parent)
+
+    def test_legacy_round_named_topic_and_ordinary_archive_keep_their_files(self):
+        self.trace("on")
+        self.commit()
+        for kind, folder in (("code-review", ".canon/canon-blind-review/round-robin"),
+                             ("implement", ".canon/ordinary")):
+            unit = self.start(kind)
+            source = self.root / folder
+            source.mkdir(parents=True)
+            (source / "report.md").write_text("actual report")
+            if kind == "implement":
+                (source / "round.json").write_text('{"application": "fixture"}')
+            self.trace("end", unit, "delivered", "--dir", str(source))
+            self.assertEqual((self.events.parent / unit / "report.md").read_text(), "actual report")
+
     def test_prepared_project_input_pins_and_retains_sha256_commits(self):
         project = self.committed_project("sha256")
         if project is None:
@@ -6811,7 +6839,7 @@ class ReviewCoverageTest(TraceCase):
         same = self.report(directory, "same-model", "A", "D000@r1", "D001@r1")
         waiver = ("--waive", "cross-family=D001@r1")
         self.assertIn("waiver.md", self.coverage(directory, [same], *waiver, returncode=1).stderr)
-        (directory / "waiver.md").write_text("User waived cross-family=D001@r1, read by A.\n")
+        (directory / "waiver.md").write_text("The user waived the independent pass. A reviewed the target.\ncross-family=D001@r1\n")
         self.assertRegex(self.coverage(directory, [same], *waiver, returncode=1).stderr, r"cross-family.*D000@r1")
         cross = self.report(directory, "cross-family", "B", "D000@r1")
         result = self.coverage(directory, [same, cross], *waiver)
@@ -6819,7 +6847,7 @@ class ReviewCoverageTest(TraceCase):
         for pair in ("same-model=D001@r1", "cross-family=D001@r2", "cross-family-2=D001@r1"):
             self.assertIn(pair, self.coverage(directory, [same], "--waive", pair, returncode=1).stderr)
         extra = self.open_round("--require", "cross-family-2", targets=("D000@r1", "D001@r1"))
-        (extra / "waiver.md").write_text("Waived cross-family=D001@r1 and cross-family-2=D000@r1.\n")
+        (extra / "waiver.md").write_text("cross-family=D001@r1\ncross-family-2=D000@r1\n")
         mismatch = "cross-family-2=D001@r1"
         self.assertIn("waiver.md", self.coverage(extra, [], "--waive", mismatch, returncode=1).stderr)
         code = self.open_round("--base", "HEAD", topic="change", kind="code-review", targets=())
@@ -6833,8 +6861,13 @@ class ReviewCoverageTest(TraceCase):
         ordinary = self.report(directory, "cross-family", "B", "D000@r1")
         requested = self.report(directory, "cross-family-2", "B", "D000@r1")
         ordinary["id"] = requested["id"] = "same-run"
+        for key in ("cross-family", "cross-family-2"):
+            (directory / (key + "-id.txt")).write_text("same-run\n")
         self.assertIn("cross-family-2", self.coverage(directory, [same, ordinary, requested], returncode=1).stderr)
+        (directory / "cross-family-2.md").write_text("Different bytes from the same run.\nVerdict: approve\n")
+        self.assertIn("two passes", self.coverage(directory, [same, ordinary, requested], returncode=1).stderr)
         requested["id"] = "independent-run"
+        (directory / "cross-family-2-id.txt").write_text("independent-run\n")
         self.assertEqual(self.coverage(directory, [same, ordinary, requested]).stdout.strip(), "D000@r1: A, B")
 
     def test_l1_documented_withdrawal_discharges_only_the_requested_cross_family_pass(self):
@@ -6843,7 +6876,7 @@ class ReviewCoverageTest(TraceCase):
         same = self.report(directory, "same-model", "A", "D000@r1")
         args = ("--withdraw", "cross-family-2")
         self.assertIn("withdrawal.md", self.coverage(directory, [same], *args, returncode=1).stderr)
-        (directory / "withdrawal.md").write_text("The user withdrew only cross-family-2.\n")
+        (directory / "withdrawal.md").write_text("The user withdrew the additional pass.\nwithdraw cross-family-2\n")
         self.assertRegex(self.coverage(directory, [same], *args, returncode=1).stderr, r"cross-family for D000@r1")
         cross = self.report(directory, "cross-family", "B", "D000@r1")
         self.assertEqual(self.coverage(directory, [same, cross], *args).stdout.strip(), "D000@r1: A, B")
@@ -6889,7 +6922,7 @@ class ReviewCoverageTest(TraceCase):
         prior = self.open_round(targets=("D000@r1", "D001@r1"))
         reports = [self.report(prior, "same-model", "A", "D000@r1", "D001@r1"),
                    self.report(prior, "cross-family", "manual:B", "D001@r1")]
-        (prior / "waiver.md").write_text("User waived cross-family=D000@r1 only.\n")
+        (prior / "waiver.md").write_text("cross-family=D000@r1\n")
         self.coverage(prior, reports, "--waive", "cross-family=D000@r1")
         self.set(self.root / self.OVERVIEW, revision=2)
         current = self.open_round(topic="D000-r1/followup-1", kind="follow-up", targets=("D000@r2",))
@@ -6915,7 +6948,7 @@ class ReviewCoverageTest(TraceCase):
                               self.report(first, "cross-family", "B", "D000@r1")])
         self.set(self.root / self.OVERVIEW, revision=2)
         second = self.open_round(topic="D000-r1/followup-1", kind="follow-up", targets=("D000@r2",))
-        (second / "waiver.md").write_text("User waived cross-family=D000@r2.\n")
+        (second / "waiver.md").write_text("cross-family=D000@r2\n")
         self.coverage(second, [self.report(second, "same-model", "A", "D000@r2")],
                       "--waive", "cross-family=D000@r2")
         self.set(self.root / self.OVERVIEW, revision=3)
@@ -6928,6 +6961,154 @@ class ReviewCoverageTest(TraceCase):
         self.assertIn("D000@r2", failure)
         self.assertIn("Independent", self.coverage(third, [delegate, self.report(third, "cross-family", "Independent",
                                                                                  "D000@r3")]).stdout)
+
+    def test_handoff_preserves_requested_roles_and_all_predecessor_targets(self):
+        self.design()
+        self.commit()
+        for supplemental in (False, True):
+            topic = "carry-" + str(supplemental).lower()
+            initial = ("D000@r1",) if supplemental else ("D000@r1", "D001@r1")
+            prior = self.open_round("--require", "cross-family", tier="L1", topic=topic, targets=initial)
+            original = self.report(prior, "same-model", "A", "D000@r1")
+            self.coverage(prior, [original], "--target", "D001@r1", returncode=1)
+            (prior / "pending.md").write_text("The requested cross-family review is pending.\n")
+            handoff = self.coverage_file(handoff={"prior_round": str(prior), "sources": ["same-model"]})
+            for missing in ("cross-family", "D001@r1"):
+                refs = ("D000@r1", "D001@r1") if missing == "cross-family" else ("D000@r1",)
+                flags = () if missing == "cross-family" else ("--require", "cross-family")
+                resumed = self.open_round(*flags, tier="L1", topic=topic, targets=refs)
+                self.report(resumed, "same-model", "A", "D000@r1")
+                result = self.coverage(resumed, [original], *handoff, returncode=1)
+                self.assertIn(missing, result.stderr)
+                self.assertIn("handoff", result.stderr)
+
+    def test_separate_passes_need_evidence_for_identical_manual_reports_and_claimed_ids(self):
+        self.commit()
+        directory = self.open_round("--require", "cross-family-2")
+        readers = [self.report(directory, "same-model", "A", "D000@r1"),
+                   self.report(directory, "cross-family", "manual:B", "D000@r1"),
+                   self.report(directory, "cross-family-2", "manual:B", "D000@r1")]
+        self.assertIn("two passes", self.coverage(directory, readers, returncode=1).stderr)
+        for n, key in enumerate(("cross-family", "cross-family-2"), 1):
+            readers[n].update(id="run-" + str(n), model="B")
+            (directory / (key + "-id.txt")).write_text("")
+        self.assertIn("-id.txt", self.coverage(directory, readers, returncode=1).stderr)
+        for n, key in enumerate(("cross-family", "cross-family-2"), 1):
+            (directory / (key + "-id.txt")).write_text("run-" + str(n) + "\n")
+        self.coverage(directory, readers)
+
+    def test_l2_code_review_credits_an_independent_manual_return_with_the_same_verdict(self):
+        self.commit()
+        current = self.open_round("--base", "HEAD", topic="change", kind="code-review", targets=())
+        spec = self.report(current, "spec", "Host")
+        spec["id"] = "host-run"
+        (current / "spec-id.txt").write_text("host-run\n")
+        standards = self.report(current, "standards", "Other host")
+        manual = self.report(current, "cross-family", "manual:Independent")
+        verdict = b"Questions: None.\nVerdict: approve\n"
+        for key in ("spec", "cross-family"):
+            (current / (key + ".md")).write_bytes(verdict)
+        readers = [spec, standards, manual]
+        self.assertIn("two passes", self.coverage(current, readers, returncode=1).stderr)
+        receipt = {"key": "cross-family", "model": "manual:Independent", "source": "review chat/return-17",
+                   "sha256": hashlib.sha256(verdict).hexdigest()}
+        path = current / "cross-family-return.json"
+        for wrong in ({"key": "spec"}, {"model": "manual:Other"}, {"sha256": "0" * 64}, {"source": " "}):
+            path.write_text(json.dumps(dict(receipt, **wrong)))
+            self.assertIn("cross-family-return.json", self.coverage(current, readers, returncode=1).stderr)
+        path.write_text(json.dumps(receipt))
+        self.assertEqual(self.coverage(current, readers).stdout.strip(), "code change: Host, Other host, manual:Independent")
+        self.assertIsNone(json.loads((current / "dispositions.json").read_text())["reviewers"][2]["id"])
+        (current / "cross-family-prompt.md").unlink()
+        self.assertIn("cross-family-prompt.md", self.coverage(current, readers).stderr)
+        manual["id"] = "made-up"
+        (current / "cross-family-id.txt").write_text("made-up\n")
+        self.assertIn("empty run ID", self.coverage(current, readers, returncode=1).stderr)
+
+    def test_a_manual_return_cannot_be_reused_for_two_requested_passes(self):
+        self.commit()
+        current = self.open_round("--require", "cross-family-2")
+        readers = [self.report(current, "same-model", "Host", "D000@r1")]
+        for key in ("cross-family", "cross-family-2"):
+            readers.append(self.report(current, key, "manual:B", "D000@r1"))
+            report = (current / (key + ".md")).read_bytes()
+            receipt = {"key": key, "model": "manual:B", "source": "review chat/return-17",
+                       "sha256": hashlib.sha256(report).hexdigest()}
+            (current / (key + "-return.json")).write_text(json.dumps(receipt))
+        self.assertIn("two passes", self.coverage(current, readers, returncode=1).stderr)
+        receipt["source"] = "review chat/return-26"
+        (current / "cross-family-2-return.json").write_text(json.dumps(receipt))
+        self.assertIn("D000@r1: Host, manual:B", self.coverage(current, readers).stdout)
+        (current / "pending.md").write_text("D000@r1, awaiting a review of another target.\n")
+        resumed = self.open_round("--require", "cross-family-2")
+        handoff = self.coverage_file(handoff={"prior_round": str(current), "sources": ["cross-family-2"]})
+        for key in ("same-model", "cross-family", "cross-family-2"):
+            for file in current.glob(key + "*"):
+                if file.is_file():
+                    shutil.copy2(file, resumed / file.name)
+        self.coverage(resumed, readers, *handoff)
+        receipt["source"] = "review chat/different-return"
+        (resumed / "cross-family-2-return.json").write_text(json.dumps(receipt))
+        self.assertIn("original", self.coverage(resumed, readers, *handoff, returncode=1).stderr)
+
+    def test_legacy_handoff_preserves_the_pending_pass_until_review_or_explicit_withdrawal(self):
+        self.commit()
+        for key in ("cross-family", "cross-family-2"):
+            with self.subTest(key=key):
+                omitted = self.open_round(tier="L1", topic=key)
+                prior = omitted.parent
+                same = self.report(prior, "same-model", "Original", "D000@r1")
+                (prior / "dispositions.json").write_text(json.dumps({"reviewers": [same], "findings": [], "new_blockers": 0}))
+                (prior / "pending.md").write_text("D000@r1, same-model complete, " + key + " pending.\n")
+                self.report(omitted, "same-model", "Original", "D000@r1")
+                handoff = self.coverage_file(handoff={"prior_round": str(prior), "sources": ["same-model"]})
+                self.assertIn(key, self.coverage(omitted, [same], *handoff, returncode=1).stderr)
+                resumed = self.open_round("--require", key, tier="L1", topic=key)
+                self.report(resumed, "same-model", "Original", "D000@r1")
+                self.assertIn(key, self.coverage(resumed, [same], *handoff, returncode=1).stderr)
+                (resumed / "withdrawal.md").write_text("withdraw " + key + "\n")
+                self.assertEqual(self.coverage(resumed, [same], *handoff, "--withdraw", key).stdout.strip(), "D000@r1: Original")
+                new = self.report(resumed, key, "Independent", "D000@r1")
+                self.assertEqual(self.coverage(resumed, [same, new], *handoff).stdout.strip(), "D000@r1: Original, Independent")
+
+    def test_legacy_handoff_reuses_a_completed_supplement_and_keeps_the_independent_pass_pending(self):
+        self.design()
+        self.commit()
+        targets = ("D000@r1", "D001@r1")
+        resumed = self.open_round("--require", "cross-family", tier="L1", targets=targets)
+        prior = resumed.parent
+        readers = [self.report(prior, "same-model", "Original reader", targets[0]),
+                   self.report(prior, "same-model-2", "Supplemental reader", targets[1])]
+        (prior / "pending.md").write_text("same-model completed D000@r1. same-model-2 completed D001@r1. "
+                                         "The requested cross-family pass is pending on both.\n")
+        (prior / "dispositions.json").write_text(json.dumps({"reviewers": readers, "findings": [], "new_blockers": 0}))
+        keys = ["same-model", "same-model-2"]
+        for key in keys:
+            for suffix in (".md", "-prompt.md"):
+                shutil.copy2(prior / (key + suffix), resumed / (key + suffix))
+        handoff = self.coverage_file(handoff={"prior_round": str(prior), "sources": keys})
+        missing = self.coverage(resumed, readers, *handoff, returncode=1).stderr
+        self.assertIn("cross-family for D000@r1, cross-family for D001@r1", missing)
+        readers.append(self.report(resumed, "cross-family", "Independent reader", *targets))
+        self.assertEqual(self.coverage(resumed, readers, *handoff).stdout.splitlines(),
+                         ["D000@r1: Original reader, Independent reader",
+                          "D001@r1: Supplemental reader, Independent reader"])
+
+    def test_mixed_prose_never_grants_a_waiver_or_withdrawal(self):
+        self.design()
+        self.commit()
+        both = ("D000@r1", "D001@r1")
+        gate = self.open_round(targets=both)
+        same = self.report(gate, "same-model", "A", *both)
+        cross = self.report(gate, "cross-family", "B", "D000@r1")
+        (gate / "waiver.md").write_text("Waive cross-family for D000@r1 only. D001@r1 stays pending.\n")
+        self.assertIn("waiver.md", self.coverage(gate, [same, cross], "--waive", "cross-family=D001@r1",
+                                                 returncode=1).stderr)
+        one = self.open_round("--require", "cross-family", tier="L1")
+        one_reader = self.report(one, "same-model", "A", "D000@r1")
+        (one / "withdrawal.md").write_text("The user still wants cross-family.\n")
+        self.assertIn("withdrawal.md", self.coverage(one, [one_reader], "--withdraw", "cross-family",
+                                                     returncode=1).stderr)
 
     def test_handoff_carries_only_verified_original_reports_and_dispatches_the_missing_reader(self):
         self.commit()
@@ -7765,6 +7946,37 @@ class RecheckTest(TraceCase):
         self.assertIn("blocker:cross-family-confirm-spec:B1 origin=confirmation reviewer=spec snapshot=" + "a" * 40,
                       history)
         self.assertIn("report=cross-family-confirm-spec archive=missing", history)
+
+    def test_single_confirmation_has_one_report_and_preserves_an_unknown_snapshot(self):
+        unit = self.start("gate")
+        finding = dict(by=["same-model:F1"], severity="major", disposition="accepted", confirmed="resolved",
+                       confirmations=[dict(reviewer="same-model", snapshot=None, result="resolved")])
+        data = dict(reviewers=[dict(role="same-model", model="A", id=None)], findings=[finding], new_blockers=2)
+        self.trace("end", unit, "delivered", "--input", "-", stdin=json.dumps(data))
+        self.rejects(*self.blocker(unit, label="B1", report="same-model-confirm-same-model"))
+        self.rejects(*self.blocker(unit, label="B1", snapshot="a" * 40))
+        for label in ("B1", "B2"):
+            self.assertNotIn("error", self.trace(*self.blocker(unit, label=label)))
+        self.assertIn("new blockers=2 unidentified=0", self.trace("history", unit))
+
+    def test_recovered_confirmation_pin_stays_bound_after_the_archive_is_lost(self):
+        unit = self.start("gate")
+        source = self.root / ".canon/checked-source"
+        source.mkdir()
+        pin = source / "same-model-snapshot-confirm.txt"
+        pin.write_text("a" * 40)
+        finding = dict(by=["same-model:F1"], severity="major", disposition="accepted", confirmed="resolved",
+                       confirmations=[dict(reviewer="same-model", snapshot=None, result="resolved")])
+        data = dict(reviewers=[dict(role="same-model", model="A", id=None)], findings=[finding], new_blockers=1)
+        self.trace("end", unit, "delivered", "--dir", str(source), "--input", "-", stdin=json.dumps(data))
+        self.rejects(*self.blocker(unit, snapshot="b" * 40))
+        command = self.blocker(unit, snapshot="a" * 40)
+        self.assertNotIn("error", self.trace(*command))
+        (self.events.parent / unit / pin.name).unlink()
+        before = self.events.read_bytes()
+        self.assertNotIn("error", self.trace(*command))
+        self.assertEqual(before, self.events.read_bytes())
+        self.assertIn("blocker:same-model-confirm:F12", self.trace("history", unit))
 
     def test_an_imported_conflicting_recheck_cannot_establish_a_blocker_origin(self):
         unit = self.start("gate")

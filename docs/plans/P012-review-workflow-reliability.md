@@ -17,7 +17,7 @@ Implements [D007: Change tiers and the review gate](../designs/D007-change-tiers
 
 ## Current state
 
-All four slices are done. Next: code review.
+All four slices and the combined code review are complete.
 
 ## Slices
 
@@ -69,8 +69,10 @@ Started at bd5c4a937e1af59a68585f9feb53ed3e9ed7b13d.
 
 S1 — Canon 83 creates distinct round directories, binds prepared/live input and preserves verified short baselines for replay after the source disappears. Seven new CLI and replay cases and a real ambiguous-prefix fixture passed. Recovery keeps its original round and source identity. The coverage check in S2 can use the existing round declaration, pass list, pin and material-warning helpers, including in a checkout with tracing off. A numbered key identifies a separately requested pass when its ordinary role is already required.
 
-S2 — Canon 84 checks actual readers by target and role, separate approval groups, partial handoffs, delegation and scoped user exceptions. Fourteen public CLI regressions and an installed-CLI trial passed. In S3 the same report-local F-number may occur in both the original and confirmation reports. Exercise the offline evidence and first-round replay joins as well as live history.
+S2 — Canon 84 checks actual readers by target and role, separate approval groups, partial handoffs, delegation and scoped user exceptions. Fourteen public CLI regressions and an installed-CLI trial passed. Applying the published rule in a scratch project put the first core implementation of an unimplemented L2 design at L2 despite its existing directory. Its later local change after implementation was L1. In S3 the same report-local F-number may occur in both the original and confirmation reports. Exercise the offline evidence and first-round replay joins as well as live history.
 
 S3 — Canon 85 registers confirmation and later recheck blockers with their own identities. Equal F12 labels remained distinct in history and replay; independent CLI checks and legacy replay cases passed. S4 can reproduce the field investigation from .canon/canon-investigate/review-publication/f10.YIZ7/replay.py and its three observation files. The machine regressions use the installed test-review-live.py; .canon/canon/review-workflow-batch/host-fallback.json records a completed and an active host job checked without a completion notice. Keep the durable verification with R007, then update finding dispositions in the docs step.
 
 S4 — The portable instructions now await foreground jobs together where supported and recover original terminal output on asynchronous hosts. R007 includes a runnable offline regression, a successful original-session recovery and the separate historical attribution limit. Both injected faults and native helper cleanup were verified with a single local invocation per case.
+
+The combined code review recorded eight Spec findings and seven Standards findings in unit `20261125T085750Z-23f146`. The first confirmations and the user-authorized targeted rechecks retain their separate verdicts. Both original reviewers confirmed the final legacy handoff case at `8367594b91f4c6be373f8fed9384f8d391f1e1e0`. The completed supplemental report kept its same-model credit on the added target. Both targets awaited the outstanding cross-family pass, and both received credit for the independent reader when its report arrived.

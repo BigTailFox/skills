@@ -31,7 +31,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "85"
+CANON_VERSION = "86"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -5070,16 +5070,20 @@ def check_round_declaration(info):
 
 
 def read_review_round(root, directory):
-    """Read a round's ownership record; a missing marker is allowed only at a legacy path."""
+    """Only a generated round below a topic (or its follow-up) owns an unfiltered archive."""
+    base = root / REVIEW_ROUND_DIR
+    if base not in directory.parents:
+        return None
+    parts = directory.relative_to(base).parts
+    if (len(parts) not in (2, 3) or not parts[-1].startswith("round-") or
+            len(parts) == 3 and not re.fullmatch(r"followup-[1-9][0-9]*", parts[1])):
+        return None
     try:
         data = regular_bytes(directory / "round.json", MAX_ARCHIVE + 1)
         if len(data) <= MAX_ARCHIVE:
             info = json.loads(data)
             check_round_declaration(info)
             return info
-    except FileNotFoundError:
-        if root / REVIEW_ROUND_DIR not in directory.parents or not directory.name.startswith("round-"):
-            return None
     except (OSError, ValueError, TraceError):
         pass
     raise TraceError("missing or invalid round.json")
@@ -5566,11 +5570,24 @@ class HistoryUnit:
                 key = item["reviewer"]
                 if key == source or (source not in authors and roles[key] == delegate_role):
                     snapshots[key].add(item["snapshot"] and item["snapshot"].lower())
-        if len(snapshots) > 1 and not suffix:
-            raise TraceError("a source with multiple confirmers requires its delegate-specific report stem")
+        expected_suffix = "-" + reviewer if len(snapshots) > 1 else ""
+        if suffix != expected_suffix:
+            raise TraceError("report stem does not match the recorded number of confirmers")
         known = snapshots.get(reviewer, set())
-        if not legacy and None not in known and event["snapshot"] not in known:
-            raise TraceError("reviewer, report or snapshot does not match a first confirmation")
+        if not known and not legacy:
+            raise TraceError("reviewer does not match a first confirmation")
+        if event["snapshot"] in known or legacy and event["snapshot"] is None:
+            return
+        if (None in known or legacy) and event["snapshot"]:
+            # Keep the checked source name with the event so a later prune cannot erase its provenance.
+            pin = event["report"] + "-snapshot.txt" if suffix else source + "-snapshot-confirm.txt"
+            if event.get("snapshot_source") == pin:
+                return
+            archived = round_file(self.trace_dir / self.unit, pin).strip().lower()
+            if archived == event["snapshot"].encode("ascii"):
+                event["snapshot_source"] = pin
+                return
+        raise TraceError("snapshot does not match the recorded confirmation")
 
     def add_evidence(self, event):
         if event["type"] == "recheck":
@@ -5580,11 +5597,13 @@ class HistoryUnit:
         key = blocker_id(event["report"], event["label"])
         if event["snapshot"]:
             event["snapshot"] = event["snapshot"].lower()
+        old = self.blockers.get(key)
+        if old and old.get("snapshot_source") and old["snapshot"] == event["snapshot"]:
+            event["snapshot_source"] = old["snapshot_source"]
         if "from" in event:
             event["from"] = self.recheck_origin(event)
         else:
             self.check_confirmation_origin(event)
-        old = self.blockers.get(key)
         if old:
             if all(old.get(k) == event.get(k) for k in ("reviewer", "from", "snapshot")):
                 return False
@@ -6133,7 +6152,11 @@ def pin_review_ref(root, directory, env, ref, now):
         if not ref or ref.startswith("-") or "\n" in ref:
             raise SnapshotSkip("invalid commit reference")
         repo = directory if ref.startswith("refs/snapshots/") else root
-        commit = trace_git(repo, env, "rev-parse", "--verify", ref + "^{commit}").decode().strip()
+        result = git_run(repo, "-c", "core.warnAmbiguousRefs=true", "rev-parse", "--verify",
+                         ref + "^{commit}", env=dict(env, LC_ALL="C"))
+        if result is None or result.returncode or "is ambiguous" in result.stderr:
+            raise SnapshotSkip("ambiguous or unavailable commit reference")
+        commit = result.stdout.strip()
     snapshot_git(directory, env, "update-ref", "refs/snapshots/" + new_id(now), commit)
     return commit
 
@@ -6234,6 +6257,16 @@ def source_passes(passes, sources, coverage):
     return served
 
 
+def saved_review_targets(directory):
+    try:
+        saved = json.loads(regular_bytes(directory / "targets.json", MAX_ARCHIVE + 1))
+    except FileNotFoundError:
+        return []
+    if not isinstance(saved, list) or any(not target_reference(t, "@r") for t in saved):
+        raise TraceError("invalid supplemental targets in targets.json")
+    return saved
+
+
 def review_targets(root, info, additional):
     targets = list(dict.fromkeys(info["targets"] + additional))
     if targets:
@@ -6256,25 +6289,31 @@ def checked_report(directory, key, reviewer, kind):
         raise TraceError("{} lacks a completed report for {}".format(key, ", ".join(scope)))
     id_file = key + "-id.txt"
     saved_id = round_file(directory, id_file).rstrip(b"\r\n")
-    if saved_id and saved_id != (reviewer["id"] or "").encode("utf-8"):
+    if reviewer["model"].startswith("manual:") and reviewer["id"] is not None:
+        raise TraceError("{} needs an empty run ID for a manual return".format(key))
+    if saved_id != (reviewer["id"] or "").encode("utf-8"):
         raise TraceError("{} conflicts with the run in {}".format(key, id_file))
     return report
 
 
-def reported_coverage(directory, kind, sources, served, targets):
-    covered, runs = {}, {}
-    for key, reviewer in sources.items():
-        report = checked_report(directory, key, reviewer, kind)
-        scope = reviewer.get("targets", ["code change"] if kind == "code-review" else [])
-        for target in scope:
-            if target not in targets:
-                raise TraceError("{} assessed undeclared target {}; supply --target for an added revision".format(key, target))
-            if reviewer["id"]:
-                source = (reviewer["model"], reviewer["id"], hashlib.sha256(report).digest(), target)
-                if runs.setdefault(source, served[key]) != served[key]:
-                    raise TraceError("{} reuses the same run's report for two passes on {}".format(key, target))
-            covered.setdefault((served[key], target), []).append(reviewer["model"])
-    return covered
+def review_source_identity(directory, key, reviewer, digest):
+    if reviewer["id"]:
+        return "run", reviewer["id"]
+    if not reviewer["model"].startswith("manual:"):
+        return None
+    name = key + "-return.json"
+    raw = round_file(directory, name)
+    if not raw:
+        return None
+    try:
+        receipt = json.loads(raw, object_pairs_hook=unique_keys)
+    except ValueError as error:
+        raise TraceError("invalid {}: {}".format(name, error))
+    if (not isinstance(receipt, dict) or set(receipt) != {"key", "model", "source", "sha256"} or
+            receipt["key"] != key or receipt["model"] != reviewer["model"] or receipt["sha256"] != digest.hex() or
+            not short_field(receipt["source"]) or not receipt["source"].strip()):
+        raise TraceError("{} must identify the returned message, reviewer key, actual model and report SHA-256".format(name))
+    return "manual return", receipt["source"].strip()
 
 
 def prior_review(root, directory, reference, legacy_kind=None):
@@ -6300,136 +6339,208 @@ def prior_review(root, directory, reference, legacy_kind=None):
     return prior, info, sources, source_passes(passes, sources, coverage)
 
 
-def check_handoff(root, directory, info, sources, served, coverage):
-    if "handoff" not in coverage:
-        return
-    handoff = coverage["handoff"]
-    if (not isinstance(handoff, dict) or set(handoff) != {"prior_round", "sources"} or
-            not isinstance(handoff["prior_round"], str) or not isinstance(handoff["sources"], list) or
-            not handoff["sources"] or any(not isinstance(key, str) or key not in sources for key in handoff["sources"])):
-        raise TraceError("handoff needs a prior_round and the original source keys included in this round's dispositions")
-    prior, previous, readers, assignments = prior_review(root, directory, handoff["prior_round"], info["kind"])
-    pending = round_file(prior, "pending.md").decode("utf-8", "replace")
-    if directory.parent != (prior.parent if previous else prior) or not pending.strip():
-        raise TraceError("prior round needs this topic's saved pending.md")
-    if previous:
-        if ((previous["kind"], previous["tier"]) != (info["kind"], info["tier"]) or
-                previous["targets"][:1] != info["targets"][:1]):
-            raise TraceError("prior round has a different review kind, tier or primary revision")
-        if previous["unit"] and info["unit"]:
-            for _, store in history_stores(root):
-                current, _ = unit_events(store, info["unit"])
-                original, end = unit_events(store, previous["unit"])
-                if ((current and current.get("continues") and current["continues"] != previous["unit"]) or
-                        (original and end and end.get("outcome") != "handoff") or
-                        (original and current and current.get("continues") != previous["unit"])):
-                    raise TraceError("prior round does not match this trace continuation")
-    elif info["kind"] != "code-review" and info["targets"][0] not in re.findall(r"\b[DP][0-9]+[A-Z]*@r[1-9][0-9]*\b", pending):
-        raise TraceError("prior round's pending.md needs the same primary revision")
-    if info["kind"] == "code-review":
-        if previous:
-            base, plans = previous["baseline"], previous["targets"]
-        else:
-            literal = round_file(prior, "baseline.txt").strip().decode("ascii", "replace")
-            base = review_commit(root / REVIEW_SNAPSHOT_DIR, trace_env(), literal)
-            plans = re.findall(r"\bP[0-9]+@r[1-9][0-9]*\b", pending)
-        if not base or base != info["baseline"] or set(plans) != set(info["targets"]):
-            raise TraceError("prior round has a different or unknown code-review base or plan")
-    carried = set(handoff["sources"])
-    for key in carried:
-        reviewer, original = sources[key], readers.get(key)
-        if (not original or any(original[field] != reviewer[field] for field in ("role", "model", "id")) or
-                served[key] != assignments[key] or not set(reviewer.get("targets", ())) <= set(original.get("targets", ())) or
-                checked_report(prior, key, original, info["kind"]) != round_file(directory, key + ".md")):
-            raise TraceError("handoff {} needs the original report, author, pass and assessed revisions".format(key))
-
-
 def waiver_pairs(directory):
-    decision = round_file(directory, "waiver.md").decode("utf-8", "replace")
-    role = r"(?<![\w-])(cross-family(?:-[0-9]+)?)(?![\w-])"
-    target = r"(?<![\w@])([DP][0-9]{3,}[A-Z]?@r[1-9][0-9]*)(?![\w@-])"
-    pairs = set(re.findall(role + r"\s*=\s*" + target, decision))
-    if not pairs:
-        # Older decision notes can name one missing role and its revisions together in prose.
-        for line in decision.splitlines():
-            keys = set(re.findall(role, line))
-            if len(keys) == 1:
-                pairs.update((next(iter(keys)), ref) for ref in re.findall(target, line))
+    lines = round_file(directory, "waiver.md").decode("utf-8", "replace").splitlines()
+    pairs = set()
+    for line in lines:
+        key, _, target = line.strip().partition("=")
+        if reviewer_key("cross-family", key) and target_reference(target, "@r"):
+            pairs.add((key, target))
     return pairs
 
 
 def topic_waivers(root, directory):
+    """Yield prior exceptions and unresolved legacy notes. Prose never authorizes a waiver."""
     reviews = root / REVIEW_ROUND_DIR
     topic = reviews / directory.relative_to(reviews).parts[0]
-    pairs = set()
     for pattern in ("waiver.md", "round-*/waiver.md", "followup-*/waiver.md", "followup-*/round-*/waiver.md"):
         for note in topic.glob(pattern):
-            if note.parent == note.parent.resolve():
-                pairs.update(waiver_pairs(note.parent))
-    return pairs
+            if note.parent != note.parent.resolve():
+                continue
+            pairs = waiver_pairs(note.parent)
+            if pairs:
+                for key, target in pairs:
+                    yield key, target, True
+            else:
+                text = round_file(note.parent, "waiver.md").decode("utf-8", "replace")
+                keys = re.findall(r"(?<![\w-])cross-family(?:-[0-9]+)?(?![\w-])", text)
+                targets = re.findall(r"\b[DP][0-9]{3,}[A-Z]?@r[1-9][0-9]*\b", text)
+                for key in set(keys):
+                    for target in set(targets):
+                        yield key, target, False
 
 
-def delegated_coverage(root, directory, info, passes, targets, sources, coverage, covered):
-    entries = coverage.get("delegations", [])
-    fields = {"pass", "target", "source", "prior_round", "prior_source", "prior_target"}
-    if not isinstance(entries, list):
-        raise TraceError("delegations must be a list")
-    waivers = topic_waivers(root, directory) if entries else ()
-    for entry in entries:
-        if not isinstance(entry, dict) or set(entry) != fields or not all(isinstance(s, str) for s in entry.values()):
-            raise TraceError("each delegation needs " + ", ".join(sorted(fields)))
-        required, target, old = entry["pass"], entry["target"], entry["prior_target"]
-        label = "{} for {}".format(required, target)
-        delegate = sources.get(entry["source"], {})
-        new_ref, old_ref = target_reference(target, "@r"), target_reference(old, "@r")
-        if (info["kind"] != "follow-up" or required not in passes or not reviewer_key("cross-family", required) or
-                target not in targets or delegate.get("role") != "same-model" or target not in delegate.get("targets", []) or
-                not old_ref or old_ref[0] != new_ref[0] or int(old_ref[1]) >= int(new_ref[1])):
-            raise TraceError("invalid delegation of " + label)
-        for waived_pass, waived in waivers:
-            doc_id, revision = waived.split("@r")
-            if waived_pass == required and new_ref[0] == doc_id and int(old_ref[1]) < int(revision) < int(new_ref[1]):
-                raise TraceError("{} needs fresh independent coverage after the waiver of {}".format(label, waived))
-        prior, declaration, previous, served = prior_review(root, directory, entry["prior_round"])
-        key = entry["prior_source"]
-        if (declaration and (declaration["tier"] != info["tier"] or declaration["kind"] == "code-review") or
-                served.get(key) != required or old not in previous[key].get("targets", [])):
-            raise TraceError("{} needs prior full {} coverage of {} by {}".format(label, required, old, key))
-        checked_report(prior, key, previous[key], "gate")
-        if required in previous and key != required:
-            checked_report(prior, required, previous[required], "gate")
-        covered.setdefault((required, target), []).append(delegate["model"])
+class ReviewCoverage:
+    """The declared obligations and the source evidence presented for this check."""
 
+    def __init__(self, root, directory, declaration, targets, dispositions, provenance):
+        self.root = root
+        self.directory = directory
+        self.declaration = declaration
+        self.kind = declaration["kind"]
+        self.targets = targets
+        self.passes = required_review_passes(declaration)
+        self.sources = {r.get("key", r["role"]): r for r in dispositions["reviewers"]}
+        self.provenance = provenance
+        self.source_pass = source_passes(self.passes, self.sources, provenance)
 
-def check_replay_material(root, directory, info, sources):
-    files = {name: round_file(directory, name) for name in ["snapshot.txt", "baseline.txt"] +
-             [key + "-prompt.md" for key in sources]}
-    gaps = {}
-    review_pins(root / REVIEW_SNAPSHOT_DIR, trace_env(**SNAPSHOT_IDENTITY), info["kind"], info, files, gaps)
-    review_prompt_gaps(files, sources, gaps)
-    warn_review_gaps(root, directory, info["unit"], gaps)
+    def check_handoff(self):
+        if "handoff" not in self.provenance:
+            return
+        handoff = self.provenance["handoff"]
+        if (not isinstance(handoff, dict) or set(handoff) != {"prior_round", "sources"} or
+                not isinstance(handoff["prior_round"], str) or not isinstance(handoff["sources"], list) or
+                not handoff["sources"] or
+                any(not isinstance(key, str) or key not in self.sources for key in handoff["sources"])):
+            raise TraceError("handoff needs a prior_round and the original source keys included in this round's dispositions")
+        prior, previous, readers, assignments = prior_review(
+            self.root, self.directory, handoff["prior_round"], self.kind)
+        pending = round_file(prior, "pending.md").decode("utf-8", "replace")
+        if self.directory.parent != (prior.parent if previous else prior) or not pending.strip():
+            raise TraceError("prior round needs this topic's saved pending.md")
+        if previous:
+            if ((previous["kind"], previous["tier"]) != (self.kind, self.declaration["tier"]) or
+                    previous["targets"][:1] != self.declaration["targets"][:1]):
+                raise TraceError("prior round has a different review kind, tier or primary revision")
+            prior_passes = required_review_passes(previous)
+            if self.kind != "code-review":
+                prior_targets = set(previous["targets"] + saved_review_targets(prior))
+                prior_targets.update(ref for reader in readers.values() for ref in reader.get("targets", []))
+                current_docs = {ref.split("@")[0] for ref in self.targets}
+                missing = [ref for ref in sorted(prior_targets) if ref.split("@")[0] not in current_docs]
+                if missing:
+                    raise TraceError("handoff omitted targets: " + ", ".join(missing))
+            if previous["unit"] and self.declaration["unit"]:
+                for _, store in history_stores(self.root):
+                    current, _ = unit_events(store, self.declaration["unit"])
+                    original, end = unit_events(store, previous["unit"])
+                    if ((current and current.get("continues") and current["continues"] != previous["unit"]) or
+                            (original and end and end.get("outcome") != "handoff") or
+                            (original and current and current.get("continues") != previous["unit"])):
+                        raise TraceError("prior round does not match this trace continuation")
+        else:
+            roles = "|".join(REVIEW_ROLES[self.kind])
+            named = re.findall(r"(?<![\w-])(?:" + roles + r")(?:-(?:[2-9]|[1-9][0-9]+))?(?![\w-])", pending.lower())
+            # A completed source keeps the pass it served. An unfilled key names its own outstanding pass.
+            prior_passes = set(assignments.values())
+            prior_passes.update(key for key in named if key not in assignments)
+        missing_passes = set(prior_passes) - set(self.passes)
+        if missing_passes:
+            raise TraceError("handoff omitted requested passes: " + ", ".join(sorted(missing_passes)))
+        if not previous and self.kind != "code-review":
+            pending_refs = re.findall(r"\b[DP][0-9]+[A-Z]*@r[1-9][0-9]*\b", pending)
+            if self.declaration["targets"][0] not in pending_refs:
+                raise TraceError("prior round's pending.md needs the same primary revision")
+            current_docs = {ref.split("@")[0] for ref in self.targets}
+            missing = [ref for ref in pending_refs if ref.split("@")[0] not in current_docs]
+            if missing:
+                raise TraceError("handoff omitted targets: " + ", ".join(missing))
+        if self.kind == "code-review":
+            if previous:
+                base, plans = previous["baseline"], previous["targets"]
+            else:
+                literal = round_file(prior, "baseline.txt").strip().decode("ascii", "replace")
+                base = review_commit(self.root / REVIEW_SNAPSHOT_DIR, trace_env(), literal)
+                plans = re.findall(r"\bP[0-9]+@r[1-9][0-9]*\b", pending)
+            if not base or base != self.declaration["baseline"] or set(plans) != set(self.declaration["targets"]):
+                raise TraceError("prior round has a different or unknown code-review base or plan")
+        carried = set(handoff["sources"])
+        for key in carried:
+            reviewer, original = self.sources[key], readers.get(key)
+            if (not original or any(original[field] != reviewer[field] for field in ("role", "model", "id")) or
+                    self.source_pass[key] != assignments[key] or
+                    not set(reviewer.get("targets", ())) <= set(original.get("targets", ())) or
+                    round_file(prior, key + "-return.json") != round_file(self.directory, key + "-return.json") or
+                    checked_report(prior, key, original, self.kind) != round_file(self.directory, key + ".md")):
+                raise TraceError("handoff {} needs the original report, author, pass and assessed revisions".format(key))
 
+    def reported_coverage(self):
+        covered, runs, copies = {}, {}, {}
+        for key, reviewer in self.sources.items():
+            report = checked_report(self.directory, key, reviewer, self.kind)
+            digest = hashlib.sha256(report).digest()
+            identity = review_source_identity(self.directory, key, reviewer, digest)
+            scope = reviewer.get("targets", ["code change"] if self.kind == "code-review" else [])
+            for target in scope:
+                if target not in self.targets:
+                    raise TraceError("{} assessed undeclared target {}; supply --target for an added revision".format(key, target))
+                required = self.source_pass[key]
+                if identity:
+                    run = target, reviewer["model"] if reviewer["id"] else None, identity
+                    if runs.setdefault(run, required) != required:
+                        raise TraceError("{} reuses the same {} for two passes on {}".format(key, identity[0], target))
+                same_text = copies.setdefault((target, digest), [])
+                for previous_pass, previous_id in same_text:
+                    if previous_pass != required and (not identity or not previous_id or identity == previous_id):
+                        raise TraceError("{} needs independent source evidence to use the same report for two passes on {}".format(
+                            key, target))
+                same_text.append((required, identity))
+                covered.setdefault((required, target), []).append(reviewer["model"])
+        return covered
 
-def review_exceptions(directory, info, passes, targets, args):
-    """A user's recorded exception discharges exactly the named obligation. It supplies no model."""
-    excused = set()
-    for pair in args.waive:
-        key, _, target = pair.partition("=")
-        if (info["tier"] != "L2" or info["kind"] == "code-review" or key not in passes or
-                not reviewer_key("cross-family", key) or target not in targets):
-            raise TraceError("cannot waive " + pair + " in this round")
-        if (key, target) not in waiver_pairs(directory):
-            raise TraceError("record the user's decision for {} in waiver.md".format(pair))
-        excused.add((key, target))
-    for key in args.withdraw:
-        if (info["tier"] != "L1" or info["kind"] == "code-review" or key not in info["require"] or
-                not reviewer_key("cross-family", key)):
-            raise TraceError("cannot withdraw " + key + " in this round")
-        decision = round_file(directory, "withdrawal.md").decode("utf-8", "replace")
-        if not re.search(r"(?<![\w-])" + re.escape(key) + r"(?![\w-])", decision):
-            raise TraceError("record the user's withdrawal of {} in withdrawal.md".format(key))
-        excused.update((key, target) for target in targets)
-    return excused
+    def add_delegations(self, covered):
+        entries = self.provenance.get("delegations", [])
+        fields = {"pass", "target", "source", "prior_round", "prior_source", "prior_target"}
+        if not isinstance(entries, list):
+            raise TraceError("delegations must be a list")
+        waivers = tuple(topic_waivers(self.root, self.directory)) if entries else ()
+        for entry in entries:
+            if not isinstance(entry, dict) or set(entry) != fields or not all(isinstance(s, str) for s in entry.values()):
+                raise TraceError("each delegation needs " + ", ".join(sorted(fields)))
+            required, target, old = entry["pass"], entry["target"], entry["prior_target"]
+            label = "{} for {}".format(required, target)
+            delegate = self.sources.get(entry["source"], {})
+            new_ref, old_ref = target_reference(target, "@r"), target_reference(old, "@r")
+            if (self.kind != "follow-up" or required not in self.passes or target not in self.targets or
+                    not reviewer_key("cross-family", required) or delegate.get("role") != "same-model" or
+                    target not in delegate.get("targets", []) or
+                    not old_ref or old_ref[0] != new_ref[0] or int(old_ref[1]) >= int(new_ref[1])):
+                raise TraceError("invalid delegation of " + label)
+            for waived_pass, waived, verified in waivers:
+                doc_id, revision = waived.split("@r")
+                if waived_pass == required and new_ref[0] == doc_id and int(old_ref[1]) < int(revision) < int(new_ref[1]):
+                    if not verified:
+                        raise TraceError("verify the legacy waiver for {} before delegating {}".format(waived, label))
+                    raise TraceError("{} needs fresh independent coverage after the waiver of {}".format(label, waived))
+            prior, declaration, previous, served = prior_review(self.root, self.directory, entry["prior_round"])
+            key = entry["prior_source"]
+            if (declaration and (declaration["tier"] != self.declaration["tier"] or declaration["kind"] == "code-review") or
+                    served.get(key) != required or old not in previous[key].get("targets", [])):
+                raise TraceError("{} needs prior full {} coverage of {} by {}".format(label, required, old, key))
+            checked_report(prior, key, previous[key], "gate")
+            if required in previous and key != required:
+                checked_report(prior, required, previous[required], "gate")
+            covered.setdefault((required, target), []).append(delegate["model"])
+
+    def check_replay_material(self):
+        files = {name: round_file(self.directory, name) for name in ["snapshot.txt", "baseline.txt"] +
+                 [key + "-prompt.md" for key in self.sources]}
+        gaps = {}
+        review_pins(self.root / REVIEW_SNAPSHOT_DIR, trace_env(**SNAPSHOT_IDENTITY),
+                    self.kind, self.declaration, files, gaps)
+        review_prompt_gaps(files, self.sources, gaps)
+        warn_review_gaps(self.root, self.directory, self.declaration["unit"], gaps)
+
+    def exceptions(self, args):
+        """A user's recorded exception discharges exactly the named obligation. It supplies no model."""
+        excused = set()
+        for pair in args.waive:
+            key, _, target = pair.partition("=")
+            if (self.declaration["tier"] != "L2" or self.kind == "code-review" or key not in self.passes or
+                    not reviewer_key("cross-family", key) or target not in self.targets):
+                raise TraceError("cannot waive " + pair + " in this round")
+            if (key, target) not in waiver_pairs(self.directory):
+                raise TraceError("record the user's decision for {} in waiver.md".format(pair))
+            excused.add((key, target))
+        for key in args.withdraw:
+            if (self.declaration["tier"] != "L1" or self.kind == "code-review" or key not in self.declaration["require"] or
+                    not reviewer_key("cross-family", key)):
+                raise TraceError("cannot withdraw " + key + " in this round")
+            decision = round_file(self.directory, "withdrawal.md").decode("utf-8", "replace")
+            if "withdraw " + key not in {line.strip() for line in decision.splitlines()}:
+                raise TraceError("record the user's withdrawal of {} in withdrawal.md".format(key))
+            excused.update((key, target) for target in self.targets)
+        return excused
 
 
 def review_check(args):
@@ -6440,26 +6551,31 @@ def review_check(args):
     info = read_review_round(root, directory)
     if info is None:
         raise TraceError("review check needs a declared round from review start")
+    dispositions = read_dispositions(info["kind"], args.input)
+    with file_lock(directory / ".checks" / "lock", TRACE_LOCK_WAIT, TraceError("review check lock timeout")):
+        return check_round_coverage(root, directory, info, dispositions, args)
+
+
+def check_round_coverage(root, directory, info, dispositions, args):
     kind = info["kind"]
-    targets = review_targets(root, info, args.target)
-    dispositions = read_dispositions(kind, args.input)
-    sources = {r.get("key", r["role"]): r for r in dispositions["reviewers"]}
-    passes = required_review_passes(info)
-    excused = review_exceptions(directory, info, passes, targets, args)
+    targets = review_targets(root, info, saved_review_targets(directory) + args.target)
     coverage = read_coverage(Path(args.coverage).read_bytes()) if args.coverage else {}
-    served = source_passes(passes, sources, coverage)
-    check_handoff(root, directory, info, sources, served, coverage)
-    covered = reported_coverage(directory, kind, sources, served, targets)
-    delegated_coverage(root, directory, info, passes, targets, sources, coverage, covered)
-    check_replay_material(root, directory, info, sources)
+    review = ReviewCoverage(root, directory, info, targets, dispositions, coverage)
+    excused = review.exceptions(args)
+    review.check_handoff()
+    covered = review.reported_coverage()
+    review.add_delegations(covered)
+    review.check_replay_material()
+    if args.target and kind != "code-review":
+        save_round_json(directory, "targets.json", targets)
     save_round_json(directory, "dispositions.json", dispositions)
     save_round_json(directory, "coverage.json", coverage)
-    missing = ["{} for {}".format(key, target) for key in passes for target in targets
+    missing = ["{} for {}".format(key, target) for key in review.passes for target in targets
                if (key, target) not in covered and (key, target) not in excused]
     if missing:
         raise TraceError("missing review coverage: " + ", ".join(missing))
     for target in targets:
-        models = dict.fromkeys(model for key in passes for model in covered.get((key, target), []))
+        models = dict.fromkeys(model for key in review.passes for model in covered.get((key, target), []))
         print("{}: {}".format(target, ", ".join(models)))
     return 0
 
