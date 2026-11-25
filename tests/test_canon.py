@@ -202,6 +202,11 @@ class CanonTest(unittest.TestCase):
         self.ok("index")
         return path
 
+    def complete_overview(self):
+        overview = self.root / self.OVERVIEW
+        overview.write_text(re.sub(r"<!-- canon:.*?-->", "Fixture.", overview.read_text(), flags=re.S))
+        self.set(overview, summary="Fixture overview")
+
     def design(self, slug="area", **fields):
         values = dict(status="active", reviewed=1, reviewers=["fixture"], implemented=1, owns=[slug],
                       paths=["src/**"])
@@ -2077,6 +2082,190 @@ class FrontmatterTest(CanonTest):
             self.assertEqual(self.ok("show", "C001"), outline)
 
 
+class CommitRefsTest(CanonTest):
+    def setUp(self):
+        super().setUp()
+        self.complete_overview()
+
+    def test_template_uses_the_index_and_agrees_with_the_committed_range(self):
+        self.design("first")
+        second = self.design("second", paths=["src/base.py"])
+        self.design("third", paths=["later.py"])
+        self.commit()
+        base = self.git("rev-parse", "HEAD")
+        (self.root / "src/base.py").write_text("new value\n")
+        self.git("add", "--", "src/base.py")
+        index = self.git("write-tree")
+        self.set(second, paths=["another/**"])
+        self.create("later.py")
+        self.git("add", "-N", "later.py")
+        status = self.git("status", "--porcelain")
+        self.assertEqual(self.ok("commit-template"), "\n\nRefs: D001, D002\n")
+        message = self.ok("commit-template", "--subject", "fix: preserve refund sign")
+        self.assertEqual(message, "fix: preserve refund sign\n\nRefs: D001, D002\n")
+        self.assertEqual(self.git("status", "--porcelain"), status)
+        self.assertEqual(self.git("write-tree"), index)
+        self.git("commit", "-qm", message)
+        self.ok("check", "--rev", "HEAD", "--base", base)
+
+    def test_each_new_commit_supplies_all_owners_even_if_a_later_commit_reverts_it(self):
+        self.design("one")
+        self.design("two")
+        self.commit()
+        base = self.git("rev-parse", "HEAD")
+        self.create("src/change.py")
+        self.git("add", "--", "src/change.py")
+        self.git("commit", "-qm", "feat: change\n\nRefs: D001, P011")
+        incomplete = self.git("rev-parse", "HEAD")
+        self.git("rm", "-q", "--", "src/change.py")
+        self.git("commit", "-qm", "fix: remove change\n\nrEfS: D001\nRefs: D002, R006")
+        for tree in ((), ("--staged",), ("--rev", "HEAD")):
+            problems = self.problems(self.fails("check", "--base", base, *tree))
+            self.assertEqual(len(problems), 1, problems)
+            for item in (incomplete, "missing D002 in Refs:", "src/change.py"):
+                self.assertIn(item, problems[0])
+        self.ok("check", "--base", incomplete)
+        self.ok("check", "--rev", base, "--base", base)
+
+    def test_rename_takes_deleted_ownership_from_parent_and_result_ownership_from_index(self):
+        first = self.design("old", paths=["src/base.py"])
+        self.design("new", paths=["moved.py"])
+        self.commit()
+        self.set(first, paths=["elsewhere"])
+        self.git("mv", "src/base.py", "moved.py")
+        self.git("add", "-u")
+        message = self.ok("commit-template", "--subject", "refactor: move file")
+        self.assertIn("Refs: D001, D002", message)
+        self.git("commit", "-qm", "moving\n\nRefs: D002")
+        error = self.fails("check", "--base", "HEAD^")
+        self.assertIn("missing D001 in Refs:", error)
+        self.assertIn("src/base.py", error)
+
+    def test_deleted_installed_link_uses_parent_classification_and_its_own_path(self):
+        self.design("glob", paths=[".claude/**"])
+        self.design("exact", paths=[".claude/skills/example"])
+        link = self.root / ".claude/skills/example"
+        link.parent.mkdir(parents=True, exist_ok=True)
+        dest = self.root / ".agents/skills/example"
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "file").write_text("tool\n")
+        link.symlink_to("../../.agents/skills/example")
+        self.git("add", "-f", "--", ".claude/skills/example", ".agents/skills/example/file")
+        self.commit()
+        self.git("rm", "-q", "--", ".claude/skills/example")
+        self.assertEqual(self.ok("commit-template"), "\n\nRefs: D002\n")
+        self.git("commit", "-qm", "drop link\n\nRefs: D002")
+        self.ok("check", "--rev", "HEAD", "--base", "HEAD^")
+
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_recorded_link_to_a_missing_installed_skill_has_only_its_exact_owner(self):
+        self.design("glob", paths=[".claude/**"])
+        self.design("exact", paths=[".claude/skills/example"])
+        self.create(".agents/skills/sibling/file")
+        self.git("add", "-f", "--", ".agents/skills/sibling/file")
+        self.commit()
+        link = self.root / ".claude/skills/example"
+        link.parent.mkdir(parents=True)
+        link.symlink_to("../../.agents/skills/example")
+        self.git("add", "-f", "--", ".claude/skills/example")
+        self.assertEqual(self.ok("commit-template"), "\n\nRefs: D002\n")
+        self.git("commit", "-qm", "record installation link\n\nRefs: D002")
+        self.ok("check", "--rev", "HEAD", "--base", "HEAD^")
+
+    @unittest.skipUnless(os.name == "posix", "requires a shell verifier")
+    def test_signed_deletion_with_signature_display_enabled_uses_its_parent(self):
+        self.design()
+        self.create("src/kept.py")
+        self.commit()
+        self.git("rm", "-q", "--", "src/base.py")
+        self.git("commit", "-qm", "delete governed file")
+        headers, message = self.git("cat-file", "commit", "HEAD").split("\n\n", 1)
+        signature = "gpgsig -----BEGIN PGP SIGNATURE-----\n eA==\n -----END PGP SIGNATURE-----"
+        signed = self.root / ".git/signed-commit"
+        signed.write_text("{}\n{}\n\n{}\n".format(headers, signature, message))
+        sha = self.git("hash-object", "-w", "-t", "commit", str(signed))
+        verifier = self.root / ".git/test-verifier"
+        verifier.write_text("#!/bin/sh\necho 'signature verification diagnostic' >&2\nexit 1\n")
+        verifier.chmod(0o755)
+        self.git("config", "gpg.program", str(verifier))
+        self.git("config", "log.showSignature", "true")
+        self.assertEqual(self.problems(self.fails("check", "--rev", sha, "--base", "HEAD^")),
+                         ["ERROR commit {}: missing D001 in Refs: for 'src/base.py'".format(sha)])
+
+    def test_unborn_and_alternate_index_no_owners_and_invalid_subject(self):
+        self.design("source")
+        self.git("add", "-A")
+        self.assertEqual(self.ok("commit-template"), "\n\nRefs: D001\n")
+        env = dict(os.environ, GIT_INDEX_FILE=str(self.root / ".git/test-index"))
+        self.assertEqual(self.ok("commit-template", "--subject", "docs: notes", env=env), "docs: notes\n")
+        self.assertEqual(self.ok("commit-template", env=env), "\n")
+        self.assertNotEqual(self.canon("commit-template", "--subject", "first\nsecond").returncode, 0)
+
+    def test_unmerged_index_does_not_produce_a_message(self):
+        self.design()
+        self.commit()
+        self.git("switch", "-qc", "side")
+        file = self.root / "src/base.py"
+        file.write_text("side\n")
+        self.git("commit", "-qam", "side")
+        self.git("switch", "-q", "main")
+        file.write_text("main\n")
+        self.git("commit", "-qam", "main")
+        self.assertNotEqual(self.run_here("git", "merge", "side").returncode, 0)
+        result = self.canon("commit-template")
+        self.assertEqual((result.returncode, result.stdout), (1, ''))
+        self.assertIn("resolve the merge conflicts", result.stderr)
+
+    def test_template_outside_a_git_checkout(self):
+        directory = self.outside_checkouts()
+        (directory / "AGENTS.md").write_text("# Test\n")
+        result = self.canon("commit-template", cwd=directory)
+        self.assertEqual((result.returncode, result.stdout), (1, ''))
+        self.assertIn("needs a Git checkout", result.stderr)
+
+    @unittest.skipIf(os.name != "posix", "requires byte filenames")
+    def test_changed_git_path_with_non_utf8_bytes_and_a_newline(self):
+        self.design()
+        self.commit()
+        name = os.fsdecode(b"src/path-\xff\nline.py")
+        (self.root / name).write_text("sample\n")
+        self.git("add", "--", name)
+        self.assertEqual(self.ok("commit-template"), "\n\nRefs: D001\n")
+        self.git("commit", "-qm", "add path")
+        self.assertIn("missing D001 in Refs: for " + repr(name), self.fails("check", "--base", "HEAD^"))
+
+    def test_root_in_range_checked_and_the_merge_itself_exempt(self):
+        self.design("source")
+        self.commit()
+        base = self.git("rev-parse", "HEAD")
+        tree = self.git("write-tree")
+        root = self.git("commit-tree", tree, "-m", "independent root")
+        self.create("src/merge-resolution.py")
+        self.git("add", "--", "src/merge-resolution.py")
+        merge = self.git("commit-tree", self.git("write-tree"), "-p", base, "-p", root, "-m", "join histories")
+        self.assertEqual(self.problems(self.fails("check", "--rev", merge, "--base", base)),
+                         ["ERROR commit {}: missing D001 in Refs: for 'src/base.py'".format(root)])
+
+    def test_shallow_base_side_can_hide_preexisting_commits_despite_a_merge_base(self):
+        self.design("source")
+        self.commit()
+        common = self.git("rev-parse", "HEAD")
+        self.create("src/added.py")
+        self.git("add", "--", "src/added.py")
+        self.git("commit", "-qm", "already in base")
+        tip = self.git("rev-parse", "HEAD")
+        tree = self.git("write-tree")
+        cut = self.git("commit-tree", tree, "-p", tip, "-m", "cut here")
+        base = self.git("commit-tree", tree, "-p", cut, "-p", common, "-m", "base")
+        self.ok("check", "--rev", tip, "--base", base)
+        shallow = self.root / self.git("rev-parse", "--git-path", "shallow")
+        shallow.write_text(cut + "\n")
+        self.assertEqual(self.git("merge-base", base, tip), common)
+        self.assertIn("fetch", self.fails("check", "--rev", tip, "--base", base))
+        shallow.write_text(common + "\n")
+        self.assertIn("missing D001 in Refs:", self.fails("check", "--rev", tip, "--base", common))
+
+
 class AuditTest(CanonTest):
     def code_commit(self, message):
         code = self.root / "src/base.py"
@@ -2291,11 +2480,6 @@ class GitFailureTest(CanonTest):
 
 class RevCheckTest(CanonTest):
     """`check --rev REV` checks the tree of commit REV, whatever the work tree holds."""
-
-    def complete_overview(self):
-        overview = self.root / self.OVERVIEW
-        overview.write_text(re.sub(r"<!-- canon:.*?-->", "Fixture.", overview.read_text(), flags=re.S))
-        self.set(overview, summary="Fixture overview")
 
     def test_strict_check_marks_only_matching_diagnostics_at_the_named_base_tip(self):
         self.complete_overview()

@@ -164,7 +164,7 @@ Before committing, after implementation and code review. Scope: the uncommitted 
 6. Search READMEs, guides and `AGENTS.md` for names the change renamed or removed (commands, flags, config keys, paths) and for what they state of behavior the change altered, and fix them.
 7. Choose the scope of `canon.py check --fix` as [Concurrent work](SKILL.md#concurrent-work) says and run it until it reports no errors.
 8. When this change archived a plan, run `canon.py audit`. If it reports a due review, end your report with one line suggesting the user run a codebase review (the `canon-review` skill). Never start a review yourself.
-9. Commit with Conventional Commits. Every commit that touches a design's `paths`, L0 included, names the designs it was checked against and the plans it updated in a trailer, e.g. `Refs: D003, P012`; `audit` counts code commits whose trailer omits their design as unchecked.
+9. Commit with Conventional Commits. Stage the intended files, then run `canon.py commit-template`. Check the staged diff against each listed design, including any historical owner of a deletion. Add the plans the commit updated to its `Refs:` line, e.g. `Refs: D003, P012`. Regenerate the template if the staging changes.
 
 ## Maintenance
 

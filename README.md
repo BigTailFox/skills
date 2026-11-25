@@ -59,6 +59,18 @@ Workers and same-model reviewers inherit the session’s model and reasoning eff
 
 A returning reviewer compares a revised target with the snapshot it reviewed. A target added during fixes or a follow-up receives a full review from each required role that has yet to assess it. `canon.py snapshot` records the work tree before a review and again before confirming fixes, with tracing on or off. Review snapshots stay in the checkout’s `.canon/canon/snapshots/` for 30 days and include untracked files that Git would add. Exclude `.canon/` when packaging the checkout. [Tracing](#tracing)
 
+### Generate commit references
+
+After staging the intended files, generate an editable commit message. Check the diff against each listed design and add any plan or review references your workflow requires. Regenerate the message after staging further changes.
+
+```sh
+mkdir -p .canon/canon/commit
+message=.canon/canon/commit/commit-message
+python3 .agents/skills/canon/scripts/canon.py commit-template > "$message" && git commit --template "$message"
+```
+
+Supply `--subject 'fix: preserve the refund sign'` for a message with a subject. In CI, `canon.py check --base BASE --rev TIP` checks every new non-merge commit for the design IDs its changed paths require. Each error identifies the commit, missing design and a path it governs.
+
 ## Tracing
 
 Tracing records how canon's workflows run in your projects, so the skills can be judged and improved on real work. It is off until you turn it on, and nothing it records leaves the machine. Run these at a project's repo root, with the `canon.py` installed there:

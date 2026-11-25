@@ -15,7 +15,8 @@ When `canon.py` says it runs only from an install inside the project, as when th
 
 | Command | Purpose |
 |---|---|
-| `check [ID\|PATH ...] [--fix] [--base REF] [--staged \| --rev REV]` | Validate all docs. `--fix` applies mechanical fixes (`refs`, `updated`, indexes, `implemented` of an active design never revised, and deleting an `as_built` left on a reviewed revision). `--base origin/main` also checks the branch against that ref: deleted docs, id collisions, revisions pending review and unfinished docs fail. Matching errors and warnings carry `[also on base]` and keep their severity. `--staged` checks the staged tree, what `git commit` records, and `--rev REV` commit REV's tree, instead of the work tree. Given doc ids or paths, it reports and fixes only those docs' problems. |
+| `check [ID\|PATH ...] [--fix] [--base REF] [--staged \| --rev REV]` | Validate all docs. `--fix` applies mechanical fixes (`refs`, `updated`, indexes, `implemented` of an active design never revised, and deleting an `as_built` left on a reviewed revision). `--base origin/main` also checks the branch against that ref: missing governing design IDs in new non-merge commits, deleted docs, id collisions, revisions pending review and unfinished docs fail. Matching errors and warnings carry `[also on base]` and keep their severity. `--staged` checks the staged tree, what `git commit` records, and `--rev REV` commit REV's tree, instead of the work tree. Given doc ids or paths, it reports and fixes only those docs' problems. |
+| `commit-template [--subject TEXT]` | Print an editable Git message with every design required by the staged change, including the parent’s owners of deleted paths. Add any plan or other references the workflow requires. |
 | `embed [ID\|PATH ...] [--check]` or `embed --source FILE [--list\|--check]` | Generate [source blocks](#embedded-source) in the work tree. Select a numbered doc and its Markdown attachments by ID, one document by path, or all consumers of a source file. Omit selectors for all live consumers. `--list` prints matching paths. `--check` reports stale or invalid blocks without writing. |
 | `new TYPE SLUG [--title T] [--from D00X] [--parent D00X] [--root DIR] [--research]` | Create a doc with the next free id. A plan needs `--from` and its accepted or active design. Use `--parent` for a sub-design or `--research` for a source-research experiment. |
 | `status ID STATUS` | Move a doc's status forward and check the move; a concept may move to a live `adopted`, an experiment to a live `concluded`, and an answered experiment back to `running` for a later run. |
@@ -178,7 +179,7 @@ Behavior no design states is unspecified. Look for a statement with `which` for 
 - Where no design states the behavior, an L0 change alters nothing callers rely on: a refactor, a dependency bump, test or tooling work, or a fix for a defect no caller could rely on, such as a crash.
 - New behavior with nothing existing to record is tiered by the rules above: a new topic is L2.
 
-A commit that touches a design's `paths`, in any tier, names the designs it was checked against in a `Refs:` trailer (`affected` lists them); `audit` treats commits without one as unchecked.
+After staging, use `commit-template` for the full set of governing design IDs. Check the staged change against each, reading the parent’s design for a deleted file when needed. Add any other IDs the workflow requires to `Refs:`.
 
 The canon skills write each command they have you give the user in the form `/canon-plan D012`; give it in the host's form, such as `$canon-plan D012` in Codex. In a linked worktree, name the worktree's path beside the command ([Concurrent work](#concurrent-work)).
 

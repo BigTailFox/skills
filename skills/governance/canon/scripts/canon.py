@@ -31,7 +31,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "81"
+CANON_VERSION = "82"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -322,7 +322,7 @@ def git_run(cwd, *args, env=None, data=None):
     except FileNotFoundError:
         return None
     if not text_mode:
-        result.stdout, result.stderr = result.stdout.decode(), result.stderr.decode(errors="replace")
+        result.stdout, result.stderr = result.stdout.decode(errors="surrogateescape"), result.stderr.decode(errors="replace")
     return result
 
 
@@ -345,6 +345,13 @@ def git_checked(cwd, *args, ok=(0,), data=None):
     if result is None or result.returncode not in ok:
         sys.exit("canon: git {} failed in {}: {}".format(args[0], cwd, git_failure(result, args[0])))
     return result
+
+
+def changed_path_status(root, command, *args):
+    """Map changed paths to Git status letters, treating a rename as a deletion and an addition."""
+    fields = git_checked(root, command, "-z", "--name-status", "--no-renames", "--ignore-submodules=none",
+                         *args, "--").stdout.split("\0")
+    return dict(zip(fields[1::2], fields[::2]))
 
 
 def unreadable_checkout(start):
@@ -515,7 +522,9 @@ def glob_regex(pattern):
             out, i = out + "[^/]", i + 1
         else:
             out, i = out + re.escape(p[i]), i + 1
-    return re.compile(out + r"(?:/.*)?$")
+    # Git permits newlines in names. Keep DOTALL scoped so composed design
+    # patterns retain it, and require the real end of the path.
+    return re.compile("(?s:" + out + r"(?:/.*)?)\Z")
 
 
 def git_pathspec(project_rel, pattern):
@@ -550,8 +559,8 @@ def parse_date(value):
 
 # ---------------------------------------------------------------- trees
 
-def resolve_tree_path(tree, relative, aliases=None, walked=None):
-    """Walk a repository-relative path in this tree, following each link before interpreting the next component."""
+def resolve_tree_path(tree, relative, aliases=None, walked=None, allow_missing=False):
+    """Follow links before interpreting the next component. With allow_missing, retain absent target components."""
     if os.path.isabs(relative) or "\0" in relative:
         return None
     done, todo, links = [], collections.deque(relative.split("/")), 0
@@ -579,7 +588,8 @@ def resolve_tree_path(tree, relative, aliases=None, walked=None):
             if links > MAX_LINKS or os.path.isabs(target):
                 return None
             todo.extendleft(reversed(target.split("/")))
-        elif kind == "dir" or kind == "file" and not any(p is not None for p in todo):
+        elif (kind == "dir" or (kind is None and allow_missing)
+              or (kind == "file" and not any(p is not None for p in todo))):
             done.append(part)
         else:
             return None
@@ -722,12 +732,12 @@ class GitTree:
             return "file", None
         return ("dir" if rel in self.dirs else None), None
 
-    def resolve(self, path):
+    def resolve(self, path, allow_missing=False):
         try:
             relative = path.relative_to(self.root).as_posix()
         except ValueError:
             return None
-        return resolve_tree_path(self, relative)
+        return resolve_tree_path(self, relative, allow_missing=allow_missing)
 
     def files(self):
         return sorted(rel for rel, (mode, _name) in self.entries.items()
@@ -759,7 +769,7 @@ class GitTree:
         return self.read_bytes(path).decode("utf-8", errors).replace("\r\n", "\n").replace("\r", "\n")
 
     def realpath(self, path):
-        rel = self.resolve(path)
+        rel = self.resolve(path, allow_missing=True)
         return None if rel is None else self.root / rel
 
 
@@ -924,14 +934,13 @@ class Repo:
         self.compared, self.days = "HEAD" if self.has_head else None, {today()}
         if rev:
             self.tree = GitTree.of_commit(self.root, rev)
-            out = git_checked(self.root, "log", "-1", "--format=%P%n%ad%n%cd", "--date=short", rev).stdout
+            out = git_checked(self.root, "log", "-1", "--no-notes", "--no-show-signature",
+                              "--format=%P%n%ad%n%cd", "--date=short", rev).stdout
             parents, *days = out.split("\n")[:3]
             self.compared = parents if len(parents.split()) == 1 else None
             self.diff_args, self.days = (self.compared, rev), set(days)
         elif staged:
-            out = git_checked(self.root, "diff", "--cached", "-z", "--name-status", "--no-renames").stdout
-            fields = out.split("\0")
-            self.staged_changes = dict(zip(fields[1::2], fields[::2]))
+            self.staged_changes = changed_path_status(self.root, "diff", "--cached")
             self.tree = GitTree.staged(self.root, self.staged_changes, self.has_head)
             self.diff_args = ("--cached", "HEAD")
         else:
@@ -2602,6 +2611,7 @@ def cmd_check(repo, args):
     if args.fix and named is None:
         require_intact_indexes(repo)
     base = branch_base(repo, args.base) if args.base else None
+    missing_refs = list(missing_commit_refs(repo, base)) if base else []
     run_check(repo, base, named)
     if args.fix:
         done, index = apply_fixes(repo)
@@ -2614,6 +2624,8 @@ def cmd_check(repo, args):
         named = named_docs(repo, args.docs) if args.docs else None
         run_check(repo, base, named)
     on_base = base_diagnostics(repo, base)
+    for sha, design, path in missing_refs:
+        repo.problem("ERROR", "commit " + sha, "missing {} in Refs: for {!r}".format(design, path))
     if args.version_notice:
         repo.problem("WARN", "AGENTS.md", args.version_notice)
     errors, warnings = print_problems(repo, on_base)
@@ -3816,6 +3828,92 @@ def trailer_ids(message, key):
         if line.lower().startswith(key + ":"):
             named |= set(re.findall(r"\b[CDPREI]\d{3,}[A-Z]?\b", line))
     return named
+
+
+@contextlib.contextmanager
+def historical_repo(root, commit):
+    """Close this tree's batch reader before opening the next commit in a long range."""
+    view = Repo(root, rev=commit)
+    try:
+        yield view
+    finally:
+        batch = view.tree.batch
+        if batch is not None and batch.poll() is None:
+            batch.communicate()
+
+
+def required_refs(view, changes, parent):
+    """One witness path per design, from the tree that records that path."""
+    owners = {}
+
+    def collect(tree, paths):
+        for path in paths:
+            for doc in tree.designs_for(tree.root / path):
+                owners.setdefault(doc.id, (doc, path))
+
+    collect(view, (path for path in changes if changes[path] != "D"))
+    deleted = [path for path in changes if changes[path] == "D"]
+    if deleted:
+        with historical_repo(view.root, parent) as previous:
+            collect(previous, deleted)
+    return sorted(owners.values(), key=lambda item: item[0].sort_key())
+
+
+def cmd_commit_template(args):
+    if args.subject and args.subject.splitlines() != [args.subject]:
+        sys.exit("canon: --subject must be one line")
+    top = git(os.getcwd(), "rev-parse", "--show-toplevel")
+    if top is None:
+        sys.exit("canon: commit-template needs a Git checkout")
+    root = Path(top.strip())
+    require_clean_merge(root)
+    staged = Repo(root, staged=True)
+    owners = required_refs(staged, staged.staged_changes, staged.compared)
+    print(args.subject)
+    if owners:
+        print("\nRefs: " + ", ".join(doc.id for doc, _ in owners))
+    return 0
+
+
+def require_range_history(root, base, commits):
+    """A missing parent at the base can hide an apparent new commit. Prove all
+    new commits descend from that boundary by testing the roots of the range."""
+    shallow = root / git_checked(root, "rev-parse", "--git-path", "shallow").stdout.strip()
+    if not shallow.is_file():
+        return
+    frontier = [sha for sha, parents in commits.items() if not any(p in commits for p in parents)]
+
+    def ancestor(older, newer):
+        return git_checked(root, "merge-base", "--is-ancestor", older, newer, ok=(0, 1)).returncode == 0
+
+    for boundary in shallow.read_text().splitlines():
+        if boundary in commits or (ancestor(boundary, base) and not all(ancestor(boundary, c) for c in frontier)):
+            sys.exit("canon: shallow history cannot establish the commit range at {}; fetch the full history "
+                     "with `git fetch --unshallow`".format(boundary))
+
+
+def missing_commit_refs(repo, base):
+    tip = repo.rev or require_commit(repo, "HEAD")
+    history = git_checked(repo.root, "log", "-z", "--no-notes", "--no-show-signature", "--encoding=UTF-8",
+                          "--format=%H%x00%P%x00%B", base.commit + ".." + tip, "--").stdout
+    if not history:
+        return
+    fields = history.split("\0")
+    records = [fields[i:i + 3] for i in range(0, len(fields) - 1, 3)]
+    parents = {sha: lineage.split() for sha, lineage, _ in records}
+    require_range_history(repo.root, base.commit, parents)
+    for sha, _, message in records:
+        lineage = parents[sha]
+        if len(lineage) > 1:
+            continue
+        paths = changed_path_status(repo.root, "diff-tree", "--root", "-r", "--no-commit-id", sha)
+        if not paths:
+            continue
+        cited = trailer_ids(message, "refs")
+        with historical_repo(repo.root, sha) as view:
+            for doc, path in required_refs(view, paths, lineage[0] if lineage else None):
+                if doc.id not in cited:
+                    yield sha, doc.id, path
 
 
 def unchecked_commits(repo, doc):
@@ -5779,13 +5877,17 @@ def main(argv=None):
                    help="report only the problems on these docs, each given by its id or the path of its file")
     p.add_argument("--fix", action="store_true",
                    help="apply mechanical fixes (refs, updated, implemented, as_built, indexes)")
-    p.add_argument("--base", help="also check this branch against a ref, e.g. origin/main: deleted docs, id "
+    p.add_argument("--base", help="check all governing design IDs in new non-merge commits' Refs: lines. Also check "
+                                  "this branch against a ref, e.g. origin/main: deleted docs, id "
                                   "collisions, revisions pending review and unfinished docs fail. Mark problems also "
                                   "present on that ref")
     p.add_argument("--staged", action="store_true",
                    help="check the staged tree, what `git commit` records, instead of the work tree")
     p.add_argument("--rev", metavar="REV", help="check the tree of commit REV instead of the work tree")
     p.set_defaults(func=cmd_check)
+
+    p = command(sub, "commit-template", help="print a Git commit message with the staged change's design references")
+    p.add_argument("--subject", default="", metavar="TEXT", help="one-line subject, left blank by default")
 
     p = command(sub, "embed", help="generate source blocks in live Markdown documents")
     select = p.add_mutually_exclusive_group()
@@ -5957,6 +6059,8 @@ def main(argv=None):
         return cmd_trace(args)
     if args.command == "snapshot":
         return cmd_snapshot(args)
+    if args.command == "commit-template":
+        return cmd_commit_template(args)
     return args.func(check_repo(args) if args.command == "check" else Repo(), args)
 
 
