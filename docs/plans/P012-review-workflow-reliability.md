@@ -17,7 +17,7 @@ Implements [D007: Change tiers and the review gate](../designs/D007-change-tiers
 
 ## Current state
 
-Next: S4.
+All four slices are done. Next: code review.
 
 ## Slices
 
@@ -53,7 +53,7 @@ Through the CLI and offline readers, record a first-round F12 and a confirmation
 
 ### S4: Recover a completed review from its original run
 
-Status: todo
+Status: done
 
 Update the portable launch and completion instructions for hosts that can await foreground jobs together and hosts with asynchronous reviewers. Exercise a completed host job with a lost completion notice, a still-running job and the machine's installed Cursor launcher. At the machine’s installed launcher entry point, reproduce the denied cleanup and a distinct denied final report replacement. Identify the exact operations. Check that a completed run publishes its bound report and run ID through cleanup denial and that the launcher’s resume automatically publishes the original report and ID after a replacement failure, with the second provider call forbidden. Retain the runnable offline regression and exact results. Record the verified machine-local outcome and reproduction in a short R007 verification receipt, distinguishing what the historical logs identify from what the reproducer establishes. [D003§external-review-progress: command recovery](../designs/D003-subagents.md#external-review-progress) · [R007: field feedback](../reviews/R007-canon-workflow-open-feedback.md)
 
@@ -72,3 +72,5 @@ S1 — Canon 83 creates distinct round directories, binds prepared/live input an
 S2 — Canon 84 checks actual readers by target and role, separate approval groups, partial handoffs, delegation and scoped user exceptions. Fourteen public CLI regressions and an installed-CLI trial passed. In S3 the same report-local F-number may occur in both the original and confirmation reports. Exercise the offline evidence and first-round replay joins as well as live history.
 
 S3 — Canon 85 registers confirmation and later recheck blockers with their own identities. Equal F12 labels remained distinct in history and replay; independent CLI checks and legacy replay cases passed. S4 can reproduce the field investigation from .canon/canon-investigate/review-publication/f10.YIZ7/replay.py and its three observation files. The machine regressions use the installed test-review-live.py; .canon/canon/review-workflow-batch/host-fallback.json records a completed and an active host job checked without a completion notice. Keep the durable verification with R007, then update finding dispositions in the docs step.
+
+S4 — The portable instructions now await foreground jobs together where supported and recover original terminal output on asynchronous hosts. R007 includes a runnable offline regression, a successful original-session recovery and the separate historical attribution limit. Both injected faults and native helper cleanup were verified with a single local invocation per case.

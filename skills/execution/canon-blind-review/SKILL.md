@@ -54,9 +54,10 @@ The review gate and code review say when the cross-family reviewer runs; other r
 ## Launch
 
 - A reviewer that runs as a host subagent is a new subagent from the host's own tool, never a fork of the session, launched without a model or effort so it runs on the session's; only a cross-family reviewer gets a model, the one its entry names. In Claude Code use a `general-purpose` or custom subagent; the built-in Explore and Plan agents cannot be resumed.
-- Launch the first-round reviewers together. Start each command reviewer once on a retained host job with its output attached as below, then launch the host reviewers asynchronously. A lone host reviewer may run in the foreground.
+- Launch first-round reviewers together. When the host can await command and host reviewers together, issue them in one parallel foreground batch. Otherwise start each command once on a retained job and launch the host reviewers asynchronously. Keep command output attached as below. A lone host reviewer may run in the foreground.
 - While any reviewer reads, keep the work tree outside `.canon/` at its review snapshot. If a first-round report is missing once all readers stop, follow the `canon` skill's workflow (Pending reviews) to fix or confirm the reports already received and freeze the next review baseline.
-- Once you have no other work, look for the report of a host subagent whose completion notice has not come in the host's record of its run: in Cursor, `subagents/<agent id>.jsonl` in `<cursor home>/projects/<project>/agent-transcripts/$CURSOR_CONVERSATION_ID/`; in Codex, the `rollout-*.jsonl` under `$CODEX_HOME/sessions/` whose `session_meta` names your session as `parent_thread_id`.
+- Before yielding with a reviewer outstanding, check its original job or host run for this prompt, even if no completion notice arrived. Save the complete terminal report and its run ID under [Review files](#review-files). If it is still running, keep waiting on the same handle. If it stopped without reporting, follow [Stopped runs](#stopped-runs).
+- For a missing host notice, Cursor keeps `subagents/<agent id>.jsonl` in `<cursor home>/projects/<project>/agent-transcripts/$CURSOR_CONVERSATION_ID/`. In Codex, match the reviewer ID and your session as `parent_thread_id` in the `rollout-*.jsonl` under `$CODEX_HOME/sessions/`. For a resumed reviewer, read the result of the turn for this prompt.
 - On every route the prompt is what keeps reviewers from modifying files, writing scratch files and reading `.canon/`.
 
 ### External review progress
@@ -85,7 +86,7 @@ Use the first-round pins that `review start` wrote in `snapshot.txt` and `baseli
 
 User cancellation ends the run. For a command, distinguish a caller timeout from a stopped attempt using the job handle and the [saved binding](#external-review-progress). Allow at most two deadline recoveries per attempt, or the route's lower limit, counting any the launcher already performed.
 
-1. Check the original job after an interruption or wait timeout. If it is still running, continue waiting on its handle. If the provider already completed the report and the launcher was interrupted before publication, finish publishing that result with the matching binding.
+1. Check the original job after an interruption, wait timeout or publication failure. If it is still running, continue waiting on its handle. Recover an already completed report and its original run ID from the matching binding without another provider call. When the launcher supports local publication recovery, resume it from the original checkout with the same output path.
 2. When a deadline actually terminated the run, check for fresh tool or model activity since its last launch or recovery. With that activity, a matching binding, a grant covering recovery and a recovery left, resume the same provider session with the original prompt, read-only scope and output. If recovery lacks a matching grant, return to the `canon` skill's workflow (Authorization for command reviewers) before any further provider call.
 3. After recovery is exhausted or unavailable, an exit without a complete terminal report spends one stopped attempt. This includes a terminated run with no new activity and a terminal provider failure. Move any partial `<out>` into the stopped attempt's directory.
 

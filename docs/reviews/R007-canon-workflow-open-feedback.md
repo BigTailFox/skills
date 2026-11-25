@@ -108,3 +108,24 @@ The remaining item is the verification-policy decision: add an explicit compile 
 ## Verification
 
 The inventory was checked against the captured source records, Canon v0.9.4's skill text and governing sections, the closed dispositions in R005/R006, and three live read-only `trace history` queries. It does not claim to reproduce the launcher failures, rerun the historical reviews or repeat the compatibility tests. Suggested severity reflects the remaining workflow impact; reported reviewer counts and elapsed times retain their source attribution.
+
+### R007-F8 and R007-F10 recovery verification
+
+On 2026-11-25 at 08:49:45 UTC, a check of the original Codex transcripts matched both child IDs and their common parent without consulting completion notices. The confirmation turn of `01a211b3-da4b-7dc1-8b41-cc6306644651` yielded the saved 1,698-byte terminal text (SHA-256 `67958cc72ee08e169e5d64fb95b27e652ef485b3a3f82d85bbe072a6f63f0d0c`, excluding the file’s trailing newline). The open turn of `01a211e2-a5e9-7111-8a31-5fada943aacd` was still running on its original handle.
+
+The four historical Cursor jobs reported provider success and launcher exit 1. Their diagnostics end in `failed (CLI exit 1): external review: [Errno 13] Permission denied`. They locate the failure in the supervised command before publication. The denied operation and its target are unknown for those jobs.
+
+| Offline case on this Linux host | Initial exit | Cleanup warnings | Result |
+|---|---:|---:|---|
+| Saved pre-fix launcher, injected `os.kill(helper_pid, SIGKILL)` denial | 1 | 0 | Historical diagnostic reproduced. Previous report preserved. |
+| Installed launcher, same injected denial | 0 | 1 | Complete report and original session ID published. |
+| Installed launcher, kernel denied the supervisor’s `SIGKILL` to `cursorsandbox --help` under `cursor_sandbox_agent_cli (enforce)` | 0 | 1 | Complete report and original session ID published. |
+| Installed launcher, injected `os.replace(.canon-review-<key>/result, cross-family.md)` denial | 1 | 0 | Previous report preserved. `resume cross-family.md` exited 0 and published the bound result with the provider disabled. |
+
+Each case made one call to a local stand-in. Each successful publication produced 262,169 exact bytes (SHA-256 `9dab0b87d7a39ab90d03bf9f0cfc7631e10dbdccb970dda8790298488c2b8c83`) and printed `session id: fixture-cursor`. The installed `~/.config/canon/review-live.py` had SHA-256 `d336ff49a7edaa462215445ad4d1bdd81b08303f30236db6fb3a91be1dbfce37`. Its companion suite passed all 50 offline cases.
+
+Run the [offline regression](R007/check_cursor_publication.py) from the checkout on Linux. The default runs both injected cases. For the kernel-denial case, also pass `--cursor-helper` with the path to the installed `cursorsandbox` beside the resolved Cursor `agent` executable.
+
+```sh
+python3 docs/reviews/R007/check_cursor_publication.py .canon/canon-implement/P012/S4
+```
