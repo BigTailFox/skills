@@ -2,6 +2,16 @@
 
 Notable changes in each release. Versions follow [Semantic Versioning](https://semver.org); while the major version is 0, a minor release may change how skills behave.
 
+## 0.9.5 - 2026-11-25
+
+- `canon.py review start` creates an isolated directory for each gate, follow-up or code-review round and pins verified first-round `snapshot.txt` and `baseline.txt` (resolving unambiguous abbreviated hashes and warning when replay material is unavailable), keeping restarted and handed-off rounds free of stale or late reports.
+- `canon.py review check` verifies completed reports, run IDs or manual return receipts (`<key>-return.json`), supplemental pass assignments, delegated follow-ups, handoff provenance, scoped L2 waivers (`waiver.md` with `--waive`) and L1 withdrawals (`withdrawal.md` with `--withdraw`), and prints the actual readers per target even with tracing off.
+- Blind-review confirmations stop after the one scheduled confirmation round and take every open or newly introduced blocker (`B1`, `B2`, ...) to the user before further fixes or rechecks. `canon.py trace blocker` registers confirmation-introduced blockers as `blocker:STEM:LABEL` so `canon.py trace recheck`, `trace history` and `scripts/trace_report.py` track later targeted rechecks without colliding with first-round finding labels.
+- The first implementation plan for the core protocol or architecture of an unimplemented L2 design defaults to L2 even when a scaffold directory already exists, and `canon.py approvals` and workflow docs clarify that a plan gate records only its own plan while separately reviewed design revisions stay under their design gate.
+- `canon-blind-review` awaits parallel foreground reviewer batches on hosts that support them, checks original jobs or host transcripts before yielding on a missing completion notice, and recovers already-completed external reports from local publication failures without rerunning the provider.
+
+When upgrading from 0.9.4, install the updated skills and run `/canon-init` to record canon version 86. Silk can retire its local rule defaulting first implementation plans for unimplemented L2 core designs to L2 (now built into `canon-plan`) and its machine-local guidance on parallel foreground reviewer batches and checking host runs for missing completion notices (now built into `canon-blind-review`). Keep local rules for mixed questions in triage replies, stopping when a targeted recheck leaves the same blocker unresolved, sweeping public overviews and diagram labels on guarantee fixes, and oldest-supported toolchain compatibility checks.
+
 ## 0.9.4 - 2026-11-25
 
 - After staging, run `canon.py commit-template` to generate an editable commit message with every design ID the changed paths require. `canon.py check --base BASE --rev TIP` checks each new non-merge commit and reports the commit, missing design and a path it governs. Add any plan or review IDs your project requires. [Commit template example](README.md#generate-commit-references)
