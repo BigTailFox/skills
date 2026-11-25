@@ -27,11 +27,23 @@ The maintainer wants to understand how much rereading it takes to regain a clear
 |----|----------|---------|-------------|
 | R008-F1 | major | Assess whether accumulated workflow rules get in the way of an agent exercising judgment on routine tasks, and which rules are worth simplifying. | open |
 | R008-F2 | major | After a series of small fixes, the maintainer wants to see how the overall workflow compares with their original intent, especially what an agent can decide and what comes back to them. [D007§change-tiers: change tiers](../designs/D007-change-tiers.md#change-tiers) | open |
-| R008-F3 | major | The core skill reads like a general introduction. Keep frequently needed guidance at the entry point and surface initialization details when setting up a project. | open |
+| R008-F3 | major | Keep the core `SKILL.md` as a concise overview. Each section should link to the dedicated document that owns its detailed rules. | open |
 | R008-F4 | minor | Remove the command catalogue from the core skill. Give the agent the command to run and let the CLI explain usage and next steps through help, results and errors. | open |
 | R008-F5 | major | Split `canon.py` into modules, publish the CLI as a Python package and let it declare third-party runtime dependencies. | open |
 
-The maintainer expects agents to encounter the core skill frequently because its trigger includes projects whose `AGENTS.md` declares Canon. Its Tool section opens with installation instructions and then describes individual commands. For example, both the command table and `canon.py check -h` explain how to check staged changes. [Core skill and command table](../../skills/governance/canon/SKILL.md#tool)
+### R008-F4 Tool section of the core skill
+
+The maintainer expects agents to encounter the core skill frequently because its trigger includes projects whose `AGENTS.md` declares Canon. Its Tool section includes installation instructions and repeats options already explained by CLI help, such as `check --staged`. [Current Tool section](../../skills/governance/canon/SKILL.md#tool)
+
+The proposed Tool text uses the standalone `canon` command discussed in R008-F5. The proposed `init.md` owns the installation steps and any prompts to the user when the CLI is missing.
+
+```markdown
+## Tool
+
+Canon provides a CLI to enforce all mechanical rules of the workflow. Each workflow skill names the commands to run at the steps that use them. If the CLI is missing, follow the [setup instructions](init.md).
+
+Use `canon --help` to list commands and their descriptions. Use `canon <command> --help` for a command's usage and options.
+```
 
 ### R008-F5 Standalone CLI package and runtime dependencies
 
