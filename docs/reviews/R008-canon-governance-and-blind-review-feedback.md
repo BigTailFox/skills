@@ -32,6 +32,14 @@ The maintainer wants to understand how much rereading it takes to regain a clear
 | R008-F5 | major | Split `canon.py` into modules, publish the CLI as a Python package and let it declare third-party runtime dependencies. | open |
 | R008-F6 | minor | Keep Reading docs short. Point the agent from each reading question to the document, section or query that answers it. | open |
 
+### R008-F3 Core skill structure
+
+The maintainer proposed four sections in the order `Tool` → `Doc Type` → `Doc Layout` → `Read Docs`. The review recommendation is `Tool` → `Reading docs` → `Doc types` → `Doc layout` for agents entering an existing project. An agent asked to fix a file can find the governing design straight away. Choosing a document type and a home for it matters when the task calls for writing. The order is open.
+
+Use the introduction to state Canon's purpose and point an agent starting a change to the workflow's tier selection. The Tool and Reading docs drafts follow. Give each document type one line on its purpose, including that designs govern behavior and plans track a change. Limit Doc layout to where project and module documents, attachments and archives live. [Document types](../../skills/governance/canon/doc-types.md)
+
+The workflow directs agents back to the core skill for tier definitions and shared-checkout procedures. The generated project instructions also send shared checkouts there. Move the tier definitions to the start of the workflow. When another session shares the checkout, point the agent to the concurrent-work instructions before its first edit. [Change flows](../../skills/governance/canon/workflow.md#flows) · [Concurrent work](../../skills/governance/canon/SKILL.md#concurrent-work) · [Project instructions](../../AGENTS.md#docs)
+
 ### R008-F4 Tool section of the core skill
 
 The maintainer expects agents to encounter the core skill frequently because its trigger includes projects whose `AGENTS.md` declares Canon. Its Tool section includes installation instructions and repeats options already explained by CLI help, such as `check --staged`. [Current Tool section](../../skills/governance/canon/SKILL.md#tool)
