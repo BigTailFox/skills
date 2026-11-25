@@ -2,6 +2,14 @@
 
 Notable changes in each release. Versions follow [Semantic Versioning](https://semver.org); while the major version is 0, a minor release may change how skills behave.
 
+## 0.9.4 - 2026-11-25
+
+- After staging, run `canon.py commit-template` to generate an editable commit message with every design ID the changed paths require. `canon.py check --base BASE --rev TIP` checks each new non-merge commit and reports the commit, missing design and a path it governs. Add any plan or review IDs your project requires. [Commit template example](README.md#generate-commit-references)
+- Returning blind reviewers see what changed since they last reviewed each target. Newly added targets get a full review. Scaffold reviews assess the interfaces and behavior the patch delivers, and expanding the work beyond the requested scope requires the maintainer's approval.
+- From a checkout of this repository, use `scripts/replay_workflows.py` to compare recorded and candidate skills on the same historical review or implementation slice. Prepare the case, run both versions with a local runner, score the blinded evidence and summarize results across independent cases. [Paired workflow replay](README.md#paired-workflow-replay)
+
+When upgrading from 0.9.3, install the updated skills and run `/canon-init` to record canon version 82. Keep the CI job that supplies the pull request's base and head or the push's previous and new tips, and fetch their history. Silk can retire its temporary `AGENTS.md` rule about expanding review scope.
+
 ## 0.9.3 - 2026-11-24
 
 - Start a source-research document with `canon.py new E <slug> --research`. Its Setup opens with `Sources`, ready for links to primary sources. The `canon-research` skill uses this form. For a run, use `canon.py new E <slug>` as before.
