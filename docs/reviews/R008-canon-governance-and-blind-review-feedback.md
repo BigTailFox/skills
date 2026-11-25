@@ -38,6 +38,7 @@ The maintainer wants to understand how much rereading it takes to regain a clear
 | R008-F11 | minor | Keep the writing guide useful as it grows. Its flat list mixes general editorial judgment with instructions for particular kinds of content. | open |
 | R008-F12 | minor | Give concurrent work a dedicated reference that an agent can reach before a shared-checkout write or a partial commit. | open |
 | R008-F13 | minor | List document types by purpose in the core skill. The maintainer proposes one format reference for per-type structure, frontmatter and embedded source. | open |
+| R008-F14 | major | Agents still transcribe verified review results and user decisions, maintain structured rows and reconstruct information already available to the CLI. Some documented formats also receive only partial validation. [Current coverage and suggested priorities](R008/cli-coverage.md) | open |
 
 ### R008-F3 Core skill structure
 
