@@ -17,7 +17,7 @@ def archive_pin(archive, name):
     if data is None:
         return None
     pin = data.strip().decode("ascii", errors="replace")
-    return pin.lower() if pin == "none" or canon.full_oid(pin) else UNKNOWN
+    return pin.lower() if pin == "none" or canon.full_oid(pin) or name == "baseline" and HEX.fullmatch(pin) else UNKNOWN
 
 
 def input_commit(case, trees, pin):
@@ -28,17 +28,20 @@ def input_commit(case, trees, pin):
     for root in roots:
         oid = pin
         if not canon.full_oid(pin):
-            value = git_bytes(root, "rev-parse", "--verify", "--quiet", pin + "^{commit}")
+            value = git_bytes(root, "rev-parse", "--disambiguate=" + pin.lower())
             if not value:
                 continue
-            oid = value.strip().decode("ascii")
-            if not oid.startswith(pin.lower()):
-                continue
+            matches = value.decode("ascii").split()
+            if len(matches) != 1 or not matches[0].startswith(pin.lower()):
+                return None
+            oid = matches[0]
         info = trees.commit(root, oid)
         if info:
             resolved[oid] = info
             if canon.full_oid(pin):
                 break
+        elif not canon.full_oid(pin):
+            return None
     return next(iter(resolved.values())) if len(resolved) == 1 else None
 
 
@@ -116,11 +119,11 @@ def revision_pin(case, token):
     return token
 
 
-def matches_pin(case, trees, token, original, tree):
+def matches_pin(case, trees, token, original, tree, archived_literal=None):
     token = revision_pin(case, token)
     if not token:
         return False
-    if original and canon.full_oid(original) and token.lower() == original:
+    if original and canon.full_oid(original) and token.lower() in (original, archived_literal):
         return True
     source = input_commit(case, trees, token)
     return bool(source and source["tree"] == tree)
@@ -162,7 +165,7 @@ def code_scope(case, trees, scope, target, base, pins):
     if not diff or not base:
         return None
     revisions, flags, paths = diff
-    if not matches_pin(case, trees, revisions[0], pins[0], base["tree"]):
+    if not matches_pin(case, trees, revisions[0], pins[0], base["tree"], base.get("archived_literal")):
         return None
     if len(revisions) == 2 and not matches_pin(case, trees, revisions[1], pins[1], target["tree"]):
         return None
@@ -251,7 +254,7 @@ def gate_scope(case, trees, scope, opening, target, base, pins, docs, reasons):
     changes = [v for label, v, _ in scope if label == "changes since"]
     if base or changes:
         token = re.match(r"\s*\x60?([a-fA-F0-9]{4,64})\b", changes[0]) if len(changes) == 1 else None
-        if not base or not token or not matches_pin(case, trees, token[1], pins[0], base["tree"]):
+        if not base or not token or not matches_pin(case, trees, token[1], pins[0], base["tree"], base.get("archived_literal")):
             reasons.append("archived review baseline unverified")
             return None
     as_built = docs[0][1]
@@ -307,6 +310,16 @@ def round_pair(case, trees, opening, archive, reports, reasons):
         return None
     parents = target["parents"]
     base = trees.commit(case.store, parents[0]) if len(parents) == 1 else None
+    binding = case.end.get("review_baseline")
+    if base and base_pin and HEX.fullmatch(base_pin) and canon.full_oid(binding):
+        if not binding.lower().startswith(base_pin):
+            reasons.append("first-round baseline unverified")
+            return None
+        base = dict(base, archived_literal=base_pin)
+        base_pin = binding.lower()
+    elif base and base_pin and HEX.fullmatch(base_pin) and not canon.full_oid(base_pin):
+        original_base = input_commit(case, trees, base_pin)
+        base_pin = original_base["commit"] if original_base else None
     if not ((base_pin == "none" and not parents and case.history.kind == "gate") or
             (canon.full_oid(base_pin) and base and not base["parents"])):
         reasons.append("first-round baseline unverified")

@@ -31,7 +31,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "82"
+CANON_VERSION = "83"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -4110,6 +4110,7 @@ def cmd_audit(repo, args):
 
 TRACE_DIR = LOCAL_DIR + "canon/trace"
 REVIEW_SNAPSHOT_DIR = LOCAL_DIR + "canon/snapshots"
+REVIEW_ROUND_DIR = LOCAL_DIR + "canon-blind-review"
 REVIEW_SNAPSHOT_DAYS = 30
 TRACE_KINDS = ("design", "plan", "implement", "investigate", "canon-review", "retro", "code-review", "gate",
                "follow-up", "slice", "end-check")
@@ -5026,24 +5027,76 @@ def unit_started(unit):
     return int(when.timestamp())
 
 
-def archive_files(source, target, since_ns):
-    """Copy the regular files directly in `source` modified at the archive cutoff or later into `target` when they total
-    at most 2 MiB; return the end line's `archive` and the bytes successfully archived by this call."""
+def regular_bytes(path, limit):
+    """Read at most limit bytes from a regular file without following a final symlink."""
+    if not stat.S_ISREG(path.lstat().st_mode):
+        raise OSError(errno.EINVAL, "not a regular file", str(path))
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
+    with open(os.open(str(path), flags), "rb") as file:
+        if not stat.S_ISREG(os.fstat(file.fileno()).st_mode):
+            raise OSError(errno.EINVAL, "not a regular file", str(path))
+        return file.read(limit)
+
+
+def check_round_declaration(info):
+    fields = {"kind", "tier", "targets", "require", "unit", "base", "baseline", "snapshot"}
+    if not isinstance(info, dict) or not fields.issubset(info):
+        raise TraceError("incomplete round declaration")
+    kind, targets, required = info["kind"], info["targets"], info["require"]
+    if not isinstance(kind, str) or kind not in REVIEW_ROLES or info["tier"] not in ("L0", "L1", "L2"):
+        raise TraceError("invalid review kind or tier")
+    if (not isinstance(targets, list) or (kind != "code-review" and not targets) or
+        any(not target_reference(t, "@r") for t in targets) or
+        len({t.partition("@")[0] for t in targets}) != len(targets)):
+        raise TraceError("use --target ID@rN for each distinct initial design or plan")
+    if (not isinstance(required, list) or
+        any(not any(reviewer_key(role, key) for role in REVIEW_ROLES[kind]) for key in required) or
+        len(set(required)) != len(required)):
+        raise TraceError("--require needs distinct reviewer keys for this review kind")
+    unit = info["unit"]
+    if unit is not None and (not isinstance(unit, str) or not UNIT_RE.fullmatch(unit)):
+        raise TraceError("--unit needs a trace unit ID")
+    if (info["base"] is not None and not isinstance(info["base"], str) or
+        info["snapshot"] is not None and not full_oid(info["snapshot"]) or
+        info["baseline"] not in (None, "none") and not full_oid(info["baseline"])):
+        raise TraceError("invalid first-round pins")
+
+
+def read_review_round(root, directory):
+    """Read a round's ownership record; a missing marker is allowed only at a legacy path."""
+    try:
+        data = regular_bytes(directory / "round.json", MAX_ARCHIVE + 1)
+        if len(data) <= MAX_ARCHIVE:
+            info = json.loads(data)
+            check_round_declaration(info)
+            return info
+    except FileNotFoundError:
+        if root / REVIEW_ROUND_DIR not in directory.parents or not directory.name.startswith("round-"):
+            return None
+    except (OSError, ValueError, TraceError):
+        pass
+    raise TraceError("missing or invalid round.json")
+
+
+def archive_files(source, target, since_ns, info):
+    """Copy up to 2 MiB of direct regular files. A matching round has no age cutoff; legacy files use since_ns."""
     written = []
     try:
         with os.scandir(str(source)) as entries:
             names = sorted(entry.name for entry in entries if entry.is_file(follow_symlinks=False)
-                           and entry.stat(follow_symlinks=False).st_mtime_ns >= since_ns)
+                           and (since_ns is None or entry.stat(follow_symlinks=False).st_mtime_ns >= since_ns))
         files, total = {}, 0
         for name in names:
-            with open(os.open(os.path.join(str(source), name), flags), "rb") as file:
-                if not stat.S_ISREG(os.fstat(file.fileno()).st_mode):
-                    continue
-                files[name] = file.read(MAX_ARCHIVE + 1 - total)
+            files[name] = regular_bytes(source / name, MAX_ARCHIVE + 1 - total)
             total += len(files[name])
             if total > MAX_ARCHIVE:
                 return "over-2MiB", {}
+        if info is not None:
+            try:
+                if json.loads(files.get("round.json", b"")) != info:
+                    raise ValueError()
+            except ValueError:
+                raise TraceError("round.json changed during archival")
         if not files:
             return "none", {}
         target.mkdir(parents=True, exist_ok=True)
@@ -5058,39 +5111,117 @@ def archive_files(source, target, since_ns):
     return "ok", files
 
 
-def retain_review_input(root, trace_dir, line, files):
+def review_pins(review_dir, env, kind, info, files, gaps):
+    """Resolve the expected pins in the supplied evidence. A mixed follow-up deliberately omits its shared base."""
+    pins = {}
+    for material in ("snapshot", "baseline"):
+        name = material + ".txt"
+        literal = files.get(name, b"").strip().decode("ascii", "replace")
+        if material == "baseline" and kind == "follow-up" and (info.get("base") is None if info else not literal):
+            continue
+        try:
+            if not literal:
+                raise SnapshotSkip("missing or unreadable")
+            if material == "baseline" and literal == "none" and kind != "code-review":
+                commit = "none"
+            else:
+                if material == "snapshot" and not full_oid(literal):
+                    raise SnapshotSkip("expected a full commit ID")
+                commit = review_commit(review_dir, env, literal)
+                if material == "snapshot" and literal.lower() != commit:
+                    raise SnapshotSkip("expected a full commit ID")
+            if info is not None and commit != info.get(material):
+                raise SnapshotSkip("does not match the pinned round input")
+            pins[material] = commit
+        except (OSError, SnapshotSkip) as error:
+            gaps[name] = str(error)
+    return pins
+
+
+def retain_review_input(root, trace_dir, line, info, files, gaps):
     """Bind the archived first-round pins to independent trees before publishing the accepted review end."""
-    baseline = files.get("baseline.txt", b"").strip()
-    target = files.get("snapshot.txt", b"").strip()
-    pins = [target] if baseline == b"none" and line["kind"] != "code-review" else [baseline, target]
-    if not all(full_oid(pin.decode("ascii", "replace")) for pin in pins):
-        return
-    review_dir = root / REVIEW_SNAPSHOT_DIR
+    review_dir, unit = root / REVIEW_SNAPSHOT_DIR, line["id"]
     env = trace_env(**SNAPSHOT_IDENTITY)
-    # An optional pin must not displace a valid end near the 16 KiB limit.
     try:
-        if not (review_dir / ".git").is_dir():
-            return
-        event_bytes(dict(line, review_input=target.decode("ascii")))
-    except (OSError, TraceError):
+        # A missing store still allows per-material diagnostics, without creating another store to inspect it.
+        lock = snapshot_lock(review_dir) if (review_dir / ".git").is_dir() else contextlib.nullcontext()
+        with lock:
+            pins = review_pins(review_dir, env, line["kind"], info, files, gaps)
+            if len(pins) != 2:
+                return
+            base, target = pins["baseline"], pins["snapshot"]
+            binding = {}
+            if base != files["baseline.txt"].strip().decode("ascii").lower():
+                binding["review_baseline"] = base
+            # An optional pin must not displace a valid end near the 16 KiB limit.
+            event_bytes(dict(line, review_input=target, **binding))
+            commits = [target] if base == "none" else [base, target]
+            trees = snapshot_git(review_dir, env, "rev-parse", *(c + "^{tree}" for c in commits)).decode().split()
+            with snapshot_lock(trace_dir):
+                snapshot_repo(trace_dir, unit, env, sha256=len(target) == 64)
+                copy_borrowed(review_dir, dict(env, GIT_DIR=str(review_dir / ".git")), trace_dir, env, *trees)
+                parents = []
+                if len(trees) == 2:
+                    parent = snapshot_git(trace_dir, env, "commit-tree", trees[0], "-m", "review baseline " + unit)
+                    parents = ["-p", parent.decode().strip()]
+                commit = snapshot_git(trace_dir, env, "commit-tree", trees[-1], *parents, "-m", "review input " + unit)
+                oid = commit.decode().strip()
+                snapshot_git(trace_dir, env, "update-ref", "refs/review-input/" + unit, oid)
+                line.update(review_input=oid, **binding)
+    except (OSError, SnapshotSkip, TraceError) as error:
+        gaps["review_input"] = "could not retain the first-round trees: " + str(error)
+
+
+def required_review_passes(info):
+    roles = list(REVIEW_ROLES[info["kind"]])
+    if info["tier"] != "L2":
+        roles.remove("cross-family")
+    return list(dict.fromkeys(roles + info["require"]))
+
+
+def review_prompt_gaps(files, keys, gaps):
+    for key in keys:
+        name = key + "-prompt.md"
+        if not files.get(name, b"").strip():
+            gaps[name] = "missing, unreadable or empty"
+
+
+def warn_review_gaps(root, directory, unit, gaps, model=None):
+    """Recording friction is best-effort. Deduplicate a round's material across start, check, close and retries."""
+    if not gaps:
         return
-    unit = line["id"]
-    with contextlib.suppress(OSError, SnapshotSkip), snapshot_lock(review_dir), snapshot_lock(trace_dir):
-        objects = snapshot_git(review_dir, env, "cat-file", "--batch-check=%(objectname) %(objecttype)",
-                               data=b"\n".join(pins) + b"\n").splitlines()
-        if objects != [pin.lower() + b" commit" for pin in pins]:
-            return
-        trees = snapshot_git(review_dir, env, "rev-parse", *(pin.decode() + "^{tree}" for pin in pins)).decode().split()
-        snapshot_repo(trace_dir, unit, env, sha256=len(target) == 64)
-        copy_borrowed(review_dir, dict(env, GIT_DIR=str(review_dir / ".git")), trace_dir, env, *trees)
-        parents = []
-        if len(trees) == 2:
-            parent = snapshot_git(trace_dir, env, "commit-tree", trees[0], "-m", "review baseline " + unit)
-            parents = ["-p", parent.decode().strip()]
-        commit = snapshot_git(trace_dir, env, "commit-tree", trees[-1], *parents, "-m", "review input " + unit)
-        oid = commit.decode().strip()
-        snapshot_git(trace_dir, env, "update-ref", "refs/review-input/" + unit, oid)
-        line["review_input"] = oid
+    address = posix_rel(directory, root) if directory else unit
+    for material, reason in gaps.items():
+        print("review warning: {}: {}: {}".format(address, material, reason), file=sys.stderr)
+    ledger = root / LOCAL_DIR / "canon-retro" / "skills.jsonl"
+    host, conversation = trace_host()
+    now = datetime.datetime.now().astimezone()
+    skill_hash = "unknown"
+    try:
+        lock = json.loads((root / "skills-lock.json").read_bytes())
+        skill_hash = lock["skills"]["canon"]["computedHash"]
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    try:
+        with file_lock(ledger.with_suffix(".lock"), TRACE_LOCK_WAIT, TraceError("retro lock timeout")), ledger.open("a+b") as log:
+            log.seek(0)
+            seen = set()
+            for raw in log:
+                with contextlib.suppress(ValueError, TypeError, AttributeError):
+                    row = json.loads(raw)
+                    if row.get("round") == address and row.get("unit") == unit:
+                        seen.add(row.get("material"))
+            for material, reason in gaps.items():
+                if material in seen:
+                    continue
+                record = dict(date=now.date().isoformat(), session=conversation or now.strftime("%Y%m%d-%H%M"),
+                              host=host, model=model or "unknown", skill="canon", skill_hash=skill_hash,
+                              canon="canon " + CANON_VERSION, step="review input", round=address, unit=unit,
+                              material=material, event=material + ": " + reason,
+                              suggestion="Verify the requested review material in the round before closing it.")
+                log.write(json.dumps(record).encode("utf-8") + b"\n")
+    except (OSError, TraceError) as error:
+        print("review warning: could not record the retro entry: " + str(error), file=sys.stderr)
 
 
 def trace_end(args):
@@ -5117,18 +5248,39 @@ def trace_end(args):
     if kind in REVIEW_ROLES:
         line["dispositions"] = dispositions
     line["archive"] = None
+    gaps = {}
 
     @contextlib.contextmanager
     def archive():
         files = {}
+        info = None
         if source:
             cutoff = start.get("archive_since_ns", unit_started(args.unit) * 10 ** 9)
-            line["archive"], files = archive_files(source, trace_dir / args.unit, cutoff)
+            try:
+                info = read_review_round(root, source)
+                if info is not None:
+                    if (info["unit"], info["kind"]) != (args.unit, kind):
+                        raise TraceError("round unit or review kind mismatch")
+                    cutoff = None
+                line["archive"], files = archive_files(source, trace_dir / args.unit, cutoff, info)
+            except TraceError as error:
+                line["archive"] = "copy: EINVAL"
+                gaps["archive"] = str(error)
         if kind not in REVIEW_ROLES:
             yield
             return
         ref = "refs/review-input/" + args.unit
-        retain_review_input(root, trace_dir, line, files)
+        if line["archive"] == "ok":
+            if dispositions is not None:
+                keys = [r.get("key", r["role"]) for r in dispositions["reviewers"]]
+            elif info and args.outcome == "delivered":
+                keys = required_review_passes(info)
+            else:
+                keys = []
+            review_prompt_gaps(files, keys, gaps)
+            retain_review_input(root, trace_dir, line, info, files, gaps)
+        elif source or args.outcome == "delivered" and dispositions is not None:
+            gaps.setdefault("archive", line["archive"] or "no round directory supplied")
         oid = line.get("review_input")
         if not oid:
             # An interrupted end may already have published this unit's ref.
@@ -5143,6 +5295,7 @@ def trace_end(args):
             raise
 
     append_event(trace_dir, line, lambda: end_unit(trace_dir, args), manifest, archive)
+    warn_review_gaps(root, source, args.unit, gaps, start.get("model"))
     print("trace {} ended".format(args.unit))
     return 0
 
@@ -5792,22 +5945,28 @@ def expire_review_snapshots(snapshot_dir, now):
         remove_stale(snapshot_dir, ".init-", hour_ago)
 
 
+@contextlib.contextmanager
+def review_snapshot_store(root, is_git):
+    if not is_git:
+        raise SnapshotSkip("no-git")
+    try:
+        ignore_trace_dir(root)
+    except OSError as error:
+        raise SnapshotSkip("gitignore: " + errno_name(error))
+    directory = root / REVIEW_SNAPSHOT_DIR
+    with snapshot_lock(directory):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        expire_review_snapshots(directory, now)
+        yield directory, now
+
+
 def cmd_snapshot(_args):
     """Record the work tree in the review snapshot repository and print the snapshot commit (D003#review-snapshots);
     exit 1 when no snapshot was recorded."""
     root, is_git = trace_root()
     try:
-        if not is_git:
-            raise SnapshotSkip("no-git")
-        try:
-            ignore_trace_dir(root)
-        except OSError as error:
-            raise SnapshotSkip("gitignore: " + errno_name(error))
-        snapshot_dir = root / REVIEW_SNAPSHOT_DIR
-        now = datetime.datetime.now(datetime.timezone.utc)
-        with snapshot_lock(snapshot_dir):
-            expire_review_snapshots(snapshot_dir, now)
-            commit = take_snapshot(root, snapshot_dir, new_id(now), None, "snapshots", borrow=True)
+        with review_snapshot_store(root, is_git) as (directory, now):
+            commit = take_snapshot(root, directory, new_id(now), None, "snapshots", borrow=True)
     except SnapshotSkip as failed:
         print("snapshot error: " + failed.reason)
         sys.stdout.flush()
@@ -5815,6 +5974,85 @@ def cmd_snapshot(_args):
             sys.stderr.write(failed.message.decode("utf-8", "replace"))
         return 1
     print(commit)
+    return 0
+
+
+def review_commit(directory, env, pin):
+    """Resolve a literal hex object name in the review store, including its alternates. Reject any ambiguity
+    before testing its object type, so Git's commit disambiguation cannot hide a colliding tree or blob."""
+    if not isinstance(pin, str) or not re.fullmatch(r"[A-Fa-f0-9]{4,64}", pin):
+        raise SnapshotSkip("expected a hexadecimal commit ID")
+    matches = snapshot_git(directory, env, "rev-parse", "--disambiguate=" + pin.lower()).decode().split()
+    if len(matches) != 1 or not matches[0].startswith(pin.lower()):
+        raise SnapshotSkip("ambiguous or unavailable commit")
+    if snapshot_git(directory, env, "cat-file", "-t", matches[0]).strip() != b"commit":
+        raise SnapshotSkip("not a commit")
+    return matches[0]
+
+
+def pin_review_ref(root, directory, env, ref, now):
+    if re.fullmatch(r"[0-9a-fA-F]+", ref):
+        commit = review_commit(directory, env, ref)
+    else:
+        if not ref or ref.startswith("-") or "\n" in ref:
+            raise SnapshotSkip("invalid commit reference")
+        repo = directory if ref.startswith("refs/snapshots/") else root
+        commit = trace_git(repo, env, "rev-parse", "--verify", ref + "^{commit}").decode().strip()
+    snapshot_git(directory, env, "update-ref", "refs/snapshots/" + new_id(now), commit)
+    return commit
+
+
+def prepare_round_inputs(root, is_git, info, prepared):
+    """Pin target and baseline independently, preserving each available input if the other cannot be recorded."""
+    env, gaps = trace_env(**SNAPSHOT_IDENTITY), {}
+    base = info["base"]
+    if base == "none" and info["kind"] != "code-review":
+        info["baseline"] = "none"
+    needs_base = info["baseline"] is None and (base is not None or info["kind"] == "code-review")
+    try:
+        with review_snapshot_store(root, is_git) as (directory, now):
+            objects, fmt = trace_git(root, env, "rev-parse", "--git-path", "objects", "--show-object-format").splitlines()
+            git_dir = snapshot_repo(directory, new_id(now), env, sha256=fmt == b"sha256")
+            borrow_objects(git_dir, os.path.abspath(root / os.fsdecode(objects)))
+            try:
+                if prepared is None:
+                    info["snapshot"] = take_snapshot(root, directory, new_id(now), None, "snapshots", borrow=True)
+                else:
+                    info["snapshot"] = pin_review_ref(root, directory, env, prepared, now)
+            except (SnapshotSkip, OSError) as error:
+                gaps["snapshot.txt"] = str(error)
+            if needs_base:
+                if base in (None, "none"):
+                    raise SnapshotSkip("code review requires a diff baseline")
+                info["baseline"] = pin_review_ref(root, directory, env, base, now)
+    except (SnapshotSkip, OSError) as error:
+        if not info["snapshot"]:
+            gaps.setdefault("snapshot.txt", str(error))
+        if needs_base:
+            gaps["baseline.txt"] = str(error)
+    return gaps
+
+
+def review_start(args):
+    root, is_git = trace_root()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*(?:/followup-[1-9][0-9]*)?", args.topic):
+        raise TraceError("invalid review topic")
+    parent = root / REVIEW_ROUND_DIR / args.topic
+    if parent.resolve() != parent:
+        raise TraceError("review topic must lie in this checkout's review directory")
+    base = "none" if args.kind == "gate" and args.base is None else args.base
+    info = dict(kind=args.kind, tier=args.tier, targets=args.target, require=args.require, unit=args.unit,
+                base=base, baseline=None, snapshot=None)
+    check_round_declaration(info)
+    gaps = prepare_round_inputs(root, is_git, info, args.snapshot)
+    parent.mkdir(parents=True, exist_ok=True)
+    path = Path(tempfile.mkdtemp(prefix="round-", dir=str(parent)))
+    (path / "round.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
+    for material in ("snapshot", "baseline"):
+        if info[material] is not None:
+            (path / (material + ".txt")).write_text(info[material] + "\n", encoding="ascii")
+    warn_review_gaps(root, path, args.unit, gaps)
+    print(path)
     return 0
 
 
@@ -5995,6 +6233,19 @@ def main(argv=None):
                    help="code commits before a review is due (default 50)")
     p.set_defaults(func=cmd_audit)
 
+    p = command(sub, "review", help="prepare and check a review round in this checkout")
+    actions = p.add_subparsers(dest="action", required=True)
+    t = command(actions, "start", help="pin initial inputs and print a fresh directory for all dispatches and reports")
+    t.add_argument("topic", metavar="TOPIC", help="the gate or code review topic, optionally ending in /followup-N")
+    t.add_argument("--kind", required=True, choices=tuple(REVIEW_ROLES))
+    t.add_argument("--tier", required=True, choices=("L0", "L1", "L2"))
+    t.add_argument("--target", action="append", default=[], metavar="ID@rN", help="initial design or plan revision")
+    t.add_argument("--require", action="append", default=[], metavar="KEY", help="additional independent reviewer")
+    t.add_argument("--base", metavar="REF", help="diff baseline, or none for a full-document gate; omit for mixed follow-ups")
+    t.add_argument("--snapshot", metavar="COMMIT", help="prepared target commit (default: snapshot the current work tree)")
+    t.add_argument("--unit", metavar="TRACE_ID", help="bind the new round's files to this trace unit and review kind")
+    t.set_defaults(func=review_start)
+
     p = command(sub, "trace", help="record canon workflow units for skill telemetry; off unless `trace on` ran")
     actions = p.add_subparsers(dest="action", required=True)
     t = command(actions, "start", help="start a unit and print `trace <id>`")
@@ -6015,8 +6266,8 @@ def main(argv=None):
     t.add_argument("outcome", help="; ".join("{}: {}".format(kinds, ", ".join(outcomes)) for kinds, outcomes in
                                              [("other kinds", OUTCOMES)] + list(KIND_OUTCOMES.items())))
     t.add_argument("--to", choices=("L1", "L2", "plan"), help="the tier or plan an escalated unit needs")
-    t.add_argument("--dir", metavar="DIR", help="directory under .canon/ whose files changed since the unit started "
-                                                "are archived with it")
+    t.add_argument("--dir", metavar="DIR", help="archive this unit-bound round's direct regular files under .canon/; "
+                                                "a legacy directory uses the unit's start time as its cutoff")
     t.add_argument("--input", metavar="FILE|-", help="a gate's, follow-up's or code review's dispositions as JSON, "
                                                      "from FILE or from stdin for -")
     t.set_defaults(func=trace_end)
@@ -6057,6 +6308,12 @@ def main(argv=None):
         print("canon: " + args.version_notice, file=sys.stderr)
     if args.command == "trace":
         return cmd_trace(args)
+    if args.command == "review":
+        try:
+            return args.func(args)
+        except (TraceError, SnapshotSkip, OSError) as error:
+            print("review error: " + str(error), file=sys.stderr)
+            return 1
     if args.command == "snapshot":
         return cmd_snapshot(args)
     if args.command == "commit-template":

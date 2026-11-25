@@ -32,6 +32,7 @@ When `canon.py` says it runs only from an install inside the project, as when th
 | `audit` | Designs with code commits since the design last changed or was reconciled (a `Reconciled:` trailer) that no `Refs:` trailer names, known issues oldest first, idle open docs other than concepts, active designs and concluded experiments, due reviews, source areas under D000's module Paths that no design covers, ranked by commits in the last 90 days, and designs D000 does not reach by following `refs` from design to design. |
 | `trace history [UNIT]` | Read recorded units, their elapsed times and archive status, even with tracing off. Give a unit ID for its details, including review findings and confirmations. |
 | `trace recheck UNIT FINDING` | Record a separately requested recheck using the saved review unit ID. See the [review evidence fields and command](review-evidence.md). |
+| `review start TOPIC --kind KIND --tier TIER [--target ID@rN ...] [--require KEY ...] [--base REF] [--snapshot COMMIT] [--unit TRACE_ID]` | Print a fresh round directory, with its declaration and verified first-round pins. Repeat `--target` or `--require` for each additional revision or reviewer. See [First-round review input](review-evidence.md#first-round-review-input). |
 | `snapshot` | Record the work tree, untracked files included, and print the snapshot commit, for the diffs of a review's confirmation and follow-up rounds (the `canon-blind-review` skill). |
 | `init`, `adopt` | Project setup, upgrades and migration; the user runs them through the `canon-init` skill. |
 

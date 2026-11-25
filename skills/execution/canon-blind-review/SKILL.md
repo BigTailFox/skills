@@ -71,7 +71,7 @@ At launch, bind the absolute checkout, round, report path, provider, model and j
 
 ## Review files
 
-Keep each reviewer's files in `.canon/canon-blind-review/<topic>/`. A gate's topic is its target's id and the revision it reviews, `<id>-r<N>` such as `D007-r4`, a gate with follow-on targets too, so a later gate never overwrites it; a code review's is the one the `canon-code-review` skill names; any other review's is a slug of what it reviews. Each [follow-up round](#follow-up-round) of a gate keeps its files, named the same way, in `<topic>/followup-<k>/`, numbered from 1.
+Use the fresh directory that `canon.py review start` prints under `.canon/canon-blind-review/<topic>/` for every dispatch and report. A gate's topic is its primary target and revision, e.g. `D007-r4`, including a joint gate. A code review uses the topic the `canon-code-review` skill names. Each [follow-up](#follow-up-round) uses `<topic>/followup-<k>`, numbered from 1. Start a fresh round for a replacement, including a change of tier. Carry forward only inputs whose commits, paths and prompt instructions match the replacement. Leave a cancelled run's report path pointing into its original directory.
 
 Give each independently numbered report a key. Start with the role (`same-model`, `cross-family`, or the caller's axis) and number further reports in that role from 2, e.g. `cross-family-2`. Before launch write `<key>-prompt.md`. Only a complete terminal report from this run goes in `<key>.md`. Write the ID of the run whose report you merged to `<key>-id.txt`. Leave it empty when the merged run has no ID, including after a fallback.
 
@@ -79,7 +79,7 @@ For a source with one confirmer, save its prompt, report and fresh run ID under 
 
 Save a host subagent's terminal report verbatim and merge it in its original language. Once that report is saved and newer than its prompt, ignore repeated or late completion notices for that run.
 
-Before dispatch, save the first round's target commit in `snapshot.txt` and its resolved baseline in `baseline.txt` (`none` for a full-document review). A follow-up without one shared verified baseline omits that pin and saves the actual inputs in each prompt. For a live review, take the target with `canon.py snapshot` from the checkout root. For a prepared patch, save the two commits that generated it and supply that scoped patch and its paths. Preserve both through confirmation and handoff. Save the input snapshot for each report in `<key>-snapshot.txt`. Take a fresh snapshot for a late or supplemental pass. For a single confirmer save the fixed snapshot in `<key>-snapshot-confirm.txt`. Keep the round's latest fixed snapshot in `snapshot-confirm.txt`. Check a snapshot with `git -C .canon/canon/snapshots cat-file -e <commit>`. When tracing supplies an ID, keep it with the round's evidence as the `canon` skill's `trace.md` directs.
+Use the first-round pins that `review start` wrote in `snapshot.txt` and `baseline.txt`. For a prepared patch pass its exact target and base at start and supply the scoped patch and paths. A mixed follow-up records each path's actual input in its prompt. Preserve the pins through confirmation and handoff. Save each report's input in `<key>-snapshot.txt`. Take a fresh snapshot for a late or supplemental pass. For a single confirmer save the fixed snapshot in `<key>-snapshot-confirm.txt`. Keep the round's latest fixed snapshot in `snapshot-confirm.txt`. Check a snapshot with `git -C .canon/canon/snapshots cat-file -e <commit>`. When tracing supplies an ID, pass it at round start and keep it with the evidence as the `canon` skill's `trace.md` directs.
 
 ## Stopped runs
 
@@ -132,7 +132,7 @@ On a separate request, snapshot the version to check. Use the confirmation promp
 
 A gate's follow-up uses its original tier and criteria. For each reviewer, list the targets they previously reviewed in full. Send an added target in a separate full-criteria pass to each missing role, following the `canon` skill's workflow (Target coverage).
 
-- Save the new snapshot in `<topic>/followup-<k>/snapshot.txt`. For each covered path, find that reviewer's last assessed input in its reports and per-source snapshots, including supplemental passes. Advance to a confirmation snapshot only if the reviewer assessed every intervening change to the path. Otherwise keep the last fully reviewed input and name any already-confirmed claims.
+- Use the returned follow-up directory's `snapshot.txt`. For each covered path, find that reviewer's last assessed input in its reports and per-source snapshots, including supplemental passes. Advance to a confirmation snapshot only if the reviewer assessed every intervening change to the path. Otherwise keep the last fully reviewed input and name any already-confirmed claims.
 - Group that reviewer's paths by baseline. Verify each `git -C .canon/canon/snapshots diff <last> <new> -- <paths>` and include the scoped commands in the prompt. For paths whose baseline or diff is unavailable, name the revised sections to read. Keep the original branch base confined to the first-round or supplemental pass that used it.
 - Send only this prompt, filled as the confirmation prompt is:
 

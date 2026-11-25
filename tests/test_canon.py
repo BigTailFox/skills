@@ -5561,6 +5561,17 @@ class TraceCase(CanonTest):
         self.git("worktree", "add", "-q", "--track", "-b", branch, ".worktrees/" + branch, "main")
         return self.root / ".worktrees" / branch
 
+    def committed_project(self, object_format):
+        """A project of its own with one commit in the requested object format, if this Git supports it."""
+        project = self.tmpdir()
+        if self.run_here("git", "init", "-q", "--object-format=" + object_format, str(project)).returncode:
+            return None
+        (project / "a.txt").write_text("a\n")
+        self.git("-C", str(project), "add", "-A")
+        self.git("-C", str(project), "-c", "user.name=fixture", "-c", "user.email=f@example.invalid",
+                 "commit", "-qm", "a")
+        return project
+
     @contextlib.contextmanager
     def read_only(self, top):
         """Make the directory `top` and every directory under it read-only while the block runs."""
@@ -6468,18 +6479,6 @@ class SnapshotTest(TraceCase):
         self.assertIsNotNone(line["manifest"])
         self.assertEqual(self.snap("for-each-ref", "refs/skills/"), "")
 
-    def committed_project(self, object_format):
-        """A project of its own with one commit, made with `git init --object-format=<object_format>`; None when this
-        Git cannot make it."""
-        project = self.tmpdir()
-        if self.run_here("git", "init", "-q", "--object-format=" + object_format, str(project)).returncode:
-            return None
-        (project / "a.txt").write_text("a\n")
-        self.git("-C", str(project), "add", "-A")
-        self.git("-C", str(project), "-c", "user.name=fixture", "-c", "user.email=f@example.invalid",
-                 "commit", "-qm", "a")
-        return project
-
     def test_a_sha256_project_gets_snapshots(self):
         project = self.committed_project("sha256")
         if project is None:
@@ -6524,6 +6523,167 @@ class SnapshotTest(TraceCase):
         big.write_bytes(b"\2" * (5 << 20))
         line = self.start_line("design")
         self.assertEqual([line["snapshot"], line["skipped"]], [None, "changes-over-10MiB"])
+
+
+class ReviewRoundTest(TraceCase):
+    def round(self, *args, topic="D000-r1", kind="gate", tier="L1"):
+        result = self.tool("review", "start", topic, "--kind", kind, "--tier", tier,
+                           "--target", "D000@r1", *args)
+        return self.root / result.stdout.strip(), result.stderr
+
+    def test_prepared_project_input_pins_and_retains_sha256_commits(self):
+        project = self.committed_project("sha256")
+        if project is None:
+            self.skipTest("this Git cannot create a SHA-256 repository")
+        self.trace("on")
+        unit = self.start("code-review", "--base", "HEAD", cwd=project)
+        head = self.git("-C", str(project), "rev-parse", "HEAD")
+        result = self.tool("review", "start", "change", "--kind", "code-review", "--tier", "L1",
+                           "--snapshot", head, "--base", head[:40], "--unit", unit, cwd=project)
+        self.assertEqual(result.stderr, "")
+        path = project / result.stdout.strip()
+        self.assertEqual((path / "baseline.txt").read_text().strip(), head)
+        self.assertEqual((path / "snapshot.txt").read_text().strip(), head)
+        for key in ("spec", "standards"):
+            (path / (key + "-prompt.md")).write_text("Read the prepared patch.\n")
+        end = self.tool("trace", "end", unit, "delivered", "--dir", str(path), cwd=project)
+        self.assertEqual(end.stderr, "")
+        trace = project / ".canon/canon/trace"
+        self.assertEqual(len(self.lines(trace / "events.jsonl")[-1]["review_input"]), 64)
+
+    def test_live_and_prepared_rounds_pin_the_actual_inputs_with_tracing_off(self):
+        self.commit()
+        head = self.git("rev-parse", "HEAD")
+        (self.root / "src/base.py").write_text("first input\n")
+        live, warnings = self.round("--base", "HEAD")
+        self.assertEqual(warnings, "")
+        target = (live / "snapshot.txt").read_text().strip()
+        self.assertEqual((live / "baseline.txt").read_text().strip(), head)
+        self.assertEqual(self.git("-C", ".canon/canon/snapshots", "show", target + ":src/base.py"), "first input")
+        (self.root / "src/base.py").write_text("later work\n")
+        prepared, warnings = self.round("--base", head[:8], "--snapshot", target,
+                                        "--require", "cross-family-2", tier="L2")
+        self.assertEqual(warnings, "")
+        self.assertNotEqual(prepared, live)
+        self.assertEqual(prepared.parent, self.root / ".canon/canon-blind-review/D000-r1")
+        self.assertEqual((prepared / "snapshot.txt").read_text().strip(), target)
+        self.assertEqual((prepared / "baseline.txt").read_text().strip(), head)
+        info = json.loads((prepared / "round.json").read_text())
+        self.assertEqual((info["kind"], info["tier"], info["targets"], info["require"], info["unit"]),
+                         ("gate", "L2", ["D000@r1"], ["cross-family-2"], None))
+        self.assertFalse(self.events.parent.exists())
+
+    def test_missing_or_incomplete_round_ownership_archives_no_files_and_still_closes(self):
+        self.commit()
+        self.trace("on")
+        for corrupt in ("missing", "incomplete", "wrong types"):
+            unit = self.start("gate", "D000")
+            path, _ = self.round("--unit", unit)
+            marker = path / "round.json"
+            if corrupt == "missing":
+                marker.unlink()
+            else:
+                info = json.loads(marker.read_text())
+                if corrupt == "incomplete":
+                    del info["require"]
+                else:
+                    info["targets"] = {"D000": 1}
+                marker.write_text(json.dumps(info))
+            (path / "same-model.md").write_text("Unowned report\n")
+            close = self.tool("trace", "end", unit, "delivered", "--dir", str(path))
+            self.assertEqual(close.stdout, "trace {} ended\n".format(unit))
+            self.assertIn("round.json", close.stderr)
+            self.assertNotEqual(self.lines()[-1]["archive"], "ok")
+            self.assertFalse((self.events.parent / unit / "same-model.md").exists())
+
+    def test_unavailable_or_ambiguous_baseline_warns_once_per_round_gap_without_blocking_the_review(self):
+        self.commit()
+        self.trace("on")
+        baseline = self.git("rev-parse", "HEAD")
+        object_format = self.git("rev-parse", "--show-object-format")
+        target = self.tool("snapshot").stdout.strip()
+        # Give an abbreviated commit a second meaning in the borrowed project object store.
+        for i in range(2_000_000):
+            data = str(i).encode()
+            if hashlib.new(object_format, b"blob %d\0" % len(data) + data).hexdigest().startswith(baseline[:4]):
+                subprocess.run(["git", "hash-object", "-w", "--stdin"], input=data, cwd=self.root, check=True,
+                               stdout=subprocess.DEVNULL)
+                break
+        else:
+            self.fail("no colliding Git blob for the four-digit fixture")
+        retro = self.root / ".canon/canon-retro/skills.jsonl"
+        for index, ref in enumerate((baseline[:4], "refs/heads/gone")):
+            unit = self.start("gate", "D000")
+            path, warnings = self.round("--base", ref, "--snapshot", target, "--unit", unit)
+            self.assertIn("baseline.txt", warnings)
+            self.assertEqual((path / "snapshot.txt").read_text().strip(), target)
+            self.assertFalse((path / "baseline.txt").exists())
+            (path / "same-model-prompt.md").write_text("Read the full design.\n")
+            close = self.tool("trace", "end", unit, "delivered", "--dir", str(path))
+            self.assertIn("baseline.txt", close.stderr)
+            self.assertEqual(self.lines()[-1]["outcome"], "delivered")
+            records = [json.loads(s) for s in retro.read_text().splitlines()]
+            self.assertEqual(len(records), index + 1)
+            self.assertIn(path.name, records[-1]["round"])
+            self.assertEqual(records[-1]["material"], "baseline.txt")
+
+    def test_only_a_requested_followup_pin_or_prompt_reports_a_gap(self):
+        self.commit()
+        self.trace("on")
+        retro = self.root / ".canon/canon-retro/skills.jsonl"
+        for requested in (False, True):
+            unit = self.start("follow-up", "D000")
+            extra = ("--base", "HEAD") if requested else ()
+            path, warnings = self.round("--unit", unit, *extra, topic="D000-r1/followup-1", kind="follow-up")
+            self.assertEqual(warnings, "")
+            if requested:
+                (path / "baseline.txt").unlink()
+            else:
+                self.assertFalse((path / "baseline.txt").exists())
+                (path / "same-model-prompt.md").write_text("Changes grouped by path.\n")
+            close = self.tool("trace", "end", unit, "delivered", "--dir", str(path))
+            if requested:
+                self.assertIn("same-model-prompt.md", close.stderr)
+                self.assertIn("baseline.txt", close.stderr)
+                records = [json.loads(s) for s in retro.read_text().splitlines()]
+                self.assertEqual(sorted(r["material"] for r in records), ["baseline.txt", "same-model-prompt.md"])
+            else:
+                self.assertEqual(close.stderr, "")
+                self.assertFalse(retro.exists())
+            self.assertNotIn("review_input", self.lines()[-1])
+
+    def test_replacement_archives_verified_older_inputs_and_isolates_late_reports(self):
+        self.commit()
+        self.trace("on")
+        original = self.start("gate", "D000", "--tier", "L1")
+        old, _ = self.round("--base", "HEAD", "--unit", original)
+        (old / "same-model-prompt.md").write_text("Verified prompt for both rounds.\n")
+        for name in ("baseline.txt", "same-model-prompt.md"):
+            os.utime(str(old / name), (100, 100))
+        self.assertIn("ended", self.trace("end", original, "cancelled", "--dir", str(old)))
+        unit = self.start("gate", "D000", "--tier", "L2")
+        target = (old / "snapshot.txt").read_text().strip()
+        base = (old / "baseline.txt").read_text().strip()
+        fresh, _ = self.round("--base", base, "--snapshot", target, "--unit", unit, tier="L2")
+        for name in ("baseline.txt", "same-model-prompt.md"):
+            shutil.copy2(old / name, fresh / name)
+        (old / "same-model.md").write_text("Late, cancelled report.\n")
+        (fresh / "cross-family-prompt.md").write_text("Review this gate.\n")
+        self.assertIn("ended", self.trace("end", unit, "delivered", "--dir", str(fresh)))
+        archive = self.events.parent / unit
+        self.assertEqual((archive / "baseline.txt").read_text().strip(), base)
+        self.assertEqual((archive / "same-model-prompt.md").read_text(), "Verified prompt for both rounds.\n")
+        self.assertFalse((archive / "same-model.md").exists())
+        retained = self.lines()[-1]["review_input"]
+        self.assertEqual(self.snap("rev-parse", retained + "^^{tree}"), self.git("rev-parse", base + "^{tree}"))
+        for kind, binding in (("gate", original), ("follow-up", None)):
+            other = self.start(kind, "D000")
+            mismatched, _ = self.round("--base", base, "--unit", binding or other)
+            (mismatched / "foreign.md").write_text("Foreign report\n")
+            self.assertIn("ended", self.trace("end", other, "delivered", "--dir", str(mismatched)))
+            self.assertNotEqual(self.lines()[-1]["archive"], "ok")
+            self.assertNotIn("review_input", self.lines()[-1])
+            self.assertFalse((self.events.parent / other / "foreign.md").exists())
 
 
 class ReviewInputTest(TraceCase):
@@ -6592,6 +6752,48 @@ class ReviewInputTest(TraceCase):
                 self.assertIsNotNone(review_input)
                 self.assertEqual(self.snap("rev-list", "--count", review_input), count)
                 self.assertEqual(self.snap("rev-parse", review_input + "^{tree}"), self.git("rev-parse", "HEAD^{tree}"))
+
+    def test_mirror_replays_only_the_verified_legacy_baseline_spelling_without_the_source_commit(self):
+        baseline = self.git("rev-parse", "HEAD")
+        short = baseline[:7]
+        unit = self.start("code-review", "--base", baseline)
+        (self.root / "src/base.py").write_text("reviewed change\n")
+        target = self.tool("snapshot").stdout.strip()
+        expected = subprocess.check_output(["git", "-C", str(self.root / ".canon/canon/snapshots"), "diff",
+                                            "--full-index", baseline, target, "--", "src/base.py"])
+        legacy = self.root / ".canon/review" / unit
+        legacy.mkdir(parents=True)
+        prompt = "Target: `git diff --full-index {} {} -- src/base.py`\n".format(short, target)
+        for name, value in {"baseline.txt": short, "snapshot.txt": target, "spec-snapshot.txt": target,
+                            "spec-prompt.md": prompt, "spec.md": "No findings.", "spec-id.txt": "reader"}.items():
+            (legacy / name).write_text(value + "\n")
+        dispositions = dict(reviewers=[dict(role="spec", model="model", id="reader")], findings=[], new_blockers=0)
+        self.assertIn("ended", self.trace("end", unit, "delivered", "--input", "-", "--dir", str(legacy),
+                                          stdin=json.dumps(dispositions)))
+        end = self.lines()[-1]
+        self.assertEqual(end.get("review_baseline"), baseline)
+        mirror = self.tmpdir()
+        self.git("init", "-q", str(mirror))
+        store = mirror / ".canon/canon/trace"
+        store.mkdir(parents=True)
+        self.git("clone", "-q", "--mirror", "--no-local", str(self.events.parent / ".git"), str(store / ".git"))
+        shutil.copy2(self.events, store)
+        shutil.copytree(self.events.parent / unit, store / unit)
+        self.assertEqual((store / unit / "baseline.txt").read_text(), short + "\n")
+        self.assertNotEqual(self.run_here("git", "-C", str(store), "cat-file", "-e", baseline).returncode, 0)
+
+        def offline():
+            script = Path(__file__).resolve().parents[1] / "scripts/trace_report.py"
+            output = subprocess.check_output([sys.executable, str(script), "--project", str(mirror),
+                                              "--cursor-home", str(self.config), "--codex-home", str(self.config),
+                                              "--json"], cwd=mirror)
+            return json.loads(output)["questions"]["9"]["units"][0]
+
+        replay = offline()
+        self.assertTrue(replay["eligible"], replay["reasons"])
+        self.assertEqual(replay["review_input"]["patch_sha256"], hashlib.sha256(expected).hexdigest())
+        (store / unit / "spec-prompt.md").write_text(prompt.replace(short, baseline[:8], 1))
+        self.assertFalse(offline()["eligible"])
 
     def test_unavailable_or_invalid_pins_leave_the_closed_review_unknown(self):
         target = self.tool("snapshot").stdout.strip()

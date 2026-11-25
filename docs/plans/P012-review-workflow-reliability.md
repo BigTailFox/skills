@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: in-progress
 created: 2026-11-25
 updated: 2026-11-25
 revision: 1
@@ -17,13 +17,13 @@ Implements [D007: Change tiers and the review gate](../designs/D007-change-tiers
 
 ## Current state
 
-Next: S1.
+Next: S2.
 
 ## Slices
 
 ### S1: Pin a fresh round and retain its review inputs
 
-Status: todo
+Status: done
 
 Risk: A cancelled reviewer can finish after its replacement starts. Git can resolve an abbreviation differently in another store.
 
@@ -64,3 +64,7 @@ The batch covers R007-F1 through F6, F8 and F10. Each has a separate acceptance 
 ## Log
 
 The plan covers one combined implementation and final code review.
+
+Started at bd5c4a937e1af59a68585f9feb53ed3e9ed7b13d.
+
+S1 — Canon 83 creates distinct round directories, binds prepared/live input and preserves verified short baselines for replay after the source disappears. Seven new CLI and replay cases and a real ambiguous-prefix fixture passed. Recovery keeps its original round and source identity. The coverage check in S2 can use the existing round declaration, pass list, pin and material-warning helpers, including in a checkout with tracing off. A numbered key identifies a separately requested pass when its ordinary role is already required.

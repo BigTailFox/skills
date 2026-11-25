@@ -20,7 +20,7 @@
 
 ### Plans
 
-- [P012: Reliable review rounds and evidence](plans/P012-review-workflow-reliability.md) · accepted · Eight review workflow corrections covering round ownership, evidence and waivers, confirmation findings and host recovery. · modules: canon
+- [P012: Reliable review rounds and evidence](plans/P012-review-workflow-reliability.md) · in-progress · Eight review workflow corrections covering round ownership, evidence and waivers, confirmation findings and host recovery. · modules: canon
 
 ### Reviews
 

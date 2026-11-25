@@ -93,6 +93,7 @@ def load_events(store, population):
                 if e["type"] in {"start", "end"}:
                     formats = {"conversation": identifier, "model": identifier, "snapshot": canon.full_oid,
                                "head": canon.full_oid, "base": canon.full_oid, "review_input": canon.full_oid,
+                               "review_baseline": canon.full_oid,
                                "manifest": lambda v: isinstance(v, str) and re.fullmatch(r"[0-9a-f]{64}", v)}
                     for key, valid in formats.items():
                         if e.get(key) is not None and not valid(e[key]):
