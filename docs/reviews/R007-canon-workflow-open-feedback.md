@@ -4,15 +4,15 @@ created: 2026-11-25
 updated: 2026-11-25
 revision: 1
 modules: [canon]
-summary: Twelve open field findings on plan tiers, review completion, approvals, trace evidence, worktree records, CLI queries and verification coverage.
-refs: [D001, D003, D006, D007, D010, C001, R005, R006]
+summary: Eight review workflow findings fixed. Four remain open on worktree retro records, multi-section queries and verification coverage.
+refs: [D001, D003, D006, D007, D010, C001, R005, R006, P012]
 ---
 
 # R007: Open Canon workflow feedback from Silk and Canon
 
 ## Scope
 
-This review consolidates the unresolved items in the November 24–25, 2026 field-feedback inventory from Silk and Canon. It assesses workflow correctness, usability, evidence retention and verification coverage against Canon `29a9e4b` (v0.9.4, canon 82), with Silk checked at `a52cc21`. The nine Silk skill reports were recorded against canon 81. Proposed changes below remain proposals; recording a finding approves no change to a design or workflow.
+This review consolidates the unresolved items in the November 24–25, 2026 field-feedback inventory from Silk and Canon. It assesses workflow correctness, usability, evidence retention and verification coverage against Canon `29a9e4b` (v0.9.4, canon 82), with Silk checked at `a52cc21`. The nine Silk skill reports were recorded against canon 81. The finding descriptions preserve the original reports. The table records their current dispositions.
 
 The [captured field evidence](R007/field-evidence.json) preserves nine original Silk skill records, seven relevant retro-note sections and three read-only trace-history results. It includes the source paths, source-file digests and repository commits. Source record numbers below identify the original lines of Silk's `.canon/canon-retro/skills.jsonl`; note names identify sections of the named repository's `.canon/canon-retro/notes.md`. Document IDs prefixed with Silk refer to that repository, not this one's designs and plans.
 
@@ -22,18 +22,20 @@ An `open` disposition means that an upstream decision, fix or verification-polic
 
 | ID | Severity | Finding | Disposition |
 |----|----------|---------|-------------|
-| R007-F1 | major | The first implementation plan for an unimplemented L2 design can be classified as L1. | open |
-| R007-F2 | major | New blockers introduced by fixes can prolong confirmation without a timely escalation. | open |
-| R007-F3 | minor | The approval instructions omit the required split between a plan and its follow-on design targets. | open |
-| R007-F4 | major | A short baseline hash silently prevents retention of the review input. | open |
-| R007-F5 | major | Restarting a gate in its existing directory can omit required evidence through the archive's modification-time filter. | open |
-| R007-F6 | minor | Confirmation-introduced blockers have no supported identity for their later targeted rechecks. | open |
+| R007-F1 | major | The first implementation plan for an unimplemented L2 design can be classified as L1. | fixed b1cffbb |
+| R007-F2 | major | New blockers introduced by fixes can prolong confirmation without a timely escalation. | fixed 821583c |
+| R007-F3 | minor | The approval instructions omit the required split between a plan and its follow-on design targets. | fixed b1cffbb |
+| R007-F4 | major | A short baseline hash silently prevents retention of the review input. | fixed d8b223a |
+| R007-F5 | major | Restarting a gate in its existing directory can omit required evidence through the archive's modification-time filter. | fixed 9594d9a |
+| R007-F6 | minor | Confirmation-introduced blockers have no supported identity for their later targeted rechecks. | fixed 9594d9a |
 | R007-F7 | major | Retro records have no shared storage rule for linked worktrees. | open |
-| R007-F8 | major | A missed background-review completion notification can leave a completed round waiting indefinitely. | open |
+| R007-F8 | major | A missed background-review completion notification can leave a completed round waiting indefinitely. | fixed 0fefb31 |
 | R007-F9 | minor | Reading several design sections requires one `show` invocation per section. | open |
-| R007-F10 | major | A completed Cursor report can fail local publication with EACCES. | open |
+| R007-F10 | major | A completed Cursor report can fail local publication with EACCES. | fixed 9594d9a |
 | R007-F11 | major | A Git marker in the default temporary root causes validation to skip outside-checkout tests. | open |
 | R007-F12 | major | Verification using newer toolchain headers misses violations of the oldest supported versions. | open |
+
+The eight fixed findings went through a single implementation plan and combined code review. [P012: Reliable review rounds and evidence](../archived/plans/P012-review-workflow-reliability.md)
 
 ### R007-F1 First implementation plan tier
 
@@ -81,7 +83,7 @@ The proposed follow-up is a shared main-checkout ledger, with an explicit fallba
 
 Silk skill record 29 and `cursor-parallel-review-launch-stall` report that a blocking command reviewer ran alongside a background Cursor Task. After the command returned, the parent waited for a completion notification that never arrived. The subagent's transcript already contained its finished report, but the chat remained silent for 16 minutes until the user intervened.
 
-The machine reviewer file now describes a parallel foreground tool batch on Cursor and checking the actual subagent result before yielding with a background reviewer outstanding. The portable instruction in `canon-blind-review` still asks for asynchronous host reviewers. Carry the host-capability distinction and a completion-recovery check into the shared workflow, consistent with [D003§external-review-progress: external review progress](../designs/D003-subagents.md#external-review-progress). The local mitigation has not closed that upstream request.
+The machine reviewer file now describes a parallel foreground tool batch on Cursor and checking the actual subagent result before yielding with a background reviewer outstanding. At intake, the portable instruction in `canon-blind-review` asked for asynchronous host reviewers. Carry the host-capability distinction and a completion-recovery check into the shared workflow, consistent with [D003§external-review-progress: external review progress](../designs/D003-subagents.md#external-review-progress). The shared fix and its verification are recorded [below](#r007-f8-and-r007-f10-recovery-verification).
 
 ### R007-F9 Batch section reads
 
@@ -89,9 +91,9 @@ Silk skill record 35 reports that supplying eight `ID#slug` arguments to `canon.
 
 ### R007-F10 Completed report publication failure
 
-Canon's `cursor-completed-report-publication` note remains `raised`. It records completed Cursor design and plan reviews on November 23, followed by two code-review confirmations on November 24, whose local launcher failed to publish the report with `EACCES` or errno 13. Each complete report was recovered from the original provider session and verified binding without another provider call.
+At intake, Canon's `cursor-completed-report-publication` note was `raised`. It records completed Cursor design and plan reviews on November 23, followed by two code-review confirmations on November 24, whose local launcher failed to publish the report with `EACCES` or errno 13. Each complete report was recovered from the original provider session and verified binding without another provider call.
 
-Keep this as a machine-launcher investigation under [D003§external-review-progress: external review progress](../designs/D003-subagents.md#external-review-progress). Establish which local write fails, fix publication through the installed entry point, and retain a regression case that recovers an already completed report without rerunning the reviewer. Manual recovery mitigates the incidents; the record contains no verified root-cause fix.
+Keep this as a machine-launcher investigation under [D003§external-review-progress: external review progress](../designs/D003-subagents.md#external-review-progress). Establish which local write fails, fix publication through the installed entry point, and retain a regression case that recovers an already completed report without rerunning the reviewer. Manual recovery mitigated each incident. The [verification below](#r007-f8-and-r007-f10-recovery-verification) records which failures the installed launcher now recovers and what the original logs established.
 
 ### R007-F11 Skipped outside-checkout tests
 
@@ -107,7 +109,7 @@ The remaining item is the verification-policy decision: add an explicit compile 
 
 ## Verification
 
-The inventory was checked against the captured source records, Canon v0.9.4's skill text and governing sections, the closed dispositions in R005/R006, and three live read-only `trace history` queries. It does not claim to reproduce the launcher failures, rerun the historical reviews or repeat the compatibility tests. Suggested severity reflects the remaining workflow impact; reported reviewer counts and elapsed times retain their source attribution.
+At intake, the inventory was checked against the captured source records, Canon v0.9.4's skill text and governing sections, the closed dispositions in R005/R006, and three live read-only `trace history` queries. The severity reflects the workflow impact at intake. The reviewer counts and elapsed times come from the original records.
 
 ### R007-F8 and R007-F10 recovery verification
 
