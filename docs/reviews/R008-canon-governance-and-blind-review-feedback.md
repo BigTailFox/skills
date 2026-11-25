@@ -41,6 +41,7 @@ The maintainer wants to understand how much rereading it takes to regain a clear
 | R008-F14 | major | Agents still transcribe verified review results and user decisions, maintain structured rows and reconstruct information already available to the CLI. Some documented formats also receive only partial validation. [Current coverage and suggested priorities](R008/cli-coverage.md) | open |
 | R008-F15 | major | Keep the first-round independence rules visible in `canon-blind-review`. Open recovery and later-round instructions at their triggers, and let the CLI prepare and check the review records. [Section-by-section blind-review assessment](R008/blind-review.md) | open |
 | R008-F16 | major | The maintainer wants to finish the simplification before 1.0 and is weighing a fresh repository against refactoring this one. [Repository choice](#r008-f16-repository-choice) | open |
+| R008-F17 | major | The maintainer finds blind review valuable but time-consuming. Tier largely follows the scope of the design change and gives too little weight to the complexity and scale of the change itself. [Blind review effort for a change](R008/workflow.md#blind-review-effort-for-a-change) | open |
 
 ### R008-F3 Core skill structure
 
