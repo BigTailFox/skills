@@ -34,7 +34,7 @@ The maintainer wants to understand how much rereading it takes to regain a clear
 | R008-F7 | minor | Does document maintenance need a separate manual `canon-sync` skill? The maintainer does not recall invoking it. | open |
 | R008-F8 | major | The maintainer proposes an optional `canon-trace` skill and mechanical activation so ordinary sessions can skip trace-specific checks and instructions. | open |
 | R008-F9 | minor | Move review evidence and the reviewer configuration example to the skills that use them. | open |
-| R008-F10 | major | The workflow reference has grown into another long entry point. Keep the next decision visible and put detailed procedures at the phase that needs them. | open |
+| R008-F10 | major | The workflow reference has grown into another long entry point. Keep the next decision visible and put detailed procedures at the phase that needs them. [Section-by-section assessment and CLI proposals](R008/workflow.md) | open |
 | R008-F11 | minor | Keep the writing guide useful as it grows. Its flat list mixes general editorial judgment with instructions for particular kinds of content. | open |
 
 ### R008-F3 Core skill structure
