@@ -1,6 +1,12 @@
-# Mechanical work still performed by agents
+# CLI responsibilities and packaging
 
 This assessment covers the three governance skills and Canon's blind-review procedure at `0fefb31` (CLI version 85). The CLI already creates numbered documents from templates, manages document status and archive moves, maintains indexes, refreshes embedded source, pins review inputs and checks reviewer coverage. The opportunities below concern the remaining work after a decision or result is available.
+
+## R008-F5 Standalone CLI package and runtime dependencies
+
+`canon.py` grew from 1,715 lines in `v0.1.0` to 6,325 at `d8b223a`. The skill ships the CLI as one Python file using only the standard library. [D000§dependencies: runtime dependencies](../../designs/D000-project-overview.md#dependencies)
+
+The maintainer proposes having the agent install the separately released package during `canon-init` using `uv` or a project virtual environment. Packaging would let the CLI declare dependencies such as `cyclopts` and `pydantic` when they improve its capabilities. An open design question is how a fresh checkout, a linked worktree and CI would obtain the CLI version that matches the project's pinned skills. [D004§install: project installation](../../designs/D004-project-setup.md#install)
 
 ## Operations worth addressing first
 
@@ -13,15 +19,6 @@ This assessment covers the three governance skills and Canon's blind-review proc
 | Add or resolve a known issue or review finding | `new` allocates the document ID. `check` parses the numbered rows and reports malformed fields. | Allocate the row's K or F number, render its columns, and update or remove the chosen row. For a design, create the Known issues section on the first entry and remove it with the last. The author supplies the claim, severity, source and disposition or next step. Adding R008-F14 itself required a hand-written table row. [D006§known-issues-findings-and-slices: row formats](../../designs/D006-doc-model.md#known-issues-findings-and-slices) |
 | Record plan progress | Canon reads slice statuses and checks conditions for archiving a plan. `status` acts on the whole document. | Apply one confirmed slice result to its `Status` line, Current state and Log together. Accept the evidence, next action or reason for pausing from the orchestrator. [Implementation](../../../skills/governance/canon/workflow.md#implementation) |
 
-## Format rules with partial validation
-
-The document model explicitly records two limits of `check`. For plans it checks a slice's `Status`, but skips the `S1: <name>` heading convention and the `Risk:` line. The heading form and the syntax of a declared risk are checkable. Whether a slice needs a risk entry takes judgment. For review findings it recognizes dispositions and checks the document ID in `fixed ID@rN`, but does not verify a `fixed <commit>` hash or that `declined` has a reason. It could check a commit against the available history and require text after `declined`. A reviewer evaluates the fix and its rationale. [D006§known-issues-findings-and-slices: validation limits](../../designs/D006-doc-model.md#known-issues-findings-and-slices)
-
-## Two small extensions to existing output
-
-- **Audit.** The CLI's `unchecked_commits` already computes the exact commits per design. `audit` prints their count and starting point. In this checkout it reported six for D005 and three for D009. A detail option could print those hashes directly. An agent still compares each change with the spec before recording reconciliation. [Maintenance](../../../skills/governance/canon/workflow.md#maintenance) · [Audit procedure](../../../skills/governance/canon-sync/SKILL.md#audit)
-- **Commit message.** `commit-template` already derives the required design IDs from the staged change, including the prior owner of a deleted file. The docs step asks the agent to add each plan the commit updated. Those plan IDs can also be derived from the staged documents. [Docs step](../../../skills/governance/canon/workflow.md#docs-step)
-
 ## Further opportunities by task
 
 - **Revisions and design splits.** Once the agent has identified a change of meaning and the correct base, the CLI could bump the revision once, record the as-built commit when applicable, or update a plan's `based_on` after its slices have been checked. `new D --parent` already creates the child design. After the author selects the topics, paths and issues to move, a tool could move that metadata, remap issue IDs and update unambiguous references. [As-built steps](../../../skills/governance/canon/as-built.md#steps) · [Designs](../../../skills/governance/canon/doc-types.md#designs-d)
@@ -30,3 +27,12 @@ The document model explicitly records two limits of `check`. For plans it checks
 - **Queries and format snippets.** The existing `show` accepts one section per invocation. Batched section reads are already tracked in R007. Once the author chooses a destination and target, the CLI could also render a relative document or section link, or an initial embed marker. `embed` already refreshes and checks existing blocks. [R007§r007-f9-batch-section-reads: batch reads](../R007-canon-workflow-open-feedback.md#r007-f9-batch-section-reads) · [Embedded source](../../../skills/governance/canon/SKILL.md#embedded-source)
 - **Worktree handoff.** Given the worktree and target branch, Git already supplies the branch, tip, target, ancestry and outstanding commit count. Canon could output that handoff information together. Which edits belong to which writer still requires context. [Concurrent work](../../../skills/governance/canon/SKILL.md#concurrent-work)
 - **Trace and reviewer routing.** For operations Canon already sees, it could read the trace switch and bind the unit to the round itself. Session-only events need a host signal. A structured reviewer configuration could also resolve the preference order and match an existing grant to the proposed call. The user grants access and the host or route enforces what the reviewer can actually receive. [Tracing](../../../skills/governance/canon/trace.md) · [Reviewer file](../../../skills/governance/canon/workflow.md#reviewer-file)
+
+## Format rules with partial validation
+
+The document model explicitly records two limits of `check`. For plans it checks a slice's `Status`, but skips the `S1: <name>` heading convention and the `Risk:` line. The heading form and the syntax of a declared risk are checkable. Whether a slice needs a risk entry takes judgment. For review findings it recognizes dispositions and checks the document ID in `fixed ID@rN`, but does not verify a `fixed <commit>` hash or that `declined` has a reason. It could check a commit against the available history and require text after `declined`. A reviewer evaluates the fix and its rationale. [D006§known-issues-findings-and-slices: validation limits](../../designs/D006-doc-model.md#known-issues-findings-and-slices)
+
+## Two small extensions to existing output
+
+- **Audit.** The CLI's `unchecked_commits` already computes the exact commits per design. `audit` prints their count and starting point. In this checkout it reported six for D005 and three for D009. A detail option could print those hashes directly. An agent still compares each change with the spec before recording reconciliation. [Maintenance](../../../skills/governance/canon/workflow.md#maintenance) · [Audit procedure](../../../skills/governance/canon-sync/SKILL.md#audit)
+- **Commit message.** `commit-template` already derives the required design IDs from the staged change, including the prior owner of a deleted file. The docs step asks the agent to add each plan the commit updated. Those plan IDs can also be derived from the staged documents. [Docs step](../../../skills/governance/canon/workflow.md#docs-step)

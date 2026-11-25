@@ -10,6 +10,13 @@ This assessment follows the nine sections and two subsections of `canon-blind-re
 
 The first two rules govern what can influence a verdict. The third lets the maintainer verify whose verdict was delivered about which change. Canon's prompt currently instructs reviewers to respect the reading and writing limits. Enforcing the actual context, permissions and accessible files requires the host or launcher. [D003§input-and-reports: reviewer inputs](../../designs/D003-subagents.md#input-and-reports) · [D007§checking-required-review-coverage: evidence](../../designs/D007-change-tiers.md#checking-required-review-coverage)
 
+For an ordinary second opinion, lead from the target to a neutral prompt, a fresh reviewer and its report. An interrupted dispatch points to recovery. An unavailable route points to manual fallback. A fix for an accepted major or blocker points to confirmation. [Review files](../../../skills/execution/canon-blind-review/SKILL.md#review-files) · [Confirmation](../../../skills/execution/canon-blind-review/SKILL.md#confirmation)
+
+## Review evidence and reviewer configuration
+
+- `review-evidence.md` serves two readers. Put round inputs, report coverage, confirmations and handoffs with `canon-blind-review`. Keep the shared record format and its validation in the CLI. Optional tracing can reuse the verified record and explain its own archive and replay. Coverage checks and review snapshots still serve the review when tracing is off. [D007§checking-required-review-coverage: review coverage](../../designs/D007-change-tiers.md#checking-required-review-coverage) · [D003§review-snapshots: snapshots](../../designs/D003-subagents.md#review-snapshots)
+- `reviewer-example.md` can live with `canon-blind-review`, which consumes the machine-local configuration. Point to that skill from `canon-init` when configuring a reviewer. A review reads the filled configuration.
+
 ## Current sections in reading order
 
 | Section | What the orchestrator needs and when | What the CLI or host can do |
@@ -25,5 +32,3 @@ The first two rules govern what can influence a verdict. The third lets the main
 | Confirmation | Read after accepted blockers or majors have been fixed. One scheduled round gives the original reviewer its claim, fix location and scoped diff. Credit the actual confirmer if an allowed delegate takes over. Open or new blockers go to the user before another fix or recheck. | `snapshot` captures the fixed tree. The CLI could prepare the diff from that reviewer's own input and render the prompt. The reviewer decides whether the fix resolves the claim. |
 | Targeted recheck | Read when the user requests a separate recheck. Revisit the named claim and preserve the first verdict alongside the later result. | For a recorded unit, `trace blocker` and `trace recheck` can append evidence after closure. The CLI could prepare the named claim and its diff before dispatch. |
 | Follow-up round | Read when a gate reviews a later revision. Keep its tier and criteria. Returning reviewers can assess changes to targets they covered in full. A finding confirmation covers its claim alone. Added targets need the missing full passes. A previously waived role needs a fresh independent read or a new scoped waiver. | `review start --kind follow-up` and `review check` already handle round inputs and declared coverage. The CLI could generate scoped diffs and prompts from the last verified baseline for each reviewer and path. |
-
-For an ordinary second opinion, lead from the target to a neutral prompt, a fresh reviewer and its report. An interrupted dispatch points to recovery. An unavailable route points to manual fallback. A fix for an accepted major or blocker points to confirmation. [Review files](../../../skills/execution/canon-blind-review/SKILL.md#review-files) · [Confirmation](../../../skills/execution/canon-blind-review/SKILL.md#confirmation)

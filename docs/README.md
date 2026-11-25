@@ -25,7 +25,7 @@
 ### Reviews
 
 - [R007: Open Canon workflow feedback from Silk and Canon](reviews/R007-canon-workflow-open-feedback.md) · open · Twelve open field findings on plan tiers, review completion, approvals, trace evidence, worktree records, CLI queries and verification coverage. · modules: canon
-- [R008: Maintainer feedback on Canon governance and blind review](reviews/R008-canon-governance-and-blind-review-feedback.md) · open · Maintainer feedback on the core skill, document formats, concurrent work, workflow and writing, blind review, tracing, CLI packaging and canon-sync. · modules: canon
+- [R008: Maintainer feedback on Canon governance and blind review](reviews/R008-canon-governance-and-blind-review-feedback.md) · open · Canon 1.0 feedback on maintainer control, workflow and blind review, CLI responsibilities and packaging, skill boundaries and core guidance. · modules: canon
 
 ### Experiments
 

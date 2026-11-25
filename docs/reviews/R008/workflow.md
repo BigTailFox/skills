@@ -1,6 +1,34 @@
 # Decisions and procedures in the Canon workflow
 
-At `0fefb31`, the workflow has nine top-level sections. The proposed short guide would let the maintainer trace a change from tier selection to delivery and see where a decision returns to them. The table follows the current file order. [Workflow](../../../skills/governance/canon/workflow.md)
+The proposed short guide follows a change from tier selection to delivery and shows where a decision returns to the maintainer. [D007§change-tiers: change tiers](../../designs/D007-change-tiers.md#change-tiers)
+
+## Detail in concepts, designs and plans
+
+- **Concept (C).** Describe the problem, possible directions and open questions in enough detail to choose what to pursue. For the CLI, this could explore whether packaging it would make the growing tool easier to maintain.
+- **Design (D).** Specify the lasting behavior, interfaces and constraints precisely enough to judge any implementation. For a packaged CLI, the design would settle whether existing projects can keep invoking `scripts/canon.py`.
+- **Plan (P).** Describe how this change will deliver the design, including dependencies, intermediate checks and recovery where needed. If the design promises compatibility, the plan can schedule publishing the package before switching callers and test the original CI command in a project upgrading from 0.9.4. Switching callers before the package is available can break that rollout even when the design is sound.
+
+Implementation choices left open by both documents belong to the implementer. When planning uncovers a choice that would change a lasting promise, take that choice back to the design. Record lasting details settled within its scope when reconciling the design after implementation. [D006§doc-types: document responsibilities](../../designs/D006-doc-model.md#doc-types) · [Docs step](../../../skills/governance/canon/workflow.md#docs-step)
+
+## Blind review effort for a change
+
+Splitting a design into sub-designs with its meaning intact requires an L1 gate. A difficult race fix that restores specified behavior in one module can qualify as L0. A full L2 change with implementation waits for design, plan and code reviews in sequence. First-round reviewers within each stage already run in parallel. [D007§choosing-a-tier: choosing a tier](../../designs/D007-change-tiers.md#choosing-a-tier) · [Change flows](../../../skills/governance/canon/workflow.md#flows) · [Code review](../../../skills/governance/canon/workflow.md#code-review)
+
+For 1.0, the review recommends retaining an independent review of a formal plan before implementation. The design and plan gates both ask whether a fresh agent could implement the change from the document and its links. Give each document its own completeness question. Can a reader tell whether an implementation satisfies the design? Can another session carry out the plan and verify the result? The reviewer assesses the plan against the design revision it names and can flag a gap that makes it impossible to deliver. Both questions can be assessed in one round. [Joint design and plan review](#joint-design-and-plan-review) · [D007§reviewer-prompt: review criteria](../../designs/D007-change-tiers.md#reviewer-prompt)
+
+Tiers can continue to determine which documents change and where approval belongs. In L2 the user receives the independent findings before approving the plan. The user or agent can request a focused blind review at any tier.
+
+## Joint design and plan review
+
+When writing P prompts a revision to an existing D for the same change, the maintainer's practice is to draft them separately and send them to blind review together. The review recommends this as the 1.0 default for that case. Give fresh reviewers one snapshot naming both revisions and record who assessed each. Ask for a verdict on D's commitments and a verdict on whether P delivers the exact D revision in `based_on`. Unchanged designs supply context. At L2 the user could approve both revisions in one response or approve D and hold P. A sequencing error can be fixed in P alone. Hold P while its governing design revision is unsettled. If D changes, recheck the dependent steps and align `based_on` before accepting P.
+
+Review D first when the user explicitly reserves the decision to start planning. A separate design round also makes sense when choosing a design would replace most of the plan. For example, distributing the CLI with the skills and publishing it independently call for different release and installation steps. Sketching those options can help the user decide how to proceed. Once the distribution route is settled, a compatibility promise that emerges while planning the upgrade can be reviewed alongside the steps that deliver it.
+
+Canon requires a plan to pass its own gate after the designs it uses. The CLI creates a formal plan from an accepted or active design, and each L2 plan approval record covers its plan alone. The proposal would let one round supply evidence for both documents' separate records. Creating a first formal P alongside a brand-new draft D would also require changing the plan creation rule. [D007§review-gate: gate order](../../designs/D007-change-tiers.md#review-gate) · [D007§pending-l2-approvals: approval records](../../designs/D007-change-tiers.md#pending-l2-approvals) · [D006§doc-types: plan creation](../../designs/D006-doc-model.md#doc-types)
+
+## Workflow section assessment
+
+At `0fefb31`, the workflow has nine top-level sections. The table follows the current file order. [Workflow](../../../skills/governance/canon/workflow.md)
 
 | Current section | What to keep on the main path | Where the procedure belongs | CLI today or proposed |
 | --- | --- | --- | --- |
@@ -14,36 +42,12 @@ At `0fefb31`, the workflow has nine top-level sections. The proposed short guide
 | Docs step | Compare the delivered change with its governing design before committing. Record details the implementation settled. Report a conflict to the user. A change of meaning needs a reviewed revision. | Keep one governance reference reached at delivery and from on-demand reconciliation. It covers changes to designs, D000, plans, issues and user-facing docs. | `affected` and `which` find candidates. `check --fix`, `status`, `archive` and `commit-template` handle mechanical edits or checks. Deciding that the code fulfills a spec or resolves an issue requires reading the change. |
 | Maintenance | A separate maintenance entry is enough. The current policy calls for an audit before large tasks and periodically. | Route reported items to reconciliation when needed. An agent compares the flagged commits with the design before recording `Reconciled:`. | `audit` already reports unchecked commits, known issues, idle docs and due reviews. Its output could link each item to its next action. |
 
-## The five review gate subsections
+Two current costs are visible at the policy level. Every L0 code change gets two reviewers and each implementation slice gets a fresh worker. Moving their operating instructions into skills preserves those costs. Relaxing either default would be a separate decision for the maintainer. [Code review](../../../skills/governance/canon/workflow.md#code-review) · [Implementation](../../../skills/governance/canon/workflow.md#implementation)
+
+### The five review gate subsections
 
 - **Pending reviews.** A missing required report leaves the gate open. In L1 the user may withdraw an extra review request. In L2 only the user can waive an unavailable cross-family pass for named design or plan revisions. An L2 code review waits for the report. The CLI already identifies missing coverage and checks the scope of a recorded exception. It could generate the pending handoff from the round. [Pending reviews](../../../skills/governance/canon/workflow.md#pending-reviews)
 - **Target coverage.** New targets need their own required coverage. A confirmation covers the finding it checked. Blind review supplies evidence of what each reviewer assessed. The CLI already checks those assignments against exact revisions. [Target coverage](../../../skills/governance/canon/workflow.md#target-coverage)
 - **Reviewer prompt.** Keep the review criteria with blind review. The CLI could fill in the target paths, revisions, baseline and as-built mode when preparing the prompt. The reviewer assesses feasibility, consistency and completeness. [Reviewer prompt](../../../skills/governance/canon/workflow.md#reviewer-prompt)
 - **Follow-up round.** A later edit that changes meaning needs review again. Blind review handles which reviewers and baselines apply. The CLI already pins snapshots and checks coverage. The agent judges whether the meaning or tier changed. [Follow-up round](../../../skills/governance/canon/workflow.md#follow-up-round)
 - **Gate status.** L1 drafts can be accepted after review. L2 approval is scoped to reviewed revisions. Starting the next phase approves only the revisions it uses. The existing `approvals` command tracks the pending set and `status` checks transitions. A proposed completion operation would write `reviewed` and `reviewers` from a successful coverage check. Applying approval would separately require a user decision matching the exact revisions. [Gate status](../../../skills/governance/canon/workflow.md#gate-status)
-
-Two current costs are visible at the policy level. Every L0 code change gets two reviewers and each implementation slice gets a fresh worker. Moving their operating instructions into skills preserves those costs. Relaxing either default would be a separate decision for the maintainer. [Code review](../../../skills/governance/canon/workflow.md#code-review) · [Implementation](../../../skills/governance/canon/workflow.md#implementation)
-
-## Blind review effort for a change
-
-Splitting a design into sub-designs with its meaning intact requires an L1 gate. A difficult race fix that restores specified behavior in one module can qualify as L0. A full L2 change with implementation waits for design, plan and code reviews in sequence. First-round reviewers within each stage already run in parallel. [D007§choosing-a-tier: choosing a tier](../../designs/D007-change-tiers.md#choosing-a-tier) · [Change flows](../../../skills/governance/canon/workflow.md#flows) · [Code review](../../../skills/governance/canon/workflow.md#code-review)
-
-For 1.0, the review recommends retaining an independent review of a formal plan before implementation. The design and plan gates both ask whether a fresh agent could implement the change from the document and its links. Give each document its own completeness question. Can a reader tell whether an implementation satisfies the design? Can another session carry out the plan and verify the result? The reviewer assesses the plan against the design revision it names and can flag a gap that makes it impossible to deliver. Both questions can be assessed in one round. [Joint design and plan review](#joint-design-and-plan-review) · [D007§reviewer-prompt: review criteria](../../designs/D007-change-tiers.md#reviewer-prompt)
-
-Tiers can continue to determine which documents change and where approval belongs. In L2 the user receives the independent findings before approving the plan. The user or agent can request a focused blind review at any tier.
-
-## Detail in concepts, designs and plans
-
-- **Concept (C).** Describe the problem, possible directions and open questions in enough detail to choose what to pursue. For the CLI, this could explore whether packaging it would make the growing tool easier to maintain.
-- **Design (D).** Specify the lasting behavior, interfaces and constraints precisely enough to judge any implementation. For a packaged CLI, the design would settle whether existing projects can keep invoking `scripts/canon.py`.
-- **Plan (P).** Describe how this change will deliver the design, including dependencies, intermediate checks and recovery where needed. If the design promises compatibility, the plan can schedule publishing the package before switching callers and test the original CI command in a project upgrading from 0.9.4. Switching callers before the package is available can break that rollout even when the design is sound.
-
-Implementation choices left open by both documents belong to the implementer. When planning uncovers a choice that would change a lasting promise, take that choice back to the design. Record lasting details settled within its scope when reconciling the design after implementation. [D006§doc-types: document responsibilities](../../designs/D006-doc-model.md#doc-types) · [Docs step](../../../skills/governance/canon/workflow.md#docs-step)
-
-## Joint design and plan review
-
-When writing P prompts a revision to an existing D for the same change, the maintainer's practice is to draft them separately and send them to blind review together. The review recommends this as the 1.0 default for that case. Give fresh reviewers one snapshot naming both revisions and record who assessed each. Ask for a verdict on D's commitments and a verdict on whether P delivers the exact D revision in `based_on`. Unchanged designs supply context. At L2 the user could approve both revisions in one response or approve D and hold P. A sequencing error can be fixed in P alone. Hold P while its governing design revision is unsettled. If D changes, recheck the dependent steps and align `based_on` before accepting P.
-
-Review D first when the user explicitly reserves the decision to start planning. A separate design round also makes sense when choosing a design would replace most of the plan. For example, distributing the CLI with the skills and publishing it independently call for different release and installation steps. Sketching those options can help the user decide how to proceed. Once the distribution route is settled, a compatibility promise that emerges while planning the upgrade can be reviewed alongside the steps that deliver it.
-
-Canon requires a plan to pass its own gate after the designs it uses. The CLI creates a formal plan from an accepted or active design, and each L2 plan approval record covers its plan alone. The proposal would let one round supply evidence for both documents' separate records. Creating a first formal P alongside a brand-new draft D would also require changing the plan creation rule. [D007§review-gate: gate order](../../designs/D007-change-tiers.md#review-gate) · [D007§pending-l2-approvals: approval records](../../designs/D007-change-tiers.md#pending-l2-approvals) · [D006§doc-types: plan creation](../../designs/D006-doc-model.md#doc-types)
