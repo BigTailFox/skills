@@ -4,14 +4,14 @@ created: 2026-10-22
 updated: 2026-11-25
 revision: 12
 modules: [canon]
-summary: D000 overview, as-built designs of existing code, backfill before changing unspecified behavior, and audit's unchecked commits and design coverage.
+summary: D000, as-built design backfill, design coverage and unchecked commits in audit, staged commit templates and per-commit design reference checks.
 refs: [D001, D006, D007, D009, R003, D010, D004, E006]
 owns: [project-overview, as-built-design, design-coverage, unchecked-commits]
 paths: [skills/governance/canon/as-built.md, skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, skills/governance/canon/doc-types.md, skills/governance/canon-init/SKILL.md, skills/governance/canon-sync/SKILL.md, skills/execution/canon-design/SKILL.md, skills/execution/canon-plan/SKILL.md, skills/execution/canon-implement/SKILL.md, skills/execution/canon-code-review/SKILL.md, skills/execution/canon-review/SKILL.md, skills/execution/canon-review/architecture.md, tests/test_canon.py]
 reviewed: 12
 reviewers: [gpt-6.2-astra]
 approved: 10
-implemented: 11
+implemented: 12
 ---
 
 # D002: Project overview and as-built designs

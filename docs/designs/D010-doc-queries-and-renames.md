@@ -11,7 +11,7 @@ paths: [skills/governance/canon/scripts/canon.py, skills/governance/canon/SKILL.
 reviewed: 9
 reviewers: [gpt-6.2-astra]
 approved: 8
-implemented: 8
+implemented: 9
 ---
 
 # D010: Doc queries and renames

@@ -11,7 +11,7 @@ paths: [skills/governance/canon/scripts/canon.py, tests/test_canon.py, skills/go
 reviewed: 9
 reviewers: [gpt-6.2-astra]
 approved: 7
-implemented: 8
+implemented: 9
 ---
 
 # D004: Project setup

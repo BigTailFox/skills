@@ -11,7 +11,7 @@ paths: [skills/governance/canon/SKILL.md, skills/governance/canon/workflow.md, s
 reviewed: 11
 reviewers: [gpt-6.2-astra]
 approved: 9
-implemented: 10
+implemented: 11
 ---
 
 # D007: Change tiers and the review gate
@@ -196,7 +196,7 @@ Each L2 gate keeps its own worktree-local record, including when tracing is off.
 
 ## Decisions
 
-- Silk's scaffold review treated five accepted designs as one delivery, and a mixed follow-up repeated about 250 lines of earlier review. Keeping the task boundary when disposing findings and selecting the baseline by reviewer and target address both failures. [R006: Silk review scope and commit checks](../reviews/R006-silk-review-scope-and-commit-checks.md)
+- Silk's scaffold review treated five accepted designs as one delivery, and a mixed follow-up repeated about 250 lines of earlier review. Keeping the task boundary when disposing findings and selecting the baseline by reviewer and target address both failures. [R006: Silk review scope and commit checks](../archived/reviews/R006-silk-review-scope-and-commit-checks.md)
 
 - The user can grant a scoped exception after the independent route is exhausted. A Silk gate retained seven confirmed fixes after two HTTP 429 responses, and a later target in another gate was credited to reviewers who had not read it. [R004: Silk feedback](../archived/reviews/R004-silk-canon-field-feedback.md)
 

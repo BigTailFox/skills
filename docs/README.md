@@ -6,7 +6,7 @@
 
 - [D000: Project overview](designs/D000-project-overview.md) · active · Agent skills built around canon, a documentation system kept in the repository; one module, its capabilities and the designs that own them. · owns: architecture
 - [D001: Skill telemetry with canon trace](designs/D001-skill-telemetry.md) · active · Opt-in tracing of canon workflows with canon.py trace, repo snapshots for replay, review dispositions and offline analysis of nine questions. · owns: skill-telemetry · modules: canon
-- [D002: Project overview and as-built designs](designs/D002-overview-and-as-built.md) · active · D000 overview, as-built designs of existing code, backfill before changing unspecified behavior, and audit's unchecked commits and design coverage. · owns: project-overview, as-built-design, design-coverage, unchecked-commits · modules: canon
+- [D002: Project overview and as-built designs](designs/D002-overview-and-as-built.md) · active · D000, as-built design backfill, design coverage and unchecked commits in audit, staged commit templates and per-commit design reference checks. · owns: project-overview, as-built-design, design-coverage, unchecked-commits · modules: canon
 - [D003: Subagents](designs/D003-subagents.md) · active · How canon runs every subagent as a new one, never a fork, reviewers and workers on the session's model, resumed by id, review snapshots, the reviewer file. · owns: subagents · modules: canon
 - [D004: Project setup](designs/D004-project-setup.md) · active · canon installed in each project and its recorded version, setup and upgrades with canon.py init, migration of docs with adopt, and the canon-init flows. · owns: project-setup · modules: canon
 - [D005: Docs index](designs/D005-docs-index.md) · active · The generated doc index of each docs root in README.md and archived/README.md, its markers and format, regenerating or staging it, and check's index errors. · owns: docs-index · modules: canon
@@ -18,10 +18,6 @@
 - [D011: Source code embedded in docs](designs/D011-embedded-source.md) · active · Embed a repository source file or a named region in Markdown, regenerate its fenced code block and check it against the same Git tree as the document. · owns: source-embeds · modules: canon
 - [D012: Paired replay of Canon workflows](designs/D012-workflow-replay.md) · active · Restore one verified unit, compare two skill suites on paired headless runs, and blind the scoring of review findings, slice outcomes and costs. · owns: workflow-replay · modules: canon
 
-### Reviews
-
-- [R006: Silk feedback on review scope and commit checks](reviews/R006-silk-review-scope-and-commit-checks.md) · open · Silk reported repeated review work, scope expansion in design and scaffold reviews, and a CI gap for required commit trailers. · modules: canon
-
 ### Experiments
 
 - [E001: Precedence of project and user skills across hosts](experiments/E001-skill-scope-precedence.md) · concluded · Same-name user and project skills load both in Cursor and Codex, told apart by path; Claude Code runs the user's. npx skills project installs reach all three. · modules: canon
@@ -29,7 +25,7 @@
 - [E003: D001 trace pilot on Canon and Silk](experiments/E003-d001-trace-pilot.md) · concluded · A 20-case Canon and Silk pilot found gaps in replay inputs, finding attribution, Cursor transcripts and worker boundaries before trace analysis. · modules: canon
 - [E004: D001 review input revalidation](experiments/E004-d001-review-input-revalidation.md) · concluded · All three recovered review inputs survived an independent trace clone. Three other pilot criteria still fail on the frozen Canon and Silk cohort. · modules: canon
 - [E005: D001 pilot evidence reconciliation](experiments/E005-d001-pilot-evidence-reconciliation.md) · concluded · Reconcile review attribution, Cursor anchors and worker chronology for the frozen Canon and Silk pilot and two preselected Codex slices. · modules: canon
-- [E006: Design references in recent Canon and Silk commits](experiments/E006-refs-trailer-trial.md) · answered · Of 60 sampled commits, six touched governed paths. One omitted Refs entirely and two cited some of the designs governing shared files. · modules: canon
+- [E006: Design references in recent Canon and Silk commits](experiments/E006-refs-trailer-trial.md) · concluded · Of 60 sampled commits, six touched governed paths. One omitted Refs entirely and two cited some of the designs governing shared files. · modules: canon
 
 ### Concepts
 
