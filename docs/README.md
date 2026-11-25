@@ -18,6 +18,10 @@
 - [D011: Source code embedded in docs](designs/D011-embedded-source.md) · active · Embed a repository source file or a named region in Markdown, regenerate its fenced code block and check it against the same Git tree as the document. · owns: source-embeds · modules: canon
 - [D012: Paired replay of Canon workflows](designs/D012-workflow-replay.md) · active · Restore one verified unit, compare two skill suites on paired headless runs, and blind the scoring of review findings, slice outcomes and costs. · owns: workflow-replay · modules: canon
 
+### Reviews
+
+- [R007: Open Canon workflow feedback from Silk and Canon](reviews/R007-canon-workflow-open-feedback.md) · open · Twelve open field findings on plan tiers, review completion, approvals, trace evidence, worktree records, CLI queries and verification coverage. · modules: canon
+
 ### Experiments
 
 - [E001: Precedence of project and user skills across hosts](experiments/E001-skill-scope-precedence.md) · concluded · Same-name user and project skills load both in Cursor and Codex, told apart by path; Claude Code runs the user's. npx skills project installs reach all three. · modules: canon
