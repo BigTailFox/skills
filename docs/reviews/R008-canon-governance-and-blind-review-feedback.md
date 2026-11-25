@@ -43,6 +43,7 @@ The maintainer wants to understand how much rereading it takes to regain a clear
 | R008-F16 | major | The maintainer wants to finish the simplification before 1.0 and is weighing a fresh repository against refactoring this one. [Repository choice](#r008-f16-repository-choice) | open |
 | R008-F17 | major | The maintainer values blind review and finds it time-consuming. Tier mostly reflects design scope. The complexity and scale of the change itself matter, and its difficulty is hard to judge up front. [Blind review effort for a change](R008/workflow.md#blind-review-effort-for-a-change) | open |
 | R008-F18 | major | The maintainer wants a clear boundary for detail in concepts, designs and plans. Skipping plan review would push delivery decisions into the design to get independent scrutiny before implementation. [Detail in concepts, designs and plans](R008/workflow.md#detail-in-concepts-designs-and-plans) | open |
+| R008-F19 | major | The maintainer has found it effective to review a plan together with the design revisions made while writing it and proposes one blind round for that case. [Joint design and plan review](R008/workflow.md#joint-design-and-plan-review) | open |
 
 ### R008-F3 Core skill structure
 
