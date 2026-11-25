@@ -1,8 +1,8 @@
 ---
 status: draft
 created: 2026-11-05
-updated: 2026-11-24
-revision: 14
+updated: 2026-11-25
+revision: 15
 modules: [canon]
 summary: Ideas for the canon module that no design tracks yet, from codebase reviews and deferred findings.
 refs: [D001, D002, D003, D004, D005, D006, D007, D008, R001, R003, D000, D009, E002, P008]
@@ -22,6 +22,7 @@ The template and Setup checks from **Research and runs in `E` docs** are impleme
 
 ## Ideas
 
+- **Change tiers and implementation complexity** (the user, 2026-11-25). Choose the tier by how the change affects the design and who has authority to approve it. Use the task's complexity to decide how to divide, sequence and verify the work. Where the tier leaves a separate plan optional, write one when dependencies or uncertainty justify it. [D007§change-tiers: change tiers](../designs/D007-change-tiers.md#change-tiers)
 - **Skills outside canon projects** ([R001: Codebase review of the canon module](../archived/reviews/R001-canon-module.md), F13). A user install of canon writes no docs, since `canon.py` runs only from an install inside the project ([D004§install: install](../designs/D004-project-setup.md#install)), but its auto skills still trigger on generic requests in any repository, and once one runs `canon.py` the agent offers to install canon in a project that never chose it. Where canon is installed but `AGENTS.md` has no canon block, as before `/canon-init`, `new` and `adopt` still create docs and regenerate the index. Scope each auto trigger to projects whose `AGENTS.md` has the canon block with a fallback to the skill's plain discipline, and make `new` and `adopt` refuse without the block. A new topic: `/canon-design`.
 - **A design for skill layout and invocation** (R001-F10, F11). AGENTS.md's Skill rules, `agents/openai.yaml` and the trigger modes have no design; neither do the contracts other skills execute: `canon-tdd`'s definition of done and `canon-code-review/smells.md`. Backfill them before they next change; `scripts/validate.py`, which checks the Skill rules, is tooling and needs no backfill ([D000§decisions: decisions](../designs/D000-project-overview.md#decisions)). `canon-review/security.md` counts as a project doc by its name, so the design that takes on `canon-review` lists its exact path. Two practices of popular skill libraries bear on the Skill rules it would state ([E002§conclusion: E002](../experiments/E002-skill-library-survey.md#conclusion), item 2): an auto description that holds only its purpose, triggers and exclusions, since obra/superpowers and mattpocock/skills each report an agent acting on a description's workflow summary instead of reading the skill, and canon's auto descriptions end with one; and trigger tests, a deterministic `validate.py` check that ranks each auto description against prompts that should and should not load it and flags descriptions that collide, plus model-run tests per host on held-out prompts.
 - **One place for closing a workflow** (R001-F5). The retro end-check paragraph is copied into seven skills and the rule for routing a deferred finding into six; one section in `workflow.md` and one rule beside the known-issue format would replace them.
