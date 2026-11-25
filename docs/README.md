@@ -20,7 +20,7 @@
 
 ### Reviews
 
-- [R007: Open Canon workflow feedback from Silk and Canon](reviews/R007-canon-workflow-open-feedback.md) · open · Eight review workflow findings fixed. Four remain open on worktree retro records, multi-section queries and verification coverage. · modules: canon
+- [R007: Open Canon workflow feedback from Silk and Canon](reviews/R007-canon-workflow-open-feedback.md) · open · Eight findings fixed. Seven open on review decisions and documentation, worktree retro records, multi-section queries and verification coverage. · modules: canon
 
 ### Experiments
 
