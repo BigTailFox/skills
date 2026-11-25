@@ -5,7 +5,7 @@ updated: 2026-11-25
 revision: 1
 modules: [canon]
 summary: Maintainer feedback on workflow changes, progressive disclosure, agent discretion, concise skills, CLI enforcement and standalone CLI packaging.
-refs: [D000, D004, D007]
+refs: [D000, D002, D004, D007]
 ---
 
 # R008: Maintainer feedback on Canon governance and blind review
@@ -30,6 +30,7 @@ The maintainer wants to understand how much rereading it takes to regain a clear
 | R008-F3 | major | Keep the core `SKILL.md` as a concise overview. Each section should link to the dedicated document that owns its detailed rules. | open |
 | R008-F4 | minor | Remove the command catalogue from the core skill. Give the agent the command to run and let the CLI explain usage and next steps through help, results and errors. | open |
 | R008-F5 | major | Split `canon.py` into modules, publish the CLI as a Python package and let it declare third-party runtime dependencies. | open |
+| R008-F6 | minor | Keep Reading docs short. Point the agent from each reading question to the document, section or query that answers it. | open |
 
 ### R008-F4 Tool section of the core skill
 
@@ -43,6 +44,21 @@ The proposed Tool text uses the standalone `canon` command discussed in R008-F5.
 Canon provides a CLI to enforce all mechanical rules of the workflow. Each workflow skill names the commands to run at the steps that use them. If the CLI is missing, follow the [setup instructions](init.md).
 
 Use `canon --help` to list commands and their descriptions. Use `canon <command> --help` for a command's usage and options.
+```
+
+### R008-F6 Reading docs section of the core skill
+
+The draft uses Canon's reserved project overview ID, D000. [D002§project-overview-d000: project overview](../designs/D002-overview-and-as-built.md#project-overview-d000)
+
+```markdown
+## Reading docs
+
+D000 is the project overview. It describes capabilities, module boundaries and dependencies, and defines shared terms in its glossary.
+
+- `canon which <file>` lists the designs that govern a file.
+- `canon show ID` prints a document's frontmatter and section outline. `canon show ID#slug` prints the selected section.
+- `canon show D00X#known-issues` shows a design's outstanding issues or reports that it has none.
+- `canon find <words>` searches by topic. Consult `docs/archived/` only when researching history, using `canon find --archived <words>` to include it in a search.
 ```
 
 ### R008-F5 Standalone CLI package and runtime dependencies
