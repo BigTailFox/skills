@@ -4,8 +4,8 @@ created: 2026-11-25
 updated: 2026-11-25
 revision: 1
 modules: [canon]
-summary: Maintainer feedback on workflow changes, progressive disclosure, agent discretion, CLI enforcement and concise skill text.
-refs: [D007]
+summary: Maintainer feedback on workflow changes, progressive disclosure, agent discretion, concise skills, CLI enforcement and standalone CLI packaging.
+refs: [D000, D004, D007]
 ---
 
 # R008: Maintainer feedback on Canon governance and blind review
@@ -29,5 +29,12 @@ The maintainer wants to understand how much rereading it takes to regain a clear
 | R008-F2 | major | After a series of small fixes, the maintainer wants to see how the overall workflow compares with their original intent, especially what an agent can decide and what comes back to them. [D007§change-tiers: change tiers](../designs/D007-change-tiers.md#change-tiers) | open |
 | R008-F3 | major | The core skill reads like a general introduction. Keep frequently needed guidance at the entry point and surface initialization details when setting up a project. | open |
 | R008-F4 | minor | Remove the command catalogue from the core skill. Give the agent the command to run and let the CLI explain usage and next steps through help, results and errors. | open |
+| R008-F5 | major | Split `canon.py` into modules, publish the CLI as a Python package and let it declare third-party runtime dependencies. | open |
 
 The maintainer expects agents to encounter the core skill frequently because its trigger includes projects whose `AGENTS.md` declares Canon. Its Tool section opens with installation instructions and then describes individual commands. For example, both the command table and `canon.py check -h` explain how to check staged changes. [Core skill and command table](../../skills/governance/canon/SKILL.md#tool)
+
+### R008-F5 Standalone CLI package and runtime dependencies
+
+`canon.py` grew from 1,715 lines in `v0.1.0` to 6,325 at `d8b223a`. The skill ships the CLI as one Python file using only the standard library. [D000§dependencies: runtime dependencies](../designs/D000-project-overview.md#dependencies)
+
+The maintainer proposes having the agent install the separately released package during `canon-init` using `uv` or a project virtual environment. Packaging would let the CLI declare dependencies such as `cyclopts` and `pydantic` when they improve its capabilities. An open design question is how a fresh checkout, a linked worktree and CI would obtain the CLI version that matches the project's pinned skills. [D004§install: project installation](../designs/D004-project-setup.md#install)
