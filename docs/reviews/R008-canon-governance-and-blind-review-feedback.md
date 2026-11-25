@@ -40,6 +40,7 @@ The maintainer wants to understand how much rereading it takes to regain a clear
 | R008-F13 | minor | List document types by purpose in the core skill. The maintainer proposes one format reference for per-type structure, frontmatter and embedded source. | open |
 | R008-F14 | major | Agents still transcribe verified review results and user decisions, maintain structured rows and reconstruct information already available to the CLI. Some documented formats also receive only partial validation. [Current coverage and suggested priorities](R008/cli-coverage.md) | open |
 | R008-F15 | major | Keep the first-round independence rules visible in `canon-blind-review`. Open recovery and later-round instructions at their triggers, and let the CLI prepare and check the review records. [Section-by-section blind-review assessment](R008/blind-review.md) | open |
+| R008-F16 | major | The maintainer wants to finish the simplification before 1.0 and is weighing a fresh repository against refactoring this one. [Repository choice](#r008-f16-repository-choice) | open |
 
 ### R008-F3 Core skill structure
 
@@ -85,6 +86,12 @@ D000 is the project overview. It describes capabilities, module boundaries and d
 `canon.py` grew from 1,715 lines in `v0.1.0` to 6,325 at `d8b223a`. The skill ships the CLI as one Python file using only the standard library. [D000§dependencies: runtime dependencies](../designs/D000-project-overview.md#dependencies)
 
 The maintainer proposes having the agent install the separately released package during `canon-init` using `uv` or a project virtual environment. Packaging would let the CLI declare dependencies such as `cyclopts` and `pydantic` when they improve its capabilities. An open design question is how a fresh checkout, a linked worktree and CI would obtain the CLI version that matches the project's pinned skills. [D004§install: project installation](../designs/D004-project-setup.md#install)
+
+### R008-F16 Repository choice
+
+The review recommends developing 1.0 on a branch of `BigTailFox/skills`. Projects already pin releases from this repository in `skills-lock.json`. A Python CLI package can ship from the same tree, so a command, the skill that calls it and the regression tests can change together. A separate CLI repository would be worth revisiting if other tools start using the CLI and need a different release schedule. [D004§install: installation and pinning](../designs/D004-project-setup.md#install)
+
+Start with a one-page account of a routine fix and an L2 design. Show what the agent decides, what the CLI checks, how the reviewers work independently and where the user approves. Use that account to choose which existing rules and regression cases to carry forward. Before 1.0, try both a fresh installation and an upgrade of a project pinned to `v0.9.4` with existing document IDs and links to resolve.
 
 ### R008-F7 Role of canon-sync
 
