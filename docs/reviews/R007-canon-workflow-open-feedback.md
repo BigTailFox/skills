@@ -4,7 +4,7 @@ created: 2026-11-25
 updated: 2026-11-25
 revision: 1
 modules: [canon]
-summary: Eight findings fixed. Seven open on review decisions and documentation, worktree retro records, multi-section queries and verification coverage.
+summary: Nine findings fixed. Six open on review decisions and documentation, worktree retro records, multi-section queries and verification coverage.
 refs: [D001, D003, D006, D007, D009, D010, C001, R004, R005, R006, P012]
 ---
 
@@ -34,7 +34,7 @@ An `open` disposition means that an upstream decision, fix or verification-polic
 | R007-F8 | major | A missed background-review completion notification can leave a completed round waiting indefinitely. | fixed 0fefb31 |
 | R007-F9 | minor | Reading several design sections requires one `show` invocation per section. | open |
 | R007-F10 | major | A completed Cursor report can fail local publication with EACCES. | fixed 9594d9a |
-| R007-F11 | major | A Git marker in the default temporary root causes validation to skip outside-checkout tests. | open |
+| R007-F11 | major | A Git marker in the default temporary root causes validation to skip outside-checkout tests. | fixed 4de7e23 |
 | R007-F12 | major | Verification using newer toolchain headers misses violations of the oldest supported versions. | open |
 | R007-F13 | major | During blind-review triage, an agent can treat a user's follow-up questions and counterproposals as decisions. | open |
 | R007-F14 | major | The targeted recheck instructions leave implicit when to return a still-unresolved blocker to the user. | open |

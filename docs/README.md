@@ -20,7 +20,7 @@
 
 ### Reviews
 
-- [R007: Open Canon workflow feedback from Silk and Canon](reviews/R007-canon-workflow-open-feedback.md) · open · Eight findings fixed. Seven open on review decisions and documentation, worktree retro records, multi-section queries and verification coverage. · modules: canon
+- [R007: Open Canon workflow feedback from Silk and Canon](reviews/R007-canon-workflow-open-feedback.md) · open · Nine findings fixed. Six open on review decisions and documentation, worktree retro records, multi-section queries and verification coverage. · modules: canon
 - [R008: Maintainer feedback on Canon governance and blind review](reviews/R008-canon-governance-and-blind-review-feedback.md) · open · Canon 1.0 feedback on maintainer control, workflow and blind review, CLI responsibilities and packaging, skill boundaries and core guidance. · modules: canon
 
 ### Experiments
