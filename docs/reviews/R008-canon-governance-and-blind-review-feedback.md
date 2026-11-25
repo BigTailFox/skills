@@ -4,8 +4,8 @@ created: 2026-11-25
 updated: 2026-11-25
 revision: 1
 modules: [canon]
-summary: Maintainer feedback on workflow changes, progressive disclosure, agent discretion, concise skills, CLI enforcement and standalone CLI packaging.
-refs: [D000, D002, D004, D007]
+summary: Maintainer review of workflow growth, agent discretion, concise skills, CLI enforcement and packaging, and the role of canon-sync.
+refs: [D000, D001, D002, D004, D007]
 ---
 
 # R008: Maintainer feedback on Canon governance and blind review
@@ -31,6 +31,7 @@ The maintainer wants to understand how much rereading it takes to regain a clear
 | R008-F4 | minor | Remove the command catalogue from the core skill. Give the agent the command to run and let the CLI explain usage and next steps through help, results and errors. | open |
 | R008-F5 | major | Split `canon.py` into modules, publish the CLI as a Python package and let it declare third-party runtime dependencies. | open |
 | R008-F6 | minor | Keep Reading docs short. Point the agent from each reading question to the document, section or query that answers it. | open |
+| R008-F7 | minor | Does document maintenance need a separate manual `canon-sync` skill? The maintainer does not recall invoking it. | open |
 
 ### R008-F3 Core skill structure
 
@@ -74,3 +75,11 @@ D000 is the project overview. It describes capabilities, module boundaries and d
 `canon.py` grew from 1,715 lines in `v0.1.0` to 6,325 at `d8b223a`. The skill ships the CLI as one Python file using only the standard library. [D000§dependencies: runtime dependencies](../designs/D000-project-overview.md#dependencies)
 
 The maintainer proposes having the agent install the separately released package during `canon-init` using `uv` or a project virtual environment. Packaging would let the CLI declare dependencies such as `cyclopts` and `pydantic` when they improve its capabilities. An open design question is how a fresh checkout, a linked worktree and CI would obtain the CLI version that matches the project's pinned skills. [D004§install: project installation](../designs/D004-project-setup.md#install)
+
+### R008-F7 Role of canon-sync
+
+`canon-sync` has three uses. It can run the ordinary docs step on demand for uncommitted work or a branch and leave the commit to the user. After a merge or rebase, it checks against the target and handles document ID collisions. Its audit mode checks for a newer release, investigates unchecked commits, revisits known issues and idle documents, repairs links from D000 and can commit corrections. Normal changes already include the docs step. [Manual skill](../../skills/governance/canon-sync/SKILL.md) · [Change flows](../../skills/governance/canon/workflow.md#flows)
+
+At `0fefb31`, `canon.py audit` flagged six commits to check against D005 and three against D009. An agent still needs to compare those commits with the designs. Three commits in the same history carry a `Reconciled:` trailer. The core maintenance workflow also writes that trailer, and Canon trace has no `canon-sync` unit, so the frequency of manual invocation is unknown. [D002§unchecked-commits-in-audit: reconciliation](../designs/D002-overview-and-as-built.md#unchecked-commits-in-audit) · [D001§units: traced units](../designs/D001-skill-telemetry.md#units)
+
+The review recommendation is to retire the standalone skill. Keep the on-demand docs step and its suggested commit message, leave collision handling in the merge instructions, and have the read-only audit point to the maintenance procedure when a finding needs judgment. Release discovery belongs with the upgrade flow in `canon-init`. [Maintenance](../../skills/governance/canon/workflow.md#maintenance) · [Upgrade](../../skills/governance/canon-init/SKILL.md#upgrade)
