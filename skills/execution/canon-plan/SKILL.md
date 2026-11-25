@@ -10,6 +10,8 @@ Read the `canon` skill first. `canon.py` means the `canon` skill's `scripts/cano
 
 ## 1. Start
 
+Choose and state the plan's tier from the design, its decision history and the proposed deliverable. A first plan implementing the core protocol or architecture of an accepted L2 design with no implemented revision defaults to L2, even when a scaffold already supplies its directory. A later local change to an implemented design takes its own tier.
+
 1. The design must have passed the review gate (`reviewed` equals `revision`); otherwise stop and give the user `/canon-design D00X` to finish it. Invoking this skill approves the design. Before changing its `approved` field, run `canon.py approvals` and keep every gate key listing that exact revision. Before `new P --from`, raise `approved` to the revision where needed, move a draft to `accepted` with `canon.py status`, say so in one line naming the reviewers, and commit. For each other design added to the new plan’s `based_on`, capture its gate keys and record approval the same way, committing it with the plan. After each approval commit, run `canon.py approvals GATE --update` for each key it covered.
 2. New plan: `canon.py new P <slug> --from D00X`. Revising a plan: edit it in place and bump `revision`.
 3. Run `canon.py trace start plan <P id> <D id> --tier <tier> --skill <skill> --model <model>`.

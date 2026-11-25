@@ -17,7 +17,7 @@ Implements [D007: Change tiers and the review gate](../designs/D007-change-tiers
 
 ## Current state
 
-Next: S2.
+Next: S3.
 
 ## Slices
 
@@ -33,7 +33,7 @@ Test at the CLI and offline replay seams. Start an L1 gate, cancel and restart t
 
 ### S2: Check review coverage before crediting revisions
 
-Status: todo
+Status: done
 
 Risk: Treating a confirmation, a stale report or a partial waiver as full coverage can mark an unreviewed target as reviewed.
 
@@ -68,3 +68,5 @@ The plan covers one combined implementation and final code review.
 Started at bd5c4a937e1af59a68585f9feb53ed3e9ed7b13d.
 
 S1 — Canon 83 creates distinct round directories, binds prepared/live input and preserves verified short baselines for replay after the source disappears. Seven new CLI and replay cases and a real ambiguous-prefix fixture passed. Recovery keeps its original round and source identity. The coverage check in S2 can use the existing round declaration, pass list, pin and material-warning helpers, including in a checkout with tracing off. A numbered key identifies a separately requested pass when its ordinary role is already required.
+
+S2 — Canon 84 checks actual readers by target and role, separate approval groups, partial handoffs, delegation and scoped user exceptions. Fourteen public CLI regressions and an installed-CLI trial passed. In S3 the same report-local F-number may occur in both the original and confirmation reports. Exercise the offline evidence and first-round replay joins as well as live history.

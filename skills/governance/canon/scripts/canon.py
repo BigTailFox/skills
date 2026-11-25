@@ -31,7 +31,7 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-CANON_VERSION = "83"
+CANON_VERSION = "84"
 
 TYPES = {
     "C": {"dir": "concepts", "active": ("draft",), "terminal": ("adopted", "dropped"),
@@ -2840,13 +2840,14 @@ def approval_ref(text, separator, gate=None):
     return doc_id, revision
 
 
-def read_approval_record(path):
-    def unique_keys(pairs):
-        result = dict(pairs)
-        if len(result) != len(pairs):
-            raise ValueError("duplicate key")
-        return result
+def unique_keys(pairs):
+    result = dict(pairs)
+    if len(result) != len(pairs):
+        raise ValueError("duplicate key")
+    return result
 
+
+def read_approval_record(path):
     gate = path.parent.name
     try:
         targets = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_keys)
@@ -4922,6 +4923,10 @@ def read_dispositions(kind, source):
         data = sys.stdin.buffer.read() if source == "-" else Path(source).read_bytes()
     except OSError as error:
         raise TraceError("cannot read --input {}: {}".format(source, errno_name(error)))
+    return parse_dispositions(kind, data)
+
+
+def parse_dispositions(kind, data):
     try:
         dispositions = json.loads(data)
     except ValueError as error:
@@ -6056,6 +6061,278 @@ def review_start(args):
     return 0
 
 
+def round_file(directory, name):
+    """Only direct regular files can establish coverage or provide replay material."""
+    try:
+        return regular_bytes(directory / name, -1)
+    except OSError:
+        return b""
+
+
+def save_round_json(directory, name, value):
+    with tempfile.TemporaryDirectory(dir=directory) as tmp:
+        staged = Path(tmp) / name
+        staged.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        staged.replace(directory / name)
+
+
+def read_coverage(data):
+    try:
+        record = json.loads(data, object_pairs_hook=unique_keys)
+    except ValueError as error:
+        raise TraceError("invalid coverage JSON: " + str(error))
+    if not isinstance(record, dict) or set(record) - {"assignments", "delegations", "handoff"}:
+        raise TraceError("invalid coverage object")
+    return record
+
+
+def source_passes(passes, sources, coverage):
+    assignments = coverage.get("assignments", {})
+    if not isinstance(assignments, dict):
+        raise TraceError("assignments must map each supplemental source to one pass")
+    served = {key: key if key in passes else reviewer["role"] for key, reviewer in sources.items()}
+    for key, required in assignments.items():
+        if (key not in sources or not isinstance(required, str) or required not in passes or
+                required not in sources or sources[required]["role"] != sources[key]["role"]):
+            raise TraceError("{} needs one declared pass and its original report in the same role".format(key))
+        if key in passes and key != required:
+            raise TraceError("{} already serves its independent pass".format(key))
+        if re.sub("^manual:", "", sources[required]["model"]) != re.sub("^manual:", "", sources[key]["model"]):
+            raise TraceError("{} needs the same actual model as {}".format(key, required))
+        served[key] = required
+    return served
+
+
+def review_targets(root, info, additional):
+    targets = list(dict.fromkeys(info["targets"] + additional))
+    if targets:
+        repo = Repo(root)
+        for target in targets:
+            ref = target_reference(target, "@r")
+            if not ref:
+                raise TraceError("invalid review target " + target)
+            doc = repo.get(ref[0])
+            if doc.archived or doc.revision != int(ref[1]):
+                raise TraceError("{} is no longer the live revision at {}".format(target, doc.rel))
+    return ["code change"] if info["kind"] == "code-review" else targets
+
+
+def checked_report(directory, key, reviewer, kind):
+    report = round_file(directory, key + ".md")
+    lines = report.rstrip().splitlines()
+    if not lines or lines[-1].strip() not in (b"Verdict: approve", b"Verdict: revise"):
+        scope = reviewer.get("targets", ["code change" if kind == "code-review" else "unknown targets"])
+        raise TraceError("{} lacks a completed report for {}".format(key, ", ".join(scope)))
+    id_file = key + "-id.txt"
+    saved_id = round_file(directory, id_file).rstrip(b"\r\n")
+    if saved_id and saved_id != (reviewer["id"] or "").encode("utf-8"):
+        raise TraceError("{} conflicts with the run in {}".format(key, id_file))
+    return report
+
+
+def reported_coverage(directory, kind, sources, served, targets):
+    covered, runs = {}, {}
+    for key, reviewer in sources.items():
+        report = checked_report(directory, key, reviewer, kind)
+        scope = reviewer.get("targets", ["code change"] if kind == "code-review" else [])
+        for target in scope:
+            if target not in targets:
+                raise TraceError("{} assessed undeclared target {}; supply --target for an added revision".format(key, target))
+            if reviewer["id"]:
+                source = (reviewer["model"], reviewer["id"], hashlib.sha256(report).digest(), target)
+                if runs.setdefault(source, served[key]) != served[key]:
+                    raise TraceError("{} reuses the same run's report for two passes on {}".format(key, target))
+            covered.setdefault((served[key], target), []).append(reviewer["model"])
+    return covered
+
+
+def prior_review(root, directory, reference, legacy_kind=None):
+    """Load the named evidence from this gate's history, including a pre-round directory."""
+    prior = archive_source(root, reference)
+    base = root / REVIEW_ROUND_DIR
+    if (prior == directory or base not in prior.parents or
+            prior.relative_to(base).parts[0] != directory.relative_to(base).parts[0]):
+        raise TraceError("unrelated prior round: " + reference)
+    info = read_review_round(root, prior)
+    topic = prior.parent if info else prior
+    parts = topic.relative_to(base).parts
+    if len(parts) > 2 or len(parts) == 2 and not re.fullmatch(r"followup-[1-9][0-9]*", parts[1]):
+        raise TraceError("invalid prior round: " + reference)
+    kind = info["kind"] if info else legacy_kind or ("follow-up" if len(parts) == 2 else "gate")
+    data = parse_dispositions(kind, regular_bytes(prior / "dispositions.json", -1))
+    sources = {r.get("key", r["role"]): r for r in data["reviewers"]}
+    try:
+        coverage = read_coverage(regular_bytes(prior / "coverage.json", -1))
+    except FileNotFoundError:
+        coverage = {}
+    passes = required_review_passes(info) if info else list(REVIEW_ROLES[kind])
+    return prior, info, sources, source_passes(passes, sources, coverage)
+
+
+def check_handoff(root, directory, info, sources, served, coverage):
+    if "handoff" not in coverage:
+        return
+    handoff = coverage["handoff"]
+    if (not isinstance(handoff, dict) or set(handoff) != {"prior_round", "sources"} or
+            not isinstance(handoff["prior_round"], str) or not isinstance(handoff["sources"], list) or
+            not handoff["sources"] or any(not isinstance(key, str) or key not in sources for key in handoff["sources"])):
+        raise TraceError("handoff needs a prior_round and the original source keys included in this round's dispositions")
+    prior, previous, readers, assignments = prior_review(root, directory, handoff["prior_round"], info["kind"])
+    pending = round_file(prior, "pending.md").decode("utf-8", "replace")
+    if directory.parent != (prior.parent if previous else prior) or not pending.strip():
+        raise TraceError("prior round needs this topic's saved pending.md")
+    if previous:
+        if ((previous["kind"], previous["tier"]) != (info["kind"], info["tier"]) or
+                previous["targets"][:1] != info["targets"][:1]):
+            raise TraceError("prior round has a different review kind, tier or primary revision")
+        if previous["unit"] and info["unit"]:
+            for _, store in history_stores(root):
+                current, _ = unit_events(store, info["unit"])
+                original, end = unit_events(store, previous["unit"])
+                if ((current and current.get("continues") and current["continues"] != previous["unit"]) or
+                        (original and end and end.get("outcome") != "handoff") or
+                        (original and current and current.get("continues") != previous["unit"])):
+                    raise TraceError("prior round does not match this trace continuation")
+    elif info["kind"] != "code-review" and info["targets"][0] not in re.findall(r"\b[DP][0-9]+[A-Z]*@r[1-9][0-9]*\b", pending):
+        raise TraceError("prior round's pending.md needs the same primary revision")
+    if info["kind"] == "code-review":
+        if previous:
+            base, plans = previous["baseline"], previous["targets"]
+        else:
+            literal = round_file(prior, "baseline.txt").strip().decode("ascii", "replace")
+            base = review_commit(root / REVIEW_SNAPSHOT_DIR, trace_env(), literal)
+            plans = re.findall(r"\bP[0-9]+@r[1-9][0-9]*\b", pending)
+        if not base or base != info["baseline"] or set(plans) != set(info["targets"]):
+            raise TraceError("prior round has a different or unknown code-review base or plan")
+    carried = set(handoff["sources"])
+    for key in carried:
+        reviewer, original = sources[key], readers.get(key)
+        if (not original or any(original[field] != reviewer[field] for field in ("role", "model", "id")) or
+                served[key] != assignments[key] or not set(reviewer.get("targets", ())) <= set(original.get("targets", ())) or
+                checked_report(prior, key, original, info["kind"]) != round_file(directory, key + ".md")):
+            raise TraceError("handoff {} needs the original report, author, pass and assessed revisions".format(key))
+
+
+def waiver_pairs(directory):
+    decision = round_file(directory, "waiver.md").decode("utf-8", "replace")
+    role = r"(?<![\w-])(cross-family(?:-[0-9]+)?)(?![\w-])"
+    target = r"(?<![\w@])([DP][0-9]{3,}[A-Z]?@r[1-9][0-9]*)(?![\w@-])"
+    pairs = set(re.findall(role + r"\s*=\s*" + target, decision))
+    if not pairs:
+        # Older decision notes can name one missing role and its revisions together in prose.
+        for line in decision.splitlines():
+            keys = set(re.findall(role, line))
+            if len(keys) == 1:
+                pairs.update((next(iter(keys)), ref) for ref in re.findall(target, line))
+    return pairs
+
+
+def topic_waivers(root, directory):
+    reviews = root / REVIEW_ROUND_DIR
+    topic = reviews / directory.relative_to(reviews).parts[0]
+    pairs = set()
+    for pattern in ("waiver.md", "round-*/waiver.md", "followup-*/waiver.md", "followup-*/round-*/waiver.md"):
+        for note in topic.glob(pattern):
+            if note.parent == note.parent.resolve():
+                pairs.update(waiver_pairs(note.parent))
+    return pairs
+
+
+def delegated_coverage(root, directory, info, passes, targets, sources, coverage, covered):
+    entries = coverage.get("delegations", [])
+    fields = {"pass", "target", "source", "prior_round", "prior_source", "prior_target"}
+    if not isinstance(entries, list):
+        raise TraceError("delegations must be a list")
+    waivers = topic_waivers(root, directory) if entries else ()
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) != fields or not all(isinstance(s, str) for s in entry.values()):
+            raise TraceError("each delegation needs " + ", ".join(sorted(fields)))
+        required, target, old = entry["pass"], entry["target"], entry["prior_target"]
+        label = "{} for {}".format(required, target)
+        delegate = sources.get(entry["source"], {})
+        new_ref, old_ref = target_reference(target, "@r"), target_reference(old, "@r")
+        if (info["kind"] != "follow-up" or required not in passes or not reviewer_key("cross-family", required) or
+                target not in targets or delegate.get("role") != "same-model" or target not in delegate.get("targets", []) or
+                not old_ref or old_ref[0] != new_ref[0] or int(old_ref[1]) >= int(new_ref[1])):
+            raise TraceError("invalid delegation of " + label)
+        for waived_pass, waived in waivers:
+            doc_id, revision = waived.split("@r")
+            if waived_pass == required and new_ref[0] == doc_id and int(old_ref[1]) < int(revision) < int(new_ref[1]):
+                raise TraceError("{} needs fresh independent coverage after the waiver of {}".format(label, waived))
+        prior, declaration, previous, served = prior_review(root, directory, entry["prior_round"])
+        key = entry["prior_source"]
+        if (declaration and (declaration["tier"] != info["tier"] or declaration["kind"] == "code-review") or
+                served.get(key) != required or old not in previous[key].get("targets", [])):
+            raise TraceError("{} needs prior full {} coverage of {} by {}".format(label, required, old, key))
+        checked_report(prior, key, previous[key], "gate")
+        if required in previous and key != required:
+            checked_report(prior, required, previous[required], "gate")
+        covered.setdefault((required, target), []).append(delegate["model"])
+
+
+def check_replay_material(root, directory, info, sources):
+    files = {name: round_file(directory, name) for name in ["snapshot.txt", "baseline.txt"] +
+             [key + "-prompt.md" for key in sources]}
+    gaps = {}
+    review_pins(root / REVIEW_SNAPSHOT_DIR, trace_env(**SNAPSHOT_IDENTITY), info["kind"], info, files, gaps)
+    review_prompt_gaps(files, sources, gaps)
+    warn_review_gaps(root, directory, info["unit"], gaps)
+
+
+def review_exceptions(directory, info, passes, targets, args):
+    """A user's recorded exception discharges exactly the named obligation. It supplies no model."""
+    excused = set()
+    for pair in args.waive:
+        key, _, target = pair.partition("=")
+        if (info["tier"] != "L2" or info["kind"] == "code-review" or key not in passes or
+                not reviewer_key("cross-family", key) or target not in targets):
+            raise TraceError("cannot waive " + pair + " in this round")
+        if (key, target) not in waiver_pairs(directory):
+            raise TraceError("record the user's decision for {} in waiver.md".format(pair))
+        excused.add((key, target))
+    for key in args.withdraw:
+        if (info["tier"] != "L1" or info["kind"] == "code-review" or key not in info["require"] or
+                not reviewer_key("cross-family", key)):
+            raise TraceError("cannot withdraw " + key + " in this round")
+        decision = round_file(directory, "withdrawal.md").decode("utf-8", "replace")
+        if not re.search(r"(?<![\w-])" + re.escape(key) + r"(?![\w-])", decision):
+            raise TraceError("record the user's withdrawal of {} in withdrawal.md".format(key))
+        excused.update((key, target) for target in targets)
+    return excused
+
+
+def review_check(args):
+    root, _ = trace_root()
+    directory = archive_source(root, args.round)
+    if root / REVIEW_ROUND_DIR not in directory.parents:
+        raise TraceError("expected a round in this checkout's review directory")
+    info = read_review_round(root, directory)
+    if info is None:
+        raise TraceError("review check needs a declared round from review start")
+    kind = info["kind"]
+    targets = review_targets(root, info, args.target)
+    dispositions = read_dispositions(kind, args.input)
+    sources = {r.get("key", r["role"]): r for r in dispositions["reviewers"]}
+    passes = required_review_passes(info)
+    excused = review_exceptions(directory, info, passes, targets, args)
+    coverage = read_coverage(Path(args.coverage).read_bytes()) if args.coverage else {}
+    served = source_passes(passes, sources, coverage)
+    check_handoff(root, directory, info, sources, served, coverage)
+    covered = reported_coverage(directory, kind, sources, served, targets)
+    delegated_coverage(root, directory, info, passes, targets, sources, coverage, covered)
+    check_replay_material(root, directory, info, sources)
+    save_round_json(directory, "dispositions.json", dispositions)
+    save_round_json(directory, "coverage.json", coverage)
+    missing = ["{} for {}".format(key, target) for key in passes for target in targets
+               if (key, target) not in covered and (key, target) not in excused]
+    if missing:
+        raise TraceError("missing review coverage: " + ", ".join(missing))
+    for target in targets:
+        models = dict.fromkeys(model for key in passes for model in covered.get((key, target), []))
+        print("{}: {}".format(target, ", ".join(models)))
+    return 0
+
+
 def require_project_install():
     """End the command unless this canon.py was started by a path inside the project, found without running Git: the
     path passes through a directory that is the nearest at or above the working directory holding `.git`; outside
@@ -6161,6 +6438,9 @@ def main(argv=None):
     p.set_defaults(func=cmd_status)
 
     p = command(sub, "approvals", help="list pending L2 approvals or record a reviewed round")
+    p.epilog = ("A plan gate contains its own plan alone. Record linked designs under their design gate. "
+                "For example, run canon.py approvals P001-r1 --start P001@r1 and "
+                "canon.py approvals D001-r1 --start D001@r1.")
     p.add_argument("gate", nargs="?", metavar="GATE", help="original gate topic, e.g. D001-r15 or P002-r1")
     mode = p.add_mutually_exclusive_group()
     mode.add_argument("--start", nargs="+", metavar="ID@rN", help="record the initial round, including the gate's primary")
@@ -6245,6 +6525,15 @@ def main(argv=None):
     t.add_argument("--snapshot", metavar="COMMIT", help="prepared target commit (default: snapshot the current work tree)")
     t.add_argument("--unit", metavar="TRACE_ID", help="bind the new round's files to this trace unit and review kind")
     t.set_defaults(func=review_start)
+
+    t = command(actions, "check", help="verify required coverage and print actual readers of each revision or change")
+    t.add_argument("round", metavar="ROUND", help="directory printed by review start")
+    t.add_argument("--input", required=True, metavar="FILE", help="review dispositions JSON, or - for stdin")
+    t.add_argument("--coverage", metavar="FILE", help="JSON evidence for supplemental assignments and follow-ups")
+    t.add_argument("--target", action="append", default=[], metavar="ID@rN", help="additional target reviewed in this round")
+    t.add_argument("--waive", action="append", default=[], metavar="KEY=ID@rN", help="apply an exact L2 gate waiver from waiver.md")
+    t.add_argument("--withdraw", action="append", default=[], metavar="KEY", help="withdraw an extra L1 gate pass recorded in withdrawal.md")
+    t.set_defaults(func=review_check)
 
     p = command(sub, "trace", help="record canon workflow units for skill telemetry; off unless `trace on` ran")
     actions = p.add_subparsers(dest="action", required=True)
