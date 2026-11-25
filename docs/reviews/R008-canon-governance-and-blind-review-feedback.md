@@ -4,8 +4,8 @@ created: 2026-11-25
 updated: 2026-11-25
 revision: 1
 modules: [canon]
-summary: Maintainer feedback on core skill scope, trace activation, review evidence, workflow and writing guidance, CLI packaging and canon-sync.
-refs: [D000, D001, D002, D003, D004, D006, D007]
+summary: Maintainer feedback on the core skill, document formats, concurrent work, workflow and writing, blind review, tracing, CLI packaging and canon-sync.
+refs: [D000, D001, D002, D003, D004, D006, D007, D011]
 ---
 
 # R008: Maintainer feedback on Canon governance and blind review
@@ -36,6 +36,8 @@ The maintainer wants to understand how much rereading it takes to regain a clear
 | R008-F9 | minor | Move review evidence and the reviewer configuration example to the skills that use them. | open |
 | R008-F10 | major | The workflow reference has grown into another long entry point. Keep the next decision visible and put detailed procedures at the phase that needs them. [Section-by-section assessment and CLI proposals](R008/workflow.md) | open |
 | R008-F11 | minor | Keep the writing guide useful as it grows. Its flat list mixes general editorial judgment with instructions for particular kinds of content. | open |
+| R008-F12 | minor | Give concurrent work a dedicated reference that an agent can reach before a shared-checkout write or a partial commit. | open |
+| R008-F13 | minor | List document types by purpose in the core skill. The maintainer proposes one format reference for per-type structure, frontmatter and embedded source. | open |
 
 ### R008-F3 Core skill structure
 
@@ -43,7 +45,9 @@ The maintainer proposed four sections in the order `Tool` → `Doc Type` → `Do
 
 Use the introduction to state Canon's purpose and point an agent starting a change to the workflow's tier selection. The Tool and Reading docs drafts follow. Give each document type one line on its purpose, including that designs govern behavior and plans track a change. Limit Doc layout to where project and module documents, attachments and archives live. [Document types](../../skills/governance/canon/doc-types.md)
 
-The workflow directs agents back to the core skill for tier definitions and shared-checkout procedures. The generated project instructions also send shared checkouts there. Move the tier definitions to the start of the workflow. When another session shares the checkout, point the agent to the concurrent-work instructions before its first edit. [Change flows](../../skills/governance/canon/workflow.md#flows) · [Concurrent work](../../skills/governance/canon/SKILL.md#concurrent-work) · [Project instructions](../../AGENTS.md#docs)
+Move the tier definitions to the start of the workflow, which currently directs agents back to the core skill. [Change flows](../../skills/governance/canon/workflow.md#flows)
+
+Distribute the seven bullets under Rules. Keep the principle that each standard has one owning design in the introduction. Put stable document IDs and document or section link syntax in the format reference. Let `new` assign the ID, `rename` and `archive` preserve it, and `check` report leftover template guidance. The review gate owns the requirement to review the current revision. Put post-merge checks and collision repair at the merge or rebase step, where `renumber` can report ambiguous references for the agent to resolve. [Current Rules](../../skills/governance/canon/SKILL.md#rules)
 
 ### R008-F4 Tool section of the core skill
 
@@ -92,7 +96,7 @@ The review recommendation is to retire the standalone skill. Keep the on-demand 
 
 At `0fefb31`, `canon/SKILL.md` has seven companion Markdown files. The maintainer values `doc-types.md`, `as-built.md`, writing guidance and tracing. The proposed homes below follow the action that needs each reference.
 
-- `doc-types.md` belongs in `canon`. Link to the section for the type being chosen or written. Let `new` supply the template and `check` validate its structure.
+- The per-type material in `doc-types.md` would become part of `doc-formats.md` under the maintainer's proposal. [Document formats](#r008-f13-document-formats)
 - `as-built.md` belongs in `canon`. Read it when adopting existing designs, documenting existing behavior on request, or preparing to change behavior that has no spec.
 - `workflow.md` can be a short guide to tiers, required decisions and the next phase. At the measured commit, Review gate and Subagents account for 3,464 of its 5,205 words. Put reviewer dispatch and confirmation with blind review, worker instructions with implementation, and link to reconciliation when a change closes.
 - `writing.md` can keep shared judgments such as where a fact belongs and what evidence supports a claim. Link situational advice where it applies, such as when adding a diagram. Give mechanically checkable headings and labels to templates and the CLI. [D006§writing-rules: writing rules](../designs/D006-doc-model.md#writing-rules)
@@ -105,3 +109,15 @@ At `0fefb31`, `canon/SKILL.md` has seven companion Markdown files. The maintaine
 The first `trace start` in a traced workflow checks the machine switch and checkout opt-out. A returned unit ID leads the agent to `trace.md`. The core skill still carries first-call instructions and each instrumented skill issues its first call even when tracing is off. [D001§call-sites: callers](../designs/D001-skill-telemetry.md#call-sites) · [D001§budgets: off-path cost](../designs/D001-skill-telemetry.md#budgets)
 
 Let the CLI check the switch as part of an operation the workflow already performs, such as `review start`. With tracing off, the agent needs no trace-only command or reference. With it on, record the event and point to `canon-trace` when interpretation or recovery needs the agent. Design, plan, handoff and worker-slice boundaries need an observable CLI or host event before their explicit calls can be retired. An explicit history query should still work after recording is turned off. [D001§switch-and-storage: effective switch](../designs/D001-skill-telemetry.md#switch-and-storage)
+
+### R008-F12 Concurrent work
+
+At `0fefb31`, Rules, Concurrent work, Frontmatter and Embedded source together take 1,629 of the 4,382 whitespace-separated words in `canon/SKILL.md`. Concurrent work accounts for 872. Move its worktree, staging, scoped checks and handoff procedures to `concurrent-work.md`. Link to it before the first edit when another session may share the checkout, or before staging a partial commit. Point the generated `AGENTS.md` instruction and the docs step to the same reference. Both currently name the section in the core skill. [Concurrent work](../../skills/governance/canon/SKILL.md#concurrent-work) · [Project instructions](../../AGENTS.md#docs) · [Docs step](../../skills/governance/canon/workflow.md#docs-step)
+
+### R008-F13 Document formats
+
+Give concept (C), design (D), plan (P), review (R), experiment (E) and investigation (I) one line each in `SKILL.md` with their purpose and a direct link to their section of the proposed `doc-formats.md`. D000 is a design and guides are unnumbered. A plan author could run `new P <slug> --from D00X` and open the Plans section. [Current type list](../../skills/governance/canon/SKILL.md#doc-types)
+
+- **Common conventions.** Explain document identity, file and section references, and shared frontmatter fields once. Describe the meaning of `reviewed`, `approved` and `implemented` where they apply. The workflow owns who can advance them and when. [D006§frontmatter: field meanings](../designs/D006-doc-model.md#frontmatter)
+- **By type.** Give each type a stable heading for its own fields, required sections and status meanings. The current frontmatter example mixes design-only `owns` with plan-only `based_on`. Let `new` generate the template for the chosen type and `check` validate the document. Keep the known-issue row format here. The review step decides where a deferred finding belongs. Update links to the affected sections when moving the material. [Current per-type reference](../../skills/governance/canon/doc-types.md)
+- **Embedded source.** Keep one optional section with a minimal marker example for a file or named region. `embed` refreshes the generated content and `check` detects stale blocks. A source editor can find affected documents with `embed --source FILE --list`. [D011§markers-and-sources: markers](../designs/D011-embedded-source.md#markers-and-sources) · [D011§generating-and-checking: CLI behavior](../designs/D011-embedded-source.md#generating-and-checking)
