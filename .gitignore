@@ -11,6 +11,8 @@ Thumbs.db
 __pycache__/
 *.py[cod]
 .venv/
+.ruff_cache/
+/cli/dist/
 
 # This checkout's links to its skills (AGENTS.md), and artifacts of `npx skills add` inside this repo
 .agents/

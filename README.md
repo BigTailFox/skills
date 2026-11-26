@@ -184,6 +184,8 @@ Auto skills load when the context calls for them. Manual skills run only as comm
 
 ## Repository layout
 
+For the standalone Python CLI, see the [CLI development instructions](cli/README.md).
+
 ```
 .
 ├── skills/

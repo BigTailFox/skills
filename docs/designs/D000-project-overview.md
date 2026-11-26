@@ -1,7 +1,7 @@
 ---
 status: active
 created: 2026-10-23
-updated: 2026-11-25
+updated: 2026-11-26
 revision: 4
 modules: []
 summary: Agent skills built around canon, a documentation system kept in the repository; one module, its capabilities and the designs that own them.
@@ -15,6 +15,8 @@ implemented: 4
 ---
 
 # D000: Project overview
+
+The [Canon 1.0 architecture contract draft](D000/v1-architecture.md) records the proposed skill and CLI boundaries for the `v1` branch.
 
 ## Goals
 

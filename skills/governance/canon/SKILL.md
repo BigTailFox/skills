@@ -1,5 +1,6 @@
 ---
 name: canon
+compatibility: Packaged commands require canon-cli>=1.0.0.dev0
 description: Canon project documentation system. Use whenever reading, creating, updating, referencing or archiving docs under docs/, when choosing a change's tier (L0, L1, L2) or whether it needs a design or plan, or when AGENTS.md says the project follows canon. Defines numbered concepts, designs, plans, reviews, experiments and investigations for long-running, multi-session, multi-model work, with frontmatter, lifecycle and blind-review gates, and ships canon.py to create, check, query and archive them.
 ---
 

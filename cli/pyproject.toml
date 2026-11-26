@@ -1,0 +1,30 @@
+[project]
+name = "canon-cli"
+version = "1.0.0.dev0"
+description = "Command-line tools for Canon project documentation"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.8"
+
+[project.scripts]
+canon = "canon_cli.__main__:main"
+
+[project.urls]
+Repository = "https://github.com/BigTailFox/skills"
+
+[dependency-groups]
+dev = ["ruff", "ty"]
+
+[build-system]
+requires = ["uv_build>=0.13.7,<0.14"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+source-include = ["tests/**", "uv.lock"]
+
+[tool.ruff.lint]
+extend-select = ["I"]
+
+[tool.ty.src]
+include = ["src", "tests"]
