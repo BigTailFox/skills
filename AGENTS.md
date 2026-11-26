@@ -49,12 +49,6 @@ Do not commit or leave untracked any `SKILL.md` other than a skill's own `skills
 - Releases follow Semantic Versioning and are tagged `vX.Y.Z`. Write the version's entry in `CHANGELOG.md` from the commits since the last tag, in terms of what changes for users. When a release absorbs a downstream patch, name its replacement and the project rules users still need. Commit the entry as `chore(repo): release X.Y.Z` and tag that commit. `CANON_VERSION` is separate and changes only with `canon.py`.
 - Write everything in English: skills, `README.md` and `AGENTS.md`.
 
-<!-- v1-refactor:start -->
-## v1 refactor branch workflow (temporary)
-
-On branch `v1`, the Canon 1.0 refactor uses a streamlined workflow: keep one consolidated architecture contract, run focused cross-family blind reviews at major milestones (architecture, CLI split/additions, rewritten core skills), run `uv run --no-project --with tiktoken python3 scripts/validate.py` and `D012` paired replay on changes, and align the final code designs once the 1.0 implementation stabilizes instead of bumping old designs on every intermediate commit. Remove this section before merging `v1` into `main`.
-<!-- v1-refactor:end -->
-
 <!-- canon:agents:start -->
 ## Docs
 
